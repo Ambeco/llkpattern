@@ -2,6 +2,12 @@
 
 Notes to self about how to work on this project, and other context that doesn't belong in the README or design docs.
 
+## Build / environment
+
+- **JDK: use 17 or 21, not 25.** This machine's default `java` is JDK 25, but Gradle 8.7 (this project's wrapper version) can't run on it — the Groovy buildscript compiler crashes intermittently with `Unsupported class file major version 69`. Set `JAVA_HOME` to a JDK 17 or 21 install for any Gradle invocation, e.g. (bash) `export JAVA_HOME="C:\Program Files\Java\jdk-17"`. Don't hardcode this into the committed `gradle.properties` (machine-specific path) — a real fix would be a Gradle toolchain declaration or bumping the Gradle wrapper version, tracked in remaining_work.md.
+- The Checker Framework nullness-checking plugin is currently disabled in `llkpattern/build.gradle` (commented out, `apply false` in the `plugins{}` block) because it crashes with `NoSuchMethodError` against JDK 25's internal javac APIs even when the rest of the build uses JDK 17/21 correctly — its own default-resolved version (3.19.0) predates JDK 17-era javac internals it pokes at reflectively. Needs a compatible version pinned before re-enabling, not a permanent removal.
+- `./gradlew :llkpattern:test` (with JAVA_HOME set as above) is the command to run the test suite. As of 2026-09-05 it passes (1 intentionally `@Ignore`d test, 23 passing in `TreeCodePointMapTest`).
+
 ## Process preferences
 
 - The user (Ambeco) wrote the original base code; I've taken over implementation under their guidance. Don't assume I know the historical reasoning behind existing code — ask if it's unclear rather than guessing.
@@ -15,7 +21,9 @@ Notes to self about how to work on this project, and other context that doesn't 
 - Per the user: they were in the middle of two simultaneous refactors when they stopped, which they've noted (with hindsight) was probably too much to juggle at once and contributed to stalling out:
   1. Compiling the parsed AST (`PatternConstruct` tree) into a graph of executable matcher nodes (`MatcherConstruct`). This is partially done — `PatternConstruct.QuantifiedUnion.buildEntryMap` (the union/loop ambiguity-detection logic) is left mid-edit with syntax errors.
   2. Refactoring the character-class representation away from mirroring the pattern's own literal syntax, toward a `RangeSet`-based representation (`CharacterClass`/`CodePointMap`/`TreeCodePointMap`), with the stated eventual intent to replace that with something more specialized/optimized once the shape is proven out. This is also mid-flight — the old direct-`RangeSet`-on-`ComplexCharacter` approach and the new `CodePointMap` family currently coexist.
-- Suggested approach going forward: tackle these one at a time rather than in parallel, given the user's own diagnosis of what stalled progress last time. Probably: get #1 compiling and minimally working first (even against the old, simpler character-class representation), get a real test suite in place around it, *then* return to #2.
+- Clarified direction (2026-09-05): the user confirmed the plan is/was to finish #2 (the `CodePointMap<V>` interface, with `TreeCodePointMap` as the initial `TreeRangeMap`-backed implementation, and a more specialized/optimized implementation later) *first*, on the theory that it'll make finishing #1 (AST → matcher-graph compilation) noticeably easier — in particular, `CodePointMap`'s merge/conflict-detection (`intersectionRejectingConflicts`) is meant to be the tool `QuantifiedUnion.buildEntryMap`'s ambiguity detection builds on, rather than hand-rolling Guava `RangeMap` overlap bookkeeping.
+- Done as of 2026-09-05: `CodePointMap`/`TreeCodePointMap` rewritten and tested (23 tests), module compiles and its test suite runs green. See the [479dd84](../.) commit message for the full list of what that touched, including a few unrelated pre-existing bugs fixed along the way (a real `PatternParser` typo, `UnicodePredicates.java`'s "code too large" compile error, JDK/Checker-Framework toolchain issues) because they were blocking any compilation/testing at all.
+- Next up per this plan: use `CodePointMap` to actually implement `QuantifiedUnion.buildEntryMap` (currently stubbed to throw `UnsupportedOperationException`), which is redactor #1's ambiguity-detection core.
 - See [design.md](design.md) for the technical design writeup and open questions, and [remaining_work.md](remaining_work.md) for the concrete TODO list inferred from reading the code.
 
 ## Misc

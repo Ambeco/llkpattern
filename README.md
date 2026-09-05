@@ -18,13 +18,13 @@ _(TBD — see [documents/design.md](documents/design.md))_
 
 ## 3. Current Progress
 
-The project is mid-implementation and does not currently compile. See [documents/remaining_work.md](documents/remaining_work.md) for the active TODO list, and [documents/notes.md](documents/notes.md) for working notes. In brief:
+The module compiles and its test suite runs green (see [documents/notes.md](documents/notes.md) for the JDK version this currently requires). See [documents/remaining_work.md](documents/remaining_work.md) for the active TODO list. In brief:
 
 - **Parsing** (`PatternParser`, `PatternConstruct`): a recursive-descent parser turns a pattern string into an AST of `PatternConstruct` nodes (unions, sequences, literals, character classes, quantifiers, boundaries, backreferences, groups). This layer is fairly mature.
-- **Compilation** (`PatternConstruct` → `MatcherConstruct`): mid-refactor. The intent is to compile the AST into a chain/graph of `MatcherConstruct` nodes — each representing one matching step, dispatching to the next node via a range map keyed on the next code point — so matching requires no backtracking. `PatternConstruct.java` currently has unfinished/non-compiling code in `QuantifiedUnion.buildEntryMap` (the ambiguity-detection logic for union branches).
-- **Character class representation**: also mid-refactor. The original approach mirrored the pattern's own character-class syntax; it's being replaced with a `RangeSet`/`RangeMap`-style representation (see `CharacterClass`, `CodePointMap`, `TreeCodePointMap`) with the intent to eventually swap in a more specialized/optimized structure than Guava's `RangeMap`.
+- **Code point range representation** (`CodePointMap`/`TreeCodePointMap`): done and tested. A `RangeMap`-style interface over Unicode code points, currently backed by Guava's `TreeRangeMap`, with the intent to swap in something more specialized later without touching callers.
+- **Compilation** (`PatternConstruct` → `MatcherConstruct`): not yet started for real. The intent is to compile the AST into a chain/graph of `MatcherConstruct` nodes — each representing one matching step, dispatching to the next node via a range map keyed on the next code point — so matching requires no backtracking. `QuantifiedUnion.buildEntryMap` (the ambiguity-detection logic for union branches, meant to be built on `CodePointMap`) is stubbed to throw `UnsupportedOperationException`; this is the next piece of work.
 - **Matching** (`Matcher`): a `java.util.regex.Matcher`-shaped public API shell exists, but nearly every method is `throw new UnsupportedOperationException("TODO: ...")`.
-- **Supporting pieces**: `NamedCharClass`/`UnicodePredicates` (Unicode category/script/block support) and the `unicodeanalyzer` module (a code generator for `UnicodePredicates`, presumably) appear largely built out.
+- **Supporting pieces**: `NamedCharClass`/`UnicodePredicates` (Unicode category/script/block support) and the `unicodeanalyzer` module (its code generator) are largely built out.
 - `oldllkpattern/` holds an earlier version of the implementation, kept for reference during the ongoing refactor.
 
 ## 4. Authorship

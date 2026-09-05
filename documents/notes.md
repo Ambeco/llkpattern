@@ -12,8 +12,9 @@ Notes to self about how to work on this project, and other context that doesn't 
 
 - The user (Ambeco) wrote the original base code; I've taken over implementation under their guidance. Don't assume I know the historical reasoning behind existing code — ask if it's unclear rather than guessing.
 - Make reasonable, incremental commits as we progress, rather than one giant commit at the end.
-- The user highly values comprehensive automated tests, run frequently. As of this writing (2026-09-05), the project does not yet have a working test suite (the one test file present doesn't currently compile) — this is a priority to establish, not just an afterthought.
+- The user highly values comprehensive automated tests, run frequently. As of 2026-09-05 there is a real, passing test suite (`./gradlew :llkpattern:test`, JDK 17/21 required — see above) — keep it green and keep adding to it as each piece of the compiler gets implemented, rather than letting it lag behind.
 - Default branch name for any new git repo: `main`, not `master`.
+- When a task turns out to require unblocking something bigger than expected (e.g. "finish CodePointMap" led to fixing a toolchain crash and a generated-file compile error before any test could even run), pause and ask before doing large mechanical surgery (like patching a 13k-line generated file) rather than assuming — see the 2026-09-05 session's `AskUserQuestion` about the `UnicodePredicates.java` "code too large" error, where the user preferred fixing the generator over a quick patch or skipping it.
 
 ## Project history / state as of 2026-09-05
 
@@ -25,6 +26,13 @@ Notes to self about how to work on this project, and other context that doesn't 
 - Done as of 2026-09-05: `CodePointMap`/`TreeCodePointMap` rewritten and tested (23 tests), module compiles and its test suite runs green. See the [479dd84](../.) commit message for the full list of what that touched, including a few unrelated pre-existing bugs fixed along the way (a real `PatternParser` typo, `UnicodePredicates.java`'s "code too large" compile error, JDK/Checker-Framework toolchain issues) because they were blocking any compilation/testing at all.
 - Next up per this plan: use `CodePointMap` to actually implement `QuantifiedUnion.buildEntryMap` (currently stubbed to throw `UnsupportedOperationException`), which is redactor #1's ambiguity-detection core.
 - See [design.md](design.md) for the technical design writeup and open questions, and [remaining_work.md](remaining_work.md) for the concrete TODO list inferred from reading the code.
+
+## Tooling gotchas (this dev machine, Windows + git-bash)
+
+- The Bash tool here is git-bash; running Windows Java tools (`java -cp ...`) directly through it can silently mis-handle mixed forward-slash paths and `;`-separated classpaths. When invoking `java`/`javac` directly (outside Gradle) with an explicit classpath, prefer the PowerShell tool with native `C:\...` paths — that's what actually worked when regenerating `UnicodePredicates.java` from `unicodeanalyzer`.
+- PowerShell's `Out-File -Encoding utf8` writes a UTF-8 **BOM**. If the output is Java source (or anything else that cares), strip the BOM (`\xEF\xBB\xBF`) before compiling — it silently broke the first token in the first generated file until caught by a stray parse error location.
+- `./gradlew` daemons can get stuck on a stale/wrong JDK after `JAVA_HOME` changes mid-session or after a host JDK auto-updates; `./gradlew --stop` before retrying is a cheap first move when a build fails in a way that looks environmental (e.g. `Unsupported class file major version NN`) rather than a real compile error in the diff you just made — confirm by re-running the *unmodified* file/command to see if the failure predates your change.
+- Git on this machine warns `LF will be replaced by CRLF` on nearly every commit — that's this repo's line-ending normalization doing its job, not an error; ignore it.
 
 ## Misc
 

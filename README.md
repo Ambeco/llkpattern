@@ -10,13 +10,22 @@ The tradeoff is expressiveness: not every pattern a traditional regex engine acc
 
 A note on `.` (dot): in V1, within a branching context, `.` matches "all other characters" — i.e., whatever isn't already claimed by a sibling branch — rather than "any character," to preserve unambiguous branch selection. Broader support for unconditionally selecting a first matching branch (e.g., using Unicode categories) may be added in a future version, but is out of scope for V1.
 
+The public API is intended to be a near drop-in replacement for `java.util.regex.Pattern`/`Matcher`, so existing regex-based code can adopt it with minimal changes (`Matcher` mirrors `java.util.regex.Matcher`'s method surface, and `PatternParser`'s grammar is documented as a regex-flavored BNF).
+
 ## 2. High-Level Design
 
 _(TBD — see [documents/design.md](documents/design.md))_
 
 ## 3. Current Progress
 
-_(TBD — see [documents/remaining_work.md](documents/remaining_work.md))_
+The project is mid-implementation and does not currently compile. See [documents/remaining_work.md](documents/remaining_work.md) for the active TODO list, and [documents/notes.md](documents/notes.md) for working notes. In brief:
+
+- **Parsing** (`PatternParser`, `PatternConstruct`): a recursive-descent parser turns a pattern string into an AST of `PatternConstruct` nodes (unions, sequences, literals, character classes, quantifiers, boundaries, backreferences, groups). This layer is fairly mature.
+- **Compilation** (`PatternConstruct` → `MatcherConstruct`): mid-refactor. The intent is to compile the AST into a chain/graph of `MatcherConstruct` nodes — each representing one matching step, dispatching to the next node via a range map keyed on the next code point — so matching requires no backtracking. `PatternConstruct.java` currently has unfinished/non-compiling code in `QuantifiedUnion.buildEntryMap` (the ambiguity-detection logic for union branches).
+- **Character class representation**: also mid-refactor. The original approach mirrored the pattern's own character-class syntax; it's being replaced with a `RangeSet`/`RangeMap`-style representation (see `CharacterClass`, `CodePointMap`, `TreeCodePointMap`) with the intent to eventually swap in a more specialized/optimized structure than Guava's `RangeMap`.
+- **Matching** (`Matcher`): a `java.util.regex.Matcher`-shaped public API shell exists, but nearly every method is `throw new UnsupportedOperationException("TODO: ...")`.
+- **Supporting pieces**: `NamedCharClass`/`UnicodePredicates` (Unicode category/script/block support) and the `unicodeanalyzer` module (a code generator for `UnicodePredicates`, presumably) appear largely built out.
+- `oldllkpattern/` holds an earlier version of the implementation, kept for reference during the ongoing refactor.
 
 ## 4. Authorship
 

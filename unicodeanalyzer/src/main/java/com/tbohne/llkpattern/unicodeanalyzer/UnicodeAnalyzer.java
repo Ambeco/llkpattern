@@ -38,7 +38,12 @@ public class UnicodeAnalyzer {
 	}
 
 	public static void intPredicate(String name, IntPredicate predicate) {
-		System.out.printf("ImmutableRangeSet<Integer> %s = new ImmutableRangeSet.Builder<Integer>()\n", name);
+		// Emitted as its own method (rather than inline in the field initializer) so that this
+		// field's builder chain doesn't count against the class's single shared <clinit> method,
+		// which has a 64KB bytecode limit that the combined initializers of ~1000 fields exceed.
+		// See PatternConstruct... er, UnicodePredicates.java, and remaining_work.md "code too large".
+		System.out.printf("private static ImmutableRangeSet<Integer> init_%s() {\n", name);
+		System.out.print("\treturn new ImmutableRangeSet.Builder<Integer>()\n");
 		int i=0;
 		while (i<=0x10FFFF) {
 			while (i<=0x10FFFF && !predicate.test(i))
@@ -48,12 +53,14 @@ public class UnicodeAnalyzer {
 				++i;
 			int max = i;
 			if (min + 1 == max) {
-				System.out.printf("\t.add(Range.singleton(0x%x))\n", min);
+				System.out.printf("\t\t.add(Range.singleton(0x%x))\n", min);
 			} else {
-				System.out.printf("\t.add(Range.closedOpen(0x%x, 0x%x))\n", min, max);
+				System.out.printf("\t\t.add(Range.closedOpen(0x%x, 0x%x))\n", min, max);
 			}
 		}
-		System.out.print("\t.build();\n");
+		System.out.print("\t\t.build();\n");
+		System.out.print("}\n");
+		System.out.printf("static final ImmutableRangeSet<Integer> %s = init_%s();\n", name, name);
 	}
 
 	public static void categories() {
@@ -141,14 +148,19 @@ public class UnicodeAnalyzer {
 	}
 
 	public static void printRanges(String name, Set<Range<Integer>> rangeSet) {
-		System.out.printf("ImmutableRangeSet<Integer> %s = new ImmutableRangeSet.Builder<Integer>()\n", name);
+		// See the comment in intPredicate(): split into its own method so this field's builder
+		// chain doesn't count against the shared <clinit> method's 64KB bytecode limit.
+		System.out.printf("private static ImmutableRangeSet<Integer> init_%s() {\n", name);
+		System.out.print("\treturn new ImmutableRangeSet.Builder<Integer>()\n");
 		for (Range<Integer> range : rangeSet) {
 			if (range.lowerEndpoint() + 1 == range.upperEndpoint()) {
-				System.out.printf("\t.add(Range.singleton(0x%x))\n", range.lowerEndpoint());
+				System.out.printf("\t\t.add(Range.singleton(0x%x))\n", range.lowerEndpoint());
 			} else {
-				System.out.printf("\t.add(Range.closedOpen(0x%x, 0x%x))\n", range.lowerEndpoint(), range.upperEndpoint());
+				System.out.printf("\t\t.add(Range.closedOpen(0x%x, 0x%x))\n", range.lowerEndpoint(), range.upperEndpoint());
 			}
 		}
-		System.out.print("\t.build();\n");
+		System.out.print("\t\t.build();\n");
+		System.out.print("}\n");
+		System.out.printf("static final ImmutableRangeSet<Integer> %s = init_%s();\n", name, name);
 	}
 }

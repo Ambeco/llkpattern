@@ -202,7 +202,7 @@ final class PatternParser {
         if (rawTextStartIndex < 0) {
           rawTextStartIndex = startIndex;
         }
-        int fullChar = rawText.codePointAt(index);
+        int fullChar = pattern.codePointAt(index);
         advanceCodePoint();
         if (peek == '{' || peek == '?' || peek == '+' || peek == '*') {
           if (rawText.length() > 0) {

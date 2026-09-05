@@ -7,17 +7,27 @@ class UnicodePredicates {
 	static final ImmutableRangeSet<Integer> ascii =
 			new ImmutableRangeSet.Builder<Integer>().add(Range.closed(0, 0x7F)).build();
 
-	static final ImmutableRangeSet<Integer> isValidCodePoint = new ImmutableRangeSet.Builder<Integer>()
+	private static ImmutableRangeSet<Integer> init_isValidCodePoint() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isBmpCodePoint = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isValidCodePoint = init_isValidCodePoint();
+	private static ImmutableRangeSet<Integer> init_isBmpCodePoint() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x10000))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isSupplementaryCodePoint = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isBmpCodePoint = init_isBmpCodePoint();
+	private static ImmutableRangeSet<Integer> init_isSupplementaryCodePoint() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isLowerCase = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isSupplementaryCodePoint = init_isSupplementaryCodePoint();
+	private static ImmutableRangeSet<Integer> init_isLowerCase() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x61, 0x7b))
 			.add(Range.singleton(0xaa))
 			.add(Range.singleton(0xb5))
@@ -672,7 +682,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1e922, 0x1e944))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isUpperCase = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isLowerCase = init_isLowerCase();
+	private static ImmutableRangeSet<Integer> init_isUpperCase() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x41, 0x5b))
 			.add(Range.closedOpen(0xc0, 0xd7))
 			.add(Range.closedOpen(0xd8, 0xdf))
@@ -1318,7 +1331,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1f170, 0x1f18a))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isTitleCase = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isUpperCase = init_isUpperCase();
+	private static ImmutableRangeSet<Integer> init_isTitleCase() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1c5))
 			.add(Range.singleton(0x1c8))
 			.add(Range.singleton(0x1cb))
@@ -1331,7 +1347,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0x1ffc))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isDigit = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isTitleCase = init_isTitleCase();
+	private static ImmutableRangeSet<Integer> init_isDigit() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x30, 0x3a))
 			.add(Range.closedOpen(0x660, 0x66a))
 			.add(Range.closedOpen(0x6f0, 0x6fa))
@@ -1395,7 +1414,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1fbf0, 0x1fbfa))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isDefined = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isDigit = init_isDigit();
+	private static ImmutableRangeSet<Integer> init_isDefined() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x378))
 			.add(Range.closedOpen(0x37a, 0x380))
 			.add(Range.closedOpen(0x384, 0x38b))
@@ -2075,7 +2097,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x100000, 0x10fffe))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isLetter = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isDefined = init_isDefined();
+	private static ImmutableRangeSet<Integer> init_isLetter() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x41, 0x5b))
 			.add(Range.closedOpen(0x61, 0x7b))
 			.add(Range.singleton(0xaa))
@@ -2700,7 +2725,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x30000, 0x3134b))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isLetterOrDigit = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isLetter = init_isLetter();
+	private static ImmutableRangeSet<Integer> init_isLetterOrDigit() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x30, 0x3a))
 			.add(Range.closedOpen(0x41, 0x5b))
 			.add(Range.closedOpen(0x61, 0x7b))
@@ -3368,7 +3396,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x30000, 0x3134b))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isAlphabetic = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isLetterOrDigit = init_isLetterOrDigit();
+	private static ImmutableRangeSet<Integer> init_isAlphabetic() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x41, 0x5b))
 			.add(Range.closedOpen(0x61, 0x7b))
 			.add(Range.singleton(0xaa))
@@ -4066,7 +4097,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x30000, 0x3134b))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isIdeographic = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isAlphabetic = init_isAlphabetic();
+	private static ImmutableRangeSet<Integer> init_isIdeographic() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x3006, 0x3008))
 			.add(Range.closedOpen(0x3021, 0x302a))
 			.add(Range.closedOpen(0x3038, 0x303b))
@@ -4088,7 +4122,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x30000, 0x3134b))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isJavaIdentifierStart = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isIdeographic = init_isIdeographic();
+	private static ImmutableRangeSet<Integer> init_isJavaIdentifierStart() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x24))
 			.add(Range.closedOpen(0x41, 0x5b))
 			.add(Range.singleton(0x5f))
@@ -4737,7 +4774,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x30000, 0x3134b))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isJavaIdentifierPart = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isJavaIdentifierStart = init_isJavaIdentifierStart();
+	private static ImmutableRangeSet<Integer> init_isJavaIdentifierPart() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x9))
 			.add(Range.closedOpen(0xe, 0x1c))
 			.add(Range.singleton(0x24))
@@ -5502,7 +5542,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xe0100, 0xe01f0))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isUnicodeIdentifierStart = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isJavaIdentifierPart = init_isJavaIdentifierPart();
+	private static ImmutableRangeSet<Integer> init_isUnicodeIdentifierStart() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x41, 0x5b))
 			.add(Range.closedOpen(0x61, 0x7b))
 			.add(Range.singleton(0xaa))
@@ -6128,7 +6171,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x30000, 0x3134b))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isUnicodeIdentifierPart = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isUnicodeIdentifierStart = init_isUnicodeIdentifierStart();
+	private static ImmutableRangeSet<Integer> init_isUnicodeIdentifierPart() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x9))
 			.add(Range.closedOpen(0xe, 0x1c))
 			.add(Range.closedOpen(0x30, 0x3a))
@@ -6878,7 +6924,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xe0100, 0xe01f0))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isIdentifierIgnorable = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isUnicodeIdentifierPart = init_isUnicodeIdentifierPart();
+	private static ImmutableRangeSet<Integer> init_isIdentifierIgnorable() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x9))
 			.add(Range.closedOpen(0xe, 0x1c))
 			.add(Range.closedOpen(0x7f, 0xa0))
@@ -6904,7 +6953,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xe0020, 0xe0080))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isSpaceChar = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isIdentifierIgnorable = init_isIdentifierIgnorable();
+	private static ImmutableRangeSet<Integer> init_isSpaceChar() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x20))
 			.add(Range.singleton(0xa0))
 			.add(Range.singleton(0x1680))
@@ -6915,7 +6967,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0x3000))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isWhitespace = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isSpaceChar = init_isSpaceChar();
+	private static ImmutableRangeSet<Integer> init_isWhitespace() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x9, 0xe))
 			.add(Range.closedOpen(0x1c, 0x21))
 			.add(Range.singleton(0x1680))
@@ -6926,12 +6981,18 @@ class UnicodePredicates {
 			.add(Range.singleton(0x3000))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isISOControl = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isWhitespace = init_isWhitespace();
+	private static ImmutableRangeSet<Integer> init_isISOControl() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x20))
 			.add(Range.closedOpen(0x7f, 0xa0))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> isMirrored = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isISOControl = init_isISOControl();
+	private static ImmutableRangeSet<Integer> init_isMirrored() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x28, 0x2a))
 			.add(Range.singleton(0x3c))
 			.add(Range.singleton(0x3e))
@@ -7047,7 +7108,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0x1d7c3))
 			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
-	static final ImmutableRangeSet<Integer> UNASSIGNED = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> isMirrored = init_isMirrored();
+	private static ImmutableRangeSet<Integer> init_UNASSIGNED() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xb00))
 			.add(Range.singleton(0xd80))
 			.add(Range.closedOpen(0x10aa0, 0x10ac0))
@@ -7726,7 +7790,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0xfb3f))
 			.add(Range.closedOpen(0x1e13e, 0x1e140))
 			.build();
-	static final ImmutableRangeSet<Integer> UPPERCASE_LETTER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> UNASSIGNED = init_UNASSIGNED();
+	private static ImmutableRangeSet<Integer> init_UPPERCASE_LETTER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1e0))
 			.add(Range.singleton(0x100))
 			.add(Range.singleton(0x120))
@@ -8366,7 +8433,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0x1f5f))
 			.add(Range.closedOpen(0x1d49e, 0x1d4a0))
 			.build();
-	static final ImmutableRangeSet<Integer> LOWERCASE_LETTER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> UPPERCASE_LETTER = init_UPPERCASE_LETTER();
+	private static ImmutableRangeSet<Integer> init_LOWERCASE_LETTER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x140))
 			.add(Range.closedOpen(0x118c0, 0x118e0))
 			.add(Range.closedOpen(0x1f40, 0x1f46))
@@ -9013,7 +9083,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0xa7bf))
 			.add(Range.closedOpen(0xdf, 0xf7))
 			.build();
-	static final ImmutableRangeSet<Integer> TITLECASE_LETTER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LOWERCASE_LETTER = init_LOWERCASE_LETTER();
+	private static ImmutableRangeSet<Integer> init_TITLECASE_LETTER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1c5))
 			.add(Range.singleton(0x1c8))
 			.add(Range.singleton(0x1cb))
@@ -9025,7 +9098,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1f98, 0x1fa0))
 			.add(Range.closedOpen(0x1fa8, 0x1fb0))
 			.build();
-	static final ImmutableRangeSet<Integer> MODIFIER_LETTER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TITLECASE_LETTER = init_TITLECASE_LETTER();
+	private static ImmutableRangeSet<Integer> init_MODIFIER_LETTER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x824))
 			.add(Range.singleton(0x828))
 			.add(Range.singleton(0x2ec))
@@ -9088,7 +9164,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xaaf3, 0xaaf5))
 			.add(Range.closedOpen(0xa717, 0xa720))
 			.build();
-	static final ImmutableRangeSet<Integer> OTHER_LETTER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MODIFIER_LETTER = init_MODIFIER_LETTER();
+	private static ImmutableRangeSet<Integer> init_OTHER_LETTER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xc80))
 			.add(Range.singleton(0xf00))
 			.add(Range.closedOpen(0xffa0, 0xffbf))
@@ -9579,7 +9658,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xfb1f, 0xfb29))
 			.add(Range.singleton(0x1ee7e))
 			.build();
-	static final ImmutableRangeSet<Integer> NON_SPACING_MARK = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OTHER_LETTER = init_OTHER_LETTER();
+	private static ImmutableRangeSet<Integer> init_NON_SPACING_MARK() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xbc0))
 			.add(Range.singleton(0xc00))
 			.add(Range.closedOpen(0x1920, 0x1923))
@@ -9908,14 +9990,20 @@ class UnicodePredicates {
 			.add(Range.singleton(0xa8ff))
 			.add(Range.singleton(0xa66f))
 			.build();
-	static final ImmutableRangeSet<Integer> ENCLOSING_MARK = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NON_SPACING_MARK = init_NON_SPACING_MARK();
+	private static ImmutableRangeSet<Integer> init_ENCLOSING_MARK() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x20dd, 0x20e1))
 			.add(Range.closedOpen(0x488, 0x48a))
 			.add(Range.singleton(0x1abe))
 			.add(Range.closedOpen(0x20e2, 0x20e5))
 			.add(Range.closedOpen(0xa670, 0xa673))
 			.build();
-	static final ImmutableRangeSet<Integer> COMBINING_SPACING_MARK = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ENCLOSING_MARK = init_ENCLOSING_MARK();
+	private static ImmutableRangeSet<Integer> init_COMBINING_SPACING_MARK() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xb40))
 			.add(Range.closedOpen(0x119d1, 0x119d4))
 			.add(Range.closedOpen(0x1930, 0x1932))
@@ -10092,7 +10180,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0xa827))
 			.add(Range.closedOpen(0xaa2f, 0xaa31))
 			.build();
-	static final ImmutableRangeSet<Integer> DECIMAL_DIGIT_NUMBER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> COMBINING_SPACING_MARK = init_COMBINING_SPACING_MARK();
+	private static ImmutableRangeSet<Integer> init_DECIMAL_DIGIT_NUMBER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1040, 0x104a))
 			.add(Range.closedOpen(0x1090, 0x109a))
 			.add(Range.closedOpen(0x17e0, 0x17ea))
@@ -10155,7 +10246,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x11066, 0x11070))
 			.add(Range.closedOpen(0x11136, 0x11140))
 			.build();
-	static final ImmutableRangeSet<Integer> LETTER_NUMBER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> DECIMAL_DIGIT_NUMBER = init_DECIMAL_DIGIT_NUMBER();
+	private static ImmutableRangeSet<Integer> init_LETTER_NUMBER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x2185, 0x2189))
 			.add(Range.closedOpen(0x16ee, 0x16f1))
 			.add(Range.singleton(0x10341))
@@ -10169,7 +10263,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xa6e6, 0xa6f0))
 			.add(Range.closedOpen(0x3021, 0x302a))
 			.build();
-	static final ImmutableRangeSet<Integer> OTHER_NUMBER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LETTER_NUMBER = init_LETTER_NUMBER();
+	private static ImmutableRangeSet<Integer> init_OTHER_NUMBER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xbf0, 0xbf3))
 			.add(Range.closedOpen(0x2074, 0x207a))
 			.add(Range.closedOpen(0x10a9d, 0x10aa0))
@@ -10242,7 +10339,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1ed01, 0x1ed2e))
 			.add(Range.closedOpen(0x11052, 0x11066))
 			.build();
-	static final ImmutableRangeSet<Integer> SPACE_SEPARATOR = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OTHER_NUMBER = init_OTHER_NUMBER();
+	private static ImmutableRangeSet<Integer> init_SPACE_SEPARATOR() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x20))
 			.add(Range.singleton(0xa0))
 			.add(Range.singleton(0x1680))
@@ -10251,17 +10351,29 @@ class UnicodePredicates {
 			.add(Range.singleton(0x3000))
 			.add(Range.closedOpen(0x2000, 0x200b))
 			.build();
-	static final ImmutableRangeSet<Integer> LINE_SEPARATOR = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SPACE_SEPARATOR = init_SPACE_SEPARATOR();
+	private static ImmutableRangeSet<Integer> init_LINE_SEPARATOR() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x2028))
 			.build();
-	static final ImmutableRangeSet<Integer> PARAGRAPH_SEPARATOR = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LINE_SEPARATOR = init_LINE_SEPARATOR();
+	private static ImmutableRangeSet<Integer> init_PARAGRAPH_SEPARATOR() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x2029))
 			.build();
-	static final ImmutableRangeSet<Integer> CONTROL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PARAGRAPH_SEPARATOR = init_PARAGRAPH_SEPARATOR();
+	private static ImmutableRangeSet<Integer> init_CONTROL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x20))
 			.add(Range.closedOpen(0x7f, 0xa0))
 			.build();
-	static final ImmutableRangeSet<Integer> FORMAT = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CONTROL = init_CONTROL();
+	private static ImmutableRangeSet<Integer> init_FORMAT() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x8e2))
 			.add(Range.closedOpen(0xe0020, 0xe0080))
 			.add(Range.singleton(0xad))
@@ -10283,15 +10395,24 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xfff9, 0xfffc))
 			.add(Range.singleton(0xfeff))
 			.build();
-	static final ImmutableRangeSet<Integer> PRIVATE_USE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> FORMAT = init_FORMAT();
+	private static ImmutableRangeSet<Integer> init_PRIVATE_USE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xe000, 0xf900))
 			.add(Range.closedOpen(0xf0000, 0xffffe))
 			.add(Range.closedOpen(0x100000, 0x10fffe))
 			.build();
-	static final ImmutableRangeSet<Integer> SURROGATE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PRIVATE_USE = init_PRIVATE_USE();
+	private static ImmutableRangeSet<Integer> init_SURROGATE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xd800, 0xe000))
 			.build();
-	static final ImmutableRangeSet<Integer> DASH_PUNCTUATION = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SURROGATE = init_SURROGATE();
+	private static ImmutableRangeSet<Integer> init_DASH_PUNCTUATION() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x10ead))
 			.add(Range.singleton(0x2d))
 			.add(Range.singleton(0x58a))
@@ -10311,7 +10432,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0xfe63))
 			.add(Range.singleton(0xff0d))
 			.build();
-	static final ImmutableRangeSet<Integer> START_PUNCTUATION = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> DASH_PUNCTUATION = init_DASH_PUNCTUATION();
+	private static ImmutableRangeSet<Integer> init_START_PUNCTUATION() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xf3c))
 			.add(Range.singleton(0x28))
 			.add(Range.singleton(0x29d8))
@@ -10388,7 +10512,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0xff5b))
 			.add(Range.singleton(0xff5f))
 			.build();
-	static final ImmutableRangeSet<Integer> END_PUNCTUATION = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> START_PUNCTUATION = init_START_PUNCTUATION();
+	private static ImmutableRangeSet<Integer> init_END_PUNCTUATION() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x169c))
 			.add(Range.singleton(0x2984))
 			.add(Range.singleton(0x2988))
@@ -10462,7 +10589,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0x301b))
 			.add(Range.singleton(0xff63))
 			.build();
-	static final ImmutableRangeSet<Integer> CONNECTOR_PUNCTUATION = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> END_PUNCTUATION = init_END_PUNCTUATION();
+	private static ImmutableRangeSet<Integer> init_CONNECTOR_PUNCTUATION() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x5f))
 			.add(Range.singleton(0x2054))
 			.add(Range.closedOpen(0x203f, 0x2041))
@@ -10470,7 +10600,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xfe33, 0xfe35))
 			.add(Range.singleton(0xff3f))
 			.build();
-	static final ImmutableRangeSet<Integer> OTHER_PUNCTUATION = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CONNECTOR_PUNCTUATION = init_CONNECTOR_PUNCTUATION();
+	private static ImmutableRangeSet<Integer> init_OTHER_PUNCTUATION() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x970))
 			.add(Range.singleton(0xaf0))
 			.add(Range.singleton(0x5c0))
@@ -10653,7 +10786,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xff1f, 0xff21))
 			.add(Range.closedOpen(0x1e95e, 0x1e960))
 			.build();
-	static final ImmutableRangeSet<Integer> MATH_SYMBOL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OTHER_PUNCTUATION = init_OTHER_PUNCTUATION();
+	private static ImmutableRangeSet<Integer> init_MATH_SYMBOL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x7c))
 			.add(Range.singleton(0xac))
 			.add(Range.closedOpen(0x2140, 0x2145))
@@ -10719,7 +10855,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x239b, 0x23b4))
 			.add(Range.singleton(0xff0b))
 			.build();
-	static final ImmutableRangeSet<Integer> CURRENCY_SYMBOL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MATH_SYMBOL = init_MATH_SYMBOL();
+	private static ImmutableRangeSet<Integer> init_CURRENCY_SYMBOL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x9fb))
 			.add(Range.singleton(0xaf1))
 			.add(Range.singleton(0xbf9))
@@ -10742,7 +10881,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0xfe69))
 			.add(Range.singleton(0xff04))
 			.build();
-	static final ImmutableRangeSet<Integer> MODIFIER_SYMBOL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CURRENCY_SYMBOL = init_CURRENCY_SYMBOL();
+	private static ImmutableRangeSet<Integer> init_MODIFIER_SYMBOL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x5e))
 			.add(Range.singleton(0x60))
 			.add(Range.singleton(0xa8))
@@ -10774,7 +10916,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xa789, 0xa78b))
 			.add(Range.singleton(0xffe3))
 			.build();
-	static final ImmutableRangeSet<Integer> OTHER_SYMBOL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MODIFIER_SYMBOL = init_MODIFIER_SYMBOL();
+	private static ImmutableRangeSet<Integer> init_OTHER_SYMBOL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xb70))
 			.add(Range.singleton(0xf38))
 			.add(Range.singleton(0xb0))
@@ -10958,7 +11103,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2670, 0x2768))
 			.add(Range.singleton(0x1ed2e))
 			.build();
-	static final ImmutableRangeSet<Integer> INITIAL_QUOTE_PUNCTUATION = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OTHER_SYMBOL = init_OTHER_SYMBOL();
+	private static ImmutableRangeSet<Integer> init_INITIAL_QUOTE_PUNCTUATION() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xab))
 			.add(Range.singleton(0x2e02))
 			.add(Range.singleton(0x2e04))
@@ -10971,7 +11119,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0x2039))
 			.add(Range.closedOpen(0x201b, 0x201d))
 			.build();
-	static final ImmutableRangeSet<Integer> FINAL_QUOTE_PUNCTUATION = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> INITIAL_QUOTE_PUNCTUATION = init_INITIAL_QUOTE_PUNCTUATION();
+	private static ImmutableRangeSet<Integer> init_FINAL_QUOTE_PUNCTUATION() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xbb))
 			.add(Range.singleton(0x2e03))
 			.add(Range.singleton(0x2e05))
@@ -10983,7 +11134,10 @@ class UnicodePredicates {
 			.add(Range.singleton(0x201d))
 			.add(Range.singleton(0x203a))
 			.build();
-	static final ImmutableRangeSet<Integer> COMMON = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> FINAL_QUOTE_PUNCTUATION = init_FINAL_QUOTE_PUNCTUATION();
+	private static ImmutableRangeSet<Integer> init_COMMON() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x640))
 			.add(Range.closedOpen(0x3000, 0x3005))
 			.add(Range.singleton(0x30a0))
@@ -11158,7 +11312,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1d516, 0x1d51d))
 			.add(Range.singleton(0xfeff))
 			.build();
-	static final ImmutableRangeSet<Integer> LATIN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> COMMON = init_COMMON();
+	private static ImmutableRangeSet<Integer> init_LATIN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xaa))
 			.add(Range.singleton(0xba))
 			.add(Range.closedOpen(0xf8, 0x2b9))
@@ -11192,7 +11349,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xab30, 0xab5b))
 			.add(Range.closedOpen(0xa7f5, 0xa800))
 			.build();
-	static final ImmutableRangeSet<Integer> GREEK = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LATIN = init_LATIN();
+	private static ImmutableRangeSet<Integer> init_GREEK() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1ff2, 0x1ff5))
 			.add(Range.singleton(0x384))
 			.add(Range.singleton(0x386))
@@ -11230,7 +11390,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1f5f, 0x1f7e))
 			.add(Range.closedOpen(0x1d200, 0x1d246))
 			.build();
-	static final ImmutableRangeSet<Integer> CYRILLIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GREEK = init_GREEK();
+	private static ImmutableRangeSet<Integer> init_CYRILLIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1d2b))
 			.add(Range.singleton(0x1d78))
 			.add(Range.closedOpen(0xa640, 0xa6a0))
@@ -11240,13 +11403,19 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1c80, 0x1c89))
 			.add(Range.closedOpen(0xfe2e, 0xfe30))
 			.build();
-	static final ImmutableRangeSet<Integer> ARMENIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CYRILLIC = init_CYRILLIC();
+	private static ImmutableRangeSet<Integer> init_ARMENIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x559, 0x58b))
 			.add(Range.closedOpen(0x58d, 0x590))
 			.add(Range.closedOpen(0x531, 0x557))
 			.add(Range.closedOpen(0xfb13, 0xfb18))
 			.build();
-	static final ImmutableRangeSet<Integer> HEBREW = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ARMENIAN = init_ARMENIAN();
+	private static ImmutableRangeSet<Integer> init_HEBREW() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xfb1d, 0xfb37))
 			.add(Range.closedOpen(0xfb46, 0xfb50))
 			.add(Range.closedOpen(0x5ef, 0x5f5))
@@ -11257,7 +11426,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xfb43, 0xfb45))
 			.add(Range.singleton(0xfb3e))
 			.build();
-	static final ImmutableRangeSet<Integer> ARABIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> HEBREW = init_HEBREW();
+	private static ImmutableRangeSet<Integer> init_ARABIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x61c))
 			.add(Range.closedOpen(0x600, 0x605))
 			.add(Range.closedOpen(0x1ee05, 0x1ee20))
@@ -11316,22 +11488,34 @@ class UnicodePredicates {
 			.add(Range.singleton(0x1ee42))
 			.add(Range.singleton(0x1ee7e))
 			.build();
-	static final ImmutableRangeSet<Integer> SYRIAC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ARABIC = init_ARABIC();
+	private static ImmutableRangeSet<Integer> init_SYRIAC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x74d, 0x750))
 			.add(Range.closedOpen(0x860, 0x86b))
 			.add(Range.closedOpen(0x70f, 0x74b))
 			.add(Range.closedOpen(0x700, 0x70e))
 			.build();
-	static final ImmutableRangeSet<Integer> THAANA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SYRIAC = init_SYRIAC();
+	private static ImmutableRangeSet<Integer> init_THAANA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x780, 0x7b2))
 			.build();
-	static final ImmutableRangeSet<Integer> DEVANAGARI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> THAANA = init_THAANA();
+	private static ImmutableRangeSet<Integer> init_DEVANAGARI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x900, 0x951))
 			.add(Range.closedOpen(0xa8e0, 0xa900))
 			.add(Range.closedOpen(0x966, 0x980))
 			.add(Range.closedOpen(0x955, 0x964))
 			.build();
-	static final ImmutableRangeSet<Integer> BENGALI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> DEVANAGARI = init_DEVANAGARI();
+	private static ImmutableRangeSet<Integer> init_BENGALI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x9b2))
 			.add(Range.singleton(0x9d7))
 			.add(Range.closedOpen(0x98f, 0x991))
@@ -11347,7 +11531,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x993, 0x9a9))
 			.add(Range.closedOpen(0x9e6, 0x9ff))
 			.build();
-	static final ImmutableRangeSet<Integer> GURMUKHI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BENGALI = init_BENGALI();
+	private static ImmutableRangeSet<Integer> init_GURMUKHI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xa3c))
 			.add(Range.singleton(0xa51))
 			.add(Range.singleton(0xa5e))
@@ -11365,7 +11552,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xa66, 0xa77))
 			.add(Range.closedOpen(0xa13, 0xa29))
 			.build();
-	static final ImmutableRangeSet<Integer> GUJARATI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GURMUKHI = init_GURMUKHI();
+	private static ImmutableRangeSet<Integer> init_GUJARATI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xad0))
 			.add(Range.closedOpen(0xa81, 0xa84))
 			.add(Range.closedOpen(0xa8f, 0xa92))
@@ -11381,7 +11571,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xae6, 0xaf2))
 			.add(Range.closedOpen(0xa93, 0xaa9))
 			.build();
-	static final ImmutableRangeSet<Integer> ORIYA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GUJARATI = init_GUJARATI();
+	private static ImmutableRangeSet<Integer> init_ORIYA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xb01, 0xb04))
 			.add(Range.closedOpen(0xb4b, 0xb4e))
 			.add(Range.closedOpen(0xb55, 0xb58))
@@ -11397,7 +11590,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xb66, 0xb78))
 			.add(Range.closedOpen(0xb13, 0xb29))
 			.build();
-	static final ImmutableRangeSet<Integer> TAMIL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ORIYA = init_ORIYA();
+	private static ImmutableRangeSet<Integer> init_TAMIL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xb9c))
 			.add(Range.singleton(0xbd0))
 			.add(Range.singleton(0xbd7))
@@ -11417,7 +11613,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x11fc0, 0x11ff2))
 			.add(Range.closedOpen(0xbe6, 0xbfb))
 			.build();
-	static final ImmutableRangeSet<Integer> TELUGU = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TAMIL = init_TAMIL();
+	private static ImmutableRangeSet<Integer> init_TELUGU() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xc2a, 0xc3a))
 			.add(Range.closedOpen(0xc0e, 0xc11))
 			.add(Range.closedOpen(0xc46, 0xc49))
@@ -11431,7 +11630,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xc66, 0xc70))
 			.add(Range.closedOpen(0xc00, 0xc0d))
 			.build();
-	static final ImmutableRangeSet<Integer> KANNADA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TELUGU = init_TELUGU();
+	private static ImmutableRangeSet<Integer> init_KANNADA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xcde))
 			.add(Range.closedOpen(0xc8e, 0xc91))
 			.add(Range.closedOpen(0xcc6, 0xcc9))
@@ -11446,7 +11648,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xc80, 0xc8d))
 			.add(Range.closedOpen(0xc92, 0xca9))
 			.build();
-	static final ImmutableRangeSet<Integer> MALAYALAM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KANNADA = init_KANNADA();
+	private static ImmutableRangeSet<Integer> init_MALAYALAM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xd54, 0xd64))
 			.add(Range.closedOpen(0xd0e, 0xd11))
 			.add(Range.closedOpen(0xd12, 0xd45))
@@ -11455,7 +11660,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xd66, 0xd80))
 			.add(Range.closedOpen(0xd00, 0xd0d))
 			.build();
-	static final ImmutableRangeSet<Integer> SINHALA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MALAYALAM = init_MALAYALAM();
+	private static ImmutableRangeSet<Integer> init_SINHALA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xdbd))
 			.add(Range.singleton(0xdca))
 			.add(Range.singleton(0xdd6))
@@ -11470,11 +11678,17 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x111e1, 0x111f5))
 			.add(Range.closedOpen(0xd9a, 0xdb2))
 			.build();
-	static final ImmutableRangeSet<Integer> THAI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SINHALA = init_SINHALA();
+	private static ImmutableRangeSet<Integer> init_THAI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xe01, 0xe3b))
 			.add(Range.closedOpen(0xe40, 0xe5c))
 			.build();
-	static final ImmutableRangeSet<Integer> LAO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> THAI = init_THAI();
+	private static ImmutableRangeSet<Integer> init_LAO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xe84))
 			.add(Range.singleton(0xea5))
 			.add(Range.singleton(0xec6))
@@ -11487,7 +11701,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xe8c, 0xea4))
 			.add(Range.closedOpen(0xed0, 0xeda))
 			.build();
-	static final ImmutableRangeSet<Integer> TIBETAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LAO = init_LAO();
+	private static ImmutableRangeSet<Integer> init_TIBETAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xfd9, 0xfdb))
 			.add(Range.closedOpen(0xf49, 0xf6d))
 			.add(Range.closedOpen(0xf99, 0xfbd))
@@ -11496,12 +11713,18 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xf00, 0xf48))
 			.add(Range.closedOpen(0xfbe, 0xfcd))
 			.build();
-	static final ImmutableRangeSet<Integer> MYANMAR = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TIBETAN = init_TIBETAN();
+	private static ImmutableRangeSet<Integer> init_MYANMAR() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1000, 0x10a0))
 			.add(Range.closedOpen(0xaa60, 0xaa80))
 			.add(Range.closedOpen(0xa9e0, 0xa9ff))
 			.build();
-	static final ImmutableRangeSet<Integer> GEORGIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MYANMAR = init_MYANMAR();
+	private static ImmutableRangeSet<Integer> init_GEORGIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1cbd, 0x1cc0))
 			.add(Range.singleton(0x10c7))
 			.add(Range.singleton(0x10cd))
@@ -11513,7 +11736,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1c90, 0x1cbb))
 			.add(Range.closedOpen(0x10d0, 0x10fb))
 			.build();
-	static final ImmutableRangeSet<Integer> HANGUL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GEORGIAN = init_GEORGIAN();
+	private static ImmutableRangeSet<Integer> init_HANGUL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xffa0, 0xffbf))
 			.add(Range.closedOpen(0x1100, 0x1200))
 			.add(Range.closedOpen(0x302e, 0x3030))
@@ -11529,7 +11755,10 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xffd2, 0xffd8))
 			.add(Range.closedOpen(0xffda, 0xffdd))
 			.build();
-	static final ImmutableRangeSet<Integer> ETHIOPIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> HANGUL = init_HANGUL();
+	private static ImmutableRangeSet<Integer> init_ETHIOPIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1318, 0x135b))
 			.add(Range.closedOpen(0x2db0, 0x2db7))
 			.add(Range.closedOpen(0x135d, 0x137d))
@@ -11563,29 +11792,47 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xab11, 0xab17))
 			.add(Range.closedOpen(0x12d8, 0x1311))
 			.build();
-	static final ImmutableRangeSet<Integer> CHEROKEE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ETHIOPIC = init_ETHIOPIC();
+	private static ImmutableRangeSet<Integer> init_CHEROKEE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x13a0, 0x13f6))
 			.add(Range.closedOpen(0x13f8, 0x13fe))
 			.add(Range.closedOpen(0xab70, 0xabc0))
 			.build();
-	static final ImmutableRangeSet<Integer> CANADIAN_ABORIGINAL = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CHEROKEE = init_CHEROKEE();
+	private static ImmutableRangeSet<Integer> init_CANADIAN_ABORIGINAL() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1400, 0x1680))
 			.add(Range.closedOpen(0x18b0, 0x18f6))
 			.build();
-	static final ImmutableRangeSet<Integer> OGHAM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CANADIAN_ABORIGINAL = init_CANADIAN_ABORIGINAL();
+	private static ImmutableRangeSet<Integer> init_OGHAM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1680, 0x169d))
 			.build();
-	static final ImmutableRangeSet<Integer> RUNIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OGHAM = init_OGHAM();
+	private static ImmutableRangeSet<Integer> init_RUNIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x16a0, 0x16eb))
 			.add(Range.closedOpen(0x16ee, 0x16f9))
 			.build();
-	static final ImmutableRangeSet<Integer> KHMER = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> RUNIC = init_RUNIC();
+	private static ImmutableRangeSet<Integer> init_KHMER() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x19e0, 0x1a00))
 			.add(Range.closedOpen(0x17e0, 0x17ea))
 			.add(Range.closedOpen(0x17f0, 0x17fa))
 			.add(Range.closedOpen(0x1780, 0x17de))
 			.build();
-	static final ImmutableRangeSet<Integer> MONGOLIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KHMER = init_KHMER();
+	private static ImmutableRangeSet<Integer> init_MONGOLIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1800, 0x1802))
 			.add(Range.singleton(0x1804))
 			.add(Range.closedOpen(0x1880, 0x18ab))
@@ -11594,14 +11841,20 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1820, 0x1879))
 			.add(Range.closedOpen(0x11660, 0x1166d))
 			.build();
-	static final ImmutableRangeSet<Integer> HIRAGANA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MONGOLIAN = init_MONGOLIAN();
+	private static ImmutableRangeSet<Integer> init_HIRAGANA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x3041, 0x3097))
 			.add(Range.closedOpen(0x309d, 0x30a0))
 			.add(Range.closedOpen(0x1b150, 0x1b153))
 			.add(Range.closedOpen(0x1b001, 0x1b11f))
 			.add(Range.singleton(0x1f200))
 			.build();
-	static final ImmutableRangeSet<Integer> KATAKANA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> HIRAGANA = init_HIRAGANA();
+	private static ImmutableRangeSet<Integer> init_KATAKANA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xff71, 0xff9e))
 			.add(Range.closedOpen(0x1b164, 0x1b168))
 			.add(Range.closedOpen(0x30fd, 0x3100))
@@ -11612,12 +11865,18 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x30a1, 0x30fb))
 			.add(Range.closedOpen(0x3300, 0x3358))
 			.build();
-	static final ImmutableRangeSet<Integer> BOPOMOFO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KATAKANA = init_KATAKANA();
+	private static ImmutableRangeSet<Integer> init_BOPOMOFO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x2ea, 0x2ec))
 			.add(Range.closedOpen(0x31a0, 0x31c0))
 			.add(Range.closedOpen(0x3105, 0x3130))
 			.build();
-	static final ImmutableRangeSet<Integer> HAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BOPOMOFO = init_BOPOMOFO();
+	private static ImmutableRangeSet<Integer> init_HAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x2a700, 0x2b735))
 			.add(Range.closedOpen(0x2f800, 0x2fa1e))
 			.add(Range.closedOpen(0x3038, 0x303c))
@@ -11638,21 +11897,36 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x20000, 0x2a6de))
 			.add(Range.closedOpen(0x2e80, 0x2e9a))
 			.build();
-	static final ImmutableRangeSet<Integer> YI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> HAN = init_HAN();
+	private static ImmutableRangeSet<Integer> init_YI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xa490, 0xa4c7))
 			.add(Range.closedOpen(0xa000, 0xa48d))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_ITALIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> YI = init_YI();
+	private static ImmutableRangeSet<Integer> init_OLD_ITALIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1032d, 0x10330))
 			.add(Range.closedOpen(0x10300, 0x10324))
 			.build();
-	static final ImmutableRangeSet<Integer> GOTHIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_ITALIC = init_OLD_ITALIC();
+	private static ImmutableRangeSet<Integer> init_GOTHIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10330, 0x1034b))
 			.build();
-	static final ImmutableRangeSet<Integer> DESERET = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GOTHIC = init_GOTHIC();
+	private static ImmutableRangeSet<Integer> init_DESERET() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10400, 0x10450))
 			.build();
-	static final ImmutableRangeSet<Integer> INHERITED = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> DESERET = init_DESERET();
+	private static ImmutableRangeSet<Integer> init_INHERITED() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1cd0, 0x1cd3))
 			.add(Range.singleton(0x670))
 			.add(Range.closedOpen(0x1cf8, 0x1cfa))
@@ -11682,33 +11956,54 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1dc0, 0x1dfa))
 			.add(Range.closedOpen(0x1d1aa, 0x1d1ae))
 			.build();
-	static final ImmutableRangeSet<Integer> TAGALOG = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> INHERITED = init_INHERITED();
+	private static ImmutableRangeSet<Integer> init_TAGALOG() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x170e, 0x1715))
 			.add(Range.closedOpen(0x1700, 0x170d))
 			.build();
-	static final ImmutableRangeSet<Integer> HANUNOO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TAGALOG = init_TAGALOG();
+	private static ImmutableRangeSet<Integer> init_HANUNOO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1720, 0x1735))
 			.build();
-	static final ImmutableRangeSet<Integer> BUHID = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> HANUNOO = init_HANUNOO();
+	private static ImmutableRangeSet<Integer> init_BUHID() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1740, 0x1754))
 			.build();
-	static final ImmutableRangeSet<Integer> TAGBANWA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BUHID = init_BUHID();
+	private static ImmutableRangeSet<Integer> init_TAGBANWA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1772, 0x1774))
 			.add(Range.closedOpen(0x176e, 0x1771))
 			.add(Range.closedOpen(0x1760, 0x176d))
 			.build();
-	static final ImmutableRangeSet<Integer> LIMBU = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TAGBANWA = init_TAGBANWA();
+	private static ImmutableRangeSet<Integer> init_LIMBU() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1940))
 			.add(Range.closedOpen(0x1900, 0x191f))
 			.add(Range.closedOpen(0x1920, 0x192c))
 			.add(Range.closedOpen(0x1930, 0x193c))
 			.add(Range.closedOpen(0x1944, 0x1950))
 			.build();
-	static final ImmutableRangeSet<Integer> TAI_LE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LIMBU = init_LIMBU();
+	private static ImmutableRangeSet<Integer> init_TAI_LE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1970, 0x1975))
 			.add(Range.closedOpen(0x1950, 0x196e))
 			.build();
-	static final ImmutableRangeSet<Integer> LINEAR_B = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TAI_LE = init_TAI_LE();
+	private static ImmutableRangeSet<Integer> init_LINEAR_B() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1003c, 0x1003e))
 			.add(Range.closedOpen(0x10028, 0x1003b))
 			.add(Range.closedOpen(0x1000d, 0x10027))
@@ -11717,18 +12012,30 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x10050, 0x1005e))
 			.add(Range.closedOpen(0x1003f, 0x1004e))
 			.build();
-	static final ImmutableRangeSet<Integer> UGARITIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LINEAR_B = init_LINEAR_B();
+	private static ImmutableRangeSet<Integer> init_UGARITIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1039f))
 			.add(Range.closedOpen(0x10380, 0x1039e))
 			.build();
-	static final ImmutableRangeSet<Integer> SHAVIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> UGARITIC = init_UGARITIC();
+	private static ImmutableRangeSet<Integer> init_SHAVIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10450, 0x10480))
 			.build();
-	static final ImmutableRangeSet<Integer> OSMANYA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SHAVIAN = init_SHAVIAN();
+	private static ImmutableRangeSet<Integer> init_OSMANYA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x104a0, 0x104aa))
 			.add(Range.closedOpen(0x10480, 0x1049e))
 			.build();
-	static final ImmutableRangeSet<Integer> CYPRIOT = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OSMANYA = init_OSMANYA();
+	private static ImmutableRangeSet<Integer> init_CYPRIOT() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x10808))
 			.add(Range.singleton(0x1083c))
 			.add(Range.singleton(0x1083f))
@@ -11736,25 +12043,40 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x10800, 0x10806))
 			.add(Range.closedOpen(0x1080a, 0x10836))
 			.build();
-	static final ImmutableRangeSet<Integer> BRAILLE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CYPRIOT = init_CYPRIOT();
+	private static ImmutableRangeSet<Integer> init_BRAILLE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x2800, 0x2900))
 			.build();
-	static final ImmutableRangeSet<Integer> BUGINESE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BRAILLE = init_BRAILLE();
+	private static ImmutableRangeSet<Integer> init_BUGINESE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1a1e, 0x1a20))
 			.add(Range.closedOpen(0x1a00, 0x1a1c))
 			.build();
-	static final ImmutableRangeSet<Integer> COPTIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BUGINESE = init_BUGINESE();
+	private static ImmutableRangeSet<Integer> init_COPTIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x2c80, 0x2cf4))
 			.add(Range.closedOpen(0x2cf9, 0x2d00))
 			.add(Range.closedOpen(0x3e2, 0x3f0))
 			.build();
-	static final ImmutableRangeSet<Integer> NEW_TAI_LUE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> COPTIC = init_COPTIC();
+	private static ImmutableRangeSet<Integer> init_NEW_TAI_LUE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x19de, 0x19e0))
 			.add(Range.closedOpen(0x19d0, 0x19db))
 			.add(Range.closedOpen(0x19b0, 0x19ca))
 			.add(Range.closedOpen(0x1980, 0x19ac))
 			.build();
-	static final ImmutableRangeSet<Integer> GLAGOLITIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NEW_TAI_LUE = init_NEW_TAI_LUE();
+	private static ImmutableRangeSet<Integer> init_GLAGOLITIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1e026, 0x1e02b))
 			.add(Range.closedOpen(0x2c00, 0x2c2f))
 			.add(Range.closedOpen(0x2c30, 0x2c5f))
@@ -11763,19 +12085,31 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1e008, 0x1e019))
 			.add(Range.closedOpen(0x1e023, 0x1e025))
 			.build();
-	static final ImmutableRangeSet<Integer> TIFINAGH = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GLAGOLITIC = init_GLAGOLITIC();
+	private static ImmutableRangeSet<Integer> init_TIFINAGH() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x2d7f))
 			.add(Range.closedOpen(0x2d6f, 0x2d71))
 			.add(Range.closedOpen(0x2d30, 0x2d68))
 			.build();
-	static final ImmutableRangeSet<Integer> SYLOTI_NAGRI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TIFINAGH = init_TIFINAGH();
+	private static ImmutableRangeSet<Integer> init_SYLOTI_NAGRI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xa800, 0xa82d))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_PERSIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SYLOTI_NAGRI = init_SYLOTI_NAGRI();
+	private static ImmutableRangeSet<Integer> init_OLD_PERSIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x103a0, 0x103c4))
 			.add(Range.closedOpen(0x103c8, 0x103d6))
 			.build();
-	static final ImmutableRangeSet<Integer> KHAROSHTHI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_PERSIAN = init_OLD_PERSIAN();
+	private static ImmutableRangeSet<Integer> init_KHAROSHTHI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10a15, 0x10a18))
 			.add(Range.closedOpen(0x10a38, 0x10a3b))
 			.add(Range.closedOpen(0x10a05, 0x10a07))
@@ -11785,193 +12119,331 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x10a3f, 0x10a49))
 			.add(Range.closedOpen(0x10a19, 0x10a36))
 			.build();
-	static final ImmutableRangeSet<Integer> BALINESE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KHAROSHTHI = init_KHAROSHTHI();
+	private static ImmutableRangeSet<Integer> init_BALINESE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1b50, 0x1b7d))
 			.add(Range.closedOpen(0x1b00, 0x1b4c))
 			.build();
-	static final ImmutableRangeSet<Integer> CUNEIFORM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BALINESE = init_BALINESE();
+	private static ImmutableRangeSet<Integer> init_CUNEIFORM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x12480, 0x12544))
 			.add(Range.closedOpen(0x12470, 0x12475))
 			.add(Range.closedOpen(0x12400, 0x1246f))
 			.add(Range.closedOpen(0x12000, 0x1239a))
 			.build();
-	static final ImmutableRangeSet<Integer> PHOENICIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CUNEIFORM = init_CUNEIFORM();
+	private static ImmutableRangeSet<Integer> init_PHOENICIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1091f))
 			.add(Range.closedOpen(0x10900, 0x1091c))
 			.build();
-	static final ImmutableRangeSet<Integer> PHAGS_PA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PHOENICIAN = init_PHOENICIAN();
+	private static ImmutableRangeSet<Integer> init_PHAGS_PA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xa840, 0xa878))
 			.build();
-	static final ImmutableRangeSet<Integer> NKO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PHAGS_PA = init_PHAGS_PA();
+	private static ImmutableRangeSet<Integer> init_NKO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x7fd, 0x800))
 			.add(Range.closedOpen(0x7c0, 0x7fb))
 			.build();
-	static final ImmutableRangeSet<Integer> SUNDANESE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NKO = init_NKO();
+	private static ImmutableRangeSet<Integer> init_SUNDANESE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1b80, 0x1bc0))
 			.add(Range.closedOpen(0x1cc0, 0x1cc8))
 			.build();
-	static final ImmutableRangeSet<Integer> BATAK = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SUNDANESE = init_SUNDANESE();
+	private static ImmutableRangeSet<Integer> init_BATAK() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1bc0, 0x1bf4))
 			.add(Range.closedOpen(0x1bfc, 0x1c00))
 			.build();
-	static final ImmutableRangeSet<Integer> LEPCHA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BATAK = init_BATAK();
+	private static ImmutableRangeSet<Integer> init_LEPCHA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1c4d, 0x1c50))
 			.add(Range.closedOpen(0x1c00, 0x1c38))
 			.add(Range.closedOpen(0x1c3b, 0x1c4a))
 			.build();
-	static final ImmutableRangeSet<Integer> OL_CHIKI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LEPCHA = init_LEPCHA();
+	private static ImmutableRangeSet<Integer> init_OL_CHIKI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1c50, 0x1c80))
 			.build();
-	static final ImmutableRangeSet<Integer> VAI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OL_CHIKI = init_OL_CHIKI();
+	private static ImmutableRangeSet<Integer> init_VAI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xa500, 0xa62c))
 			.build();
-	static final ImmutableRangeSet<Integer> SAURASHTRA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> VAI = init_VAI();
+	private static ImmutableRangeSet<Integer> init_SAURASHTRA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xa880, 0xa8c6))
 			.add(Range.closedOpen(0xa8ce, 0xa8da))
 			.build();
-	static final ImmutableRangeSet<Integer> KAYAH_LI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SAURASHTRA = init_SAURASHTRA();
+	private static ImmutableRangeSet<Integer> init_KAYAH_LI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xa92f))
 			.add(Range.closedOpen(0xa900, 0xa92e))
 			.build();
-	static final ImmutableRangeSet<Integer> REJANG = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KAYAH_LI = init_KAYAH_LI();
+	private static ImmutableRangeSet<Integer> init_REJANG() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xa930, 0xa954))
 			.add(Range.singleton(0xa95f))
 			.build();
-	static final ImmutableRangeSet<Integer> LYCIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> REJANG = init_REJANG();
+	private static ImmutableRangeSet<Integer> init_LYCIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10280, 0x1029d))
 			.build();
-	static final ImmutableRangeSet<Integer> CARIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LYCIAN = init_LYCIAN();
+	private static ImmutableRangeSet<Integer> init_CARIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x102a0, 0x102d1))
 			.build();
-	static final ImmutableRangeSet<Integer> LYDIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CARIAN = init_CARIAN();
+	private static ImmutableRangeSet<Integer> init_LYDIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1093f))
 			.add(Range.closedOpen(0x10920, 0x1093a))
 			.build();
-	static final ImmutableRangeSet<Integer> CHAM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LYDIAN = init_LYDIAN();
+	private static ImmutableRangeSet<Integer> init_CHAM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xaa5c, 0xaa60))
 			.add(Range.closedOpen(0xaa00, 0xaa37))
 			.add(Range.closedOpen(0xaa40, 0xaa4e))
 			.add(Range.closedOpen(0xaa50, 0xaa5a))
 			.build();
-	static final ImmutableRangeSet<Integer> TAI_THAM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CHAM = init_CHAM();
+	private static ImmutableRangeSet<Integer> init_TAI_THAM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1a7f, 0x1a8a))
 			.add(Range.closedOpen(0x1a90, 0x1a9a))
 			.add(Range.closedOpen(0x1a20, 0x1a5f))
 			.add(Range.closedOpen(0x1aa0, 0x1aae))
 			.add(Range.closedOpen(0x1a60, 0x1a7d))
 			.build();
-	static final ImmutableRangeSet<Integer> TAI_VIET = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TAI_THAM = init_TAI_THAM();
+	private static ImmutableRangeSet<Integer> init_TAI_VIET() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xaadb, 0xaae0))
 			.add(Range.closedOpen(0xaa80, 0xaac3))
 			.build();
-	static final ImmutableRangeSet<Integer> AVESTAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TAI_VIET = init_TAI_VIET();
+	private static ImmutableRangeSet<Integer> init_AVESTAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10b39, 0x10b40))
 			.add(Range.closedOpen(0x10b00, 0x10b36))
 			.build();
-	static final ImmutableRangeSet<Integer> EGYPTIAN_HIEROGLYPHS = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> AVESTAN = init_AVESTAN();
+	private static ImmutableRangeSet<Integer> init_EGYPTIAN_HIEROGLYPHS() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x13000, 0x1342f))
 			.add(Range.closedOpen(0x13430, 0x13439))
 			.build();
-	static final ImmutableRangeSet<Integer> SAMARITAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> EGYPTIAN_HIEROGLYPHS = init_EGYPTIAN_HIEROGLYPHS();
+	private static ImmutableRangeSet<Integer> init_SAMARITAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x830, 0x83f))
 			.add(Range.closedOpen(0x800, 0x82e))
 			.build();
-	static final ImmutableRangeSet<Integer> MANDAIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SAMARITAN = init_SAMARITAN();
+	private static ImmutableRangeSet<Integer> init_MANDAIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x85e))
 			.add(Range.closedOpen(0x840, 0x85c))
 			.build();
-	static final ImmutableRangeSet<Integer> LISU = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MANDAIC = init_MANDAIC();
+	private static ImmutableRangeSet<Integer> init_LISU() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x11fb0))
 			.add(Range.closedOpen(0xa4d0, 0xa500))
 			.build();
-	static final ImmutableRangeSet<Integer> BAMUM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LISU = init_LISU();
+	private static ImmutableRangeSet<Integer> init_BAMUM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x16800, 0x16a39))
 			.add(Range.closedOpen(0xa6a0, 0xa6f8))
 			.build();
-	static final ImmutableRangeSet<Integer> JAVANESE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BAMUM = init_BAMUM();
+	private static ImmutableRangeSet<Integer> init_JAVANESE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xa9de, 0xa9e0))
 			.add(Range.closedOpen(0xa980, 0xa9ce))
 			.add(Range.closedOpen(0xa9d0, 0xa9da))
 			.build();
-	static final ImmutableRangeSet<Integer> MEETEI_MAYEK = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> JAVANESE = init_JAVANESE();
+	private static ImmutableRangeSet<Integer> init_MEETEI_MAYEK() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0xaae0, 0xaaf7))
 			.add(Range.closedOpen(0xabc0, 0xabee))
 			.add(Range.closedOpen(0xabf0, 0xabfa))
 			.build();
-	static final ImmutableRangeSet<Integer> IMPERIAL_ARAMAIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MEETEI_MAYEK = init_MEETEI_MAYEK();
+	private static ImmutableRangeSet<Integer> init_IMPERIAL_ARAMAIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10840, 0x10856))
 			.add(Range.closedOpen(0x10857, 0x10860))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_SOUTH_ARABIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> IMPERIAL_ARAMAIC = init_IMPERIAL_ARAMAIC();
+	private static ImmutableRangeSet<Integer> init_OLD_SOUTH_ARABIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10a60, 0x10a80))
 			.build();
-	static final ImmutableRangeSet<Integer> INSCRIPTIONAL_PARTHIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_SOUTH_ARABIAN = init_OLD_SOUTH_ARABIAN();
+	private static ImmutableRangeSet<Integer> init_INSCRIPTIONAL_PARTHIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10b40, 0x10b56))
 			.add(Range.closedOpen(0x10b58, 0x10b60))
 			.build();
-	static final ImmutableRangeSet<Integer> INSCRIPTIONAL_PAHLAVI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> INSCRIPTIONAL_PARTHIAN = init_INSCRIPTIONAL_PARTHIAN();
+	private static ImmutableRangeSet<Integer> init_INSCRIPTIONAL_PAHLAVI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10b60, 0x10b73))
 			.add(Range.closedOpen(0x10b78, 0x10b80))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_TURKIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> INSCRIPTIONAL_PAHLAVI = init_INSCRIPTIONAL_PAHLAVI();
+	private static ImmutableRangeSet<Integer> init_OLD_TURKIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10c00, 0x10c49))
 			.build();
-	static final ImmutableRangeSet<Integer> BRAHMI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_TURKIC = init_OLD_TURKIC();
+	private static ImmutableRangeSet<Integer> init_BRAHMI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1107f))
 			.add(Range.closedOpen(0x11000, 0x1104e))
 			.add(Range.closedOpen(0x11052, 0x11070))
 			.build();
-	static final ImmutableRangeSet<Integer> KAITHI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BRAHMI = init_BRAHMI();
+	private static ImmutableRangeSet<Integer> init_KAITHI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11080, 0x110c2))
 			.add(Range.singleton(0x110cd))
 			.build();
-	static final ImmutableRangeSet<Integer> MEROITIC_HIEROGLYPHS = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KAITHI = init_KAITHI();
+	private static ImmutableRangeSet<Integer> init_MEROITIC_HIEROGLYPHS() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10980, 0x109a0))
 			.build();
-	static final ImmutableRangeSet<Integer> MEROITIC_CURSIVE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MEROITIC_HIEROGLYPHS = init_MEROITIC_HIEROGLYPHS();
+	private static ImmutableRangeSet<Integer> init_MEROITIC_CURSIVE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x109bc, 0x109d0))
 			.add(Range.closedOpen(0x109a0, 0x109b8))
 			.add(Range.closedOpen(0x109d2, 0x10a00))
 			.build();
-	static final ImmutableRangeSet<Integer> SORA_SOMPENG = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MEROITIC_CURSIVE = init_MEROITIC_CURSIVE();
+	private static ImmutableRangeSet<Integer> init_SORA_SOMPENG() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x110f0, 0x110fa))
 			.add(Range.closedOpen(0x110d0, 0x110e9))
 			.build();
-	static final ImmutableRangeSet<Integer> CHAKMA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SORA_SOMPENG = init_SORA_SOMPENG();
+	private static ImmutableRangeSet<Integer> init_CHAKMA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11136, 0x11148))
 			.add(Range.closedOpen(0x11100, 0x11135))
 			.build();
-	static final ImmutableRangeSet<Integer> SHARADA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CHAKMA = init_CHAKMA();
+	private static ImmutableRangeSet<Integer> init_SHARADA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11180, 0x111e0))
 			.build();
-	static final ImmutableRangeSet<Integer> TAKRI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SHARADA = init_SHARADA();
+	private static ImmutableRangeSet<Integer> init_TAKRI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x116c0, 0x116ca))
 			.add(Range.closedOpen(0x11680, 0x116b9))
 			.build();
-	static final ImmutableRangeSet<Integer> MIAO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TAKRI = init_TAKRI();
+	private static ImmutableRangeSet<Integer> init_MIAO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x16f4f, 0x16f88))
 			.add(Range.closedOpen(0x16f00, 0x16f4b))
 			.add(Range.closedOpen(0x16f8f, 0x16fa0))
 			.build();
-	static final ImmutableRangeSet<Integer> CAUCASIAN_ALBANIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MIAO = init_MIAO();
+	private static ImmutableRangeSet<Integer> init_CAUCASIAN_ALBANIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x1056f))
 			.add(Range.closedOpen(0x10530, 0x10564))
 			.build();
-	static final ImmutableRangeSet<Integer> BASSA_VAH = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CAUCASIAN_ALBANIAN = init_CAUCASIAN_ALBANIAN();
+	private static ImmutableRangeSet<Integer> init_BASSA_VAH() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x16ad0, 0x16aee))
 			.add(Range.closedOpen(0x16af0, 0x16af6))
 			.build();
-	static final ImmutableRangeSet<Integer> DUPLOYAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BASSA_VAH = init_BASSA_VAH();
+	private static ImmutableRangeSet<Integer> init_DUPLOYAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1bc9c, 0x1bca0))
 			.add(Range.closedOpen(0x1bc70, 0x1bc7d))
 			.add(Range.closedOpen(0x1bc00, 0x1bc6b))
 			.add(Range.closedOpen(0x1bc90, 0x1bc9a))
 			.add(Range.closedOpen(0x1bc80, 0x1bc89))
 			.build();
-	static final ImmutableRangeSet<Integer> ELBASAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> DUPLOYAN = init_DUPLOYAN();
+	private static ImmutableRangeSet<Integer> init_ELBASAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10500, 0x10528))
 			.build();
-	static final ImmutableRangeSet<Integer> GRANTHA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ELBASAN = init_ELBASAN();
+	private static ImmutableRangeSet<Integer> init_GRANTHA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1130f, 0x11311))
 			.add(Range.closedOpen(0x11332, 0x11334))
 			.add(Range.closedOpen(0x11347, 0x11349))
@@ -11988,140 +12460,233 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1133c, 0x11345))
 			.add(Range.closedOpen(0x11313, 0x11329))
 			.build();
-	static final ImmutableRangeSet<Integer> PAHAWH_HMONG = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GRANTHA = init_GRANTHA();
+	private static ImmutableRangeSet<Integer> init_PAHAWH_HMONG() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x16b50, 0x16b5a))
 			.add(Range.closedOpen(0x16b63, 0x16b78))
 			.add(Range.closedOpen(0x16b5b, 0x16b62))
 			.add(Range.closedOpen(0x16b00, 0x16b46))
 			.add(Range.closedOpen(0x16b7d, 0x16b90))
 			.build();
-	static final ImmutableRangeSet<Integer> KHOJKI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PAHAWH_HMONG = init_PAHAWH_HMONG();
+	private static ImmutableRangeSet<Integer> init_KHOJKI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11200, 0x11212))
 			.add(Range.closedOpen(0x11213, 0x1123f))
 			.build();
-	static final ImmutableRangeSet<Integer> LINEAR_A = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KHOJKI = init_KHOJKI();
+	private static ImmutableRangeSet<Integer> init_LINEAR_A() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10740, 0x10756))
 			.add(Range.closedOpen(0x10600, 0x10737))
 			.add(Range.closedOpen(0x10760, 0x10768))
 			.build();
-	static final ImmutableRangeSet<Integer> MAHAJANI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> LINEAR_A = init_LINEAR_A();
+	private static ImmutableRangeSet<Integer> init_MAHAJANI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11150, 0x11177))
 			.build();
-	static final ImmutableRangeSet<Integer> MANICHAEAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MAHAJANI = init_MAHAJANI();
+	private static ImmutableRangeSet<Integer> init_MANICHAEAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10ac0, 0x10ae7))
 			.add(Range.closedOpen(0x10aeb, 0x10af7))
 			.build();
-	static final ImmutableRangeSet<Integer> MENDE_KIKAKUI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MANICHAEAN = init_MANICHAEAN();
+	private static ImmutableRangeSet<Integer> init_MENDE_KIKAKUI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1e800, 0x1e8c5))
 			.add(Range.closedOpen(0x1e8c7, 0x1e8d7))
 			.build();
-	static final ImmutableRangeSet<Integer> MODI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MENDE_KIKAKUI = init_MENDE_KIKAKUI();
+	private static ImmutableRangeSet<Integer> init_MODI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11600, 0x11645))
 			.add(Range.closedOpen(0x11650, 0x1165a))
 			.build();
-	static final ImmutableRangeSet<Integer> MRO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MODI = init_MODI();
+	private static ImmutableRangeSet<Integer> init_MRO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x16a40, 0x16a5f))
 			.add(Range.closedOpen(0x16a60, 0x16a6a))
 			.add(Range.closedOpen(0x16a6e, 0x16a70))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_NORTH_ARABIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MRO = init_MRO();
+	private static ImmutableRangeSet<Integer> init_OLD_NORTH_ARABIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10a80, 0x10aa0))
 			.build();
-	static final ImmutableRangeSet<Integer> NABATAEAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_NORTH_ARABIAN = init_OLD_NORTH_ARABIAN();
+	private static ImmutableRangeSet<Integer> init_NABATAEAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x108a7, 0x108b0))
 			.add(Range.closedOpen(0x10880, 0x1089f))
 			.build();
-	static final ImmutableRangeSet<Integer> PALMYRENE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NABATAEAN = init_NABATAEAN();
+	private static ImmutableRangeSet<Integer> init_PALMYRENE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10860, 0x10880))
 			.build();
-	static final ImmutableRangeSet<Integer> PAU_CIN_HAU = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PALMYRENE = init_PALMYRENE();
+	private static ImmutableRangeSet<Integer> init_PAU_CIN_HAU() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11ac0, 0x11af9))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_PERMIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PAU_CIN_HAU = init_PAU_CIN_HAU();
+	private static ImmutableRangeSet<Integer> init_OLD_PERMIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10350, 0x1037b))
 			.build();
-	static final ImmutableRangeSet<Integer> PSALTER_PAHLAVI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_PERMIC = init_OLD_PERMIC();
+	private static ImmutableRangeSet<Integer> init_PSALTER_PAHLAVI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10b80, 0x10b92))
 			.add(Range.closedOpen(0x10b99, 0x10b9d))
 			.add(Range.closedOpen(0x10ba9, 0x10bb0))
 			.build();
-	static final ImmutableRangeSet<Integer> SIDDHAM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> PSALTER_PAHLAVI = init_PSALTER_PAHLAVI();
+	private static ImmutableRangeSet<Integer> init_SIDDHAM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11580, 0x115b6))
 			.add(Range.closedOpen(0x115b8, 0x115de))
 			.build();
-	static final ImmutableRangeSet<Integer> KHUDAWADI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SIDDHAM = init_SIDDHAM();
+	private static ImmutableRangeSet<Integer> init_KHUDAWADI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x112f0, 0x112fa))
 			.add(Range.closedOpen(0x112b0, 0x112eb))
 			.build();
-	static final ImmutableRangeSet<Integer> TIRHUTA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KHUDAWADI = init_KHUDAWADI();
+	private static ImmutableRangeSet<Integer> init_TIRHUTA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x114d0, 0x114da))
 			.add(Range.closedOpen(0x11480, 0x114c8))
 			.build();
-	static final ImmutableRangeSet<Integer> WARANG_CITI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TIRHUTA = init_TIRHUTA();
+	private static ImmutableRangeSet<Integer> init_WARANG_CITI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x118a0, 0x118f3))
 			.add(Range.singleton(0x118ff))
 			.build();
-	static final ImmutableRangeSet<Integer> AHOM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> WARANG_CITI = init_WARANG_CITI();
+	private static ImmutableRangeSet<Integer> init_AHOM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11730, 0x11740))
 			.add(Range.closedOpen(0x11700, 0x1171b))
 			.add(Range.closedOpen(0x1171d, 0x1172c))
 			.build();
-	static final ImmutableRangeSet<Integer> ANATOLIAN_HIEROGLYPHS = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> AHOM = init_AHOM();
+	private static ImmutableRangeSet<Integer> init_ANATOLIAN_HIEROGLYPHS() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x14400, 0x14647))
 			.build();
-	static final ImmutableRangeSet<Integer> HATRAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ANATOLIAN_HIEROGLYPHS = init_ANATOLIAN_HIEROGLYPHS();
+	private static ImmutableRangeSet<Integer> init_HATRAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x108e0, 0x108f3))
 			.add(Range.closedOpen(0x108f4, 0x108f6))
 			.add(Range.closedOpen(0x108fb, 0x10900))
 			.build();
-	static final ImmutableRangeSet<Integer> MULTANI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> HATRAN = init_HATRAN();
+	private static ImmutableRangeSet<Integer> init_MULTANI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0x11288))
 			.add(Range.closedOpen(0x11280, 0x11287))
 			.add(Range.closedOpen(0x1128a, 0x1128e))
 			.add(Range.closedOpen(0x1129f, 0x112aa))
 			.add(Range.closedOpen(0x1128f, 0x1129e))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_HUNGARIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MULTANI = init_MULTANI();
+	private static ImmutableRangeSet<Integer> init_OLD_HUNGARIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10c80, 0x10cb3))
 			.add(Range.closedOpen(0x10cc0, 0x10cf3))
 			.add(Range.closedOpen(0x10cfa, 0x10d00))
 			.build();
-	static final ImmutableRangeSet<Integer> SIGNWRITING = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_HUNGARIAN = init_OLD_HUNGARIAN();
+	private static ImmutableRangeSet<Integer> init_SIGNWRITING() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1daa1, 0x1dab0))
 			.add(Range.closedOpen(0x1d800, 0x1da8c))
 			.add(Range.closedOpen(0x1da9b, 0x1daa0))
 			.build();
-	static final ImmutableRangeSet<Integer> ADLAM = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SIGNWRITING = init_SIGNWRITING();
+	private static ImmutableRangeSet<Integer> init_ADLAM() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1e900, 0x1e94c))
 			.add(Range.closedOpen(0x1e950, 0x1e95a))
 			.add(Range.closedOpen(0x1e95e, 0x1e960))
 			.build();
-	static final ImmutableRangeSet<Integer> BHAIKSUKI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ADLAM = init_ADLAM();
+	private static ImmutableRangeSet<Integer> init_BHAIKSUKI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11c00, 0x11c09))
 			.add(Range.closedOpen(0x11c38, 0x11c46))
 			.add(Range.closedOpen(0x11c0a, 0x11c37))
 			.add(Range.closedOpen(0x11c50, 0x11c6d))
 			.build();
-	static final ImmutableRangeSet<Integer> MARCHEN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> BHAIKSUKI = init_BHAIKSUKI();
+	private static ImmutableRangeSet<Integer> init_MARCHEN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11c70, 0x11c90))
 			.add(Range.closedOpen(0x11c92, 0x11ca8))
 			.add(Range.closedOpen(0x11ca9, 0x11cb7))
 			.build();
-	static final ImmutableRangeSet<Integer> NEWA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MARCHEN = init_MARCHEN();
+	private static ImmutableRangeSet<Integer> init_NEWA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1145d, 0x11462))
 			.add(Range.closedOpen(0x11400, 0x1145c))
 			.build();
-	static final ImmutableRangeSet<Integer> OSAGE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NEWA = init_NEWA();
+	private static ImmutableRangeSet<Integer> init_OSAGE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x104b0, 0x104d4))
 			.add(Range.closedOpen(0x104d8, 0x104fc))
 			.build();
-	static final ImmutableRangeSet<Integer> TANGUT = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OSAGE = init_OSAGE();
+	private static ImmutableRangeSet<Integer> init_TANGUT() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x18800, 0x18b00))
 			.add(Range.closedOpen(0x17000, 0x187f8))
 			.add(Range.closedOpen(0x18d00, 0x18d09))
 			.add(Range.singleton(0x16fe0))
 			.build();
-	static final ImmutableRangeSet<Integer> MASARAM_GONDI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> TANGUT = init_TANGUT();
+	private static ImmutableRangeSet<Integer> init_MASARAM_GONDI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11d08, 0x11d0a))
 			.add(Range.closedOpen(0x11d3c, 0x11d3e))
 			.add(Range.singleton(0x11d3a))
@@ -12130,30 +12695,54 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x11d3f, 0x11d48))
 			.add(Range.closedOpen(0x11d0b, 0x11d37))
 			.build();
-	static final ImmutableRangeSet<Integer> NUSHU = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MASARAM_GONDI = init_MASARAM_GONDI();
+	private static ImmutableRangeSet<Integer> init_NUSHU() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1b170, 0x1b2fc))
 			.add(Range.singleton(0x16fe1))
 			.build();
-	static final ImmutableRangeSet<Integer> SOYOMBO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NUSHU = init_NUSHU();
+	private static ImmutableRangeSet<Integer> init_SOYOMBO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11a50, 0x11aa3))
 			.build();
-	static final ImmutableRangeSet<Integer> ZANABAZAR_SQUARE = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SOYOMBO = init_SOYOMBO();
+	private static ImmutableRangeSet<Integer> init_ZANABAZAR_SQUARE() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11a00, 0x11a48))
 			.build();
-	static final ImmutableRangeSet<Integer> HANIFI_ROHINGYA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ZANABAZAR_SQUARE = init_ZANABAZAR_SQUARE();
+	private static ImmutableRangeSet<Integer> init_HANIFI_ROHINGYA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10d00, 0x10d28))
 			.add(Range.closedOpen(0x10d30, 0x10d3a))
 			.build();
-	static final ImmutableRangeSet<Integer> OLD_SOGDIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> HANIFI_ROHINGYA = init_HANIFI_ROHINGYA();
+	private static ImmutableRangeSet<Integer> init_OLD_SOGDIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10f00, 0x10f28))
 			.build();
-	static final ImmutableRangeSet<Integer> SOGDIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> OLD_SOGDIAN = init_OLD_SOGDIAN();
+	private static ImmutableRangeSet<Integer> init_SOGDIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10f30, 0x10f5a))
 			.build();
-	static final ImmutableRangeSet<Integer> DOGRA = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> SOGDIAN = init_SOGDIAN();
+	private static ImmutableRangeSet<Integer> init_DOGRA() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11800, 0x1183c))
 			.build();
-	static final ImmutableRangeSet<Integer> GUNJALA_GONDI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> DOGRA = init_DOGRA();
+	private static ImmutableRangeSet<Integer> init_GUNJALA_GONDI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11d67, 0x11d69))
 			.add(Range.closedOpen(0x11d90, 0x11d92))
 			.add(Range.closedOpen(0x11d60, 0x11d66))
@@ -12161,39 +12750,66 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x11d6a, 0x11d8f))
 			.add(Range.closedOpen(0x11da0, 0x11daa))
 			.build();
-	static final ImmutableRangeSet<Integer> MAKASAR = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> GUNJALA_GONDI = init_GUNJALA_GONDI();
+	private static ImmutableRangeSet<Integer> init_MAKASAR() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11ee0, 0x11ef9))
 			.build();
-	static final ImmutableRangeSet<Integer> MEDEFAIDRIN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MAKASAR = init_MAKASAR();
+	private static ImmutableRangeSet<Integer> init_MEDEFAIDRIN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x16e40, 0x16e9b))
 			.build();
-	static final ImmutableRangeSet<Integer> ELYMAIC = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> MEDEFAIDRIN = init_MEDEFAIDRIN();
+	private static ImmutableRangeSet<Integer> init_ELYMAIC() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10fe0, 0x10ff7))
 			.build();
-	static final ImmutableRangeSet<Integer> NANDINAGARI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> ELYMAIC = init_ELYMAIC();
+	private static ImmutableRangeSet<Integer> init_NANDINAGARI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x119da, 0x119e5))
 			.add(Range.closedOpen(0x119a0, 0x119a8))
 			.add(Range.closedOpen(0x119aa, 0x119d8))
 			.build();
-	static final ImmutableRangeSet<Integer> NYIAKENG_PUACHUE_HMONG = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NANDINAGARI = init_NANDINAGARI();
+	private static ImmutableRangeSet<Integer> init_NYIAKENG_PUACHUE_HMONG() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1e100, 0x1e12d))
 			.add(Range.closedOpen(0x1e130, 0x1e13e))
 			.add(Range.closedOpen(0x1e140, 0x1e14a))
 			.add(Range.closedOpen(0x1e14e, 0x1e150))
 			.build();
-	static final ImmutableRangeSet<Integer> WANCHO = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> NYIAKENG_PUACHUE_HMONG = init_NYIAKENG_PUACHUE_HMONG();
+	private static ImmutableRangeSet<Integer> init_WANCHO() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x1e2c0, 0x1e2fa))
 			.add(Range.singleton(0x1e2ff))
 			.build();
-	static final ImmutableRangeSet<Integer> YEZIDI = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> WANCHO = init_WANCHO();
+	private static ImmutableRangeSet<Integer> init_YEZIDI() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10eab, 0x10eae))
 			.add(Range.closedOpen(0x10eb0, 0x10eb2))
 			.add(Range.closedOpen(0x10e80, 0x10eaa))
 			.build();
-	static final ImmutableRangeSet<Integer> CHORASMIAN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> YEZIDI = init_YEZIDI();
+	private static ImmutableRangeSet<Integer> init_CHORASMIAN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x10fb0, 0x10fcc))
 			.build();
-	static final ImmutableRangeSet<Integer> DIVES_AKURU = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> CHORASMIAN = init_CHORASMIAN();
+	private static ImmutableRangeSet<Integer> init_DIVES_AKURU() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x11915, 0x11917))
 			.add(Range.closedOpen(0x11937, 0x11939))
 			.add(Range.singleton(0x11909))
@@ -12203,11 +12819,17 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x11918, 0x11936))
 			.add(Range.closedOpen(0x1193b, 0x11947))
 			.build();
-	static final ImmutableRangeSet<Integer> KHITAN_SMALL_SCRIPT = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> DIVES_AKURU = init_DIVES_AKURU();
+	private static ImmutableRangeSet<Integer> init_KHITAN_SMALL_SCRIPT() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x18b00, 0x18cd6))
 			.add(Range.singleton(0x16fe4))
 			.build();
-	static final ImmutableRangeSet<Integer> UNKNOWN = new ImmutableRangeSet.Builder<Integer>()
+	}
+	static final ImmutableRangeSet<Integer> KHITAN_SMALL_SCRIPT = init_KHITAN_SMALL_SCRIPT();
+	private static ImmutableRangeSet<Integer> init_UNKNOWN() {
+		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.singleton(0xb00))
 			.add(Range.singleton(0xd80))
 			.add(Range.closedOpen(0x10aa0, 0x10ac0))
@@ -12884,4 +13506,6 @@ class UnicodePredicates {
 			.add(Range.singleton(0xfb3f))
 			.add(Range.closedOpen(0x1e13e, 0x1e140))
 			.build();
+	}
+	static final ImmutableRangeSet<Integer> UNKNOWN = init_UNKNOWN();
 }

@@ -72,6 +72,42 @@ repro -- the exception is literally `unknown named character class "InGreek"`, n
 `&&`). That gap is real but out of scope here; it belongs with the `\p{...}`/block/script coverage
 item under "HIGHEST PRIORITY" below.
 
+## URGENT: CASE_INSENSITIVE/UNICODE_CASE and inline flag toggles (found 2026-09-06)
+
+- [ ] **`CASE_INSENSITIVE`/`UNICODE_CASE` have no effect on matching at all.** Both flags are
+      defined as constants (`Ll1Pattern.CASE_INSENSITIVE`/`UNICODE_CASE`), threaded through
+      `PatternParser`, and consulted for exactly one thing -- `UNICODE_CHARACTER_CLASS` picking
+      ASCII vs Unicode POSIX-class tables in `NamedCharClass`. Nothing else in the codebase does
+      case-folding: no `toLowerCase`/`toUpperCase`/`equalsIgnoreCase` anywhere in
+      `PatternConstruct`/`MatcherConstruct`, and neither literal-string compilation nor
+      character-class range compilation ever consults the flag. Confirmed directly:
+      `Ll1Pattern.compile("abc", Ll1Pattern.CASE_INSENSITIVE).matcher("ABC").matches()` and
+      `Ll1Pattern.compile("[a-z]", Ll1Pattern.CASE_INSENSITIVE).matcher("A").matches()` both return
+      `false` (both should be `true` under `java.util.regex` semantics). Needs real design work,
+      not a one-line fix: case-insensitive matching means either case-folding every literal
+      character and character-class range at compile time (simple ASCII folding for
+      `CASE_INSENSITIVE` alone; full Unicode case folding, e.g. Kelvin sign K vs "k", when
+      `UNICODE_CASE` is also set -- these are deliberately different in `java.util.regex`) or
+      doing case-insensitive comparisons at match time; needs a decision on which, plus which
+      Unicode case-folding data/table this project uses.
+- [ ] **Inline flag toggles (`(?i)`, `(?i:...)`, `(?m)`, etc.) are separately broken and throw on
+      *any* use whatsoever** -- found while testing the bug above. `Ll1Pattern.compile("(?i)abc")`
+      throws `PatternSyntaxException: "It doesn't make sense for a group to enable the same flag
+      \"i\" multiple times."` immediately. Root cause at
+      [PatternParser.java:321](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternParser.java:321)
+      (and the mirrored disable-branch a few lines below, around line 334/340): the "already set"
+      check uses bitwise OR instead of AND --
+      ```java
+      if ((enableFlags | flagValue) != 0) {   // wrong: true as soon as flagValue != 0, i.e. always
+      ```
+      Since `enableFlags` starts at `0`, `(0 | flagValue)` is nonzero for the *first* flag
+      character too, so this throws immediately on the very first flag in any `(?...)` construct.
+      Should be `&`. This affects *every* inline flag (`i`/`d`/`m`/`s`/`u`/`x`/`U`), not just the
+      case ones -- `(?m)`, `(?x)`, etc. are equally unusable right now. Straightforward one-line-
+      per-branch fix (change `|` to `&` in both the enable and disable loops); do this one first,
+      independently of the case-folding design work above, and add regression tests for every
+      flag letter alone and in combination (including disable, e.g. `(?i-m:...)`).
+
 ## HIGHEST PRIORITY
 
 - [ ] **Comprehensive parser/compiler/matcher test coverage for every already-supported (or

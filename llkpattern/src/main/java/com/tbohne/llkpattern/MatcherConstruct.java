@@ -64,7 +64,55 @@ abstract class MatcherConstruct {
 
 	@Nullable MatcherConstruct getNext(Matcher matcher, int peeked) {
 		MatcherConstruct mapped = dispatchMap.get(peeked);
+		if (mapped == null && peeked != -1) {
+			// CASE_INSENSITIVE/UNICODE_CASE (2026-09-06): dispatchMap's keys are exactly the code
+			// points the pattern was written with (e.g. "[a-z]" only ever puts 'a'-'z' in the map),
+			// so a case-insensitive match has to try the *input* character's other-case forms
+			// against that same map, rather than expanding every character class's ranges at compile
+			// time. Two lookups (not one) because there's no single "canonical case" that works for
+			// both an all-lowercase pattern matching an uppercase input and vice versa.
+			int flags = matcher.pattern.flags();
+			if ((flags & Ll1Pattern.CASE_INSENSITIVE) != 0) {
+				boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
+				int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
+				int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
+				if (upper != peeked) {
+					mapped = dispatchMap.get(upper);
+				}
+				if (mapped == null && lower != peeked) {
+					mapped = dispatchMap.get(lower);
+				}
+			}
+		}
 		return (mapped != null) ? mapped : elseDispatch;
+	}
+
+	private static int foldAsciiUpper(int codePoint) {
+		return (codePoint >= 'a' && codePoint <= 'z') ? codePoint - ('a' - 'A') : codePoint;
+	}
+
+	private static int foldAsciiLower(int codePoint) {
+		return (codePoint >= 'A' && codePoint <= 'Z') ? codePoint + ('a' - 'A') : codePoint;
+	}
+
+	/**
+	 * True if {@code a} and {@code b} should be treated as the same character for matching
+	 * purposes, honoring {@code flags}' {@code CASE_INSENSITIVE}/{@code UNICODE_CASE} the same way
+	 * {@link #getNext} does for dispatch-map-based matching. Used by {@link LiteralMatcherConstruct},
+	 * whose own characters are compared directly rather than through a dispatch map.
+	 */
+	static boolean codePointsMatch(int a, int b, int flags) {
+		if (a == b) {
+			return true;
+		}
+		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+			return false;
+		}
+		if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
+			return Character.toUpperCase(a) == Character.toUpperCase(b)
+					|| Character.toLowerCase(a) == Character.toLowerCase(b);
+		}
+		return foldAsciiUpper(a) == foldAsciiUpper(b);
 	}
 
 	@VisibleForTesting
@@ -115,10 +163,18 @@ abstract class MatcherConstruct {
 			int i=0;
 			do {
 				int next = value.codePointAt(i);
-				if (next != peeked) {
+				// Bug fix (2026-09-06): this was Character.isSupplementaryCodePoint(i) -- checking
+				// whether the *loop index* happened to be a huge number, not whether the code point
+				// just read is supplementary. Always false for any realistically-sized literal, so
+				// `units` was always 1, silently downgrading every supplementary character in a
+				// literal to two separate surrogate-half "characters" compared one at a time. That
+				// happened to still produce correct comparisons (both sides advance in the same
+				// lockstep), so it was latent rather than an active bug, but it's exactly backwards
+				// from what was intended and worth fixing now that this method is being touched.
+				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
+				if (!codePointsMatch(next, peeked, matcher.pattern.flags())) {
 					return false;
 				}
-				int units = Character.isSupplementaryCodePoint(i) ? 2 : 1;
 				peeked = matcher.consumeCodeUnits(units);
 				i += units;
 			} while (i<value.length());

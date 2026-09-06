@@ -1,6 +1,6 @@
 # Remaining Work
 
-Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1215 tests, 0 failing, 561 skipped (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
+Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1232 tests, 0 failing, 561 skipped (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
 
 ## FIXED (2026-09-06): the `PatternParser` hang on octal/`\x{...}` escapes in a `[...]` range
 
@@ -132,41 +132,101 @@ repro -- the exception is literally `unknown named character class "InGreek"`, n
 `&&`). That gap is real but out of scope here; it belongs with the `\p{...}`/block/script coverage
 item under "HIGHEST PRIORITY" below.
 
-## URGENT: CASE_INSENSITIVE/UNICODE_CASE and inline flag toggles (found 2026-09-06)
+## FIXED (2026-09-06): CASE_INSENSITIVE/UNICODE_CASE, inline flag toggles, and DOTALL
 
-- [ ] **`CASE_INSENSITIVE`/`UNICODE_CASE` have no effect on matching at all.** Both flags are
-      defined as constants (`Ll1Pattern.CASE_INSENSITIVE`/`UNICODE_CASE`), threaded through
-      `PatternParser`, and consulted for exactly one thing -- `UNICODE_CHARACTER_CLASS` picking
-      ASCII vs Unicode POSIX-class tables in `NamedCharClass`. Nothing else in the codebase does
-      case-folding: no `toLowerCase`/`toUpperCase`/`equalsIgnoreCase` anywhere in
-      `PatternConstruct`/`MatcherConstruct`, and neither literal-string compilation nor
-      character-class range compilation ever consults the flag. Confirmed directly:
-      `Ll1Pattern.compile("abc", Ll1Pattern.CASE_INSENSITIVE).matcher("ABC").matches()` and
-      `Ll1Pattern.compile("[a-z]", Ll1Pattern.CASE_INSENSITIVE).matcher("A").matches()` both return
-      `false` (both should be `true` under `java.util.regex` semantics). Needs real design work,
-      not a one-line fix: case-insensitive matching means either case-folding every literal
-      character and character-class range at compile time (simple ASCII folding for
-      `CASE_INSENSITIVE` alone; full Unicode case folding, e.g. Kelvin sign K vs "k", when
-      `UNICODE_CASE` is also set -- these are deliberately different in `java.util.regex`) or
-      doing case-insensitive comparisons at match time; needs a decision on which, plus which
-      Unicode case-folding data/table this project uses.
-- [ ] **Inline flag toggles (`(?i)`, `(?i:...)`, `(?m)`, etc.) are separately broken and throw on
-      *any* use whatsoever** -- found while testing the bug above. `Ll1Pattern.compile("(?i)abc")`
-      throws `PatternSyntaxException: "It doesn't make sense for a group to enable the same flag
-      \"i\" multiple times."` immediately. Root cause at
-      [PatternParser.java:321](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternParser.java:321)
-      (and the mirrored disable-branch a few lines below, around line 334/340): the "already set"
-      check uses bitwise OR instead of AND --
-      ```java
-      if ((enableFlags | flagValue) != 0) {   // wrong: true as soon as flagValue != 0, i.e. always
-      ```
-      Since `enableFlags` starts at `0`, `(0 | flagValue)` is nonzero for the *first* flag
-      character too, so this throws immediately on the very first flag in any `(?...)` construct.
-      Should be `&`. This affects *every* inline flag (`i`/`d`/`m`/`s`/`u`/`x`/`U`), not just the
-      case ones -- `(?m)`, `(?x)`, etc. are equally unusable right now. Straightforward one-line-
-      per-branch fix (change `|` to `&` in both the enable and disable loops); do this one first,
-      independently of the case-folding design work above, and add regression tests for every
-      flag letter alone and in combination (including disable, e.g. `(?i-m:...)`).
+All three had no effect on matching at all before this fix (`CASE_INSENSITIVE`/`UNICODE_CASE`
+silently ignored; inline flag toggles like `(?i)` threw a `PatternSyntaxException` on *any* use;
+`.` always matched everything, i.e. behaved as if `DOTALL` were permanently on). Fixed together
+since finding one immediately led to the next -- see below for what's still left after this pass.
+
+1. **`CASE_INSENSITIVE`/`UNICODE_CASE`**: fixed at match time, not by expanding character-class
+   ranges at compile time. `MatcherConstruct#getNext` (the single funnel every character-based
+   dispatch goes through -- character classes, `.`, alternation/loop entry) now retries the
+   dispatch-map lookup with the input code point's other-case form(s) on a miss, when
+   `CASE_INSENSITIVE` is set; ASCII-only folding (`a-z`/`A-Z`) unless `UNICODE_CASE` is also set,
+   in which case it uses `Character.toUpperCase`/`toLowerCase`. `LiteralMatcherConstruct` (whose
+   own characters are compared directly, not through a dispatch map) got the same treatment via a
+   new shared `codePointsMatch()` helper. This required making `Matcher.pattern` package-private
+   (was `private`) so `MatcherConstruct` can read `matcher.pattern.flags()`. See
+   [MatcherConstruct.java](../llkpattern/src/main/java/com/tbohne/llkpattern/MatcherConstruct.java).
+   **Scope note**: this covers flags passed to `Ll1Pattern.compile(pattern, flags)` (the global
+   case). It does NOT make an inline `(?i)` actually toggle case-sensitivity for only part of a
+   pattern -- see the "inline flag toggles don't actually scope anything" item below, a distinct,
+   bigger gap this stopped short of.
+2. **Inline flag toggles threw unconditionally**: `PatternParser`'s "is this flag already set"
+   checks used `|` instead of `&` (`(enableFlags | flagValue) != 0` is true as soon as `flagValue`
+   is nonzero, i.e. on the very first flag character of literally any `(?...)` construct). Fixed to
+   `&` in both the enable and disable loops.
+3. **`.` always matched everything, ignoring `DOTALL` entirely**: the `case '.':` branch in
+   `PatternParser.parseUnion` built `TreeRangeSet.<Integer>create().complement()` (= "everything")
+   unconditionally -- the `Ll1Pattern.DOTALL` constant existed but nothing anywhere ever read it.
+   Fixed to build "everything except `\n`" unless `DOTALL` is set (a fuller line-terminator set --
+   `\r`, U+0085, U+2028, U+2029 -- and `UNIX_LINES` interaction are a follow-up, not done here).
+
+**Two more bugs surfaced while fixing these** (both real, both pre-existing, found because fixing
+#2 let previously-rejected patterns reach code paths nothing had ever exercised before):
+
+- **A flags-only group (`(?s)`, no `:`) defaulted to `captureConstructIndex = 0`** (meaning "real
+  capturing group 0") instead of `-1` (non-capturing) -- unlike the plain `(?:...)` case, which
+  already special-cases this. Symptom: any pattern with a real capturing group *and* a flags-only
+  group crashed at match time with `ArrayIndexOutOfBoundsException` in
+  `BeginCaptureMatcherConstruct` (the capture-groups array was sized for the real groups only, but
+  something also tried to write into a phantom "group 0" slot). Fixed by setting
+  `union.captureConstructIndex = -1` in that branch, same as `(?:...)`.
+- **A *bare* flags-only group (`(?s)`, immediately closed by `)`, no body) breaks the surrounding
+  sequence** -- found while regression-testing the fix above. `Ll1Pattern.compile("(?s)abx")`
+  no longer crashes, but `matcher("abx").find()` incorrectly returns `false` (should trivially be
+  `true` -- `(?s)` toggling `DOTALL` shouldn't affect matching "abx" at all, let alone break it).
+  The bare form returns an empty, un-parsed `QuantifiedUnion` (zero `constructs`) directly from
+  `PatternParser.parseGroup()`
+  ([PatternParser.java:355-359](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternParser.java:355)),
+  without ever going through the machinery ((`parseUnion`, `buildEntryMap`/`buildMatcher`) that
+  makes a `QuantifiedUnion` behave as a proper (here: zero-width, always-succeeding) link in the
+  compiled graph -- an empty `constructs` list apparently doesn't compile into a working no-op
+  passthrough. **Not yet fixed** -- needs its own investigation into how
+  `QuantifiedUnion.buildEntryMap`/`buildMatcher` handle (or fail to handle) zero constructs, or
+  whether the bare form needs to synthesize a single always-matching zero-width construct instead
+  of an empty list. Confirmed via direct repro; regenerating the golden corpus after the fixes
+  above turned every affected `(?s)`/`(?iu)`/`(?x)` corpus row into a clean, understood `UNEXPECTED`
+  (`llk=NOMATCH` where regex matches) rather than a crash, so this is now cleanly isolated rather
+  than masked by something else.
+- [ ] **Inline flag toggles don't actually locally scope anything**, even once the bare-group bug
+      above is fixed. `(?i:...)`/`(?i)` only ever mutate `PatternParser`'s own `flags` field at
+      *parse* time, affecting every construct parsed after that point in the current scope -- they
+      are not stored per-construct for use at match/compile time. So `(?i:abc)def` would (once the
+      bug above is fixed) make matching sensitive to case for `abc` correctly by cascading, but
+      `abc(?i:def)ghi` cannot currently make ONLY `def` case-insensitive while `ghi` stays
+      case-sensitive again afterward, because nothing restores the "insensitive-ness" boundary at
+      runtime the way it already does at *parse* time (`union.tempFlags`/`parentFlags` correctly
+      restores `PatternParser.flags` after a `(?i:...)` group for parsing *purposes*, e.g. deciding
+      ASCII vs Unicode named classes -- but `CASE_INSENSITIVE`'s new match-time folding reads the
+      single global `Matcher.pattern.flags()`, which doesn't vary by position in the pattern at
+      all). Needs each `MatcherConstruct` (or at least `LiteralMatcherConstruct`/character-class
+      dispatch) to carry its own local flags snapshot from parse time, rather than reading the
+      pattern-wide flags at match time. A real design task, not a one-line fix -- do this after the
+      bare-group bug above, since testing it meaningfully needs bare/grouped inline flags to work
+      correctly first.
+- [ ] **`NamedCharClass`/`RegexCharacterClass` have a latent circular static-initialization
+      dependency**, found (and worked around, not fixed) while attempting the `DOTALL` fix above.
+      `RegexCharacterClass`'s enum body needs `NamedCharClass.White_Space` (`s`'s Unicode variant),
+      and separately `NamedCharClass`'s own enum body reads back `RegexCharacterClass.s.ascii` --
+      whichever of the two classes' static initializers runs *second* sees the other's
+      not-yet-assigned enum constant as `null`, throwing
+      `NullPointerException`/`ExceptionInInitializerError`. This had simply never been triggered
+      before because every existing code path always caused `NamedCharClass` to finish
+      initializing first (e.g. any `\p{...}` lookup). Directly referencing
+      `RegexCharacterClass.DOT` from `PatternParser` (the natural way to reuse its existing "`.`
+      except newline" definition for the `DOTALL` fix above) was the first code path to trigger
+      `RegexCharacterClass` loading *first*, reproducing the crash --
+      confirmed via a standalone repro (`Ll1Pattern.compile("a.b").matcher("a\nb").find()`, with
+      `case '.':` changed to reference `RegexCharacterClass.DOT.get(flags)`, throws
+      `ExceptionInInitializerError` -> `NullPointerException: Cannot read field "ascii" because
+      "...RegexCharacterClass.s" is null` at `NamedCharClass.java:244`). Worked around for now by
+      having `PatternParser`'s `.` construction build its own "everything except `\n`" `RangeSet`
+      inline instead of reusing `RegexCharacterClass.DOT` -- correct, but leaves `RegexCharacterClass.DOT`
+      itself still landmined for the next caller who reaches for it. Real fix needs breaking the
+      cycle (lazy/deferred cross-reference, or restructuring which class's static data the other
+      one depends on) rather than another workaround.
 
 ## HIGHEST PRIORITY
 
@@ -287,8 +347,8 @@ failure instead of a hung suite.
 `openjdk_supplementary.tsv`, 339 rows; regenerate via the `generateCorpus` command above after any
 scraping/unescaping/engine change):
 
-- BMP: 134 AGREES, 68 UNIMPLEMENTED (auto-tagged), 20 UNEXPECTED (auto-tagged).
-- Supplementary: 213 AGREES, 98 UNIMPLEMENTED (auto-tagged), 28 UNEXPECTED (auto-tagged).
+- BMP: 136 AGREES, 58 UNIMPLEMENTED (auto-tagged), 28 UNEXPECTED (auto-tagged).
+- Supplementary: 215 AGREES, 88 UNIMPLEMENTED (auto-tagged), 36 UNEXPECTED (auto-tagged).
 - The 4 rows that used to hang `llkMatchesGolden` outright no longer do -- see "FIXED (2026-09-06):
   the `PatternParser` hang..." above.
 - Character-class intersection (`&&`) is fixed -- see "FIXED (2026-09-06): character-class
@@ -297,8 +357,13 @@ scraping/unescaping/engine change):
 - The surrogate-pair matching bug and its two associated finds (unclamped negated-class ranges
   colliding with the end-of-input sentinel; `\p{...}` crashing as the pattern's last construct) are
   fixed -- see "FIXED (2026-09-06): llk matched into the low half of a *valid* surrogate pair"
-  above; moved another ~19 rows to `AGREES` (AGREES now 134+213=347 total, up from 65+136=201 at the
-  start of this session).
+  above; moved another ~19 rows to `AGREES`.
+- `CASE_INSENSITIVE`/`UNICODE_CASE`/inline flag toggles/`DOTALL` are fixed -- see "FIXED
+  (2026-09-06): CASE_INSENSITIVE/UNICODE_CASE, inline flag toggles, and DOTALL" above. Net effect on
+  the corpus was small and mixed (a handful of `.`-without-`DOTALL` rows moved to `AGREES`; roughly
+  as many `(?iu)`/`(?x)`/`(?s)` rows moved from crashing to a clean, understood `UNEXPECTED` instead
+  of `AGREES`, because of the two new bugs that fix surfaced -- see that entry's "two more bugs
+  surfaced" list). AGREES is now 136+215=351 total, up from 65+136=201 at the start of this session.
 - The remaining `UNIMPLEMENTED`/`UNEXPECTED` counts are **not yet human-reviewed** -- per
   `CorpusGenerator`'s javadoc, "UNIMPLEMENTED" really just means "llk didn't run cleanly" (could
   be a correct LL(1)-ambiguity rejection, not a missing feature) and needs retagging as

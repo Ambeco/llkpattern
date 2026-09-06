@@ -28,7 +28,10 @@ public class Matcher implements MatchResult {
 		throw new UnsupportedOperationException("TODO: implement Matcher#quoteReplacement");
 	}
 
-	private Ll1Pattern pattern;
+	// Package-private (not private) so MatcherConstruct can read pattern.flags() for
+	// case-insensitive matching (CASE_INSENSITIVE/UNICODE_CASE) -- see MatcherConstruct#getNext and
+	// LiteralMatcherConstruct#match.
+	Ll1Pattern pattern;
 	String input;
 	int regionEnd;
 	int regionStart = 0;

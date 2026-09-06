@@ -183,7 +183,23 @@ final class PatternParser {
             }
             break;
           case '.':
-            ComplexCharacter dot = new ComplexCharacter(index, TreeRangeSet.<Integer>create().complement());
+            // Bug fix (2026-09-06): this unconditionally built "everything" (complement of the
+            // empty set), i.e. always behaved as if DOTALL were on -- the DOTALL flag constant
+            // existed (Ll1Pattern.DOTALL) but nothing anywhere ever actually consulted it. Without
+            // DOTALL, "." must exclude the line terminator '\n' (a fuller line-terminator set --
+            // \r, U+0085, U+2028, U+2029 -- and UNIX_LINES interaction are tracked separately in
+            // remaining_work.md, not done here). Deliberately NOT reusing
+            // NamedCharClass.RegexCharacterClass.DOT (which already defines exactly this set) --
+            // see remaining_work.md's "RegexCharacterClass/NamedCharClass circular static
+            // initialization" entry for why that constant is landmined for any caller that isn't
+            // careful about class-load order.
+            TreeRangeSet<Integer> newline = TreeRangeSet.create();
+            newline.add(Range.singleton(+'\n'));
+            RangeSet<Integer> dotRanges =
+                (flags & Pattern.DOTALL) != 0
+                    ? TreeRangeSet.<Integer>create().complement()
+                    : newline.complement();
+            ComplexCharacter dot = new ComplexCharacter(index, dotRanges);
             sequence.patterns.add(parseQuantifiable(dot));
             advance(1);
             break;
@@ -313,12 +329,28 @@ final class PatternParser {
         case 'u':
         case 'x':
         case 'U':
+          // Bug fix (2026-09-06): a flags-only construct ("(?s)" or "(?s:...)") is non-capturing,
+          // exactly like "(?:...)" (which sets this explicitly, above) -- but this branch never
+          // did, leaving QuantifiedUnion's captureConstructIndex at its default of 0, i.e.
+          // "capturing group 0". That corrupted the whole pattern's capture bookkeeping: the "(?s)"
+          // construct got (wrongly) counted and compiled as a real capturing group despite never
+          // going through the increment/parseUnion machinery below (the bare "(?...)" form returns
+          // immediately, a few lines down) or, for "(?...:...)", getting wrongly double-processed
+          // by that machinery as group 0 on top of whatever real group 0 already existed --
+          // producing a captureGroups array sized for 0 real groups while still trying to write
+          // into slot 0, an ArrayIndexOutOfBoundsException at match time.
+          union.captureConstructIndex = -1;
           int flagIdx = 0;
           int enableFlags = 0;
           int disableFlags = 0;
           while ((flagIdx = flagNames.indexOf(peek)) >= 0) {
             int flagValue = flagValues[flagIdx];
-            if ((enableFlags | flagValue) != 0) {
+            // Bug fix (2026-09-06): this was "|" instead of "&", which is true as soon as
+            // flagValue is nonzero -- i.e. on the very first flag character of ANY inline flag
+            // group ((?i), (?m), etc.), since enableFlags starts at 0 and (0 | flagValue) != 0
+            // whenever flagValue != 0. That made every inline flag construct throw immediately,
+            // not just genuine repeats like "(?ii)". "&" actually tests "is this bit already set".
+            if ((enableFlags & flagValue) != 0) {
               throw throwUnexpectedChar(
                   "It doesn't make sense for a group to enable the same flag \"",
                   peek,
@@ -331,13 +363,13 @@ final class PatternParser {
             advance(1);
             while ((flagIdx = flagNames.indexOf(peek)) >= 0) {
               int flagValue = flagValues[flagIdx];
-              if ((enableFlags | flagValue) != 0) {
+              if ((enableFlags & flagValue) != 0) {
                 throw throwUnexpectedChar(
                     "It doesn't make sense for a group and disable the same flag \"",
                     peek,
                     "\" at the same time.");
               }
-              if ((disableFlags | flagValue) != 0) {
+              if ((disableFlags & flagValue) != 0) {
                 throw throwUnexpectedChar(
                     "It doesn't make sense for a group to disable the same flag \"",
                     peek,

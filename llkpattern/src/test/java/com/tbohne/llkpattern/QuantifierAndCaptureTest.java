@@ -145,9 +145,31 @@ public class QuantifierAndCaptureTest {
   // --- Explicitly deferred: capturing AND quantified at once (e.g. "(a)*") ---
 
   @Test
-  public void capturingAndQuantifiedGroup_notYetSupported() {
-    // See design.md/remaining_work.md "capture in a loop" -- (a)* needs BeginCapture to re-fire
-    // every iteration, which needs more wiring than a plain quantified-but-non-capturing group.
-    assertThrows(UnsupportedOperationException.class, () -> match("(a)*", "aaa"));
+  public void capturingAndQuantifiedGroup_recordsLastIterationOnly() {
+    // Real regex semantics: (a)* captures whichever iteration matched last, not the first or a
+    // concatenation of all of them.
+    Matcher[] out = new Matcher[1];
+    assertThat(match("(a)*", "aaa", out), is(true));
+    assertThat(out[0].captureGroups[0].result, is("a"));
+  }
+
+  @Test
+  public void capturingAndQuantifiedGroup_zeroIterations_leavesCaptureUnset() {
+    Matcher[] out = new Matcher[1];
+    assertThat(match("(a)*", "", out), is(true));
+    assertThat(out[0].captureGroups[0], nullValue());
+  }
+
+  @Test
+  public void capturingAndQuantifiedGroup_ofAlternation_recordsLastMatchedBranch() {
+    Matcher[] out = new Matcher[1];
+    assertThat(match("(a|b)*", "abba", out), is(true));
+    assertThat(out[0].captureGroups[0].result, is("a"));
+  }
+
+  @Test
+  public void capturingAndQuantifiedGroup_followedByLiteral_stillChoosesCorrectExit() {
+    assertThat(match("(a)*b", "aaab"), is(true));
+    assertThat(match("(a)*b", "b"), is(true));
   }
 }

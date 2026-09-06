@@ -204,7 +204,12 @@ abstract class PatternConstruct {
 		 * dispatch back to {@code this} once they finish matching.
 		 */
 		void buildLoopEntryMapAndMatcher(List<PatternConstruct> body, PatternConstruct next) {
-			new LoopDispatchMatcherConstruct(this, body, next);
+			buildLoopEntryMapAndMatcher(body, next, -1);
+		}
+
+		/** As above, but also a capturing group (e.g. {@code (a)*}) -- see LoopDispatchMatcherConstruct. */
+		void buildLoopEntryMapAndMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
+			new LoopDispatchMatcherConstruct(this, body, next, captureConstructIndex);
 		}
 	}
 
@@ -228,16 +233,7 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
-				if (isCapturing()) {
-					// TODO(remaining_work.md "capture in a loop"): a capturing AND quantified group
-					// (e.g. `(a)*`) needs the capture to re-fire every iteration (last iteration wins,
-					// per real regex semantics), which means BeginCapture must wrap loop-body re-entry
-					// (not just the construct's outer entry point) and the body's own "next" must route
-					// through EndCapture before looping back -- deliberately deferred; see design.md.
-					throw new UnsupportedOperationException(
-							"TODO: a capturing group that is also quantified (e.g. \"(a)*\") is not yet compiled");
-				}
-				buildLoopEntryMapAndMatcher(constructs, next);
+				buildLoopEntryMapAndMatcher(constructs, next, captureConstructIndex);
 				return;
 			}
 

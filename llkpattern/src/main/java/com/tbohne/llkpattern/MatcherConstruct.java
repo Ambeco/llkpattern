@@ -268,34 +268,65 @@ abstract class MatcherConstruct {
 	 * that matches what follows the loop, it routes through an {@link EndLoopMatcherConstruct}
 	 * (which enforces {@code min} then dispatches to {@code next}). The runtime min/max checks --
 	 * not two different static dispatch maps -- are what make one map correct for every bound.
+	 *
+	 * <p>When {@code captureConstructIndex != -1} (the construct is <i>also</i> a capturing group,
+	 * e.g. {@code (a)*}), the capture must re-fire every iteration -- last iteration wins, per real
+	 * regex semantics -- so this inserts two more indirections: {@code LoopMatcherConstruct}
+	 * dispatches unconditionally to a shared {@link BeginCaptureMatcherConstruct} (which records the
+	 * start position, then dispatches by character among the body parts, same as the non-capturing
+	 * case would have dispatched directly), and each body part is compiled against a {@link
+	 * PatternConstruct.CaptureEndMarker} standing in for {@code owner} -- so finishing one iteration
+	 * records the captured substring before looping back, rather than looping back directly.
 	 */
 	static final class LoopDispatchMatcherConstruct extends MatcherConstruct {
 		LoopDispatchMatcherConstruct(
-				PatternConstruct.QuantifiableConstruct owner, List<PatternConstruct> body, PatternConstruct next) {
+				PatternConstruct.QuantifiableConstruct owner, List<PatternConstruct> body, PatternConstruct next,
+				int captureConstructIndex) {
 			super(owner); // Self-registers FIRST -- see the class doc above and design.md.
+
+			boolean capturing = captureConstructIndex != -1;
+			PatternConstruct bodyCompileTarget = owner;
+			if (capturing) {
+				// Loops back to `owner` (this node) itself, same as the non-capturing case, but only
+				// after recording the captured substring -- owner.matcher (== this) is already set by
+				// the super(owner) call above, so this is safe to compile immediately.
+				bodyCompileTarget = new PatternConstruct.CaptureEndMarker(owner.startIndex, captureConstructIndex, owner);
+				bodyCompileTarget.compile(owner);
+			}
 
 			List<PatternConstruct> candidates = new ArrayList<>(body);
 			candidates.add(next);
 			PatternConstruct.MergedEntries result =
-					PatternConstruct.compileAndMergeCandidates(owner.pattern, candidates, owner, "loop part");
+					PatternConstruct.compileAndMergeCandidates(owner.pattern, candidates, bodyCompileTarget, "loop part");
 
 			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(owner.quantifiableIndex, owner.max);
 			EndLoopMatcherConstruct endLoopNode = new EndLoopMatcherConstruct(owner.quantifiableIndex, owner.min);
 			endLoopNode.elseDispatch = next.matcher;
+
+			// Where a body-owned range's target actually gets recorded: directly on loopNode in the
+			// non-capturing case, or on a shared BeginCapture (which loopNode forwards to
+			// unconditionally, below) when capturing -- either way, `loopNode` is what the outer
+			// dispatchMap below routes "continue" characters to.
+			BeginCaptureMatcherConstruct beginCaptureNode =
+					capturing ? new BeginCaptureMatcherConstruct(captureConstructIndex) : null;
+			MatcherConstruct bodyDispatchNode = capturing ? beginCaptureNode : loopNode;
 
 			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 				Range<Integer> range = Range.closedOpen(e.getKey().min, e.getKey().max);
 				boolean isExit = e.getValue() == next;
 				dispatchMap.put(range, isExit ? endLoopNode : loopNode);
 				if (!isExit) {
-					loopNode.dispatchMap.put(range, e.getValue().matcher);
+					bodyDispatchNode.dispatchMap.put(range, e.getValue().matcher);
 				}
 			}
 			if (result.elseCandidate != null) {
 				elseDispatch = (result.elseCandidate == next) ? endLoopNode : loopNode;
 				if (result.elseCandidate != next) {
-					loopNode.elseDispatch = result.elseCandidate.matcher;
+					bodyDispatchNode.elseDispatch = result.elseCandidate.matcher;
 				}
+			}
+			if (capturing) {
+				loopNode.elseDispatch = beginCaptureNode; // unconditional: every continue attempt begins capturing.
 			}
 
 			// This construct's own entry set, as seen by whatever ambiguity check an ancestor (e.g.
@@ -325,6 +356,16 @@ abstract class MatcherConstruct {
 			super(owner);
 			this.captureConstructIndex = captureConstructIndex;
 			this.elseDispatch = target;
+		}
+
+		/**
+		 * Internal (non-self-registering) variant used when the same BeginCapture instance needs to
+		 * dispatch by character among several loop-body branches -- the caller populates
+		 * dispatchMap/elseDispatch directly afterward (see LoopDispatchMatcherConstruct) rather than
+		 * this constructor taking one fixed target.
+		 */
+		BeginCaptureMatcherConstruct(int captureConstructIndex) {
+			this.captureConstructIndex = captureConstructIndex;
 		}
 
 		@Override

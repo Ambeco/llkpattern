@@ -27,8 +27,9 @@ public class PatternParserTest {
 
 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
 		assertThat(((LiteralMatcherConstruct) compiled).value, is("a"));
-		assertThat(compiled.getDispatchMap().get(+'a'), instanceOf(EndMatcherConstruct.class));
-		assertThat(compiled.getElse(), nullValue());
+		// A literal's dispatchMap is deliberately empty -- what comes after the *whole* literal is
+		// an unconditional forward (elseDispatch), not something keyed by its own first character.
+		assertThat(compiled.getElse(), instanceOf(EndMatcherConstruct.class));
 	}
 
 	@Test
@@ -38,7 +39,42 @@ public class PatternParserTest {
 
 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
 		assertThat(((LiteralMatcherConstruct) compiled).value, is("ab"));
-		assertThat(compiled.getDispatchMap().get(+'a'), instanceOf(EndMatcherConstruct.class));
+		assertThat(compiled.getElse(), instanceOf(EndMatcherConstruct.class));
+	}
+
+	@Test
+	public void match_singleLetter_actuallyMatches() {
+		// Unlike the structural assertions above, this exercises match() end-to-end -- exactly what
+		// caught the elseDispatch-vs-dispatchMap bug the other two tests' structural checks missed.
+		MatcherConstruct compiled = compile("a");
+		Matcher m = newMatcher(compiled, "a");
+
+		assertThat(compiled.match(m, m.peek()), is(true));
+	}
+
+	@Test
+	public void match_multiLetterLiteral_actuallyMatches() {
+		MatcherConstruct compiled = compile("ab");
+		Matcher m = newMatcher(compiled, "ab");
+
+		assertThat(compiled.match(m, m.peek()), is(true));
+	}
+
+	@Test
+	public void match_literalFollowedByLiteral_actuallyMatches() {
+		// A Sequence of two distinct LiteralMatcherConstructs (not merged raw text) -- exercises
+		// the first literal's elseDispatch handing off correctly to the second.
+		MatcherConstruct compiled = compile("[a]b");
+		Matcher m = newMatcher(compiled, "ab");
+
+		assertThat(compiled.match(m, m.peek()), is(true));
+	}
+
+	private static Matcher newMatcher(MatcherConstruct compiled, String input) {
+		Matcher m = new Matcher(new Ll1Pattern(input, 0, compiled), input);
+		m.quantifiableCounts = new int[8];
+		m.captureGroups = new Matcher.Group[8];
+		return m;
 	}
 
 	@Test

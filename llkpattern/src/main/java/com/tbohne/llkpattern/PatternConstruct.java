@@ -77,31 +77,138 @@ abstract class PatternConstruct {
 
 	abstract void buildMatcher();
 
+	/** Converts a Guava RangeMap (arbitrary bound types) into a CodePointMap ({@code [min,max)}). */
+	static TreeCodePointMap<PatternConstruct> toCodePointMap(RangeMap<Integer, PatternConstruct> rangeMap) {
+		TreeCodePointMap<PatternConstruct> result = new TreeCodePointMap<>();
+		for (Entry<Range<Integer>, PatternConstruct> e : rangeMap.asMapOfRanges().entrySet()) {
+			Range<Integer> canon = e.getKey().canonical(DiscreteDomain.integers());
+			result.put(canon.lowerEndpoint(), canon.upperEndpoint(), e.getValue());
+		}
+		return result;
+	}
+
+	/**
+	 * Returns the first code point range present (with a different value) in both maps, or null
+	 * if none overlap. {@code CodePointMap.intersectionRejectingConflicts} would detect the same
+	 * thing, but throws immediately rather than letting us report which ranges/branches conflict.
+	 */
+	static @Nullable Entry<CodePointMap.Range, PatternConstruct> findFirstOverlap(
+			CodePointMap<PatternConstruct> merged, CodePointMap<PatternConstruct> branch) {
+		for (Entry<CodePointMap.Range, PatternConstruct> branchEntry : branch.entrySet()) {
+			for (Entry<CodePointMap.Range, PatternConstruct> mergedEntry : merged.entrySet()) {
+				int loMax = Math.min(branchEntry.getKey().max, mergedEntry.getKey().max);
+				int hiMin = Math.max(branchEntry.getKey().min, mergedEntry.getKey().min);
+				if (hiMin < loMax) {
+					return new CodePointMap.ImmutableEntry<>(
+							new CodePointMap.Range(hiMin, loMax), mergedEntry.getValue());
+				}
+			}
+		}
+		return null;
+	}
+
+	static TreeCodePointMap<PatternConstruct> mergeEntryMapRejectingAmbiguity(
+			String pattern, TreeCodePointMap<PatternConstruct> merged, PatternConstruct branch, String branchDescription) {
+		TreeCodePointMap<PatternConstruct> branchMap = toCodePointMap(branch.entryMap);
+		Entry<CodePointMap.Range, PatternConstruct> conflict = findFirstOverlap(merged, branchMap);
+		if (conflict != null) {
+			throw PatternSyntaxException.throwWithReferences(
+					pattern,
+					branch.startIndex,
+					branchDescription, " starting at index ", branch.startIndex,
+					" accepts character(s) ",
+					new PatternSyntaxException.CodePoint(conflict.getKey().min),
+					"-",
+					new PatternSyntaxException.CodePoint(conflict.getKey().max - 1),
+					", but a prior part of the same construct already claims those, which is not allowed");
+		}
+		return (TreeCodePointMap<PatternConstruct>) merged.union(branchMap);
+	}
+
+	/** Result of {@link #compileAndMergeCandidates}. */
+	static final class MergedEntries {
+		final TreeCodePointMap<PatternConstruct> ranges;
+		// Whichever candidate claimed "matches any other character" (at most one is allowed to).
+		final @Nullable PatternConstruct elseCandidate;
+
+		MergedEntries(TreeCodePointMap<PatternConstruct> ranges, @Nullable PatternConstruct elseCandidate) {
+			this.ranges = ranges;
+			this.elseCandidate = elseCandidate;
+		}
+
+		@Nullable PatternConstruct entryElse() {
+			return elseCandidate != null ? elseCandidate.entryElse : null;
+		}
+	}
+
+	/**
+	 * Compiles each of {@code candidates} against {@code compileTarget} (harmless/idempotent if a
+	 * candidate is already compiled -- e.g. {@code compileTarget} itself, when it's included as one
+	 * of the candidates), then merges their entry ranges, rejecting the first ambiguity: two
+	 * candidates whose entry ranges overlap, or two candidates that both accept "any other
+	 * character". Used both for plain alternation ({@code candidates} = a union's branches) and for
+	 * loop dispatch ({@code candidates} = a loop's body parts plus its own {@code next}, since
+	 * "keep looping" vs "exit" must be just as unambiguous as any other branch choice).
+	 */
+	static MergedEntries compileAndMergeCandidates(
+			String pattern, List<PatternConstruct> candidates, PatternConstruct compileTarget, String candidateNounPlural) {
+		TreeCodePointMap<PatternConstruct> merged = new TreeCodePointMap<>();
+		PatternConstruct elseCandidate = null;
+		for (int i = 0; i < candidates.size(); i++) {
+			PatternConstruct candidate = candidates.get(i);
+			candidate.compile(compileTarget);
+			if (candidate.entryElse != null) {
+				if (elseCandidate != null) {
+					throw PatternSyntaxException.throwWithReferences(
+							pattern,
+							candidate.startIndex,
+							candidateNounPlural, " starting at index ", candidate.startIndex,
+							" allows any character, but another ", candidateNounPlural,
+							" starting at index ", elseCandidate.startIndex,
+							" also allows any character, which is ambiguous");
+				}
+				elseCandidate = candidate;
+			}
+			merged = mergeEntryMapRejectingAmbiguity(pattern, merged, candidate, candidateNounPlural + " #" + (i + 1));
+		}
+		return new MergedEntries(merged, elseCandidate);
+	}
+
 	static abstract class QuantifiableConstruct extends PatternConstruct {
+		final String pattern;
 		int min = 1;
 		int max = 1;
 		int quantifiableIndex = -1;
 
-		@MonotonicNonNull MatcherConstruct endLoopMatcher;
-		RangeMap<Integer, PatternConstruct> endLoopExitMap = TreeRangeMap.create();
-		@MonotonicNonNull PatternConstruct endLoopExitElse;
-
-		QuantifiableConstruct(int startIndex) {
+		QuantifiableConstruct(String pattern, int startIndex) {
 			super(startIndex);
+			this.pattern = pattern;
 		}
 
-		QuantifiableConstruct(int startIndex, int endIndex) {
+		QuantifiableConstruct(String pattern, int startIndex, int endIndex) {
 			super(startIndex, endIndex);
+			this.pattern = pattern;
 		}
 
 		/** True for a "plain" {@code {1,1}} construct -- i.e. no real repetition/optionality. */
 		boolean isUnquantified() {
 			return min == 1 && max == 1;
 		}
+
+		/**
+		 * Builds the loop matcher graph (a {@code LoopDispatchMatcherConstruct}, see MatcherConstruct
+		 * and design.md) AND this construct's own {@code entryMap}/{@code entryElse}, for the
+		 * quantified ({@code !isUnquantified()}) case. Must be called from {@code buildEntryMap} (not
+		 * {@code buildMatcher}) -- the self-registering constructor needs to run, setting
+		 * {@code this.matcher}, before {@code body}'s own {@code compile()} calls, since they
+		 * dispatch back to {@code this} once they finish matching.
+		 */
+		void buildLoopEntryMapAndMatcher(List<PatternConstruct> body, PatternConstruct next) {
+			new LoopDispatchMatcherConstruct(this, body, next);
+		}
 	}
 
 	static final class QuantifiedUnion extends QuantifiableConstruct {
-		final String pattern;
 		final int parentFlags;
 
 		int captureConstructIndex = 0;
@@ -110,102 +217,93 @@ abstract class PatternConstruct {
 		boolean tempFlags = false;
 
 		QuantifiedUnion(String pattern, int startIndex, int parentFlags) {
-			super(startIndex);
-			this.pattern = pattern;
+			super(pattern, startIndex);
 			this.parentFlags = parentFlags;
+		}
+
+		private boolean isCapturing() {
+			return captureConstructIndex != -1;
 		}
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
-				// TODO(remaining_work.md "quantifier loop compilation"): a quantified group (e.g.
-				// `(a|b)*`, `(a|b)?`, `(a|b){2,3}`) needs a LoopMatcherConstruct/EndLoopMatcherConstruct
-				// pair and, for `min == 0`, this union's own entryMap must also fold in `next`'s entry
-				// set (entering zero times). That's also where the real compile-time cycle (this
-				// construct's body dispatching back to itself) is exercised -- see design.md.
-				throw new UnsupportedOperationException(
-						"TODO: quantified groups (a group followed by ?, *, +, or {n,m}) are not yet compiled");
+				if (isCapturing()) {
+					// TODO(remaining_work.md "capture in a loop"): a capturing AND quantified group
+					// (e.g. `(a)*`) needs the capture to re-fire every iteration (last iteration wins,
+					// per real regex semantics), which means BeginCapture must wrap loop-body re-entry
+					// (not just the construct's outer entry point) and the body's own "next" must route
+					// through EndCapture before looping back -- deliberately deferred; see design.md.
+					throw new UnsupportedOperationException(
+							"TODO: a capturing group that is also quantified (e.g. \"(a)*\") is not yet compiled");
+				}
+				buildLoopEntryMapAndMatcher(constructs, next);
+				return;
 			}
 
 			// Compile every branch (tail-to-front relative to this union: each branch's "next" is
-			// this union's own "next", since choosing a branch doesn't consume anything itself) and
-			// merge their entry ranges, rejecting any two branches that could both match the same
-			// next code point -- the core LL(1) restriction this whole library is built around.
-			TreeCodePointMap<PatternConstruct> merged = new TreeCodePointMap<>();
-			int elseBranchIndex = -1;
-			for (int i = 0; i < constructs.size(); i++) {
-				PatternConstruct construct = constructs.get(i);
-				construct.compile(next);
-
-				if (construct.entryElse != null) {
-					if (entryElse != null) {
-						PatternConstruct priorElse = constructs.get(elseBranchIndex);
-						throw PatternSyntaxException.throwWithReferences(
-								pattern,
-								construct.startIndex,
-								"union subpattern #", i + 1, " starting at index ", construct.startIndex,
-								" allows any character, but subpattern #", elseBranchIndex + 1,
-								" starting at index ", priorElse.startIndex,
-								" also allows any character, which is ambiguous");
-					}
-					entryElse = construct.entryElse;
-					elseBranchIndex = i;
-				}
-
-				TreeCodePointMap<PatternConstruct> branchMap = toCodePointMap(construct.entryMap);
-				Entry<CodePointMap.Range, PatternConstruct> conflict = findFirstOverlap(merged, branchMap);
-				if (conflict != null) {
-					throw PatternSyntaxException.throwWithReferences(
-							pattern,
-							construct.startIndex,
-							"union subpattern #", i + 1, " starting at index ", construct.startIndex,
-							" accepts character(s) ",
-							new PatternSyntaxException.CodePoint(conflict.getKey().min),
-							"-",
-							new PatternSyntaxException.CodePoint(conflict.getKey().max - 1),
-							", but a prior subpattern in the same union already claims those, which is not allowed");
-				}
-				merged = (TreeCodePointMap<PatternConstruct>) merged.union(branchMap);
+			// this union's own "next" -- or, for a capturing group, a marker that ends the capture
+			// before reaching the real next -- since choosing a branch doesn't itself consume
+			// anything) and merge their entry ranges, rejecting any two branches that could both
+			// match the same next code point -- the core LL(1) restriction this library is built on.
+			PatternConstruct compileTarget = next;
+			if (isCapturing()) {
+				compileTarget = new CaptureEndMarker(startIndex, captureConstructIndex, next);
+				// Branches read `owner.next.matcher` while building their own matcher (tail-to-front),
+				// so compileTarget must already be fully compiled by then -- unlike a normal `next`,
+				// nothing else ever calls compile() on a freshly-constructed marker for us.
+				compileTarget.compile(next);
 			}
-
-			for (Entry<CodePointMap.Range, PatternConstruct> e : merged.entrySet()) {
+			MergedEntries result = compileAndMergeCandidates(pattern, constructs, compileTarget, "union subpattern");
+			entryElse = result.entryElse();
+			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 				entryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
 			}
 		}
 
 		@Override
 		void buildMatcher() {
-			new DispatchMatcherConstruct(this);
+			if (!isUnquantified()) {
+				return; // matcher was already built by buildLoopEntryMapAndMatcher, above.
+			}
+			if (isCapturing()) {
+				MatcherConstruct dispatch = new DispatchMatcherConstruct(entryMap, entryElse);
+				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
+			} else {
+				new DispatchMatcherConstruct(this);
+			}
+		}
+	}
+
+	/**
+	 * A zero-width marker inserted as a capturing group's branches' "next", so that an
+	 * EndCaptureMatcherConstruct fires (recording the captured substring) right as the group's
+	 * content finishes matching, before control actually reaches whatever follows the group. Has
+	 * the same entry set as {@code realNext} -- inserting it must not change what characters are
+	 * considered ambiguous for the group's branches.
+	 */
+	static final class CaptureEndMarker extends PatternConstruct {
+		final int captureConstructIndex;
+		final PatternConstruct realNext;
+
+		CaptureEndMarker(int startIndex, int captureConstructIndex, PatternConstruct realNext) {
+			super(startIndex);
+			this.captureConstructIndex = captureConstructIndex;
+			this.realNext = realNext;
 		}
 
-		/** Converts a Guava RangeMap (arbitrary bound types) into a CodePointMap ({@code [min,max)}). */
-		private static TreeCodePointMap<PatternConstruct> toCodePointMap(RangeMap<Integer, PatternConstruct> rangeMap) {
-			TreeCodePointMap<PatternConstruct> result = new TreeCodePointMap<>();
-			for (Entry<Range<Integer>, PatternConstruct> e : rangeMap.asMapOfRanges().entrySet()) {
-				Range<Integer> canon = e.getKey().canonical(DiscreteDomain.integers());
-				result.put(canon.lowerEndpoint(), canon.upperEndpoint(), e.getValue());
-			}
-			return result;
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			// realNext is already compiled by the time any of this marker's callers need it -- it's
+			// the capturing group's own `next`, which (like any `next`) was compiled before the group
+			// itself, tail-to-front.
+			entryMap = realNext.entryMap;
+			entryElse = realNext.entryElse;
 		}
 
-		/**
-		 * Returns the first code point range present (with a different value) in both maps, or null
-		 * if none overlap. {@code CodePointMap.intersectionRejectingConflicts} would detect the same
-		 * thing, but throws immediately rather than letting us report which ranges/branches conflict.
-		 */
-		private static @Nullable Entry<CodePointMap.Range, PatternConstruct> findFirstOverlap(
-				CodePointMap<PatternConstruct> merged, CodePointMap<PatternConstruct> branch) {
-			for (Entry<CodePointMap.Range, PatternConstruct> branchEntry : branch.entrySet()) {
-				for (Entry<CodePointMap.Range, PatternConstruct> mergedEntry : merged.entrySet()) {
-					int loMax = Math.min(branchEntry.getKey().max, mergedEntry.getKey().max);
-					int hiMin = Math.max(branchEntry.getKey().min, mergedEntry.getKey().min);
-					if (hiMin < loMax) {
-						return new CodePointMap.ImmutableEntry<>(
-								new CodePointMap.Range(hiMin, loMax), mergedEntry.getValue());
-					}
-				}
-			}
-			return null;
+		@Override
+		void buildMatcher() {
+			new EndCaptureMatcherConstruct(this, captureConstructIndex, realNext.matcher);
 		}
 	}
 
@@ -329,19 +427,16 @@ abstract class PatternConstruct {
 	static final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
 		final ComplexCharacter delegate;
 
-		ComplexQuantifiedCharacter(int startIndex, ComplexCharacter delegate) {
-			super(startIndex, delegate.endIndex);
+		ComplexQuantifiedCharacter(String pattern, int startIndex, ComplexCharacter delegate) {
+			super(pattern, startIndex, delegate.endIndex);
 			this.delegate = delegate;
 		}
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
-				// TODO(remaining_work.md "quantifier loop compilation"): same gap as
-				// QuantifiedUnion's -- a quantified character class (`a*`, `a?`, `a{2,3}`, ...) needs
-				// a real loop, not just a pass-through.
-				throw new UnsupportedOperationException(
-						"TODO: quantified character classes (?, *, +, or {n,m} on a character or class) are not yet compiled");
+				buildLoopEntryMapAndMatcher(List.of(delegate), next);
+				return;
 			}
 			delegate.compile(next);
 			for (Range<Integer> range : delegate.ranges.asRanges()) {
@@ -351,6 +446,9 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildMatcher() {
+			if (!isUnquantified()) {
+				return; // matcher was already built by buildLoopEntryMapAndMatcher, above.
+			}
 			// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
 			// delegate ComplexCharacter (already compiled by buildEntryMap, above).
 			matcher = delegate.matcher;
@@ -392,12 +490,21 @@ abstract class PatternConstruct {
 
 		EndConstruct(int startIndex) {
 			super(startIndex);
+			// Matcher#peek()/consume*() return -1 (never a real code point) once input is exhausted --
+			// see Matcher.java. Registering it here is what lets a loop's "should I exit" dispatch
+			// (built by merging its body's entry ranges with `next`'s, same as any other branch
+			// choice) actually route "there's no more input" to the exit path; without this,
+			// `entryMap` stays empty and end-of-input has nowhere to dispatch to at all.
+			entryMap.put(Range.singleton(-1), this);
 			new EndMatcherConstruct(this);
 		}
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			// An EndConstruct has no "next" -- it's the sentinel marking the end of the whole pattern.
+			// entryMap is populated in the constructor (compile() never reaches here -- its `matcher
+			// != null` guard short-circuits immediately, since the constructor above also sets
+			// `matcher`), but is written this way for anyone reading buildEntryMap for its own sake.
 		}
 
 		@Override

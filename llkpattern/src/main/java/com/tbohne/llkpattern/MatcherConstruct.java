@@ -8,6 +8,8 @@ import com.tbohne.llkpattern.Matcher.Group;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
 import com.tbohne.llkpattern.PatternConstruct.QuantifiedUnion;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -49,6 +51,15 @@ abstract class MatcherConstruct {
 		owner.matcher = this;
 	}
 
+	/**
+	 * For internal/synthetic nodes that aren't the externally-visible entry point of any single
+	 * PatternConstruct -- e.g. {@link LoopMatcherConstruct}/{@link EndLoopMatcherConstruct} (both
+	 * only ever reached via a {@link LoopDispatchMatcherConstruct}'s own dispatch map), or the
+	 * plain alternation dispatch wrapped inside a capturing group's Begin/EndCapture pair. Skips
+	 * self-registration since there's no single owning construct to register into.
+	 */
+	MatcherConstruct() {}
+
 	abstract boolean match(Matcher matcher, int peeked);
 
 	@Nullable MatcherConstruct getNext(Matcher matcher, int peeked) {
@@ -89,7 +100,15 @@ abstract class MatcherConstruct {
 		LiteralMatcherConstruct(PatternConstruct owner, String value) {
 			super(owner);
 			this.value = value;
-			dispatchMap.put(Range.singleton(value.codePointAt(0)), owner.next.matcher);
+			// dispatchMap deliberately stays empty: it's only ever consulted (via getNext(), from
+			// match() below) *after* the whole literal has matched, at which point every one of this
+			// literal's own characters leads to the exact same place -- `owner.next.matcher` -- so
+			// this is an unconditional forward, not a lookup keyed by the just-consumed character.
+			// (A dispatchMap entry keyed by this literal's own first character was here previously,
+			// for no-longer-obvious reasons; it was never actually correct, since match() below looks
+			// up whatever character comes *after* the literal, not the literal's first character --
+			// it just went uncaught because no test had exercised match() end-to-end until now.)
+			elseDispatch = owner.next.matcher;
 		}
 
 		boolean match(Matcher matcher, int peeked) {
@@ -114,12 +133,25 @@ abstract class MatcherConstruct {
 	 * picking a branch doesn't consume a character, the chosen branch's own matcher does.
 	 */
 	static final class DispatchMatcherConstruct extends MatcherConstruct {
+		/** Self-registering: this becomes {@code owner.matcher} (the plain, non-capturing case). */
 		DispatchMatcherConstruct(QuantifiedUnion owner) {
 			super(owner);
-			for (Map.Entry<Range<Integer>, PatternConstruct> e : owner.entryMap.asMapOfRanges().entrySet()) {
+			populate(owner.entryMap, owner.entryElse);
+		}
+
+		/**
+		 * Internal (non-self-registering) variant, used when a capturing union's actual entry point
+		 * is a {@link BeginCaptureMatcherConstruct} that wraps this node instead.
+		 */
+		DispatchMatcherConstruct(RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
+			populate(entryMap, entryElse);
+		}
+
+		private void populate(RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
+			for (Map.Entry<Range<Integer>, PatternConstruct> e : entryMap.asMapOfRanges().entrySet()) {
 				dispatchMap.put(e.getKey(), e.getValue().matcher);
 			}
-			elseDispatch = owner.entryElse != null ? owner.entryElse.matcher : null;
+			elseDispatch = entryElse != null ? entryElse.matcher : null;
 		}
 
 		@Override
@@ -172,12 +204,17 @@ abstract class MatcherConstruct {
 		}
 	}
 
+	/**
+	 * Entered every time a loop's body is (re-)attempted -- i.e. reached only via a {@link
+	 * LoopDispatchMatcherConstruct}'s dispatch map, never self-registered into a PatternConstruct.
+	 * Enforces the quantifier's upper bound: if the body would otherwise match again but {@code
+	 * max} repetitions are already used up, the overall match must fail here rather than continue.
+	 */
 	static final class LoopMatcherConstruct extends MatcherConstruct {
 		final int quantifiableIndex;
 		final int max;
 
-		LoopMatcherConstruct(PatternConstruct owner, int quantifiableIndex, int max) {
-			super(owner);
+		LoopMatcherConstruct(int quantifiableIndex, int max) {
 			this.quantifiableIndex = quantifiableIndex;
 			this.max = max;
 		}
@@ -193,12 +230,18 @@ abstract class MatcherConstruct {
 		}
 	}
 
+	/**
+	 * Entered when a {@link LoopDispatchMatcherConstruct} decides the next character means "done
+	 * looping" -- reached only via that node's dispatch map, never self-registered. Enforces the
+	 * quantifier's lower bound: if fewer than {@code min} repetitions have happened, the overall
+	 * match must fail here even though the next character looks like a valid continuation of
+	 * whatever follows the loop.
+	 */
 	static final class EndLoopMatcherConstruct extends MatcherConstruct {
 		final int quantifiableIndex;
 		final int min;
 
-		EndLoopMatcherConstruct(PatternConstruct owner, int quantifiableIndex, int min) {
-			super(owner);
+		EndLoopMatcherConstruct(int quantifiableIndex, int min) {
 			this.quantifiableIndex = quantifiableIndex;
 			this.min = min;
 		}
@@ -214,26 +257,79 @@ abstract class MatcherConstruct {
 		}
 	}
 
+	/**
+	 * The externally-visible entry point (and re-check point after each iteration) for a
+	 * quantified construct ({@code ?}, {@code *}, {@code +}, or {@code {n,m}}). See design.md's
+	 * "compile() algorithm" section. This one dispatch map serves both the very first attempt and
+	 * every subsequent re-check (the body's own compiled "next" is {@code owner} itself, forming
+	 * the cycle this class's self-registering superclass constructor exists to break): for a
+	 * character that could continue the loop, it routes through a {@link LoopMatcherConstruct}
+	 * (which enforces {@code max} then dispatches to whichever body part matched); for a character
+	 * that matches what follows the loop, it routes through an {@link EndLoopMatcherConstruct}
+	 * (which enforces {@code min} then dispatches to {@code next}). The runtime min/max checks --
+	 * not two different static dispatch maps -- are what make one map correct for every bound.
+	 */
+	static final class LoopDispatchMatcherConstruct extends MatcherConstruct {
+		LoopDispatchMatcherConstruct(
+				PatternConstruct.QuantifiableConstruct owner, List<PatternConstruct> body, PatternConstruct next) {
+			super(owner); // Self-registers FIRST -- see the class doc above and design.md.
+
+			List<PatternConstruct> candidates = new ArrayList<>(body);
+			candidates.add(next);
+			PatternConstruct.MergedEntries result =
+					PatternConstruct.compileAndMergeCandidates(owner.pattern, candidates, owner, "loop part");
+
+			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(owner.quantifiableIndex, owner.max);
+			EndLoopMatcherConstruct endLoopNode = new EndLoopMatcherConstruct(owner.quantifiableIndex, owner.min);
+			endLoopNode.elseDispatch = next.matcher;
+
+			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
+				Range<Integer> range = Range.closedOpen(e.getKey().min, e.getKey().max);
+				boolean isExit = e.getValue() == next;
+				dispatchMap.put(range, isExit ? endLoopNode : loopNode);
+				if (!isExit) {
+					loopNode.dispatchMap.put(range, e.getValue().matcher);
+				}
+			}
+			if (result.elseCandidate != null) {
+				elseDispatch = (result.elseCandidate == next) ? endLoopNode : loopNode;
+				if (result.elseCandidate != next) {
+					loopNode.elseDispatch = result.elseCandidate.matcher;
+				}
+			}
+
+			// This construct's own entry set, as seen by whatever ambiguity check an ancestor (e.g.
+			// an enclosing union or loop) runs on it: always the body's ranges; also `next`'s ranges
+			// (entering zero times is valid) when min == 0.
+			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
+				if (e.getValue() != next || owner.min == 0) {
+					owner.entryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
+				}
+			}
+			if (result.elseCandidate != null && (result.elseCandidate != next || owner.min == 0)) {
+				owner.entryElse = result.elseCandidate.entryElse;
+			}
+		}
+
+		@Override
+		boolean match(Matcher matcher, int peeked) {
+			MatcherConstruct next = getNext(matcher, peeked);
+			return next != null && next.match(matcher, peeked);
+		}
+	}
+
 	static final class BeginCaptureMatcherConstruct extends MatcherConstruct {
 		final int captureConstructIndex;
-		final @Nullable String captureName;
 
-		BeginCaptureMatcherConstruct(PatternConstruct owner, int captureConstructIndex) {
+		BeginCaptureMatcherConstruct(PatternConstruct owner, int captureConstructIndex, MatcherConstruct target) {
 			super(owner);
 			this.captureConstructIndex = captureConstructIndex;
-			this.captureName = null;
+			this.elseDispatch = target;
 		}
 
-		BeginCaptureMatcherConstruct(PatternConstruct owner, @NonNull String captureName) {
-			super(owner);
-			this.captureConstructIndex = -1;
-			this.captureName = captureName;
-		}
-
+		@Override
 		boolean match(Matcher matcher, int peeked) {
-			Group group = new Group(matcher.pos);
-			matcher.groups.add(group);
-			matcher.currentCaptureGroupIdx[captureConstructIndex] =  matcher.groups.size();
+			matcher.captureGroups[captureConstructIndex] = new Group(matcher.pos);
 			MatcherConstruct next = getNext(matcher, peeked);
 			return next != null && next.match(matcher, peeked);
 		}
@@ -242,16 +338,16 @@ abstract class MatcherConstruct {
 	static final class EndCaptureMatcherConstruct extends MatcherConstruct {
 		final int captureConstructIndex;
 
-		EndCaptureMatcherConstruct(PatternConstruct owner, int captureConstructIndex) {
+		EndCaptureMatcherConstruct(PatternConstruct.CaptureEndMarker owner, int captureConstructIndex, MatcherConstruct target) {
 			super(owner);
 			this.captureConstructIndex = captureConstructIndex;
+			this.elseDispatch = target;
 		}
 
+		@Override
 		boolean match(Matcher matcher, int peeked) {
-			int groupIdx = matcher.currentCaptureGroupIdx[captureConstructIndex];
-			Group group = matcher.groups.get(groupIdx);
+			Group group = matcher.captureGroups[captureConstructIndex];
 			group.result = matcher.input.substring(group.inputStartIndex, matcher.pos);
-			matcher.currentCaptureGroupIdx[captureConstructIndex] = -1;
 			MatcherConstruct next = getNext(matcher, peeked);
 			return next != null && next.match(matcher, peeked);
 		}

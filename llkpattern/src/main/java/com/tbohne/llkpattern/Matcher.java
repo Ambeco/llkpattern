@@ -1,10 +1,8 @@
 package com.tbohne.llkpattern;
 
-import java.util.HashMap;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
-import java.util.ArrayList;
-import java.util.Map;
 import java.util.regex.MatchResult;
 
 /**
@@ -36,9 +34,13 @@ public class Matcher implements MatchResult {
 	int regionStart = 0;
 	int pos = 0;
 	int[] quantifiableCounts = new int[]{};
-	int[] currentCaptureGroupIdx = new int[]{};
-	ArrayList<Group> groups = new ArrayList<>();
-  Map<String, Group> groupByName = new HashMap<>();
+	// One slot per capture-group construct in the pattern, indexed by captureConstructIndex.
+	// BeginCaptureMatcherConstruct overwrites the slot on entry; since there's no recursion or
+	// backtracking in this engine, the same construct can never be "open" twice at once, so a flat
+	// array (not an actual stack) suffices -- re-entering a capture inside a loop naturally
+	// implements regex's "last iteration wins" semantics by simply overwriting the previous Group,
+	// and a slot a loop never entered stays null (unset), also matching regex semantics.
+	@Nullable Group[] captureGroups = new Group[]{};
 
 	Matcher(Ll1Pattern pattern, String input) {
 		this.pattern = pattern;
@@ -191,8 +193,11 @@ public class Matcher implements MatchResult {
 		throw new UnsupportedOperationException("TODO: implement Matcher#useTransparentBounds");
 	}
 
+	// -1 is used throughout as the "no more input" sentinel passed to MatcherConstruct#match /
+	// #getNext: it can never equal a real code point, so it simply fails to match any dispatchMap
+	// range, which is exactly what should happen once the input is exhausted.
 	int peek() {
-		return input.codePointAt(pos);
+		return pos < input.length() ? input.codePointAt(pos) : -1;
 	}
 
 	boolean consumeLiteral(String value) {
@@ -207,14 +212,17 @@ public class Matcher implements MatchResult {
 	}
 
 	int consume1CodePoint() {
-		char codeunit = input.charAt(pos);
-		pos += (codeunit<=0xDFF||codeunit>=0xE000 ? 1 : 2);
-		return input.codePointAt(pos);
+		// The previous width computation (`codeunit <= 0xDFF || codeunit >= 0xE000 ? 1 : 2`) used
+		// the wrong bounds entirely -- 0xDFF isn't near the surrogate range (0xD800-0xDFFF) -- and
+		// neither version guarded against `pos` reaching the end of input, which crashed on the
+		// very common case of consuming the last character of a match.
+		pos += Character.charCount(input.codePointAt(pos));
+		return pos < input.length() ? input.codePointAt(pos) : -1;
 	}
 
 	int consumeCodeUnits(int width) {
 		pos += width;
-		return input.codePointAt(pos);
+		return pos < input.length() ? input.codePointAt(pos) : -1;
 	}
 
 	int beginCapture(String name) {

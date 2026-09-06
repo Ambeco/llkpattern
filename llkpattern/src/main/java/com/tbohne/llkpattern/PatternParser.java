@@ -113,7 +113,12 @@ final class PatternParser {
   }
 
   PatternConstruct parse() {
-    QuantifiedUnion root = parseUnion(new QuantifiedUnion(pattern, 0, flags));
+    QuantifiedUnion root = new QuantifiedUnion(pattern, 0, flags);
+    // The whole pattern isn't a capturing group -- only parseGroup() should assign a real
+    // captureConstructIndex. Without this, root's default (0, same as an unassigned real group)
+    // was misread as "this is capturing group 0" by anything checking captureConstructIndex != -1.
+    root.captureConstructIndex = -1;
+    root = parseUnion(root);
     if (index < pattern.length()) {
       // This can trigger if the user has one too many ')'
       throw throwUnexpectedChar("Too many \")\". Check that the () parenthesis match");
@@ -701,12 +706,16 @@ final class PatternParser {
   }
 
   private ComplexQuantifiedCharacter parseQuantifiable(ComplexCharacter construct) {
-    return parseQuantifiable(new ComplexQuantifiedCharacter(index, construct));
+    return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, index, construct));
   }
 
   private <T extends QuantifiableConstruct> T parseQuantifiable(T construct) {
     if (peek == '?') {
       construct.min = 0;
+      // A bare "?" still needs a counter slot: even with max == 1, the compiled loop dispatch
+      // must be able to tell "haven't matched yet" from "already matched once" to reject a second
+      // attempt (this was previously missing -- every other quantifier branch below assigns one).
+      construct.quantifiableIndex = quantifiableIndex++;
       advance(1);
       construct.endIndex = index;
     } else if (peek == '*') {
@@ -750,7 +759,7 @@ final class PatternParser {
           construct.max = Integer.MAX_VALUE;
         } else {
           try {
-            construct.min = Integer.parseInt(pattern.substring(index, end));
+            construct.max = Integer.parseInt(pattern.substring(index, end));
           } catch (NumberFormatException e) {
             throw throwUnexpectedChar(
                 "second parameter of explicit quantifier '{' must be less than ",

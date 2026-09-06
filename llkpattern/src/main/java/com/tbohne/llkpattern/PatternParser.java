@@ -425,11 +425,16 @@ final class PatternParser {
           }
         case '-':
           complex.ranges.add(Range.singleton(+'-'));
+          advance(1);
           break;
         case '\\':
           int eCodePoint = tryParseSingleCharEscape();
           if (eCodePoint != -1) {
-            complex.ranges.add(Range.singleton(eCodePoint));
+            if (peek == '-') {
+              parseMaybeRangePredicate(complex, eCodePoint);
+            } else {
+              complex.ranges.add(Range.singleton(eCodePoint));
+            }
           } else {
             parseComplexEscape(complex);
           }

@@ -1,26 +1,41 @@
 # Remaining Work
 
-Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) has 4 known-failing tests (see "URGENT" below) out of 1203 total (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
+Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1203 tests, 0 failing, 561 skipped (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
 
-## URGENT: newly-discovered engine bugs (found by the scraped-corpus harness, 2026-09-06)
+## FIXED (2026-09-06): the `PatternParser` hang on octal/`\x{...}` escapes in a `[...]` range
 
-- [ ] **`Ll1Pattern` appears to hang (not throw) on at least 4 corpus rows**, all involving octal
-      or `\x{...}` hex escapes inside a character-class range:
-  - `[\042-\044]+` vs input `"ぃ"` (`OpenJdkBmpCorpusTest`)
-  - `[\x{d800}-\x{dbff}\x{dc00}-\x{dfff}]` vs `"x"` and vs `"?"` (`OpenJdkSupplementaryCorpusTest`)
-  - `[\x{dc00}-\x{dfff}]` vs `"?"` (`OpenJdkSupplementaryCorpusTest`)
+Root cause was two bugs in `PatternParser.parseComplexCharacter()`'s per-character `switch`:
 
-  These currently show as real, failing `llkMatchesGolden` test failures (>2000ms timeout; see
-  `ScrapedCorpusTestBase`) -- deliberately left failing/red rather than silenced, since a hang is
-  a correctness bug, not a mismatched golden value. **Oddity worth investigating alongside the
-  hang itself**: `CorpusGenerator`'s own generation-time probe (100ms timeout) did NOT catch these
-  as pathological for the BMP row -- it recorded a fast (<100ms) `RuntimeException` for
-  `[\042-\044]+` vs `"ぃ"`, but re-running the *exact same* pattern/input during the real test
-  timed out at 2000ms. That's either a flake in the generation run, or genuine nondeterminism in
-  `Ll1Pattern` for this pattern shape (e.g. depending on JIT warmup, thread, or class-init order)
-  -- if it's the latter, that's a second bug on top of the hang itself. Start here: minimal
-  reproduction of `[\042-\044]+` against a single character, single-threaded, with a debugger/trace
-  on the compiled `MatcherConstruct` graph to see which node is looping.
+1. `case '\\':` — when `tryParseSingleCharEscape()` successfully parsed an escape (octal `\0nn`,
+   `\xhh`, `\x{h...h}`, `\uhhhh`), the result was always added as a lone `Range.singleton`, never
+   checking for a following `-` to start a range (unlike the `default:` case, which already did
+   this for unescaped characters). So in e.g. `[\042-\044]`, the `-` was left completely unconsumed
+   after `\042`.
+2. `case '-':` never called `advance(1)` and had no `break`, so on the *next* loop iteration that
+   leftover `-` hit `case '-':` again, which added a literal `-` to the range set but still didn't
+   advance `index` — spinning on the same character forever. (It also had no `break`, silently
+   falling through into `case '\\':`'s body on every hit, though the missing `advance` was the
+   actual hang.)
+
+Fixed by making `case '\\':` call `parseMaybeRangePredicate()` when an escape is followed by `-`
+(mirroring `default:`), and adding the missing `advance(1)` to `case '-':`. See
+[PatternParser.java:426](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternParser.java:426).
+
+After the fix, the 4 previously-hanging golden rows (which had been auto-tagged
+`PATHOLOGICAL_INPUT_SIMPLIFIED` with a stale `RuntimeException` expectation from when generation
+also hung) were regenerated against their original un-shrunk input: 2 now `AGREES`, and 2 turned up
+a **new, real** `UNEXPECTED` divergence — see the next item.
+
+- [ ] **NEW (found while fixing the hang above): llk matches a lone low surrogate against
+      `java.util.regex`'s `NOMATCH`** for patterns whose character-class range covers only the low
+      (`\x{dc00}-\x{dfff}`) or the split low/high surrogate pair, e.g. `[\x{dc00}-\x{dfff}]` and
+      `[\x{d800}-\x{dbff}\x{dc00}-\x{dfff}]`, both vs input `"?"` (`OpenJdkSupplementaryCorpusTest`
+      golden rows). `java.util.regex` treats a lone surrogate code *unit* input as not in the range
+      (it's operating on UTF-16 code units, not code points, for a range expressed via `\x{...}`
+      code-point escapes outside the BMP... or something adjacent to that) while llk matches it.
+      Needs investigation into how `ComplexCharacter`/`CodePointMap` map surrogate code units vs.
+      code points for ranges specified with 5-digit `\x{...}` escapes. Not a hang, not urgent, but
+      newly discovered and not yet understood.
 - [ ] **Character-class intersection (`&&`) looks entirely broken**: 24/222 BMP rows and 35/339
       supplementary rows are tagged `UNEXPECTED` in the golden files specifically for `&&`
       patterns (e.g. `[あ-い&&[ぅ-ぇ]]`, `[あ-ぎ&&[^あ-い]]`) -- llk appears to ignore the
@@ -151,11 +166,10 @@ failure instead of a hung suite.
 `openjdk_supplementary.tsv`, 339 rows; regenerate via the `generateCorpus` command above after any
 scraping/unescaping/engine change):
 
-- BMP: 65 AGREES, 132 UNIMPLEMENTED (auto-tagged), 24 UNEXPECTED (auto-tagged) -- one row
-  pathological-input-simplified.
-- Supplementary: 136 AGREES, 164 UNIMPLEMENTED (auto-tagged), 35 UNEXPECTED (auto-tagged).
-- 4 rows currently fail `llkMatchesGolden` outright (a hang, not a value mismatch) -- see "URGENT"
-  at the top of this file.
+- BMP: 66 AGREES, 132 UNIMPLEMENTED (auto-tagged), 24 UNEXPECTED (auto-tagged).
+- Supplementary: 137 AGREES, 164 UNIMPLEMENTED (auto-tagged), 37 UNEXPECTED (auto-tagged).
+- The 4 rows that used to hang `llkMatchesGolden` outright no longer do -- see "FIXED (2026-09-06)"
+  at the top of this file (2 now AGREES, 2 turned into a new real UNEXPECTED surrogate-range bug).
 - The large `UNIMPLEMENTED`/`UNEXPECTED` counts are **not yet human-reviewed** -- per
   `CorpusGenerator`'s javadoc, "UNIMPLEMENTED" really just means "llk didn't run cleanly" (could
   be a correct LL(1)-ambiguity rejection, not a missing feature) and needs retagging as

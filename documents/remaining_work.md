@@ -266,7 +266,28 @@ scraping/unescaping/engine change):
 - [ ] `PatternConstruct.compile()` is typed `@Nullable MatcherConstruct` but, now that every construct type actually builds a matcher, likely always returns non-null in practice — worth dropping the `@Nullable` (and fixing `Ll1Pattern.compile()`'s unchecked-nullable assignment).
 - [ ] `PatternSyntaxException.Reference` is constructed in a couple of places (e.g. the old, since-rewritten ambiguity-detection attempt) but was never actually handled in `PatternSyntaxException.throwWithReferences` — it silently falls through to `Object.toString()` (`Reference@<hashcode>`). Either implement it (render the referenced snippet, as `CodePoint`/`CodePointReference` do) or remove it if `CodePoint`-based messages turn out to be sufficient. Current loop/union ambiguity messages avoid it, using plain indices/`CodePoint` instead.
 - [ ] Migrate `ComplexCharacter`'s direct Guava `RangeSet<Integer>` usage onto `CodePointMap`, or decide it should stay separate (`ComplexCharacter` represents a single character class's ranges, which is a slightly different job than `CodePointMap`'s "ranges to values"; worth a deliberate decision rather than reflexive migration).
-- [ ] Eventually replace `TreeCodePointMap`'s Guava `TreeRangeMap` delegation with a more specialized/optimized code-point range structure — explicitly called out by the project owner as a later step, not needed for a first working version. The `CodePointMap` interface exists specifically so this swap doesn't require touching callers.
+- [ ] Eventually replace `TreeCodePointMap`'s Guava `TreeRangeMap` delegation with a more specialized/optimized code-point range structure — explicitly called out by the project owner as a later step, not needed for a first working version. The `CodePointMap` interface exists specifically so this swap doesn't require touching callers. Design sketch from the project owner (2026-09-06):
+  - Two parallel arrays: `int[] codePointKeys` and `V[] values`. Each `codePointKeys` entry is a
+    bitfield -- high 21 bits the range's min code point, low 11 bits the count of *additional*
+    code points after `min` that map to the same value (i.e. the range is `[min, min+count]`).
+    `codePointKeys` is sorted as if unsigned. Lookup: binary- or linear-search for the last key
+    `<= codePoint`, subtract that key's `min` from the input code point, and check the result is
+    `<= count` (i.e. within the range) -- on a hit, return the `values` entry at the same index.
+  - Immutable map type plus a separate mutable builder, same shape as `TreeCodePointMap`'s
+    existing immutable/builder split.
+  - Expected win: dramatically less memory than `TreeRangeMap`-backed `TreeCodePointMap`
+    (no per-entry object/node overhead, two flat arrays), which should also mean better CPU-cache
+    behavior during matching.
+  - **Followup experiment** (once the above works): shrink the range field to 10 bits and use the
+    freed 11th bit as a mask-vs-range flag. When set, the 10 "range" bits are instead a bitmask of
+    which of the 10 code points *after* `min` also map to this value (not required to be
+    contiguous) -- lookup then has to branch on the flag and, on a mask hit, may need to check up
+    to 11 candidate keys in a row (since a mask entry no longer implies contiguous coverage the
+    way a range entry does), so it trades lookup speed for density. Good fit for
+    alternating-but-not-contiguous data (e.g. `isLowerCase` over `0x100`-`0x137`, which alternates
+    upper/lower every code point and would otherwise need one range entry per code point). Also
+    worth trying a `long[]` variant with 42 range/mask bits instead of `int[]`'s 11, trading larger
+    per-entry size for fewer wasted bits when ranges/gaps are long.
 - [ ] `CodePointMap.ComplementCodePointMap` is only partially implemented (`entrySet`/`intersection`/`intersectionRejectingConflicts` throw `UnsupportedOperationException`) — fill in once there's a concrete caller/use case driving what's actually needed (`.` in a branching context is the likely first caller).
 - [ ] The `PatternConstruct.findFirstOverlap` ambiguity check is an O(candidates × ranges) manual scan rather than using `CodePointMap.intersectionRejectingConflicts` directly, because the latter's exception doesn't carry which range/candidate conflicted. Fine for realistic pattern sizes; revisit only if it matters in practice.
 

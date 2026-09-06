@@ -1,6 +1,88 @@
 # Remaining Work
 
-Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) compiles and passes: 70 tests, 0 skipped.
+Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) has 4 known-failing tests (see "URGENT" below) out of 1203 total (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
+
+## URGENT: newly-discovered engine bugs (found by the scraped-corpus harness, 2026-09-06)
+
+- [ ] **`Ll1Pattern` appears to hang (not throw) on at least 4 corpus rows**, all involving octal
+      or `\x{...}` hex escapes inside a character-class range:
+  - `[\042-\044]+` vs input `"ぃ"` (`OpenJdkBmpCorpusTest`)
+  - `[\x{d800}-\x{dbff}\x{dc00}-\x{dfff}]` vs `"x"` and vs `"?"` (`OpenJdkSupplementaryCorpusTest`)
+  - `[\x{dc00}-\x{dfff}]` vs `"?"` (`OpenJdkSupplementaryCorpusTest`)
+
+  These currently show as real, failing `llkMatchesGolden` test failures (>2000ms timeout; see
+  `ScrapedCorpusTestBase`) -- deliberately left failing/red rather than silenced, since a hang is
+  a correctness bug, not a mismatched golden value. **Oddity worth investigating alongside the
+  hang itself**: `CorpusGenerator`'s own generation-time probe (100ms timeout) did NOT catch these
+  as pathological for the BMP row -- it recorded a fast (<100ms) `RuntimeException` for
+  `[\042-\044]+` vs `"ぃ"`, but re-running the *exact same* pattern/input during the real test
+  timed out at 2000ms. That's either a flake in the generation run, or genuine nondeterminism in
+  `Ll1Pattern` for this pattern shape (e.g. depending on JIT warmup, thread, or class-init order)
+  -- if it's the latter, that's a second bug on top of the hang itself. Start here: minimal
+  reproduction of `[\042-\044]+` against a single character, single-threaded, with a debugger/trace
+  on the compiled `MatcherConstruct` graph to see which node is looping.
+- [ ] **Character-class intersection (`&&`) looks entirely broken**: 24/222 BMP rows and 35/339
+      supplementary rows are tagged `UNEXPECTED` in the golden files specifically for `&&`
+      patterns (e.g. `[あ-い&&[ぅ-ぇ]]`, `[あ-ぎ&&[^あ-い]]`) -- llk appears to ignore the
+      intersection and just match the first operand's range, including when the intersection
+      should have been empty. See `llkpattern/src/test/resources/golden/openjdk_bmp.tsv` and
+      `openjdk_supplementary.tsv`, filter for `status` starting with `UNEXPECTED` and pattern
+      containing `&&`, for the full list of cases. This overlaps directly with the "HIGHEST
+      PRIORITY" character-class-intersection coverage item below -- likely the same root cause
+      (`PatternConstruct.ComplexCharacter`'s intersection handling, or its compile step) across
+      both.
+
+## HIGHEST PRIORITY
+
+- [ ] **Comprehensive parser/compiler/matcher test coverage for every already-supported (or
+      believed-supported) piece of grammar** (requested by the project owner, 2026-09-06). Existing
+      test coverage is concentrated on structural cases (literals, sequences, plain alternation,
+      quantifier loops, capture groups) — escapes and character-class machinery are comparatively
+      untested, and this session found real, previously-latent bugs in exactly that untested area
+      (`NamedCharClass`'s static initializer: 19 spurious empty-range entries in generated
+      `UnicodePredicates.java`, plus three `ImmutableRangeSet.Builder`-overlap crashes fixed via a
+      new `union()` helper — see the "Done" section below). Nothing else in the codebase exercises
+      any of these escapes, so more bugs of the same shape should be assumed present until tests
+      say otherwise. Needed coverage, one test (or small test group) per bullet, covering parse,
+      compile, and actual `match()`/`matches()`/`find()` behavior (not just "doesn't throw" —
+      see notes.md's standing lesson that structural-only tests miss real bugs):
+  - [ ] Escapes: `\\` (literal backslash), octal `\0n`/`\0nn`/`\0mnn`, hex (`\xhh`, `\uhhhh`,
+        `\x{h...h}`), `\t`, `\n`, `\r`, `\f`, `\a` (alert/bell), `\e` (escape), `\cX` (control
+        chars).
+  - [ ] Character classes: `[abc]`, negated `[^abc]`, ranges `[a-z]`, unions `[a-c[p-z]]`,
+        intersections `[a-z&&[aeiou]]`, intersections-with-negation `[a-z&&[^aeiou]]`, and
+        intersections with a negated range operand specifically (distinguish "negate the whole
+        intersection" from "one operand of the intersection is itself negated" — these are easy
+        to conflate and parse identically by accident).
+  - [ ] Predefined classes: `.`, `\d`/`\D`, `\h`/`\H`, `\s`/`\S`, `\v`/`\V`, `\w`/`\W`.
+  - [ ] All 13 POSIX classes (confirmed exactly 13, matching `NamedCharClass.java`'s `POSIX`-source
+        entries): `Lower`, `Upper`, `ASCII`, `Alpha`, `Digit`, `Alnum`, `Punct`, `Graph`, `Print`,
+        `Blank`, `Cntrl`, `XDigit`, `Space`.
+  - [ ] `java.lang.Character`-method-backed classes (`Source.Java` entries in `NamedCharClass.java`
+        — there are well over a dozen, not just 4; enumerate directly from that file rather than
+        from memory, since it's the authoritative list and may grow).
+  - [ ] Unicode scripts (`\p{IsScript}`/`\p{script=Script}`), blocks (`\p{InBlock}`/
+        `\p{block=Block}`), general categories (`\p{Lu}`, `\p{Sc}` -- Oracle's docs list category
+        codes without spelling out what each one means; `Sc` = Symbol/currency -- and every other
+        two-letter category), and binary properties (`\p{IsAlphabetic}` etc.).
+  - [ ] Negation of any `\p{...}` via `\P{...}`.
+  - [ ] Unicode-qualified class names used *inside* a character class (e.g. `[\p{L}&&[^\p{Lu}]]`).
+  - [ ] `\R` (any Unicode linebreak sequence).
+  - [ ] Quantifiers `?`, `*`, `+`, `{n}`, `{n,}`, `{n,m}` -- each one both alone and with a
+        trailing reluctant `?` and a trailing possessive `+` (parser currently accepts and no-ops
+        both per design.md; confirm that's what actually happens end-to-end, not just at parse
+        time).
+  - [ ] Named capture groups (`(?<name>...)`), non-capturing groups (`(?:...)`).
+  - [ ] Inline flag toggles (`(?i)`, `(?i:...)`, etc.).
+
+## Also remember for later (currently-unimplemented/deferred features)
+
+- [ ] Once implemented, add the same depth of test coverage for: backreferences `\n` and
+      `\k<name>` (see `BackReferenceMatcherConstruct`, currently a stub -- also flagged in
+      design.md as "not actually context-free," may not fit the LL(1) model at all), quotation
+      (`\Q...\E`), positive/negative lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind
+      (`(?<=...)`/`(?<!...)`) -- note lookahead/lookbehind are currently rejected outright at
+      parse time per design.md, and independent/atomic non-capturing groups (`(?>X)`).
 
 ## Done
 
@@ -13,6 +95,90 @@ Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a 
 - [x] Found and fixed **seven** real, previously-latent bugs while building tests against the above (all pre-existing, not introduced by this work) — see the [2947d91](../.)/[2728911](../.) commit messages for full detail: `advanceCodePoint()` double-advancing; `parseComplexCharacter()` never consuming `]`; raw-text accumulation appending the wrong character; `{n,m}` overwriting `min` instead of setting `max`; a bare `?` never getting a counter slot; the top-level pattern misread as capturing group 0; `Matcher#consume1CodePoint`/`consumeCodeUnits`/`peek` crashing at end-of-input (plus a wrong surrogate-width check). Also one real bug in code written *this* session and caught by its own tests: `LiteralMatcherConstruct` dispatched post-consumption using a map keyed by its own first character (a mismatch) instead of an unconditional forward.
 - [x] `PatternParserTest` (8 tests) and `QuantifierAndCaptureTest` (21 tests) — see Testing section.
 - [x] **`Ll1Pattern`/`Matcher` public API**: `matcher(CharSequence)`, `matches()`, `lookingAt()`, `find()`/`find(int)`, `group()`/`group(int)`/`group(String)`, `start()`/`start(int)`/`start(String)`, `end()`/`end(int)`/`end(String)`, `groupCount()`, `region(int,int)`, `reset()`/`reset(String)`. `Matcher#quantifiableCounts`/`captureGroups` are now sized automatically from the compiled pattern (`PatternParser` exposes final counts + a name→index map after `parse()`). See design.md for how `matches()` and `lookingAt()`/`find()` share one compiled graph via a runtime flag rather than needing separate compilations.
+- [x] **Two real, previously-latent `NamedCharClass` bugs, found and fixed 2026-09-06** while
+      building the scraped-corpus harness (below) -- `NamedCharClass` had zero prior test coverage
+      (nothing in the repo used `\w`/`\d`/`\s`/`\p{...}`/POSIX classes before this session), so
+      its static initializer had simply never run:
+      1. 19 spurious empty ranges (`Range.closedOpen(0x110000, 0x110000)`) in generated
+         `UnicodePredicates.java`, crashing `ImmutableRangeSet.Builder.build()`. Fixed by deleting
+         the 19 no-op lines (mechanical, verified safe: full existing suite stayed green).
+         Root cause in the `unicodeanalyzer` generator not yet investigated -- if it's
+         regenerated, check whether this recurs.
+      2. Three spots in `NamedCharClass.java` (`Blank`'s unicode branch, `Print`'s unicode branch,
+         `RegexCharacterClass.w`'s unicode branch) unioned multiple Unicode range sets via
+         `ImmutableRangeSet.Builder().addAll(a).addAll(b)...`, which throws on any overlap between
+         them -- and they do overlap (e.g. code point 837 is claimed by both `Alphabetic` and
+         `NON_SPACING_MARK`). Fixed by adding `NamedCharClass.union(RangeSet<Integer>...)` (merges
+         via a mutable `TreeRangeSet`, which coalesces instead of rejecting overlaps) and using it
+         at all three sites instead of `Builder`.
+
+## Scraped-corpus differential test harness (implemented 2026-09-06)
+
+Design: `documents/tools/scrape_<source>.py` fetches a source project's own regex test data and
+emits an "intermediate" TSV of `(pattern, flags, input[, mode])` tuples (no per-source
+knowledge of expected results -- we compute those ourselves, see below). `CorpusGenerator`
+(`llkpattern/src/test/java/.../corpus/CorpusGenerator.java`, run via
+`./gradlew :llkpattern:generateCorpus -Pinput=... -Poutput=... -Pmode=... -Punescape=...`) reads
+that, runs each tuple through both `java.util.regex` and `Ll1Pattern` (`MatchRunner`), and writes a
+golden TSV (`GoldenRow`/`GoldenTsv`) with the recorded outcome of both plus an auto-tagged `status`
+column (`AGREES`/`UNIMPLEMENTED: ...`/`UNEXPECTED: ...` -- see `CorpusGenerator`'s javadoc; these
+are a first-pass heuristic, NOT a human-verified verdict). `ScrapedCorpusTestBase` is a JUnit4
+`@Parameterized` base class; one concrete subclass per golden file (`OpenJdkBmpCorpusTest`,
+`OpenJdkSupplementaryCorpusTest`) just supplies the file path. Per row, only `Ll1Pattern` is
+re-run and compared against the golden `llk*` columns on every test invocation --
+`java.util.regex`'s own re-verification (`regexMatchesGolden`) is implemented but `@Ignore`d by
+default (per the project owner, 2026-09-06): its behavior is fixed JDK behavior this project can't
+regress, so re-running it on every test is pure cost, and it reintroduces the pathological-input
+risk below for no payoff. Re-enable it manually (comment out `@Ignore`, or run directly) to
+double-check the `regex*` columns against whatever JDK is actually installed.
+
+**Pathological-input handling**: some source suites deliberately test catastrophic-backtracking
+patterns, which made bare generation hang forever the first time this ran. `GoldenRow` has a 12th
+column, `originalPathologicalInput` (empty in the common case): `CorpusGenerator` probes each row
+with a 100ms-timeout wall-clock budget (`MatchRunner.runWithTimeout`, a fresh daemon thread per
+call -- deliberately NOT a shared thread, since a shared one stays permanently blocked after the
+first genuine hang and would poison every later row); on timeout, it repeatedly halves the input
+length until both engines finish within budget, records the shrunk input as `input` and the
+original as `originalPathologicalInput`, and prefixes `status` with
+`PATHOLOGICAL_INPUT_SIMPLIFIED (...)`. This is deliberately a generation-time-only concern (per
+the project owner, 2026-09-06): since regular test runs don't re-run `java.util.regex` at all (see
+above) and `Ll1Pattern` isn't expected to hang the way backtracking regex can, ongoing test runs
+don't need the shrink machinery -- `llkMatchesGolden` still wraps its own re-run in a (generous,
+2000ms) timeout purely as defense-in-depth, turning a future counterexample into a clean test
+failure instead of a hung suite.
+
+**Current results** (`llkpattern/src/test/resources/golden/openjdk_bmp.tsv`, 222 rows;
+`openjdk_supplementary.tsv`, 339 rows; regenerate via the `generateCorpus` command above after any
+scraping/unescaping/engine change):
+
+- BMP: 65 AGREES, 132 UNIMPLEMENTED (auto-tagged), 24 UNEXPECTED (auto-tagged) -- one row
+  pathological-input-simplified.
+- Supplementary: 136 AGREES, 164 UNIMPLEMENTED (auto-tagged), 35 UNEXPECTED (auto-tagged).
+- 4 rows currently fail `llkMatchesGolden` outright (a hang, not a value mismatch) -- see "URGENT"
+  at the top of this file.
+- The large `UNIMPLEMENTED`/`UNEXPECTED` counts are **not yet human-reviewed** -- per
+  `CorpusGenerator`'s javadoc, "UNIMPLEMENTED" really just means "llk didn't run cleanly" (could
+  be a correct LL(1)-ambiguity rejection, not a missing feature) and needs retagging as
+  `EXPECTED_DIVERGENCE` where that's the case. A first skim already found one clear, real,
+  non-cosmetic bug this way: character-class intersection (`&&`) -- see "URGENT" above.
+
+**Next steps** (not yet started):
+
+- [ ] Human triage pass over every non-`AGREES` row in both golden files -- retag
+      `EXPECTED_DIVERGENCE` vs leave as a real bug to fix, per `CorpusGenerator`'s status scheme.
+- [ ] More sources, each as its own `scrape_<source>.py` + golden file + `ScrapedCorpusTestBase`
+      subclass (the pipeline already supports this cleanly):
+  - [ ] **AOSP/libcore**: `https://android.googlesource.com/platform/libcore/+/refs/heads/main/ojluni/src/test/java/util/regex/`
+        (per the project owner, 2026-09-06 -- note this is `libcore`, not
+        `platform_frameworks_base` as an earlier draft of this file guessed).
+  - [ ] **RE2J**: `https://github.com/google/re2j/tree/master/javatests/com/google/re2j` (per the
+        project owner, 2026-09-06) -- interesting as a comparison point since RE2J, like llk, is a
+        deliberately linear-time (non-backtracking) engine, just via a different mechanism (Thompson
+        NFA simulation vs LL(1) compile-time dispatch).
+  - [ ] **dregex**: `https://github.com/marianobarrios/dregex/tree/master/src/test/java/dregex`
+        (per the project owner, 2026-09-06).
+  - [ ] Oracle GraalVM's regex engine tests were the third original candidate (see the superseded
+        entry this section replaces) -- not yet located/confirmed.
 
 ## Core implementation
 
@@ -43,7 +209,11 @@ Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a 
 - [ ] Add more parser tests covering the documented grammar (escapes, boundaries, `\p{...}` Unicode classes, backreferences syntax) and its error cases (`PatternSyntaxException`s) — coverage is still thin relative to the grammar's size.
 - [ ] Cross-check current `Matcher` behavior against `java.util.regex.Pattern`/`Matcher` for the subset of syntax both support — not yet done beyond what the tests above assert from first principles; see the scraped-corpus harness idea below for the systematic version of this.
 - [ ] Decide on a CI setup (or at least a documented local command, given the JDK version constraint above) to run the suite "frequently" per the owner's stated preference.
-- [ ] **Scraped-corpus differential test harness** (proposed by the project owner, 2026-09-06, not yet started): a script that scrapes real-world regex *test suites* (not just regex literals in the wild — those come with no input strings, which the owner already tried and found "limited value" without knowing what to run them against) from large codebases with substantial regex test coverage — e.g. `aosp-mirror/platform_frameworks_base`, `openjdk/jdk`, Oracle GraalVM — extracting `(pattern, flags, input)` tuples that real regex implementers wrote and (often) struggled with. For each tuple, run both `java.util.regex.Pattern`/`Matcher` and `Ll1Pattern`/`Matcher`, recording a row of `(pattern, flags, input, stdJavaCompileException, stdJavaMatchException, stdJavaMatchResults, llkCompileException, llkMatchException, llkMatchResults)`. The resulting table becomes both a parameterized test (one test per row) and living documentation of exactly where/why this engine's behavior diverges from `java.util.regex` (some divergence is expected and correct — LL(1) is strictly less expressive than backtracking regex — the point is to know *which* cases and *why*, not to eliminate all divergence). `Matcher`'s public API (`matches`/`find`/`group`/`start`/`end`, at least) is now implemented, so there's something real to run the right-hand side of each row against — this is now unblocked and a good candidate for the next session.
+- [x] **Scraped-corpus differential test harness**: implemented 2026-09-06 for OpenJDK's own
+      `java.util.regex` test data (`test/jdk/java/util/regex/BMPTestCases.txt` and
+      `SupplementaryTestCases.txt`) -- see the "Scraped-corpus differential test harness" section
+      below for the full design, current results, and what's next (more sources: AOSP/libcore,
+      RE2J, dregex).
 
 ## Housekeeping / cleanup
 

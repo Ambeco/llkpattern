@@ -30,3 +30,19 @@ dependencies {
     implementation "org.checkerframework:checker-qual:${checkerFrameworkVersion}"
     //annotationProcessor "org.checkerframework:checker:${checkerFrameworkVersion}"
 }
+
+// Regenerates a scraped-corpus golden TSV file from a per-source "intermediate" TSV (see
+// documents/tools/scrape_*.py and CorpusGenerator's own javadoc). Usage:
+//   ./gradlew :llkpattern:generateCorpus -Pinput=<intermediate.tsv> -Poutput=<golden.tsv> -Pmode=FIND
+task generateCorpus(type: JavaExec) {
+    group = 'verification'
+    description = 'Regenerates a scraped-corpus golden TSV file from an intermediate scrape TSV.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.tbohne.llkpattern.corpus.CorpusGenerator'
+    args = [
+        project.findProperty('input') ?: '',
+        project.findProperty('output') ?: '',
+        project.findProperty('mode') ?: 'FIND',
+        project.findProperty('unescape') ?: 'none',
+    ]
+}

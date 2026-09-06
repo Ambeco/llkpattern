@@ -18,7 +18,7 @@ _(TBD — see [documents/design.md](documents/design.md))_
 
 ## 3. Current Progress
 
-The module compiles and its test suite runs green (see [documents/notes.md](documents/notes.md) for the JDK version this currently requires). See [documents/remaining_work.md](documents/remaining_work.md) for the active TODO list. In brief:
+The module compiles; its test suite has 4 known-failing tests out of 1203 (see [documents/remaining_work.md](documents/remaining_work.md) for the JDK version this currently requires and the active TODO list). A new scraped-corpus differential test harness (compares `Ll1Pattern` against `java.util.regex` on real test data mined from OpenJDK's own regex test suite) landed 2026-09-06 and already surfaced several real bugs, including a character-class-intersection (`&&`) bug and a handful of inputs where `Ll1Pattern` appears to hang rather than throw — see remaining_work.md's "URGENT" section. In brief:
 
 - **Parsing** (`PatternParser`, `PatternConstruct`): a recursive-descent parser turns a pattern string into an AST of `PatternConstruct` nodes (unions, sequences, literals, character classes, quantifiers, boundaries, backreferences, groups). This layer is fairly mature; several real parsing bugs were found and fixed while building out the compiler (see [documents/notes.md](documents/notes.md)).
 - **Code point range representation** (`CodePointMap`/`TreeCodePointMap`): done and tested. A `RangeMap`-style interface over Unicode code points, currently backed by Guava's `TreeRangeMap`, with the intent to swap in something more specialized later without touching callers.

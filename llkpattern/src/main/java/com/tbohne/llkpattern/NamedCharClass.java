@@ -5,6 +5,8 @@ import com.google.common.collect.ImmutableRangeSet;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Range;
+import com.google.common.collect.RangeSet;
+import com.google.common.collect.TreeRangeSet;
 
 import java.util.regex.Pattern;
 
@@ -211,15 +213,16 @@ enum NamedCharClass {
           .add(Range.singleton(+'\t'))
           .build(),
       White_Space.unicode.difference(
-          new ImmutableRangeSet.Builder<Integer>()
+          union(
+              new ImmutableRangeSet.Builder<Integer>()
             .add(Range.singleton(+'\n'))
             .add(Range.singleton(+'\u000b'))
             .add(Range.singleton(+'\u000c'))
             .add(Range.singleton(+'\r'))
             .add(Range.singleton(+'\u0085'))
-            .addAll(UnicodePredicates.LINE_SEPARATOR)
-            .addAll(UnicodePredicates.PARAGRAPH_SEPARATOR)
-            .build())),
+                .build(),
+              UnicodePredicates.LINE_SEPARATOR,
+              UnicodePredicates.PARAGRAPH_SEPARATOR))),
   Cntrl(
       Source.POSIX,
       new ImmutableRangeSet.Builder<Integer>()
@@ -233,10 +236,7 @@ enum NamedCharClass {
           .addAll(Graph.ascii)
           .add(Range.singleton(0x0020))
           .build(),
-      new ImmutableRangeSet.Builder<Integer>()
-          .addAll(Graph.unicode)
-          .addAll(Blank.unicode)
-          .build()
+      union(Graph.unicode, Blank.unicode)
           .difference(Cntrl.unicode)),
   XDigit(
       Source.POSIX,
@@ -258,6 +258,28 @@ enum NamedCharClass {
     Source(ImmutableSet<CharacterClassPrefix> allowedPrefixes) {
       this.allowedPrefixes = allowedPrefixes;
     }
+  }
+
+  /**
+   * Unions any number of code-point range sets that may legitimately overlap each other (e.g.
+   * two different Unicode category predicates both claiming the same code point).
+   *
+   * <p>Unlike {@code ImmutableRangeSet.Builder}, whose {@code build()} throws {@code
+   * IllegalArgumentException} the moment two {@code add}/{@code addAll} calls contribute
+   * overlapping ranges (it's meant for building one range set from known-disjoint pieces, not for
+   * unioning several potentially-overlapping ones), this always succeeds: it merges everything
+   * into a mutable {@code TreeRangeSet} first (whose {@code addAll} coalesces overlaps instead of
+   * rejecting them), then freezes the result. Use this instead of {@code Builder} whenever
+   * combining more than one already-built range set -- did you mean to use this instead of a
+   * {@code Builder} chain, if you're seeing "Overlapping ranges not permitted"?
+   */
+  @SafeVarargs
+  private static ImmutableRangeSet<Integer> union(RangeSet<Integer>... sets) {
+    TreeRangeSet<Integer> merged = TreeRangeSet.create();
+    for (RangeSet<Integer> set : sets) {
+      merged.addAll(set);
+    }
+    return ImmutableRangeSet.copyOf(merged);
   }
 
   final Source source;
@@ -348,15 +370,14 @@ enum NamedCharClass {
             .add(Range.closed(+'0', +'9'))
             .add(Range.singleton(+'_'))
             .build(),
-        new ImmutableRangeSet.Builder<Integer>()
-            .addAll(Alphabetic.unicode)
-            .addAll(Digit.unicode)
-            .addAll(UnicodePredicates.NON_SPACING_MARK)
-            .addAll(UnicodePredicates.COMBINING_SPACING_MARK)
-            .addAll(UnicodePredicates.ENCLOSING_MARK)
-            .addAll(UnicodePredicates.CONNECTOR_PUNCTUATION)
-            .addAll(Join_Control.unicode)
-            .build()),
+        union(
+            Alphabetic.unicode,
+            Digit.unicode,
+            UnicodePredicates.NON_SPACING_MARK,
+            UnicodePredicates.COMBINING_SPACING_MARK,
+            UnicodePredicates.ENCLOSING_MARK,
+            UnicodePredicates.CONNECTOR_PUNCTUATION,
+            Join_Control.unicode)),
     W(w.ascii.complement(), w.unicode.complement()),
     R(new ImmutableRangeSet.Builder<Integer>()
           .add(Range.singleton(+'\n'))

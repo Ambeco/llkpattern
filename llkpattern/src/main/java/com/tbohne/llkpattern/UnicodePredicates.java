@@ -16,7 +16,6 @@ class UnicodePredicates {
 	private static ImmutableRangeSet<Integer> init_isBmpCodePoint() {
 		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x10000))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isBmpCodePoint = init_isBmpCodePoint();
@@ -680,7 +679,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1d7c4, 0x1d7ca))
 			.add(Range.singleton(0x1d7cb))
 			.add(Range.closedOpen(0x1e922, 0x1e944))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isLowerCase = init_isLowerCase();
@@ -1329,7 +1327,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1f130, 0x1f14a))
 			.add(Range.closedOpen(0x1f150, 0x1f16a))
 			.add(Range.closedOpen(0x1f170, 0x1f18a))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isUpperCase = init_isUpperCase();
@@ -1345,7 +1342,6 @@ class UnicodePredicates {
 			.add(Range.singleton(0x1fbc))
 			.add(Range.singleton(0x1fcc))
 			.add(Range.singleton(0x1ffc))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isTitleCase = init_isTitleCase();
@@ -1412,7 +1408,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1e2f0, 0x1e2fa))
 			.add(Range.closedOpen(0x1e950, 0x1e95a))
 			.add(Range.closedOpen(0x1fbf0, 0x1fbfa))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isDigit = init_isDigit();
@@ -2095,7 +2090,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0xe0100, 0xe01f0))
 			.add(Range.closedOpen(0xf0000, 0xffffe))
 			.add(Range.closedOpen(0x100000, 0x10fffe))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isDefined = init_isDefined();
@@ -2723,7 +2717,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2ceb0, 0x2ebe1))
 			.add(Range.closedOpen(0x2f800, 0x2fa1e))
 			.add(Range.closedOpen(0x30000, 0x3134b))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isLetter = init_isLetter();
@@ -3394,7 +3387,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2ceb0, 0x2ebe1))
 			.add(Range.closedOpen(0x2f800, 0x2fa1e))
 			.add(Range.closedOpen(0x30000, 0x3134b))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isLetterOrDigit = init_isLetterOrDigit();
@@ -4095,7 +4087,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2ceb0, 0x2ebe1))
 			.add(Range.closedOpen(0x2f800, 0x2fa1e))
 			.add(Range.closedOpen(0x30000, 0x3134b))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isAlphabetic = init_isAlphabetic();
@@ -4120,7 +4111,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2ceb0, 0x2ebe1))
 			.add(Range.closedOpen(0x2f800, 0x2fa1e))
 			.add(Range.closedOpen(0x30000, 0x3134b))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isIdeographic = init_isIdeographic();
@@ -4772,7 +4762,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2ceb0, 0x2ebe1))
 			.add(Range.closedOpen(0x2f800, 0x2fa1e))
 			.add(Range.closedOpen(0x30000, 0x3134b))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isJavaIdentifierStart = init_isJavaIdentifierStart();
@@ -5540,7 +5529,6 @@ class UnicodePredicates {
 			.add(Range.singleton(0xe0001))
 			.add(Range.closedOpen(0xe0020, 0xe0080))
 			.add(Range.closedOpen(0xe0100, 0xe01f0))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isJavaIdentifierPart = init_isJavaIdentifierPart();
@@ -6169,7 +6157,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2ceb0, 0x2ebe1))
 			.add(Range.closedOpen(0x2f800, 0x2fa1e))
 			.add(Range.closedOpen(0x30000, 0x3134b))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isUnicodeIdentifierStart = init_isUnicodeIdentifierStart();
@@ -6922,7 +6909,6 @@ class UnicodePredicates {
 			.add(Range.singleton(0xe0001))
 			.add(Range.closedOpen(0xe0020, 0xe0080))
 			.add(Range.closedOpen(0xe0100, 0xe01f0))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isUnicodeIdentifierPart = init_isUnicodeIdentifierPart();
@@ -6951,7 +6937,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x1d173, 0x1d17b))
 			.add(Range.singleton(0xe0001))
 			.add(Range.closedOpen(0xe0020, 0xe0080))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isIdentifierIgnorable = init_isIdentifierIgnorable();
@@ -6965,7 +6950,6 @@ class UnicodePredicates {
 			.add(Range.singleton(0x202f))
 			.add(Range.singleton(0x205f))
 			.add(Range.singleton(0x3000))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isSpaceChar = init_isSpaceChar();
@@ -6979,7 +6963,6 @@ class UnicodePredicates {
 			.add(Range.closedOpen(0x2028, 0x202a))
 			.add(Range.singleton(0x205f))
 			.add(Range.singleton(0x3000))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isWhitespace = init_isWhitespace();
@@ -6987,7 +6970,6 @@ class UnicodePredicates {
 		return new ImmutableRangeSet.Builder<Integer>()
 			.add(Range.closedOpen(0x0, 0x20))
 			.add(Range.closedOpen(0x7f, 0xa0))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isISOControl = init_isISOControl();
@@ -7106,7 +7088,6 @@ class UnicodePredicates {
 			.add(Range.singleton(0x1d74f))
 			.add(Range.singleton(0x1d789))
 			.add(Range.singleton(0x1d7c3))
-			.add(Range.closedOpen(0x110000, 0x110000))
 			.build();
 	}
 	static final ImmutableRangeSet<Integer> isMirrored = init_isMirrored();

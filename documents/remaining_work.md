@@ -36,16 +36,41 @@ a **new, real** `UNEXPECTED` divergence — see the next item.
       Needs investigation into how `ComplexCharacter`/`CodePointMap` map surrogate code units vs.
       code points for ranges specified with 5-digit `\x{...}` escapes. Not a hang, not urgent, but
       newly discovered and not yet understood.
-- [ ] **Character-class intersection (`&&`) looks entirely broken**: 24/222 BMP rows and 35/339
-      supplementary rows are tagged `UNEXPECTED` in the golden files specifically for `&&`
-      patterns (e.g. `[あ-い&&[ぅ-ぇ]]`, `[あ-ぎ&&[^あ-い]]`) -- llk appears to ignore the
-      intersection and just match the first operand's range, including when the intersection
-      should have been empty. See `llkpattern/src/test/resources/golden/openjdk_bmp.tsv` and
-      `openjdk_supplementary.tsv`, filter for `status` starting with `UNEXPECTED` and pattern
-      containing `&&`, for the full list of cases. This overlaps directly with the "HIGHEST
-      PRIORITY" character-class-intersection coverage item below -- likely the same root cause
-      (`PatternConstruct.ComplexCharacter`'s intersection handling, or its compile step) across
-      both.
+## FIXED (2026-09-06): character-class intersection (`&&`) was entirely broken
+
+Three separate bugs in `PatternParser.parseComplexCharacter()`, all in the `&&`/nested-class
+handling, combined to produce the `UNEXPECTED`/`UNIMPLEMENTED` rows reported above:
+
+1. **Intersection was actually computing set *difference***:
+   `complex.ranges.removeAll(parseComplexCharacter().ranges)` -- Guava's `RangeSet.removeAll(other)`
+   removes `other` from the set (i.e. `complex - other`), not `complex ∩ other`. Since two
+   *disjoint* ranges have nothing to remove from each other, `[あ-い&&[ぅ-ぇ]]` left `[あ-い]`
+   untouched instead of correctly becoming empty. Fixed via the standard trick
+   `A ∩ B == A - complement(B)` (a private `intersect()` helper).
+2. **A nested class as an operand had no parser case at all**: `[[あ-い]&&[ぅ-ぇ]]` (or any union
+   like `[a-c[p-z]]`) has no `case '['` in the class-body switch, so a literal `[` fell into
+   `default:`, was consumed as an ordinary code point, and the class closed on the very next
+   unrelated `]` -- corrupting the rest of the pattern into a `PatternSyntaxException`. This was
+   the single largest contributor: 35-47 rows per golden file, all `\p{...}`-free nested-bracket
+   shapes. Fixed by adding `case '[':` that unions the nested class's ranges into the current
+   operand.
+3. **`&&` was only recognized when immediately followed by `[`**: real `java.util.regex` treats
+   `&&` as the intersection operator unconditionally, with the right-hand operand being *whatever
+   run of members follows, up to the next `&&` or the closing `]`* -- bracketed or not (verified
+   against a real JDK: `Pattern.matches("[あ-い&&あ-ぅ]", "あ")` is `true`). llk required `&&[`,
+   so `[あ-い&&ぅ-ぇ]` (no bracket around the RHS) silently degraded into two literal `&`
+   characters unioned with a range, rather than an intersection. Fixed by restructuring the
+   class-body loop around `&&`-separated "operand runs": `complex.ranges` now accumulates only the
+   *current* run, and each `&&` folds the completed run into a running `intersectionSoFar` via the
+   same `intersect()` helper, finalized at the closing `]`.
+
+All three are on [PatternParser.java](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternParser.java)'s
+`parseComplexCharacter()`. After the fix and regenerating both golden files, every `&&` row in both
+files is `AGREES` except 19 (4 BMP + 15 supplementary) that fail for an unrelated, pre-existing
+reason: `\p{InGreek}`-style Unicode *block* names aren't implemented (confirmed via a standalone
+repro -- the exception is literally `unknown named character class "InGreek"`, nothing to do with
+`&&`). That gap is real but out of scope here; it belongs with the `\p{...}`/block/script coverage
+item under "HIGHEST PRIORITY" below.
 
 ## HIGHEST PRIORITY
 
@@ -166,15 +191,18 @@ failure instead of a hung suite.
 `openjdk_supplementary.tsv`, 339 rows; regenerate via the `generateCorpus` command above after any
 scraping/unescaping/engine change):
 
-- BMP: 66 AGREES, 132 UNIMPLEMENTED (auto-tagged), 24 UNEXPECTED (auto-tagged).
-- Supplementary: 137 AGREES, 164 UNIMPLEMENTED (auto-tagged), 37 UNEXPECTED (auto-tagged).
-- The 4 rows that used to hang `llkMatchesGolden` outright no longer do -- see "FIXED (2026-09-06)"
-  at the top of this file (2 now AGREES, 2 turned into a new real UNEXPECTED surrogate-range bug).
-- The large `UNIMPLEMENTED`/`UNEXPECTED` counts are **not yet human-reviewed** -- per
+- BMP: 124 AGREES, 82 UNIMPLEMENTED (auto-tagged), 16 UNEXPECTED (auto-tagged).
+- Supplementary: 196 AGREES, 113 UNIMPLEMENTED (auto-tagged), 30 UNEXPECTED (auto-tagged).
+- The 4 rows that used to hang `llkMatchesGolden` outright no longer do -- see "FIXED (2026-09-06):
+  the `PatternParser` hang..." above (2 now AGREES, 2 turned into a new real UNEXPECTED
+  surrogate-range bug).
+- Character-class intersection (`&&`) is fixed -- see "FIXED (2026-09-06): character-class
+  intersection..." above; this alone moved ~86 rows from UNIMPLEMENTED/UNEXPECTED to AGREES across
+  both files (AGREES went from 65+136=201 to 124+196=320).
+- The remaining `UNIMPLEMENTED`/`UNEXPECTED` counts are **not yet human-reviewed** -- per
   `CorpusGenerator`'s javadoc, "UNIMPLEMENTED" really just means "llk didn't run cleanly" (could
   be a correct LL(1)-ambiguity rejection, not a missing feature) and needs retagging as
-  `EXPECTED_DIVERGENCE` where that's the case. A first skim already found one clear, real,
-  non-cosmetic bug this way: character-class intersection (`&&`) -- see "URGENT" above.
+  `EXPECTED_DIVERGENCE` where that's the case.
 
 **Next steps** (not yet started):
 

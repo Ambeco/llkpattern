@@ -1,6 +1,7 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.collect.Range;
+import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeSet;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import com.tbohne.llkpattern.PatternConstruct.*;
@@ -404,6 +405,13 @@ final class PatternParser {
       negate = true;
       advance(1);
     }
+    // IntersectionCharacter -> UnionCharacter (&& IntersectionCharacter)?  -- "&&" is a real
+    // operator token, not tied to a bracket: [a-z&&aeiou] intersects the *whole run* of members
+    // up to the next "&&" or the closing "]" against everything accumulated so far, whether or
+    // not that run happens to be wrapped in its own "[...]". So `complex.ranges` below always
+    // accumulates only the *current* union-operand run; `intersectionSoFar` (null until the first
+    // "&&" is seen) holds the running intersection of every completed operand run before it.
+    @Nullable RangeSet<Integer> intersectionSoFar = null;
     for (; ; ) {
       switch (peek) {
         case '\0':
@@ -412,10 +420,15 @@ final class PatternParser {
           if (index > complex.startIndex + 1) {
             int closeBracketIndex = index;
             advance(1); // consume the ']' -- callers expect peek to be past this construct
+            RangeSet<Integer> finalRanges =
+                intersectionSoFar == null
+                    ? complex.ranges
+                    : intersect(intersectionSoFar, complex.ranges);
             if (negate) {
               return new ComplexCharacter(
-                  complex.startIndex, closeBracketIndex + 1, complex.ranges.complement());
+                  complex.startIndex, closeBracketIndex + 1, finalRanges.complement());
             }
+            complex.ranges = finalRanges;
             complex.endIndex = closeBracketIndex + 1;
             return complex;
           } else {
@@ -439,12 +452,26 @@ final class PatternParser {
             parseComplexEscape(complex);
           }
           break;
+        case '[':
+          // RangeCharacter -> "[" IntersectionCharacter "]" -- a nested class is itself a member
+          // of the enclosing union, e.g. "[a-c[p-z]]" or an operand of "&&" in "[[a-b]&&[c-d]]".
+          // Union its ranges into the current operand run; "&&" (below) intersects whole runs,
+          // not individual members, so this is exactly like unioning in any other member.
+          complex.ranges.addAll(parseComplexCharacter().ranges);
+          break;
         case '&':
-          if (index + 5 < pattern.length()
-              && pattern.charAt(index + 1) == '&'
-              && pattern.charAt(index + 2) == '[') {
+          if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
+            // "&&" is always the intersection operator here -- unlike a lone "&", which is just a
+            // literal character (handled by falling through to default below) -- regardless of
+            // what comes right after it. The RHS is NOT required to be bracketed: [a-z&&aeiou] is
+            // valid Java regex syntax, intersecting against the literal run "aeiou", not just
+            // [a-z&&[aeiou]].
             advance(2);
-            complex.ranges.removeAll(parseComplexCharacter().ranges);
+            intersectionSoFar =
+                intersectionSoFar == null
+                    ? complex.ranges
+                    : intersect(intersectionSoFar, complex.ranges);
+            complex.ranges = TreeRangeSet.create();
             break;
           }
           // fallthrough
@@ -458,6 +485,13 @@ final class PatternParser {
           }
       }
     }
+  }
+
+  /** {@code a & b}, computed as {@code a - complement(b)} since Guava's {@link RangeSet} has no
+   *  in-place intersect. Mutates and returns {@code a}. */
+  private static RangeSet<Integer> intersect(RangeSet<Integer> a, RangeSet<Integer> b) {
+    a.removeAll(b.complement());
+    return a;
   }
 
   static private final String META_CHARACTERS = "^.[]$()*{}?+|\\";

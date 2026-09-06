@@ -206,27 +206,42 @@ since finding one immediately led to the next -- see below for what's still left
       pattern-wide flags at match time. A real design task, not a one-line fix -- do this after the
       bare-group bug above, since testing it meaningfully needs bare/grouped inline flags to work
       correctly first.
-- [ ] **`NamedCharClass`/`RegexCharacterClass` have a latent circular static-initialization
-      dependency**, found (and worked around, not fixed) while attempting the `DOTALL` fix above.
-      `RegexCharacterClass`'s enum body needs `NamedCharClass.White_Space` (`s`'s Unicode variant),
-      and separately `NamedCharClass`'s own enum body reads back `RegexCharacterClass.s.ascii` --
-      whichever of the two classes' static initializers runs *second* sees the other's
-      not-yet-assigned enum constant as `null`, throwing
-      `NullPointerException`/`ExceptionInInitializerError`. This had simply never been triggered
-      before because every existing code path always caused `NamedCharClass` to finish
-      initializing first (e.g. any `\p{...}` lookup). Directly referencing
-      `RegexCharacterClass.DOT` from `PatternParser` (the natural way to reuse its existing "`.`
-      except newline" definition for the `DOTALL` fix above) was the first code path to trigger
-      `RegexCharacterClass` loading *first*, reproducing the crash --
-      confirmed via a standalone repro (`Ll1Pattern.compile("a.b").matcher("a\nb").find()`, with
-      `case '.':` changed to reference `RegexCharacterClass.DOT.get(flags)`, throws
-      `ExceptionInInitializerError` -> `NullPointerException: Cannot read field "ascii" because
-      "...RegexCharacterClass.s" is null` at `NamedCharClass.java:244`). Worked around for now by
-      having `PatternParser`'s `.` construction build its own "everything except `\n`" `RangeSet`
-      inline instead of reusing `RegexCharacterClass.DOT` -- correct, but leaves `RegexCharacterClass.DOT`
-      itself still landmined for the next caller who reaches for it. Real fix needs breaking the
-      cycle (lazy/deferred cross-reference, or restructuring which class's static data the other
-      one depends on) rather than another workaround.
+## FIXED (2026-09-06): `NamedCharClass`/`RegexCharacterClass` circular static initialization
+
+Found (and initially only worked around) while attempting the `DOTALL` fix above:
+`RegexCharacterClass`'s enum body needed `NamedCharClass.White_Space` (`s`'s Unicode variant), and
+separately `NamedCharClass.Space` read back `RegexCharacterClass.s.ascii` -- a genuine two-way
+dependency between the two enums. Whichever class's static initializer ran *second* saw the other's
+not-yet-assigned enum constant as `null`, throwing
+`NullPointerException`/`ExceptionInInitializerError`. This had never been triggered before because
+every existing code path happened to cause `NamedCharClass` to finish initializing first (e.g. any
+`\p{...}` lookup); reusing `RegexCharacterClass.DOT` for the `DOTALL` fix above was the first path
+to load `RegexCharacterClass` *first*, reproducing the crash (confirmed via a standalone repro
+before fixing: `Ll1Pattern.compile("a.b").matcher("a\nb").find()` with `case '.':` referencing
+`RegexCharacterClass.DOT.get(flags)` threw `ExceptionInInitializerError` ->
+`NullPointerException: Cannot read field "ascii" because "...RegexCharacterClass.s" is null` at
+`NamedCharClass.java:244`).
+
+**Root cause, precisely** (diagnosed by the project owner, 2026-09-06): `NamedCharClass.Space` was
+the *only* place the outer enum read anything from `RegexCharacterClass` (`RegexCharacterClass.s`,
+which itself already read `NamedCharClass.White_Space` and had its own hardcoded ASCII whitespace
+literal). Two dependency edges running in opposite directions between the same two classes is
+exactly what makes a cycle; `RegexCharacterClass.d` reading `NamedCharClass.Digit` was never a
+problem on its own, because that edge runs the same direction as everything else. Fixed by
+inlining `RegexCharacterClass.s`'s hardcoded ASCII whitespace literal directly into
+`NamedCharClass.Space` (removing the one and only reverse-direction edge), then having
+`RegexCharacterClass.s` read `Space.ascii`/`Space.unicode` instead of duplicating that literal
+itself -- so the dependency now flows one way only (`RegexCharacterClass` depends on
+`NamedCharClass`, never the reverse), and the single source of truth for the ASCII whitespace set
+is `NamedCharClass.Space`, not a value duplicated in two places. See
+[NamedCharClass.java](../llkpattern/src/main/java/com/tbohne/llkpattern/NamedCharClass.java)'s
+`Space` and `RegexCharacterClass.s` entries. `PatternParser`'s `.`/`DOTALL` construction now reuses
+`RegexCharacterClass.DOT.unicode` directly instead of the inline workaround it used before this fix
+(deliberately `.unicode`, not `.get(flags)` -- `DOT`'s single-arg constructor auto-derives `.ascii`
+as an ASCII-only intersection, which is correct for a POSIX/Unicode-property class like `\s` but
+would make `.` wrongly stop matching non-ASCII characters by default; confirmed via the corpus,
+which caught this exact mistake on the first attempt -- 12 rows with non-ASCII/supplementary input
+newly failed until switched from `.get(flags)` to `.unicode`).
 
 ## HIGHEST PRIORITY
 

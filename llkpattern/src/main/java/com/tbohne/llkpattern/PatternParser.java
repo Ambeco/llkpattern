@@ -186,19 +186,23 @@ final class PatternParser {
             // Bug fix (2026-09-06): this unconditionally built "everything" (complement of the
             // empty set), i.e. always behaved as if DOTALL were on -- the DOTALL flag constant
             // existed (Ll1Pattern.DOTALL) but nothing anywhere ever actually consulted it. Without
-            // DOTALL, "." must exclude the line terminator '\n' (a fuller line-terminator set --
-            // \r, U+0085, U+2028, U+2029 -- and UNIX_LINES interaction are tracked separately in
-            // remaining_work.md, not done here). Deliberately NOT reusing
-            // NamedCharClass.RegexCharacterClass.DOT (which already defines exactly this set) --
-            // see remaining_work.md's "RegexCharacterClass/NamedCharClass circular static
-            // initialization" entry for why that constant is landmined for any caller that isn't
-            // careful about class-load order.
-            TreeRangeSet<Integer> newline = TreeRangeSet.create();
-            newline.add(Range.singleton(+'\n'));
+            // DOTALL, "." must exclude the line terminator '\n' -- see
+            // NamedCharClass.RegexCharacterClass.DOT, which already defines exactly this set (a
+            // fuller line-terminator set -- \r, U+0085, U+2028, U+2029 -- and UNIX_LINES
+            // interaction are tracked separately in remaining_work.md, not done here). This used to
+            // build the same set inline instead of reusing that constant, to dodge a circular
+            // static-initialization dependency between NamedCharClass and RegexCharacterClass --
+            // now fixed (see remaining_work.md), so reusing it here is safe again. Deliberately
+            // .unicode, not .get(flags): DOT's single-arg constructor auto-derives .ascii as
+            // .unicode intersected with the ASCII range (right, for a POSIX/Unicode-property class
+            // like \s or \w, where that's exactly the ASCII-vs-Unicode distinction
+            // UNICODE_CHARACTER_CLASS controls) -- but "." matching only ASCII characters by
+            // default would be wrong; "." always means "any character" (modulo the newline
+            // exclusion here), regardless of UNICODE_CHARACTER_CLASS.
             RangeSet<Integer> dotRanges =
                 (flags & Pattern.DOTALL) != 0
                     ? TreeRangeSet.<Integer>create().complement()
-                    : newline.complement();
+                    : TreeRangeSet.create(RegexCharacterClass.DOT.unicode);
             ComplexCharacter dot = new ComplexCharacter(index, dotRanges);
             sequence.patterns.add(parseQuantifiable(dot));
             advance(1);

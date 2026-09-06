@@ -241,7 +241,26 @@ enum NamedCharClass {
   XDigit(
       Source.POSIX,
       Hex_Digit.unicode),
-  Space(Source.POSIX, RegexCharacterClass.s.ascii, White_Space.unicode),
+  // Bug fix (2026-09-06): this used to read RegexCharacterClass.s.ascii, but RegexCharacterClass.s
+  // itself (below) reads White_Space (right above) -- a genuine two-way dependency between this
+  // enum and RegexCharacterClass, whichever's static initializer runs second sees the other's
+  // not-yet-assigned enum constant as null (NullPointerException/ExceptionInInitializerError; see
+  // remaining_work.md's "NamedCharClass/RegexCharacterClass circular static initialization" entry
+  // for the repro that found this). This is the same literal ASCII whitespace set
+  // RegexCharacterClass.s hardcodes -- inlined here instead of shared, so the dependency only ever
+  // flows one way (RegexCharacterClass depends on NamedCharClass, never the reverse):
+  // RegexCharacterClass.s now reads Space.ascii/Space.unicode instead of duplicating this literal.
+  Space(
+      Source.POSIX,
+      new ImmutableRangeSet.Builder<Integer>()
+          .add(Range.singleton(+' '))
+          .add(Range.singleton(+'\t'))
+          .add(Range.singleton(+'\n'))
+          .add(Range.singleton(0x000B))
+          .add(Range.singleton(+'\f'))
+          .add(Range.singleton(+'\r'))
+          .build(),
+      White_Space.unicode),
   ;
 
 
@@ -343,15 +362,11 @@ enum NamedCharClass {
           .add(Range.closed(0x2000,0x200a))
           .build()),
     H(h.unicode.complement()),
-    s(new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.singleton(+' '))
-          .add(Range.singleton(+'\t'))
-          .add(Range.singleton(+'\n'))
-          .add(Range.singleton(0x000B))
-          .add(Range.singleton(+'\f'))
-          .add(Range.singleton(+'\r'))
-          .build(),
-        White_Space.unicode),
+    // Bug fix (2026-09-06): now delegates to NamedCharClass.Space instead of duplicating its own
+    // hardcoded ASCII whitespace literal + a separate White_Space.unicode reference -- see Space's
+    // own comment for why that duplication exists (breaking a circular static-init dependency) and
+    // why this direction (RegexCharacterClass -> NamedCharClass, not the reverse) is safe.
+    s(Space.ascii, Space.unicode),
     S(s.ascii.complement(), s.unicode.complement()),
     v(new ImmutableRangeSet.Builder<Integer>()
           .add(Range.singleton(+'\n'))

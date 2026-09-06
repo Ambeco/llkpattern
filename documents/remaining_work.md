@@ -193,6 +193,40 @@ scraping/unescaping/engine change):
         (per the project owner, 2026-09-06).
   - [ ] Oracle GraalVM's regex engine tests were the third original candidate (see the superseded
         entry this section replaces) -- not yet located/confirmed.
+  - [ ] **dk.brics.automaton**: `https://github.com/cs-au-dk/dk.brics.automaton/tree/master/test/java/dk/brics/automaton`
+        (per the project owner, 2026-09-06).
+  - [ ] **DataDog/java-reggie**: `https://github.com/DataDog/java-reggie/tree/main/reggie-integration-tests/src/test/java/com/datadoghq/reggie/integration`
+        (per the project owner, 2026-09-06).
+- [ ] **Investigate java-reggie's `FuzzTest`** (`https://github.com/DataDog/java-reggie` --
+      look under its integration-tests module, per the project owner, 2026-09-06) to see how it
+      picks fuzzed inputs and decides pass/fail. This project considered a fuzz test for
+      `Ll1Pattern` before and shelved it for exactly that reason: it wasn't clear which inputs to
+      generate for an arbitrary pattern, or what the "correct" outcome even is without an oracle to
+      compare against. java-reggie apparently found an answer worth copying (possibly the same
+      differential-against-`java.util.regex` idea this project's scraped-corpus harness already
+      uses, possibly something else, e.g. pattern-directed input generation) -- read it before
+      building anything, don't just copy the "fuzz" label.
+
+## Scraped-corpus microbenchmark (idea, 2026-09-06)
+
+- [ ] **Add a microbenchmark that compares `java.util.regex` vs `Ll1Pattern` speed over the
+      scraped-corpus golden files** (per the project owner, 2026-09-06). Sketch: load every golden
+      row from `openjdk_bmp.tsv`/`openjdk_supplementary.tsv` (and any later-added corpus files, see
+      above), keep only rows where `status == "AGREES"` (both engines compile and produce the same
+      match outcome -- comparing speed on a row where the engines disagree about *correctness*
+      isn't meaningful), then time (a) `java.util.regex.Pattern.compile(...)` + the matching call
+      (`matches`/`lookingAt`/`find`, per the row's `mode`) and (b) `Ll1Pattern`'s equivalent, and
+      report both. Open questions to settle before building:
+  - JMH vs a hand-rolled JUnit timer loop -- JMH is the right tool for real microbenchmark rigor
+        (warmup iterations, fork isolation, avoiding dead-code elimination) but is a new build
+        dependency/plugin; a fake-it-with-JUnit version (loop N times, discard a warmup prefix,
+        report min/median/mean) is far less rigorous but zero new dependencies. Ask the project
+        owner which tradeoff they want once this is picked up.
+  - Compile time and match time probably need reporting separately (llk likely compiles slower --
+        it's building a full dispatch graph upfront -- but may match faster per-call; a combined
+        number would hide that story).
+  - Needs a decision on where results go: console output only (simplest), a checked-in baseline
+        file to diff against (catches regressions), or both.
 
 ## Core implementation
 

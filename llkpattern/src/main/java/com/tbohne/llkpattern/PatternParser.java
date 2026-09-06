@@ -100,7 +100,10 @@ final class PatternParser {
   }
 
   private void advanceCodePoint() {
-    index += pattern.offsetByCodePoints(index, 1);
+    // offsetByCodePoints(index, 1) already returns the new absolute index one code point past
+    // `index` -- it's not a delta to add to `index` (that was the bug: it double-advanced every
+    // call after the first, since index==0 made `index += offset` and `index = offset` coincide).
+    index = pattern.offsetByCodePoints(index, 1);
     peek = index < pattern.length() ? pattern.charAt(index) : '\0';
   }
 
@@ -213,7 +216,7 @@ final class PatternParser {
           complex.endIndex = index;
           sequence.patterns.add(parseQuantifiable(complex));
         } else {
-          rawText.append(peek);
+          rawText.appendCodePoint(fullChar);
         }
       }
     }
@@ -379,9 +382,13 @@ final class PatternParser {
           throw throwUnexpectedChar("expected \"]\" to match ", new CodePointReference(complex.startIndex));
         case ']':
           if (index > complex.startIndex + 1) {
-            if (negate)
-              return new ComplexCharacter(complex.startIndex, index, complex.ranges.complement());
-            complex.endIndex = index;
+            int closeBracketIndex = index;
+            advance(1); // consume the ']' -- callers expect peek to be past this construct
+            if (negate) {
+              return new ComplexCharacter(
+                  complex.startIndex, closeBracketIndex + 1, complex.ranges.complement());
+            }
+            complex.endIndex = closeBracketIndex + 1;
             return complex;
           } else {
             complex.ranges.add(Range.singleton(+']'));

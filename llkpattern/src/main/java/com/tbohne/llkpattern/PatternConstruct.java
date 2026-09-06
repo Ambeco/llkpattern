@@ -1,7 +1,6 @@
 package com.tbohne.llkpattern;
 
-import com.google.common.collect.BoundType;
-import com.google.common.collect.ImmutableRangeMap;
+import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeMap;
 import com.google.common.collect.RangeSet;
@@ -10,14 +9,12 @@ import com.google.common.collect.TreeRangeSet;
 import com.tbohne.llkpattern.MatcherConstruct.*;
 
 import java.util.Map.Entry;
-import java.util.Set;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiFunction;
 
 abstract class PatternConstruct {
 	static final RangeMap<Integer, PatternConstruct> EMPTY_MAP = TreeRangeMap.create();
@@ -27,13 +24,17 @@ abstract class PatternConstruct {
 
 	@MonotonicNonNull MatcherConstruct matcher;
 
-	RangeMap<Integer, MatcherConstruct> exitMap = TreeRangeMap.create();
-	@MonotonicNonNull MatcherConstruct exitElse;
+	// The construct that comes after this one -- i.e. what compile() was last called with.
+	// Recorded so that, once this construct appears as a value in some ancestor's entryMap, that
+	// ancestor's MatcherConstruct-building code can rely on `entryMapValue.matcher` already being
+	// set (this construct's own compile() already ran, tail-to-front) rather than needing to
+	// thread the continuation through again.
+	@MonotonicNonNull PatternConstruct next;
 
 	// Which PatternConstruct handles each possible next code point, once this construct (and
 	// anything it can trivially skip, e.g. an optional quantifier) has matched. Populated by
 	// buildEntryMap(); consumed while compiling a containing QuantifiedUnion/Sequence to detect
-	// ambiguous branches, and eventually to drive building the MatcherConstruct graph.
+	// ambiguous branches, and to build the MatcherConstruct graph.
 	RangeMap<Integer, PatternConstruct> entryMap = TreeRangeMap.create();
 	@MonotonicNonNull PatternConstruct entryElse;
 
@@ -47,17 +48,34 @@ abstract class PatternConstruct {
 		this.endIndex = endIndex;
 	}
 
-	// TODO: this doesn't yet build a MatcherConstruct graph from the AST -- it only populates
-	// entryMap/entryElse (see buildEntryMap) and returns whatever `matcher` already happens to be
-	// set to (only EndConstruct sets it today). Finishing this is tracked in remaining_work.md.
+	/**
+	 * Compiles this construct (and, transitively, whatever it depends on) into a MatcherConstruct
+	 * graph, returning the node that represents "start matching this construct here". See
+	 * design.md's "The compile() algorithm and cycle handling" section.
+	 *
+	 * <p>Memoized on {@link #matcher}: if it's already set -- either because this exact construct
+	 * was already compiled, or because a MatcherConstruct constructor further up the call stack
+	 * already self-registered here to break a cycle -- this returns immediately without redoing
+	 * (or re-entering) any work.
+	 */
 	@Nullable MatcherConstruct compile(PatternConstruct next) {
-		if (entryMap.equals(EMPTY_MAP)) {
-			buildEntryMap(next);
+		if (matcher != null) {
+			return matcher;
+		}
+		this.next = next;
+		buildEntryMap(next);
+		if (matcher == null) {
+			// buildMatcher() constructs `new SomeMatcherConstruct(this, ...)`, whose constructor's
+			// first act is `this.matcher = it` (see MatcherConstruct's class doc) -- so `matcher` is
+			// set as a side effect of the call below, not by assigning its return value.
+			buildMatcher();
 		}
 		return matcher;
 	}
 
 	abstract void buildEntryMap(PatternConstruct next);
+
+	abstract void buildMatcher();
 
 	static abstract class QuantifiableConstruct extends PatternConstruct {
 		int min = 1;
@@ -74,6 +92,11 @@ abstract class PatternConstruct {
 
 		QuantifiableConstruct(int startIndex, int endIndex) {
 			super(startIndex, endIndex);
+		}
+
+		/** True for a "plain" {@code {1,1}} construct -- i.e. no real repetition/optionality. */
+		boolean isUnquantified() {
+			return min == 1 && max == 1;
 		}
 	}
 
@@ -94,43 +117,95 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			// TODO(https://github.com/Ambeco/llpattern remaining_work.md "ambiguity-detection algorithm"):
-			// This needs to walk `constructs`, compile each one against `next`, and merge their entry
-			// ranges into this union's entryMap/entryElse, throwing a PatternSyntaxException with a
-			// helpful message the first time two branches' entry ranges overlap (or two branches both
-			// try to claim "else"). The previous attempt at this (see git history) didn't compile and
-			// is being redone now that CodePointMap/TreeCodePointMap's merge-conflict detection
-			// (CodePointMap#intersectionRejectingConflicts) exists to build this on top of, rather than
-			// hand-rolling Guava RangeMap overlap bookkeeping here.
-			throw new UnsupportedOperationException("TODO: QuantifiedUnion.buildEntryMap not yet implemented");
+			if (!isUnquantified()) {
+				// TODO(remaining_work.md "quantifier loop compilation"): a quantified group (e.g.
+				// `(a|b)*`, `(a|b)?`, `(a|b){2,3}`) needs a LoopMatcherConstruct/EndLoopMatcherConstruct
+				// pair and, for `min == 0`, this union's own entryMap must also fold in `next`'s entry
+				// set (entering zero times). That's also where the real compile-time cycle (this
+				// construct's body dispatching back to itself) is exercised -- see design.md.
+				throw new UnsupportedOperationException(
+						"TODO: quantified groups (a group followed by ?, *, +, or {n,m}) are not yet compiled");
+			}
+
+			// Compile every branch (tail-to-front relative to this union: each branch's "next" is
+			// this union's own "next", since choosing a branch doesn't consume anything itself) and
+			// merge their entry ranges, rejecting any two branches that could both match the same
+			// next code point -- the core LL(1) restriction this whole library is built around.
+			TreeCodePointMap<PatternConstruct> merged = new TreeCodePointMap<>();
+			int elseBranchIndex = -1;
+			for (int i = 0; i < constructs.size(); i++) {
+				PatternConstruct construct = constructs.get(i);
+				construct.compile(next);
+
+				if (construct.entryElse != null) {
+					if (entryElse != null) {
+						PatternConstruct priorElse = constructs.get(elseBranchIndex);
+						throw PatternSyntaxException.throwWithReferences(
+								pattern,
+								construct.startIndex,
+								"union subpattern #", i + 1, " starting at index ", construct.startIndex,
+								" allows any character, but subpattern #", elseBranchIndex + 1,
+								" starting at index ", priorElse.startIndex,
+								" also allows any character, which is ambiguous");
+					}
+					entryElse = construct.entryElse;
+					elseBranchIndex = i;
+				}
+
+				TreeCodePointMap<PatternConstruct> branchMap = toCodePointMap(construct.entryMap);
+				Entry<CodePointMap.Range, PatternConstruct> conflict = findFirstOverlap(merged, branchMap);
+				if (conflict != null) {
+					throw PatternSyntaxException.throwWithReferences(
+							pattern,
+							construct.startIndex,
+							"union subpattern #", i + 1, " starting at index ", construct.startIndex,
+							" accepts character(s) ",
+							new PatternSyntaxException.CodePoint(conflict.getKey().min),
+							"-",
+							new PatternSyntaxException.CodePoint(conflict.getKey().max - 1),
+							", but a prior subpattern in the same union already claims those, which is not allowed");
+				}
+				merged = (TreeCodePointMap<PatternConstruct>) merged.union(branchMap);
+			}
+
+			for (Entry<CodePointMap.Range, PatternConstruct> e : merged.entrySet()) {
+				entryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
+			}
 		}
 
-		BiFunction<PatternConstruct, PatternConstruct, PatternConstruct> rejectAmbiguous(int thisIndex,
-																																										 Map.Entry<Range<Integer>,	PatternConstruct> entry) {
-			return (first, second) -> {
-				RangeMap<Integer, PatternConstruct> overlapMap = entryMap.subRangeMap(entry.getKey());
-				Range<Integer> range = overlapMap.asMapOfRanges().keySet().iterator().next();
-				char rangeStart = range.lowerBoundType() == BoundType.CLOSED ? '(' : '[';
-				char rangeEnd = range.upperBoundType() == BoundType.CLOSED ? ')' : ']';
-				PatternConstruct other = overlapMap.get(+rangeStart);
-				// TODO: Narrow down the references to only the first character
-				throw PatternSyntaxException.throwWithReferences(
-						pattern,
-						second.startIndex,
-						"union subpattern #",
-						thisIndex+1,
-						" starts with \"",
-						new PatternSyntaxException.Reference(first.startIndex, first.endIndex),
-						"\" which accepts characters in the range of ",
-						rangeStart,
-						new PatternSyntaxException.CodePoint(entry.getKey().lowerEndpoint()),
-						"-",
-						new PatternSyntaxException.CodePoint(entry.getKey().upperEndpoint()),
-						rangeEnd,
-						", but a prior subpattern that starts with \"",
-						new PatternSyntaxException.Reference(second.startIndex, second.endIndex),
-						"\", matches those same characters, which is not allowed.");
-			};
+		@Override
+		void buildMatcher() {
+			new DispatchMatcherConstruct(this);
+		}
+
+		/** Converts a Guava RangeMap (arbitrary bound types) into a CodePointMap ({@code [min,max)}). */
+		private static TreeCodePointMap<PatternConstruct> toCodePointMap(RangeMap<Integer, PatternConstruct> rangeMap) {
+			TreeCodePointMap<PatternConstruct> result = new TreeCodePointMap<>();
+			for (Entry<Range<Integer>, PatternConstruct> e : rangeMap.asMapOfRanges().entrySet()) {
+				Range<Integer> canon = e.getKey().canonical(DiscreteDomain.integers());
+				result.put(canon.lowerEndpoint(), canon.upperEndpoint(), e.getValue());
+			}
+			return result;
+		}
+
+		/**
+		 * Returns the first code point range present (with a different value) in both maps, or null
+		 * if none overlap. {@code CodePointMap.intersectionRejectingConflicts} would detect the same
+		 * thing, but throws immediately rather than letting us report which ranges/branches conflict.
+		 */
+		private static @Nullable Entry<CodePointMap.Range, PatternConstruct> findFirstOverlap(
+				CodePointMap<PatternConstruct> merged, CodePointMap<PatternConstruct> branch) {
+			for (Entry<CodePointMap.Range, PatternConstruct> branchEntry : branch.entrySet()) {
+				for (Entry<CodePointMap.Range, PatternConstruct> mergedEntry : merged.entrySet()) {
+					int loMax = Math.min(branchEntry.getKey().max, mergedEntry.getKey().max);
+					int hiMin = Math.max(branchEntry.getKey().min, mergedEntry.getKey().min);
+					if (hiMin < loMax) {
+						return new CodePointMap.ImmutableEntry<>(
+								new CodePointMap.Range(hiMin, loMax), mergedEntry.getValue());
+					}
+				}
+			}
+			return null;
 		}
 	}
 
@@ -144,14 +219,23 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			// TODO: each pattern in the sequence should be compiled against *the following* pattern
-			// (or `next` for the last one), not all against `next` -- this is a placeholder wiring so
-			// the module compiles while the matcher-graph work in remaining_work.md is finished.
-			for (int i = 0; i < patterns.size(); i++) {
-				patterns.get(i).buildEntryMap(next);
+			// Compile tail-to-front: the last element's next is this sequence's own next, and each
+			// earlier element's next is the element right after it (already compiled by the time we
+			// get to it).
+			PatternConstruct tail = next;
+			for (int i = patterns.size() - 1; i >= 0; i--) {
+				patterns.get(i).compile(tail);
+				tail = patterns.get(i);
 			}
 			entryMap = patterns.get(0).entryMap;
 			entryElse = patterns.get(0).entryElse;
+		}
+
+		@Override
+		void buildMatcher() {
+			// A Sequence has no matching behavior of its own -- it's exactly whatever its first
+			// element compiled to (already compiled by buildEntryMap, above).
+			matcher = patterns.get(0).matcher;
 		}
 	}
 
@@ -166,6 +250,11 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			entryMap.put(Range.singleton(value.codePointAt(0)), this);
+		}
+
+		@Override
+		void buildMatcher() {
+			new LiteralMatcherConstruct(this, value);
 		}
 	}
 
@@ -182,6 +271,15 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			entryElse = this;
+		}
+
+		@Override
+		void buildMatcher() {
+			if (name != null) {
+				new BackReferenceMatcherConstruct(this, name);
+			} else {
+				new BackReferenceMatcherConstruct(this, id);
+			}
 		}
 	}
 
@@ -221,6 +319,11 @@ abstract class PatternConstruct {
 			}
 			entryElse = dotElse;
 		}
+
+		@Override
+		void buildMatcher() {
+			new SingleCharMatcherConstruct(this);
+		}
 	}
 
 	static final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
@@ -233,10 +336,24 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			delegate.buildEntryMap(next);
+			if (!isUnquantified()) {
+				// TODO(remaining_work.md "quantifier loop compilation"): same gap as
+				// QuantifiedUnion's -- a quantified character class (`a*`, `a?`, `a{2,3}`, ...) needs
+				// a real loop, not just a pass-through.
+				throw new UnsupportedOperationException(
+						"TODO: quantified character classes (?, *, +, or {n,m} on a character or class) are not yet compiled");
+			}
+			delegate.compile(next);
 			for (Range<Integer> range : delegate.ranges.asRanges()) {
 				entryMap.put(range, this);
 			}
+		}
+
+		@Override
+		void buildMatcher() {
+			// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
+			// delegate ComplexCharacter (already compiled by buildEntryMap, above).
+			matcher = delegate.matcher;
 		}
 	}
 
@@ -264,13 +381,18 @@ abstract class PatternConstruct {
 		void buildEntryMap(PatternConstruct next) {
 			entryElse = this;
 		}
+
+		@Override
+		void buildMatcher() {
+			new BoundaryMatcherConstruct(this, type);
+		}
 	}
-	
+
 	static final class EndConstruct extends PatternConstruct {
 
 		EndConstruct(int startIndex) {
 			super(startIndex);
-			matcher = EndMatcherConstruct.instance;
+			new EndMatcherConstruct(this);
 		}
 
 		@Override
@@ -278,8 +400,10 @@ abstract class PatternConstruct {
 			// An EndConstruct has no "next" -- it's the sentinel marking the end of the whole pattern.
 		}
 
-		@Override MatcherConstruct compile(PatternConstruct next) {
-			return matcher;
+		@Override
+		void buildMatcher() {
+			// matcher is already set by the constructor -- compile() never reaches this (see its
+			// `if (matcher == null)` guard) but it's implemented for completeness/symmetry.
 		}
 	}
 }

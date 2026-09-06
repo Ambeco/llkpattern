@@ -698,7 +698,11 @@ final class PatternParser {
     }
     String charClassName = pattern.substring(index, end);
     advance(end - index + 1);
-    int peek2 = pattern.charAt(index + 1);
+    // Bounds-checked like every other lookahead-by-one in this file (e.g.
+    // tryParseSingleCharEscape's own `peek2`) -- unguarded, this crashed with
+    // StringIndexOutOfBoundsException whenever a "\p{...}"/"\P{...}" construct was the very last
+    // thing in the pattern (index + 1 == pattern.length()), e.g. the bare pattern "\p{Cs}".
+    int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
     NamedCharClass.CharacterClassPrefix prefix;
     if (peek == 'I' && peek2 == 's') {
       prefix = NamedCharClass.CharacterClassPrefix.is;

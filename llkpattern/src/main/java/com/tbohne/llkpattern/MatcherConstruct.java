@@ -81,7 +81,7 @@ abstract class MatcherConstruct {
 		SingleCharMatcherConstruct(ComplexCharacter owner) {
 			super(owner);
 			MatcherConstruct target = owner.next.matcher;
-			for (Range<Integer> range : owner.ranges.asRanges()) {
+			for (Range<Integer> range : owner.validRanges().asRanges()) {
 				dispatchMap.put(range, target);
 			}
 		}

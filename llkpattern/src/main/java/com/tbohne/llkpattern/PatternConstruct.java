@@ -406,9 +406,25 @@ abstract class PatternConstruct {
 			super(startIndex);
 		}
 
+		/**
+		 * {@code ranges} clamped to the actual Unicode code point domain {@code [0,
+		 * MAX_CODE_POINT]}. Every {@code Range.complement()} in this codebase (negated classes via
+		 * {@code [^...]}, {@code .}, and built-ins like {@code \D}/{@code \S}/{@code \W}) produces a
+		 * mathematically unbounded {@code RangeSet} that extends to {@code Integer.MIN_VALUE}/{@code
+		 * MAX_VALUE} -- Guava has no concept of "the codepoint domain" to bound it to. Left unclamped,
+		 * such a range can swallow {@code -1}, the sentinel {@code Matcher} uses throughout for
+		 * "no more input" (see {@code Matcher#peek}), making a negated class at end-of-input look
+		 * like a match and crash trying to then consume a code point past the end of the string. Every
+		 * caller that turns {@code ranges} into an actual dispatch/entry map (as opposed to still
+		 * combining/negating them further) must go through this, not raw {@code ranges.asRanges()}.
+		 */
+		RangeSet<Integer> validRanges() {
+			return ranges.subRangeSet(Range.closed(0, Character.MAX_CODE_POINT));
+		}
+
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			for (Range<Integer> range : ranges.asRanges()) {
+			for (Range<Integer> range : validRanges().asRanges()) {
 				entryMap.put(range, this);
 			}
 			entryElse = dotElse;
@@ -435,7 +451,7 @@ abstract class PatternConstruct {
 				return;
 			}
 			delegate.compile(next);
-			for (Range<Integer> range : delegate.ranges.asRanges()) {
+			for (Range<Integer> range : delegate.validRanges().asRanges()) {
 				entryMap.put(range, this);
 			}
 		}

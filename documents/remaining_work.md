@@ -1,6 +1,6 @@
 # Remaining Work
 
-Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1203 tests, 0 failing, 561 skipped (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
+Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1215 tests, 0 failing, 561 skipped (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
 
 ## FIXED (2026-09-06): the `PatternParser` hang on octal/`\x{...}` escapes in a `[...]` range
 
@@ -26,16 +26,76 @@ After the fix, the 4 previously-hanging golden rows (which had been auto-tagged
 also hung) were regenerated against their original un-shrunk input: 2 now `AGREES`, and 2 turned up
 a **new, real** `UNEXPECTED` divergence — see the next item.
 
-- [ ] **NEW (found while fixing the hang above): llk matches a lone low surrogate against
-      `java.util.regex`'s `NOMATCH`** for patterns whose character-class range covers only the low
-      (`\x{dc00}-\x{dfff}`) or the split low/high surrogate pair, e.g. `[\x{dc00}-\x{dfff}]` and
-      `[\x{d800}-\x{dbff}\x{dc00}-\x{dfff}]`, both vs input `"?"` (`OpenJdkSupplementaryCorpusTest`
-      golden rows). `java.util.regex` treats a lone surrogate code *unit* input as not in the range
-      (it's operating on UTF-16 code units, not code points, for a range expressed via `\x{...}`
-      code-point escapes outside the BMP... or something adjacent to that) while llk matches it.
-      Needs investigation into how `ComplexCharacter`/`CodePointMap` map surrogate code units vs.
-      code points for ranges specified with 5-digit `\x{...}` escapes. Not a hang, not urgent, but
-      newly discovered and not yet understood.
+## FIXED (2026-09-06): llk matched into the low half of a *valid* surrogate pair
+
+This entry originally (see git history) mischaracterized the bug as "llk matches a lone low
+surrogate that `java.util.regex` rejects." **That framing was wrong** -- the golden row in question
+(`[\x{dc00}-\x{dfff}]` vs an input JUnit's display name rendered as `"?"`) does not actually contain
+a lone surrogate at all: its real input is the single Java string literal for U+1F4A9 (💩), i.e. a
+*valid, correctly-paired* UTF-16 surrogate pair. `"?"` in the test name is just how JUnit renders an
+unprintable/astral character, not evidence of what the string actually contains -- decoding the raw
+golden-file bytes (`GoldenRow.input`) was needed to see this.
+
+Before trusting either of two different AI assistants' secondhand claims about the exact rule here
+(one claimed `\x{...}` behaves differently from `\u`/disjunction/`\p{Cs}` escapes; the other cited
+JDK-8149446 -- a "Won't Fix" bug about matching into a valid pair -- as still-current behavior),
+both were checked directly against the JDK actually installed here (17):
+
+```
+[\udc00-\udfff]        valid pair (U+10000)      find=false
+[\udc00-\udfff]        lone low surrogate        find=true
+[\x{dc00}-\x{dfff}]    valid pair                find=false
+[\x{dc00}-\x{dfff}]    lone low surrogate        find=true
+[\udc00\udc01\udc02]   valid pair (disjunction)  find=false
+[\udc00\udc01\udc02]   lone low surrogate        find=true
+\p{Cs}                 valid pair                find=false
+\p{Cs}                 lone low surrogate        find=true
+```
+
+Neither AI's account held up: all four forms behave *identically* on this JDK -- a lone surrogate
+matches, a valid pair is never split, full stop, no escape-form-specific exception. So the real,
+narrow bug was: **llk's `find()` tried every UTF-16 char index as a candidate match-start position,
+including the low half of a valid surrogate pair** ([Matcher.java](../llkpattern/src/main/java/com/tbohne/llkpattern/Matcher.java)'s
+`find(int start)` loop incremented `i` by a plain char index, with no check for "is this the middle
+of a code point"). At that index, `codePointAt(i)` returns just the lone low-surrogate char value
+(it only combines a pair when called *at the high surrogate's own index*), so a character class
+covering the surrogate range matched it -- exactly the JDK-8149446 defect, just not one `java.util.regex`
+itself currently exhibits.
+
+Fixed by having `find(int start)` skip any `i` that is the low half of a valid high+low pair (see
+the fix's own comment for why this is scoped to `find`'s scan and not `peek`/`consume1CodePoint`,
+which are already code-point-aware for within-match advancement via `Character.charCount`).
+
+**Two more bugs surfaced while fixing this one** (both real, both pre-existing, neither introduced
+by the fix -- it just stopped a different bug from masking them):
+
+1. **Negated character classes weren't clamped to the valid Unicode domain.** Every `.complement()`
+   in this codebase (`[^...]`, `.`, and built-ins like `\D`/`\S`/`\W`) produces a Guava `RangeSet`
+   that's mathematically unbounded (extends to `Integer.MIN_VALUE`/`MAX_VALUE` -- Guava has no
+   concept of "the codepoint domain"). Left unclamped, such a range can swallow `-1`, the sentinel
+   `Matcher` uses throughout for "no more input" (see `Matcher#peek`), making end-of-input look like
+   a match against a negated class and then crash trying to consume a code point past the end of the
+   string (`StringIndexOutOfBoundsException` from `consume1CodePoint`). This was unreachable before
+   the `find()` fix above because `find()` would always find its own (wrong) match at the mid-pair
+   position first, before ever reaching a position where this could trigger. Fixed by adding
+   `ComplexCharacter#validRanges()` (clamps to `[0, Character.MAX_CODE_POINT]`) and routing every
+   place that turns `ranges` into an actual dispatch/entry map
+   ([MatcherConstruct.java](../llkpattern/src/main/java/com/tbohne/llkpattern/MatcherConstruct.java)'s
+   `SingleCharMatcherConstruct`, and two spots in
+   [PatternConstruct.java](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternConstruct.java))
+   through it instead of raw `ranges.asRanges()`.
+2. **`\p{...}`/`\P{...}` crashed with `StringIndexOutOfBoundsException` if it was the very last thing
+   in the pattern** (e.g. the bare pattern `\p{Cs}`) -- `PatternParser.parseComplexEscape()` read
+   `pattern.charAt(index + 1)` unconditionally, with no bounds check (unlike every other
+   lookahead-by-one in that file). Fixed by bounds-checking it the same way.
+
+Regression coverage: [SurrogateMatchingTest.java](../llkpattern/src/test/java/com/tbohne/llkpattern/SurrogateMatchingTest.java)
+covers all four escape forms above, both surrogate halves, out-of-order (unpairable) surrogates, and
+`find()` specifically refusing to start mid-pair. Both scraped-corpus golden files were regenerated;
+every row this fix touched moved to `AGREES` or to an already-tracked, unrelated known gap (mostly
+`\p{InGreek}`-style Unicode block names, and the already-documented "reluctant/possessive quantifiers
+are no-ops" design decision -- see design.md).
+
 ## FIXED (2026-09-06): character-class intersection (`&&`) was entirely broken
 
 Three separate bugs in `PatternParser.parseComplexCharacter()`, all in the `&&`/nested-class
@@ -227,14 +287,18 @@ failure instead of a hung suite.
 `openjdk_supplementary.tsv`, 339 rows; regenerate via the `generateCorpus` command above after any
 scraping/unescaping/engine change):
 
-- BMP: 124 AGREES, 82 UNIMPLEMENTED (auto-tagged), 16 UNEXPECTED (auto-tagged).
-- Supplementary: 196 AGREES, 113 UNIMPLEMENTED (auto-tagged), 30 UNEXPECTED (auto-tagged).
+- BMP: 134 AGREES, 68 UNIMPLEMENTED (auto-tagged), 20 UNEXPECTED (auto-tagged).
+- Supplementary: 213 AGREES, 98 UNIMPLEMENTED (auto-tagged), 28 UNEXPECTED (auto-tagged).
 - The 4 rows that used to hang `llkMatchesGolden` outright no longer do -- see "FIXED (2026-09-06):
-  the `PatternParser` hang..." above (2 now AGREES, 2 turned into a new real UNEXPECTED
-  surrogate-range bug).
+  the `PatternParser` hang..." above.
 - Character-class intersection (`&&`) is fixed -- see "FIXED (2026-09-06): character-class
   intersection..." above; this alone moved ~86 rows from UNIMPLEMENTED/UNEXPECTED to AGREES across
-  both files (AGREES went from 65+136=201 to 124+196=320).
+  both files.
+- The surrogate-pair matching bug and its two associated finds (unclamped negated-class ranges
+  colliding with the end-of-input sentinel; `\p{...}` crashing as the pattern's last construct) are
+  fixed -- see "FIXED (2026-09-06): llk matched into the low half of a *valid* surrogate pair"
+  above; moved another ~19 rows to `AGREES` (AGREES now 134+213=347 total, up from 65+136=201 at the
+  start of this session).
 - The remaining `UNIMPLEMENTED`/`UNEXPECTED` counts are **not yet human-reviewed** -- per
   `CorpusGenerator`'s javadoc, "UNIMPLEMENTED" really just means "llk didn't run cleanly" (could
   be a correct LL(1)-ambiguity rejection, not a missing feature) and needs retagging as

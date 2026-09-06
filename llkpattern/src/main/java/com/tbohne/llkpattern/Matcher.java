@@ -101,6 +101,19 @@ public class Matcher implements MatchResult {
 
 	public boolean find(int start) {
 		for (int i = start; i <= regionEnd; i++) {
+			// Unicode code points, not UTF-16 code units, are the atomic matching unit (see
+			// java.util.regex's own behavior, and JDK-8149446): a valid high+low surrogate pair must
+			// never be split, so `i` landing on the low half of one is not a legal place to *start* a
+			// match, even though it's a legal char index. Skipping it here (rather than in
+			// attemptMatch/peek, which is also used for internal within-match advancement that's
+			// already code-point-aware via consume1CodePoint) keeps this fix scoped to exactly the
+			// bug: find()'s scan treating every char index as a candidate start position.
+			if (i > 0
+					&& i < input.length()
+					&& Character.isLowSurrogate(input.charAt(i))
+					&& Character.isHighSurrogate(input.charAt(i - 1))) {
+				continue;
+			}
 			if (attemptMatch(i, false)) {
 				return true;
 			}

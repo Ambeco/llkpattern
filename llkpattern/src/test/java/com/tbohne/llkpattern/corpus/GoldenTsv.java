@@ -64,6 +64,18 @@ public final class GoldenTsv {
     return sb.toString();
   }
 
+  /** True if any char in {@code s} is a lone (unpaired) UTF-16 surrogate -- see {@link
+   *  #isLoneSurrogate(String, int)}. Exposed for {@code MatchRunner}'s input-integrity assertion:
+   *  see documents/remaining_work.md's surrogate-matching entry for why that matters. */
+  public static boolean containsLoneSurrogate(String s) {
+    for (int i = 0; i < s.length(); i++) {
+      if (isLoneSurrogate(s, i)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** True if the char at {@code index} is a UTF-16 surrogate that is NOT part of a valid
    *  high+low pair with its neighbor -- i.e. one that {@code UTF-8}, which has no way to encode a
    *  lone surrogate, cannot represent on its own. */

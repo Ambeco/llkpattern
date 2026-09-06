@@ -9,6 +9,8 @@ import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -89,6 +91,9 @@ final class PatternParser {
   private char peek;
   private int quantifiableIndex;
   private int captureConstructIndex;
+  // Name -> captureConstructIndex, populated as each named group's real index is assigned (see
+  // parseGroup). Exposed via getNamedGroups() for Ll1Pattern to carry forward for group(String).
+  private final Map<String, Integer> namedGroups = new HashMap<>();
 
   PatternParser(String pattern, int flags) {
     this.pattern = pattern;
@@ -97,6 +102,21 @@ final class PatternParser {
     this.flags = flags;
     quantifiableIndex = 0;
     captureConstructIndex = 0;
+  }
+
+  /** Total number of quantifiable (?, *, +, {n,m}) constructs -- sizes Matcher#quantifiableCounts. */
+  int getQuantifiableCount() {
+    return quantifiableIndex;
+  }
+
+  /** Total number of capturing groups -- sizes Matcher#captureGroups. */
+  int getCaptureGroupCount() {
+    return captureConstructIndex;
+  }
+
+  /** Named capturing groups' names mapped to their captureConstructIndex. */
+  Map<String, Integer> getNamedGroups() {
+    return namedGroups;
   }
 
   private void advanceCodePoint() {
@@ -354,6 +374,9 @@ final class PatternParser {
     union.endIndex = index;
     if (union.captureConstructIndex != -1) {
       union.captureConstructIndex = captureConstructIndex++;
+      if (!union.captureName.isEmpty()) {
+        namedGroups.put(union.captureName, union.captureConstructIndex);
+      }
     }
     advance(1);
     parseQuantifiable(union);

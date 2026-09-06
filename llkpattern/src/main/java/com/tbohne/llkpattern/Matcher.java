@@ -33,19 +33,34 @@ public class Matcher implements MatchResult {
 	int regionEnd;
 	int regionStart = 0;
 	int pos = 0;
-	int[] quantifiableCounts = new int[]{};
+	int[] quantifiableCounts;
 	// One slot per capture-group construct in the pattern, indexed by captureConstructIndex.
 	// BeginCaptureMatcherConstruct overwrites the slot on entry; since there's no recursion or
 	// backtracking in this engine, the same construct can never be "open" twice at once, so a flat
 	// array (not an actual stack) suffices -- re-entering a capture inside a loop naturally
 	// implements regex's "last iteration wins" semantics by simply overwriting the previous Group,
 	// and a slot a loop never entered stays null (unset), also matching regex semantics.
-	@Nullable Group[] captureGroups = new Group[]{};
+	@Nullable Group[] captureGroups;
+
+	// Set by attemptMatch() before each match attempt, read by MatcherConstruct.EndMatcherConstruct:
+	// true for matches() (the whole region must be consumed), false for lookingAt()/find() (a
+	// prefix match starting at `pos` is enough). This is the one place the "same compiled graph"
+	// design needs a runtime switch -- see design.md.
+	boolean requireFullMatch;
+
+	// The most recent successful match's span, and whether one exists yet at all (start()/end()/
+	// group() throw IllegalStateException before the first successful match(), same as
+	// java.util.regex.Matcher).
+	private boolean hasMatch = false;
+	private int matchStart = -1;
+	private int matchEnd = -1;
 
 	Matcher(Ll1Pattern pattern, String input) {
 		this.pattern = pattern;
 		this.input = input;
 		this.regionEnd = input.length();
+		this.quantifiableCounts = new int[pattern.quantifiableCount];
+		this.captureGroups = new Group[pattern.captureGroupCount];
 	}
 
 	public Matcher appendReplacement(StringBuffer sb, String replacement) {
@@ -57,39 +72,62 @@ public class Matcher implements MatchResult {
 	}
 
 	public int end() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#end");
+		return end(0);
 	}
 
 	public int end(int group) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#end");
+		if (group == 0) {
+			requireMatch();
+			return matchEnd;
+		}
+		Group g = captureGroup(group);
+		if (g == null || g.result == null) {
+			return -1;
+		}
+		return g.inputStartIndex + g.result.length();
 	}
 
 	public int end(String name) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#end");
+		return end(groupIndexByName(name));
 	}
 
 	public boolean find() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#find");
+		// Same start-of-search-window semantics as java.util.regex: resume right after the previous
+		// match, advancing by one extra position if that match was empty so find() always makes
+		// forward progress instead of matching the same empty span forever.
+		int nextStart = hasMatch ? (matchEnd == matchStart ? matchEnd + 1 : matchEnd) : regionStart;
+		return find(nextStart);
 	}
 
 	public boolean find(int start) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#find");
+		for (int i = start; i <= regionEnd; i++) {
+			if (attemptMatch(i, false)) {
+				return true;
+			}
+		}
+		hasMatch = false;
+		return false;
 	}
 
 	public String group() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#group");
+		return group(0);
 	}
 
 	public String group(int group) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#group");
+		if (group == 0) {
+			requireMatch();
+			return input.substring(matchStart, matchEnd);
+		}
+		Group g = captureGroup(group);
+		return g == null ? null : g.result;
 	}
 
-	public String group(String group) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#group");
+	public String group(String name) {
+		return group(groupIndexByName(name));
 	}
 
-	public int groupCount()  {
-		throw new UnsupportedOperationException("TODO: implement Matcher#groupCount");
+	public int groupCount() {
+		return pattern.captureGroupCount;
 	}
 
 	public boolean hasAnchoringBounds()  {
@@ -105,11 +143,11 @@ public class Matcher implements MatchResult {
 	}
 
 	public boolean lookingAt() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#lookingAt");
+		return attemptMatch(regionStart, false);
 	}
 
 	public boolean matches() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#matches");
+		return attemptMatch(regionStart, true);
 	}
 
 	public Ll1Pattern pattern() {
@@ -119,6 +157,8 @@ public class Matcher implements MatchResult {
 	public Matcher region(int start, int end)  {
 		this.regionStart = start;
 		this.regionEnd = end;
+		this.pos = start;
+		hasMatch = false;
 		return this;
 	}
 
@@ -146,6 +186,7 @@ public class Matcher implements MatchResult {
 		regionStart = 0;
 		regionEnd = input.length();
 		pos = 0;
+		resetMatchState();
 		return this;
 	}
 
@@ -154,19 +195,33 @@ public class Matcher implements MatchResult {
 		regionStart = 0;
 		regionEnd = input.length();
 		pos = 0;
+		resetMatchState();
 		return this;
 	}
 
+	private void resetMatchState() {
+		hasMatch = false;
+		matchStart = -1;
+		matchEnd = -1;
+		java.util.Arrays.fill(quantifiableCounts, 0);
+		java.util.Arrays.fill(captureGroups, null);
+	}
+
 	public int start() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#start");
+		return start(0);
 	}
 
 	public int start(int group)  {
-		throw new UnsupportedOperationException("TODO: implement Matcher#start");
+		if (group == 0) {
+			requireMatch();
+			return matchStart;
+		}
+		Group g = captureGroup(group);
+		return g == null ? -1 : g.inputStartIndex;
 	}
 
 	public int start(String name)  {
-		throw new UnsupportedOperationException("TODO: implement Matcher#start");
+		return start(groupIndexByName(name));
 	}
 
 	public MatchResult toMatchResult() {
@@ -186,6 +241,9 @@ public class Matcher implements MatchResult {
 			throw new IllegalArgumentException("newPattern cannot be null");
 		}
 		pattern = newPattern;
+		quantifiableCounts = new int[newPattern.quantifiableCount];
+		captureGroups = new Group[newPattern.captureGroupCount];
+		resetMatchState();
 		return this;
 	}
 
@@ -193,11 +251,52 @@ public class Matcher implements MatchResult {
 		throw new UnsupportedOperationException("TODO: implement Matcher#useTransparentBounds");
 	}
 
+	/**
+	 * Attempts one match starting at code point index {@code from}, requiring the whole region to
+	 * be consumed iff {@code requireFullMatch}. On success, records the match span (readable via
+	 * start()/end()/group()) and leaves {@link #hasMatch} true.
+	 */
+	private boolean attemptMatch(int from, boolean requireFullMatch) {
+		pos = from;
+		this.requireFullMatch = requireFullMatch;
+		boolean success = pattern.compiled.match(this, peek());
+		if (success) {
+			hasMatch = true;
+			matchStart = from;
+			matchEnd = pos;
+		}
+		return success;
+	}
+
+	private void requireMatch() {
+		if (!hasMatch) {
+			throw new IllegalStateException("No match found");
+		}
+	}
+
+	private @Nullable Group captureGroup(int group) {
+		requireMatch();
+		if (group < 0 || group > pattern.captureGroupCount) {
+			throw new IndexOutOfBoundsException("No group " + group);
+		}
+		// captureConstructIndex is 0-based for the first *real* capturing group (group 1 in the
+		// public/java.util.regex numbering, where group 0 is the whole match) -- see PatternParser.
+		return captureGroups[group - 1];
+	}
+
+	private int groupIndexByName(String name) {
+		Integer index = pattern.namedGroups.get(name);
+		if (index == null) {
+			throw new IllegalArgumentException("No group with name <" + name + ">");
+		}
+		return index;
+	}
+
 	// -1 is used throughout as the "no more input" sentinel passed to MatcherConstruct#match /
 	// #getNext: it can never equal a real code point, so it simply fails to match any dispatchMap
 	// range, which is exactly what should happen once the input is exhausted.
 	int peek() {
-		return pos < input.length() ? input.codePointAt(pos) : -1;
+		return pos < regionEnd ? input.codePointAt(pos) : -1;
 	}
 
 	boolean consumeLiteral(String value) {
@@ -217,12 +316,12 @@ public class Matcher implements MatchResult {
 		// neither version guarded against `pos` reaching the end of input, which crashed on the
 		// very common case of consuming the last character of a match.
 		pos += Character.charCount(input.codePointAt(pos));
-		return pos < input.length() ? input.codePointAt(pos) : -1;
+		return pos < regionEnd ? input.codePointAt(pos) : -1;
 	}
 
 	int consumeCodeUnits(int width) {
 		pos += width;
-		return pos < input.length() ? input.codePointAt(pos) : -1;
+		return pos < regionEnd ? input.codePointAt(pos) : -1;
 	}
 
 	int beginCapture(String name) {

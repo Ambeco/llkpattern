@@ -1,5 +1,7 @@
 package com.tbohne.llkpattern;
 
+import java.util.Collections;
+import java.util.Map;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -40,7 +42,13 @@ public final class Ll1Pattern {
 		PatternParser parser = new PatternParser(pattern, flags);
 		PatternConstruct parsed = parser.parse();
 		MatcherConstruct compiled = parsed.compile(new PatternConstruct.EndConstruct(parsed.endIndex));
-		return new Ll1Pattern(pattern, flags, compiled);
+		return new Ll1Pattern(
+				pattern,
+				flags,
+				compiled,
+				parser.getQuantifiableCount(),
+				parser.getCaptureGroupCount(),
+				parser.getNamedGroups());
 	}
 
 	public static boolean matches(String regex, CharSequence input) {
@@ -53,12 +61,27 @@ public final class Ll1Pattern {
 
 	private final String pattern;
 	private final int flags;
-	private final MatcherConstruct compiled;
+	final MatcherConstruct compiled;
+	// Sizes for the per-match scratch arrays a Matcher needs -- see Matcher#quantifiableCounts /
+	// Matcher#captureGroups. captureGroupCount doesn't include implicit group 0 (the whole match),
+	// which Matcher tracks separately (matchStart/matchEnd).
+	final int quantifiableCount;
+	final int captureGroupCount;
+	final Map<String, Integer> namedGroups;
 
-	Ll1Pattern(String pattern, int flags, MatcherConstruct compiled) {
+	Ll1Pattern(
+			String pattern,
+			int flags,
+			MatcherConstruct compiled,
+			int quantifiableCount,
+			int captureGroupCount,
+			Map<String, Integer> namedGroups) {
 		this.pattern = pattern;
 		this.flags = flags;
 		this.compiled = compiled;
+		this.quantifiableCount = quantifiableCount;
+		this.captureGroupCount = captureGroupCount;
+		this.namedGroups = Collections.unmodifiableMap(namedGroups);
 	}
 
 	public Predicate<String> asPredicate() {
@@ -70,7 +93,7 @@ public final class Ll1Pattern {
 	}
 
 	public Matcher matcher(CharSequence input) {
-		throw new UnsupportedOperationException("TODO: implement Ll1Pattern#matcher");
+		return new Matcher(this, input.toString());
 	}
 
 	public String pattern() {

@@ -394,6 +394,14 @@ abstract class MatcherConstruct {
 		}
 	}
 
+	/**
+	 * Reached once the whole pattern has matched. Whether that's actually a *complete* match
+	 * depends on which Matcher operation is running: {@code matches()} requires consuming the
+	 * whole region, while {@code lookingAt()}/{@code find()} only need a matched prefix -- see
+	 * {@link Matcher#requireFullMatch}, set immediately before each match attempt. This is the one
+	 * place that flag is read; every other node just cares whether the pattern's own structure was
+	 * satisfied, not how much of the region is left over.
+	 */
 	static final class EndMatcherConstruct extends MatcherConstruct {
 		EndMatcherConstruct(PatternConstruct.EndConstruct owner) {
 			super(owner);
@@ -401,7 +409,7 @@ abstract class MatcherConstruct {
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			return true;
+			return !matcher.requireFullMatch || matcher.pos == matcher.regionEnd;
 		}
 	}
 }

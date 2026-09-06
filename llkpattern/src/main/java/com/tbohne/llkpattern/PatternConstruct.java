@@ -486,12 +486,17 @@ abstract class PatternConstruct {
 
 		EndConstruct(int startIndex) {
 			super(startIndex);
-			// Matcher#peek()/consume*() return -1 (never a real code point) once input is exhausted --
-			// see Matcher.java. Registering it here is what lets a loop's "should I exit" dispatch
-			// (built by merging its body's entry ranges with `next`'s, same as any other branch
-			// choice) actually route "there's no more input" to the exit path; without this,
-			// `entryMap` stays empty and end-of-input has nowhere to dispatch to at all.
-			entryMap.put(Range.singleton(-1), this);
+			// "The pattern's grammar is satisfied here" -- reachable regardless of what character (or
+			// lack of one) comes next, matching ANY of them via entryElse rather than only registering
+			// the -1 "no more input" sentinel (see Matcher#peek()). That distinction matters for a
+			// loop's "should I exit" dispatch (built by merging its body's entry ranges with `next`'s,
+			// same as any other branch choice): a plain "-1 only" registration made an optional loop's
+			// exit path unreachable at any position with real leftover characters -- which is exactly
+			// what lookingAt()/find() need (a matched prefix with more string after it), as opposed to
+			// matches() (which needs the *whole region* consumed). Both are supported by the same
+			// compiled graph: EndMatcherConstruct.match() enforces the stricter check only when
+			// Matcher#requireFullMatch says to -- see its doc.
+			entryElse = this;
 			new EndMatcherConstruct(this);
 		}
 

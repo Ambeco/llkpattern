@@ -5,98 +5,79 @@ import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertThrows;
 
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * End-to-end match() tests for quantifier (loop) and capture-group compilation. These call
- * match() directly (bypassing Ll1Pattern/Matcher's not-yet-implemented public API, see
- * remaining_work.md) with a manually right-sized Matcher -- see {@link #match}.
- */
+/** End-to-end matches()/group() tests for quantifier (loop) and capture-group compilation. */
 @RunWith(JUnit4.class)
 public class QuantifierAndCaptureTest {
 
-  private static boolean match(String pattern, String input) {
-    return match(pattern, input, null);
-  }
-
-  private static boolean match(String pattern, String input, @Nullable Matcher[] out) {
-    PatternConstruct parsed = new PatternParser(pattern, 0).parse();
-    MatcherConstruct compiled = parsed.compile(new PatternConstruct.EndConstruct(parsed.endIndex));
-    Matcher m = new Matcher(new Ll1Pattern(pattern, 0, compiled), input);
-    // Sized generously rather than exactly -- these tests are about compilation correctness, not
-    // about the (separately tracked, remaining_work.md) sizing of these arrays from a real parse.
-    m.quantifiableCounts = new int[8];
-    m.captureGroups = new Matcher.Group[8];
-    if (out != null) {
-      out[0] = m;
-    }
-    return compiled.match(m, m.peek());
+  private static boolean matches(String pattern, String input) {
+    return Ll1Pattern.compile(pattern).matcher(input).matches();
   }
 
   // --- Star (*): zero or more ---
 
   @Test
   public void star_zeroOccurrences_matches() {
-    assertThat(match("a*", ""), is(true));
+    assertThat(matches("a*", ""), is(true));
   }
 
   @Test
   public void star_manyOccurrences_matches() {
-    assertThat(match("a*", "aaa"), is(true));
+    assertThat(matches("a*", "aaa"), is(true));
   }
 
   @Test
   public void star_followedByLiteral_choosesCorrectExit() {
-    assertThat(match("a*b", "aaab"), is(true));
-    assertThat(match("a*b", "b"), is(true));
+    assertThat(matches("a*b", "aaab"), is(true));
+    assertThat(matches("a*b", "b"), is(true));
   }
 
   // --- Plus (+): one or more ---
 
   @Test
   public void plus_zeroOccurrences_fails() {
-    assertThat(match("a+", ""), is(false));
+    assertThat(matches("a+", ""), is(false));
   }
 
   @Test
   public void plus_oneOrMoreOccurrences_matches() {
-    assertThat(match("a+", "a"), is(true));
-    assertThat(match("a+", "aaa"), is(true));
+    assertThat(matches("a+", "a"), is(true));
+    assertThat(matches("a+", "aaa"), is(true));
   }
 
   // --- Optional (?): zero or one ---
 
   @Test
   public void optional_zeroOccurrences_matches() {
-    assertThat(match("a?", ""), is(true));
+    assertThat(matches("a?", ""), is(true));
   }
 
   @Test
   public void optional_oneOccurrence_matches() {
-    assertThat(match("a?", "a"), is(true));
+    assertThat(matches("a?", "a"), is(true));
   }
 
   // --- Bounded ({n,m}) ---
 
   @Test
   public void bounded_belowMin_fails() {
-    assertThat(match("a{2,3}", "a"), is(false));
+    assertThat(matches("a{2,3}", "a"), is(false));
   }
 
   @Test
   public void bounded_withinRange_matches() {
-    assertThat(match("a{2,3}", "aa"), is(true));
-    assertThat(match("a{2,3}", "aaa"), is(true));
+    assertThat(matches("a{2,3}", "aa"), is(true));
+    assertThat(matches("a{2,3}", "aaa"), is(true));
   }
 
   @Test
   public void bounded_aboveMax_fails() {
     // Also guards against the {n,m} parser bug (fixed alongside this) where the second number
     // silently overwrote the first instead of setting max, making every bound effectively {m,m}.
-    assertThat(match("a{2,3}", "aaaa"), is(false));
+    assertThat(matches("a{2,3}", "aaaa"), is(false));
   }
 
   // --- Alternation inside a loop ---
@@ -104,72 +85,83 @@ public class QuantifierAndCaptureTest {
   @Test
   public void loopOfAlternation_matchesEitherBranchRepeatedly() {
     // Non-capturing (?:...) -- a plain (a|b)* is *also* a capturing group by default, which hits
-    // the deliberately-deferred "capturing and quantified at once" case tested separately below.
-    assertThat(match("(?:a|b)*c", "abbac"), is(true));
-    assertThat(match("(?:a|b)*c", "c"), is(true));
+    // the "capturing and quantified at once" case tested separately below.
+    assertThat(matches("(?:a|b)*c", "abbac"), is(true));
+    assertThat(matches("(?:a|b)*c", "c"), is(true));
   }
 
   @Test
   public void loopOfAlternation_ambiguousBranches_stillRejectedAtCompileTime() {
-    assertThrows(java.util.regex.PatternSyntaxException.class, () -> match("(?:ab|ac)*d", "d"));
+    assertThrows(java.util.regex.PatternSyntaxException.class, () -> Ll1Pattern.compile("(?:ab|ac)*d"));
   }
 
   // --- Capturing groups (non-quantified) ---
 
   @Test
   public void capturingGroup_recordsMatchedSubstring() {
-    Matcher[] out = new Matcher[1];
-    assertThat(match("(a)", "a", out), is(true));
-    assertThat(out[0].captureGroups[0].result, is("a"));
+    Matcher m = Ll1Pattern.compile("(a)").matcher("a");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("a"));
   }
 
   @Test
   public void capturingGroup_recordsWhicheverAlternationBranchMatched() {
-    Matcher[] out = new Matcher[1];
-    assertThat(match("(a|b)c", "bc", out), is(true));
-    assertThat(out[0].captureGroups[0].result, is("b"));
+    Matcher m = Ll1Pattern.compile("(a|b)c").matcher("bc");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("b"));
   }
 
   @Test
   public void capturingGroup_inMiddleOfSequence_recordsOnlyItsOwnSubstring() {
-    Matcher[] out = new Matcher[1];
-    assertThat(match("a(b)c", "abc", out), is(true));
-    assertThat(out[0].captureGroups[0].result, is("b"));
+    Matcher m = Ll1Pattern.compile("a(b)c").matcher("abc");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("b"));
   }
 
   @Test
   public void nonCapturingGroup_matchesWithoutRecordingAnything() {
-    assertThat(match("(?:a)b", "ab"), is(true));
+    Matcher m = Ll1Pattern.compile("(?:a)b").matcher("ab");
+    assertThat(m.matches(), is(true));
+    assertThat(m.groupCount(), is(0));
   }
 
-  // --- Explicitly deferred: capturing AND quantified at once (e.g. "(a)*") ---
+  @Test
+  public void namedCapturingGroup_accessibleByName() {
+    Matcher m = Ll1Pattern.compile("(?<letter>a)").matcher("a");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group("letter"), is("a"));
+    assertThat(m.start("letter"), is(0));
+    assertThat(m.end("letter"), is(1));
+  }
+
+  // --- Capturing AND quantified at once (e.g. "(a)*") ---
 
   @Test
   public void capturingAndQuantifiedGroup_recordsLastIterationOnly() {
     // Real regex semantics: (a)* captures whichever iteration matched last, not the first or a
     // concatenation of all of them.
-    Matcher[] out = new Matcher[1];
-    assertThat(match("(a)*", "aaa", out), is(true));
-    assertThat(out[0].captureGroups[0].result, is("a"));
+    Matcher m = Ll1Pattern.compile("(a)*").matcher("aaa");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("a"));
   }
 
   @Test
   public void capturingAndQuantifiedGroup_zeroIterations_leavesCaptureUnset() {
-    Matcher[] out = new Matcher[1];
-    assertThat(match("(a)*", "", out), is(true));
-    assertThat(out[0].captureGroups[0], nullValue());
+    Matcher m = Ll1Pattern.compile("(a)*").matcher("");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), nullValue());
   }
 
   @Test
   public void capturingAndQuantifiedGroup_ofAlternation_recordsLastMatchedBranch() {
-    Matcher[] out = new Matcher[1];
-    assertThat(match("(a|b)*", "abba", out), is(true));
-    assertThat(out[0].captureGroups[0].result, is("a"));
+    Matcher m = Ll1Pattern.compile("(a|b)*").matcher("abba");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("a"));
   }
 
   @Test
   public void capturingAndQuantifiedGroup_followedByLiteral_stillChoosesCorrectExit() {
-    assertThat(match("(a)*b", "aaab"), is(true));
-    assertThat(match("(a)*b", "b"), is(true));
+    assertThat(matches("(a)*b", "aaab"), is(true));
+    assertThat(matches("(a)*b", "b"), is(true));
   }
 }

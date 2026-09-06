@@ -17,8 +17,7 @@ import org.junit.runners.JUnit4;
 public class PatternParserTest {
 
 	private static MatcherConstruct compile(String pattern) {
-		PatternConstruct parsed = new PatternParser(pattern, 0).parse();
-		return parsed.compile(new PatternConstruct.EndConstruct(parsed.endIndex));
+		return Ll1Pattern.compile(pattern).compiled;
 	}
 
 	@Test
@@ -46,35 +45,19 @@ public class PatternParserTest {
 	public void match_singleLetter_actuallyMatches() {
 		// Unlike the structural assertions above, this exercises match() end-to-end -- exactly what
 		// caught the elseDispatch-vs-dispatchMap bug the other two tests' structural checks missed.
-		MatcherConstruct compiled = compile("a");
-		Matcher m = newMatcher(compiled, "a");
-
-		assertThat(compiled.match(m, m.peek()), is(true));
+		assertThat(Ll1Pattern.compile("a").matcher("a").matches(), is(true));
 	}
 
 	@Test
 	public void match_multiLetterLiteral_actuallyMatches() {
-		MatcherConstruct compiled = compile("ab");
-		Matcher m = newMatcher(compiled, "ab");
-
-		assertThat(compiled.match(m, m.peek()), is(true));
+		assertThat(Ll1Pattern.compile("ab").matcher("ab").matches(), is(true));
 	}
 
 	@Test
 	public void match_literalFollowedByLiteral_actuallyMatches() {
 		// A Sequence of two distinct LiteralMatcherConstructs (not merged raw text) -- exercises
 		// the first literal's elseDispatch handing off correctly to the second.
-		MatcherConstruct compiled = compile("[a]b");
-		Matcher m = newMatcher(compiled, "ab");
-
-		assertThat(compiled.match(m, m.peek()), is(true));
-	}
-
-	private static Matcher newMatcher(MatcherConstruct compiled, String input) {
-		Matcher m = new Matcher(new Ll1Pattern(input, 0, compiled), input);
-		m.quantifiableCounts = new int[8];
-		m.captureGroups = new Matcher.Group[8];
-		return m;
+		assertThat(Ll1Pattern.compile("[a]b").matcher("ab").matches(), is(true));
 	}
 
 	@Test

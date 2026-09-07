@@ -491,6 +491,14 @@ abstract class MatcherConstruct {
 				PriorWordBoundaryMatchType priorMustBeWord,
 				PeekWordBoundaryMatchType peekMustBeWord) {
 			super(owner, owner.next.matcher);
+			if (priorMustBeWord == PriorWordBoundaryMatchType.Unchecked
+					&& peekMustBeWord == PeekWordBoundaryMatchType.Unchecked) {
+				// BoundaryConstruct.buildMatcher() never builds one of these with both sides
+				// Unchecked -- that's the fully-statically-known case, resolved at compile time into
+				// a compile error or a no-op pass-through instead of a WordBoundaryMatcherConstruct.
+				throw new IllegalStateException(
+						"WordBoundaryMatcherConstruct built with neither side checked");
+			}
 			this.wordSet = wordSet;
 			this.priorMustBeWord = priorMustBeWord;
 			this.peekMustBeWord = peekMustBeWord;
@@ -502,39 +510,34 @@ abstract class MatcherConstruct {
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			boolean matchesHere;
-			switch (peekMustBeWord) {
-				case PeekMustBeWord:
-					matchesHere = isWordChar(peeked);
-					break;
-				case PeekMustNotBeWord:
-					matchesHere = !isWordChar(peeked);
-					break;
-				case PeekMustBeSameAsPrior:
-					matchesHere = isWordChar(peeked) == isWordChar(matcher.peekPrevious());
-					break;
-				case PeekMustBeOppositePrior:
-					matchesHere = isWordChar(peeked) != isWordChar(matcher.peekPrevious());
-					break;
-				case Unchecked:
-				default:
-					switch (priorMustBeWord) {
-						case PriorMustBeWord:
-							matchesHere = isWordChar(matcher.peekPrevious());
-							break;
-						case PriorMustBeNonWord:
-							matchesHere = !isWordChar(matcher.peekPrevious());
-							break;
-						case Unchecked:
-						default:
-							// BoundaryConstruct.buildMatcher() never builds one of these with both sides
-							// Unchecked -- that's the fully-statically-known case, resolved at compile
-							// time into an error or a no-op pass-through instead.
-							throw new IllegalStateException(
-									"WordBoundaryMatcherConstruct built with neither side checked");
-					}
+			// peekPrevious() is only actually called when some check below needs it -- checkPrior
+			// is exactly that: either the prior side has a fixed target of its own, or the peek
+			// side needs to compare against it.
+			boolean checkPrior = priorMustBeWord != PriorWordBoundaryMatchType.Unchecked
+					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
+					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;
+			boolean priorIsWord = checkPrior && isWordChar(matcher.peekPrevious());
+			boolean peekIsWord = isWordChar(peeked);
+
+			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
+				return false;
 			}
-			return matchesHere && matchNext(matcher, peeked);
+			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeNonWord && priorIsWord) {
+				return false;
+			}
+			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeWord && !peekIsWord) {
+				return false;
+			}
+			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustNotBeWord && peekIsWord) {
+				return false;
+			}
+			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior && peekIsWord != priorIsWord) {
+				return false;
+			}
+			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior && peekIsWord == priorIsWord) {
+				return false;
+			}
+			return matchNext(matcher, peeked);
 		}
 	}
 

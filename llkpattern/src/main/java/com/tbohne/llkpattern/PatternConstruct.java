@@ -206,20 +206,20 @@ abstract class PatternConstruct {
 		}
 
 		/**
-		 * Builds the loop matcher graph (a {@code LoopDispatchMatcherConstruct}, see MatcherConstruct
-		 * and design.md) AND this construct's own {@code entryMap}/{@code entryElse}, for the
-		 * quantified ({@code !isUnquantified()}) case. Must be called from {@code buildEntryMap} (not
-		 * {@code buildMatcher}) -- the self-registering constructor needs to run, setting
-		 * {@code this.matcher}, before {@code body}'s own {@code compile()} calls, since they
-		 * dispatch back to {@code this} once they finish matching.
+		 * Builds the loop matcher graph (a plain {@code DispatchMatcherConstruct}, built via its
+		 * loop-flavored constructor -- see MatcherConstruct and design.md) AND this construct's own
+		 * {@code entryMap}/{@code entryElse}, for the quantified ({@code !isUnquantified()}) case.
+		 * Must be called from {@code buildEntryMap} (not {@code buildMatcher}) -- the self-registering
+		 * constructor needs to run, setting {@code this.matcher}, before {@code body}'s own
+		 * {@code compile()} calls, since they dispatch back to {@code this} once they finish matching.
 		 */
 		void buildLoopEntryMapAndMatcher(List<PatternConstruct> body, PatternConstruct next) {
 			buildLoopEntryMapAndMatcher(body, next, -1);
 		}
 
-		/** As above, but also a capturing group (e.g. {@code (a)*}) -- see LoopDispatchMatcherConstruct. */
+		/** As above, but also a capturing group (e.g. {@code (a)*}) -- see DispatchMatcherConstruct. */
 		void buildLoopEntryMapAndMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
-			new LoopDispatchMatcherConstruct(this, body, next, captureConstructIndex);
+			new DispatchMatcherConstruct(this, body, next, captureConstructIndex);
 		}
 	}
 
@@ -325,7 +325,7 @@ abstract class PatternConstruct {
 			// Bug fix (2026-09-06): this used to just alias `entryMap = realNext.entryMap` directly
 			// -- but that leaves every entry's VALUE as realNext itself (whatever realNext.buildEntryMap
 			// put there), not this marker. That silently broke identity checks like
-			// LoopDispatchMatcherConstruct's `e.getValue() == next` (used to tell "the loop is
+			// DispatchMatcherConstruct's loop-flavored constructor's `e.getValue() == next` (used to tell "the loop is
 			// exiting toward `next`" from "the loop is continuing") whenever THIS marker was passed
 			// in as that `next` -- i.e. any non-quantified capturing group whose content contains its
 			// own internal loop, e.g. "([a-z]+)!": the exit character got misclassified as "continue

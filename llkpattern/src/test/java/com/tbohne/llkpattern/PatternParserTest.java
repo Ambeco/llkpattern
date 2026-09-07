@@ -26,9 +26,9 @@ public class PatternParserTest {
 
 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
 		assertThat(((LiteralMatcherConstruct) compiled).value, is("a"));
-		// A literal's dispatchMap is deliberately empty -- what comes after the *whole* literal is
-		// an unconditional forward (elseDispatch), not something keyed by its own first character.
-		assertThat(compiled.getElse(), instanceOf(EndMatcherConstruct.class));
+		// A literal is Single-dispatching -- what comes after the *whole* literal is an unconditional
+		// forward (next), not something keyed by its own first character.
+		assertThat(((LiteralMatcherConstruct) compiled).getNext(), instanceOf(EndMatcherConstruct.class));
 	}
 
 	@Test
@@ -38,7 +38,7 @@ public class PatternParserTest {
 
 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
 		assertThat(((LiteralMatcherConstruct) compiled).value, is("ab"));
-		assertThat(compiled.getElse(), instanceOf(EndMatcherConstruct.class));
+		assertThat(((LiteralMatcherConstruct) compiled).getNext(), instanceOf(EndMatcherConstruct.class));
 	}
 
 	@Test
@@ -63,12 +63,15 @@ public class PatternParserTest {
 	@Test
 	public void compile_sequenceOfCharacterClasses_chainsToNext() {
 		// [a][b] is two separate ComplexQuantifiedCharacter nodes (not merged raw text), so this
-		// exercises Sequence's tail-to-front chaining between two distinct matcher nodes.
+		// exercises Sequence's tail-to-front chaining between two distinct matcher nodes. Each
+		// SingleCharMatcherConstruct is Single-dispatching -- a character class has exactly one
+		// successor regardless of which member character was seen -- so chaining is via `.getNext()`.
 		MatcherConstruct compiled = compile("[a][b]");
 
-		assertThat(compiled.getDispatchMap().get(+'a'), instanceOf(MatcherConstruct.SingleCharMatcherConstruct.class));
-		MatcherConstruct second = compiled.getDispatchMap().get(+'a');
-		assertThat(second.getDispatchMap().get(+'b'), instanceOf(EndMatcherConstruct.class));
+		assertThat(compiled, instanceOf(MatcherConstruct.SingleCharMatcherConstruct.class));
+		MatcherConstruct second = ((MatcherConstruct.SingleCharMatcherConstruct) compiled).getNext();
+		assertThat(second, instanceOf(MatcherConstruct.SingleCharMatcherConstruct.class));
+		assertThat(((MatcherConstruct.SingleCharMatcherConstruct) second).getNext(), instanceOf(EndMatcherConstruct.class));
 	}
 
 	@Test
@@ -76,9 +79,10 @@ public class PatternParserTest {
 		MatcherConstruct compiled = compile("a|b");
 
 		assertThat(compiled, instanceOf(DispatchMatcherConstruct.class));
-		assertThat(compiled.getDispatchMap().get(+'a'), instanceOf(LiteralMatcherConstruct.class));
-		assertThat(compiled.getDispatchMap().get(+'b'), instanceOf(LiteralMatcherConstruct.class));
-		assertThat(compiled.getDispatchMap().get(+'c'), nullValue());
+		DispatchMatcherConstruct dispatch = (DispatchMatcherConstruct) compiled;
+		assertThat(dispatch.getDispatchMap().get(+'a'), instanceOf(LiteralMatcherConstruct.class));
+		assertThat(dispatch.getDispatchMap().get(+'b'), instanceOf(LiteralMatcherConstruct.class));
+		assertThat(dispatch.getDispatchMap().get(+'c'), nullValue());
 	}
 
 	@Test

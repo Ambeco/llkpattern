@@ -80,6 +80,42 @@ The `MethodHandle` idea (originally proposed, then marked moot, back when every 
 construction time: each such node binds a `MethodHandle` to its successor's `match` method at
 construction and invokes that instead of a virtual call.
 
+**Direct-call `MethodHandle` binding (2026-09-07)**: the handle each `SingleDispatchingMatcherConstruct`
+binds is resolved via `findSpecial` (an `invokespecial`-style direct call to one exact override),
+not `findVirtual` + `bindTo` (an ordinary virtual dispatch pinned to a fixed receiver) -- per the
+project owner, this both skips the virtual lookup and lets the JIT inline the call directly. Getting
+there took two attempts, both worth recording since the gotcha is non-obvious:
+- **First attempt**: a single `final MethodHandle getMatchMethod()` in `MatcherConstruct` itself,
+  calling `MethodHandles.lookup().findSpecial(getClass(), "match", type, getClass())`. This throws
+  `IllegalAccessException` for most real successors: `findSpecial` requires `specialCaller` (the
+  last argument) to be the calling `Lookup`'s own `lookupClass()` or a subclass of it -- it's built
+  to emulate `super.foo()` from a specific class, not "call this concrete method on some unrelated
+  object." A `Lookup` obtained from code living in `MatcherConstruct` has `lookupClass() ==
+  MatcherConstruct`, so it only works when the successor's runtime class happens to be a
+  `MatcherConstruct` subclass reachable from there -- which fails for the extremely common case of
+  a `SingleDispatchingMatcherConstruct` node whose successor is a sibling-hierarchy
+  `MultiDispatchingMatcherConstruct` (e.g. a literal or character class dispatching into a
+  union/loop's entry node).
+- **Second attempt**: `MethodHandles.Lookup.privateLookupIn(getClass(), MethodHandles.lookup())`
+  mints a `Lookup` whose `lookupClass()` genuinely *is* the target class, sidestepping the
+  restriction above entirely. This worked (confirmed empirically) but was rejected by the project
+  owner (2026-09-07): `privateLookupIn` is Java 9+/Android API 33+, and this project's Android
+  floor is API 26 (core-library-level Java 8) -- API 33 covers under half of live Android devices,
+  API 26 over 55%.
+- **What actually shipped**: `getMatchMethod()` is `abstract` on `MatcherConstruct`; each concrete
+  leaf class overrides it with a one-line body calling a shared `bindMatchSpecial(MethodHandles.Lookup)`
+  helper. `MethodHandles.lookup()` is caller-sensitive -- resolved to whichever class's bytecode
+  contains the call, not the runtime type of the object it's called on -- so calling it from each
+  leaf class's own override (not a shared method in the abstract base) is what gives
+  `lookupClass() == that leaf class`, satisfying `findSpecial`'s requirement without
+  `privateLookupIn` at all. The per-class boilerplate is the price of staying on Java 7/Android
+  API 26-era `MethodHandles` (`findVirtual`/`findSpecial`/`bindTo` themselves are all fine at that
+  level; only `privateLookupIn` is the Java 9+/API 33 outlier). Trade-off worth naming: this moved
+  cost from "one static `findVirtual` handle, cheaply `bindTo` per node" to "one `findSpecial`
+  resolution per node" -- i.e. more pattern*-compile*-time cost in exchange for the inlining benefit
+  at match time; not benchmarked (see the scraped-corpus microbenchmark idea in remaining_work.md,
+  which already tracks compile time and match time as separate concerns).
+
 ### Code point range representation
 
 - `CodePointMap<V>` (interface) + `TreeCodePointMap<V>` (its implementation, delegating to Guava's `TreeRangeMap`) is the intended long-term replacement for ad-hoc uses of Guava `RangeSet`/`RangeMap<Integer, V>` throughout this codebase. The plan (confirmed with the project owner 2026-09-05): finish this piece first, then build the AST → matcher-graph compilation step (in particular, `QuantifiedUnion`'s branch-ambiguity detection) on top of it, rather than in parallel with it — the two were being done simultaneously before, which stalled progress.

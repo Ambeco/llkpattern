@@ -81,6 +81,53 @@ abstract class MatcherConstruct {
 
 	abstract boolean match(Matcher matcher, int peeked);
 
+	static final MethodType MATCH_TYPE = MethodType.methodType(boolean.class, Matcher.class, int.class);
+
+	/**
+	 * A {@link MethodHandle} bound to {@code this.match}, resolved via {@code findSpecial} (an
+	 * {@code invokespecial}-style direct call to this exact override) rather than {@code
+	 * findVirtual} + {@code bindTo} (an ordinary virtual dispatch on a fixed receiver). Used by
+	 * {@link SingleDispatchingMatcherConstruct} to call its successor without a virtual lookup.
+	 *
+	 * <p>{@code findSpecial} requires {@code specialCaller} to be the {@code Lookup}'s own {@code
+	 * lookupClass()} (or a subclass of it) -- it's built to emulate {@code super.foo()} from
+	 * within a specific class, not "call this concrete method on some unrelated object." A first
+	 * attempt made this a single {@code final} method here in {@code MatcherConstruct}, calling
+	 * {@code MethodHandles.lookup()} from code that lives in {@code MatcherConstruct} itself --
+	 * that gives {@code lookupClass() == MatcherConstruct}, so {@code findSpecial} fails with
+	 * {@code IllegalAccessException} for any successor that isn't itself a reachable {@code
+	 * MatcherConstruct} subclass from here -- e.g. a {@link SingleDispatchingMatcherConstruct}
+	 * whose successor is a sibling-hierarchy {@link MultiDispatchingMatcherConstruct}, a
+	 * completely ordinary shape in this graph (a literal or character class routinely dispatches
+	 * into a union/loop's entry node). {@code MethodHandles.Lookup.privateLookupIn} fixes that
+	 * (it mints a {@code Lookup} whose {@code lookupClass()} genuinely is the target class), but
+	 * is Java 9+/Android API 33+ only -- unacceptable given this project's Android floor of API
+	 * 26 (~Java 8 core-library level; per the project owner, 2026-09-07, that floor is worth over
+	 * half of live Android devices, vs. API 33 covering under half). So instead: {@code
+	 * getMatchMethod()} is {@code abstract} here, and each concrete leaf class overrides it with a
+	 * one-line body calling {@link #bindMatchSpecial} -- {@code MethodHandles.lookup()} is
+	 * caller-sensitive, resolved to whatever class's bytecode contains the call, so calling it
+	 * from each leaf class's own override (not a shared helper) is what gives {@code
+	 * lookupClass() == that leaf class}, trivially satisfying {@code findSpecial}'s requirement
+	 * without needing {@code privateLookupIn} at all.
+	 */
+	abstract MethodHandle getMatchMethod();
+
+	/**
+	 * Shared body for every concrete class's one-line {@link #getMatchMethod()} override: {@code
+	 * lookup} must come from a {@code MethodHandles.lookup()} call made in that same leaf class
+	 * (see {@link #getMatchMethod()}'s doc for why), but everything else is identical, so it's
+	 * factored out here rather than duplicated per class.
+	 */
+	final MethodHandle bindMatchSpecial(MethodHandles.Lookup lookup) {
+		try {
+			return lookup.findSpecial(getClass(), "match", MATCH_TYPE, getClass()).bindTo(this);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError(
+					"Couldn't bind a direct match() handle for " + getClass().getName(), e);
+		}
+	}
+
 	private static int foldAsciiUpper(int codePoint) {
 		return (codePoint >= 'a' && codePoint <= 'z') ? codePoint - ('a' - 'A') : codePoint;
 	}
@@ -142,30 +189,19 @@ abstract class MatcherConstruct {
 	 * built (or at least already self-registered) by the time this constructor runs.
 	 */
 	abstract static class SingleDispatchingMatcherConstruct extends MatcherConstruct {
-		private static final MethodHandle MATCH_HANDLE;
-
-		static {
-			try {
-				MATCH_HANDLE = MethodHandles.lookup().findVirtual(
-						MatcherConstruct.class, "match", MethodType.methodType(boolean.class, Matcher.class, int.class));
-			} catch (ReflectiveOperationException e) {
-				throw new ExceptionInInitializerError(e);
-			}
-		}
-
 		final MatcherConstruct next;
 		private final MethodHandle nextMethod;
 
 		SingleDispatchingMatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
 			super(owner);
 			this.next = next;
-			this.nextMethod = MATCH_HANDLE.bindTo(next);
+			this.nextMethod = next.getMatchMethod();
 		}
 
 		SingleDispatchingMatcherConstruct(int flags, MatcherConstruct next) {
 			super(flags);
 			this.next = next;
-			this.nextMethod = MATCH_HANDLE.bindTo(next);
+			this.nextMethod = next.getMatchMethod();
 		}
 
 		/** Invokes {@code next.match(matcher, peeked)} via the bound {@link MethodHandle}. */
@@ -251,6 +287,11 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
+		}
+
+		@Override
 		boolean match(Matcher matcher, int peeked) {
 			if (!containsFolded(validRanges, peeked, flags)) {
 				return false;
@@ -266,6 +307,11 @@ abstract class MatcherConstruct {
 		LiteralMatcherConstruct(PatternConstruct owner, String value) {
 			super(owner, owner.next.matcher);
 			this.value = value;
+		}
+
+		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
 		}
 
 		// TODO: optimize to compare the entire `String value` as a single operation.
@@ -411,6 +457,11 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
+		}
+
+		@Override
 		boolean match(Matcher matcher, int peeked) {
 			MatcherConstruct next = getNext(matcher, peeked);
 			return next != null && next.match(matcher, peeked);
@@ -434,6 +485,11 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
+		}
+
+		@Override
 		boolean match(Matcher matcher, int peeked) {
 			// TODO(remaining_work.md "Backreferences"): backreferences aren't context-free (see
 			// PatternParser's grammar comment) -- this needs to look up the referenced group's
@@ -448,6 +504,11 @@ abstract class MatcherConstruct {
 		BoundaryMatcherConstruct(PatternConstruct owner, BoundaryEnum type) {
 			super(owner, owner.next.matcher);
 			this.type = type;
+		}
+
+		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
 		}
 
 		@Override
@@ -517,6 +578,11 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
+		}
+
+		@Override
 		boolean match(Matcher matcher, int peeked) {
 			boolean matchesHere;
 			switch (peekMustBeWord) {
@@ -572,6 +638,11 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
+		}
+
+		@Override
 		boolean match(Matcher matcher, int peeked) {
 			int loopCount = ++matcher.quantifiableCounts[quantifiableIndex];
 			if (loopCount > max) {
@@ -603,6 +674,11 @@ abstract class MatcherConstruct {
 			this.min = min;
 		}
 
+		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
+		}
+
 		boolean match(Matcher matcher, int peeked) {
 			int loopCount = matcher.quantifiableCounts[quantifiableIndex];
 			matcher.quantifiableCounts[quantifiableIndex] = 0;
@@ -631,6 +707,11 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
+		}
+
+		@Override
 		boolean match(Matcher matcher, int peeked) {
 			matcher.captureGroups[captureConstructIndex] = new Group(matcher.pos);
 			return matchNext(matcher, peeked);
@@ -643,6 +724,11 @@ abstract class MatcherConstruct {
 		EndCaptureMatcherConstruct(PatternConstruct.CaptureEndMarker owner, int captureConstructIndex, MatcherConstruct next) {
 			super(owner, next);
 			this.captureConstructIndex = captureConstructIndex;
+		}
+
+		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
 		}
 
 		@Override
@@ -665,6 +751,11 @@ abstract class MatcherConstruct {
 	static final class EndMatcherConstruct extends MatcherConstruct {
 		EndMatcherConstruct(PatternConstruct.EndConstruct owner) {
 			super(owner);
+		}
+
+		@Override
+		MethodHandle getMatchMethod() {
+			return bindMatchSpecial(MethodHandles.lookup());
 		}
 
 		@Override

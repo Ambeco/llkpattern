@@ -364,12 +364,8 @@ abstract class PatternConstruct {
 			PatternConstruct tail = next;
 			for (int i = patterns.size() - 1; i >= 0; i--) {
 				PatternConstruct part = patterns.get(i);
-				if (part instanceof BoundaryConstruct && i > 0) {
-					BoundaryConstruct boundary = (BoundaryConstruct) part;
-					if (boundary.type == BoundaryConstruct.BoundaryEnum.Word
-							|| boundary.type == BoundaryConstruct.BoundaryEnum.NonWord) {
-						boundary.priorCharSet = lastCharSet(patterns.get(i - 1));
-					}
+				if (part instanceof WordBoundaryConstruct && i > 0) {
+					((WordBoundaryConstruct) part).priorCharSet = lastCharSet(patterns.get(i - 1));
 				}
 				part.compile(tail);
 				tail = part;
@@ -524,8 +520,6 @@ abstract class PatternConstruct {
 		enum BoundaryEnum {
 			LineBegin,
 			LineEnd,
-			Word,
-			NonWord,
 			InputBegin,
 			PreviousMatchEnd,
 			InputEndExceptTerminator,
@@ -533,21 +527,45 @@ abstract class PatternConstruct {
 			Linebreak
 		}
 
-		final String pattern;
 		final BoundaryEnum type;
 
-		// For Word/NonWord only: the set of code points that could be the last one consumed by
-		// whatever immediately precedes this boundary in its enclosing Sequence, if statically known
-		// -- set by Sequence.buildEntryMap (via lastCharSet(), below) before compile() runs; null
-		// (the default, e.g. when this boundary opens its Sequence, or isn't in one at all) means
-		// "not statically known", which is always a safe fallback, just a missed optimization. See
-		// design.md's "Boundary matching" section.
+		BoundaryConstruct(int startIndex, int endIndex, BoundaryEnum type) {
+			super(startIndex, endIndex);
+			this.type = type;
+		}
+
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			entryElse = this;
+		}
+
+		@Override
+		void buildMatcher() {
+			new BoundaryMatcherConstruct(this, type);
+		}
+	}
+
+	/**
+	 * {@code \b} (word boundary) / {@code \B} (non-word-boundary). Split out from {@link
+	 * BoundaryConstruct} (2026-09-07) since these two are the only boundary types with an actual
+	 * implementation, plus a compile-time optimization {@link BoundaryConstruct}'s other types
+	 * don't need -- see design.md's "Boundary matching" section for the full design.
+	 */
+	static final class WordBoundaryConstruct extends PatternConstruct {
+		final String pattern;
+		final boolean isWordBoundary; // true: \b, false: \B
+
+		// The set of code points that could be the last one consumed by whatever immediately
+		// precedes this boundary in its enclosing Sequence, if statically known -- set by
+		// Sequence.buildEntryMap (via lastCharSet(), below) before compile() runs; null (the
+		// default, e.g. when this boundary opens its Sequence, or isn't in one at all) means "not
+		// statically known", which is always a safe fallback, just a missed optimization.
 		@Nullable RangeSet<Integer> priorCharSet;
 
-		BoundaryConstruct(String pattern, int startIndex, int endIndex, BoundaryEnum type) {
+		WordBoundaryConstruct(String pattern, int startIndex, int endIndex, boolean isWordBoundary) {
 			super(startIndex, endIndex);
 			this.pattern = pattern;
-			this.type = type;
+			this.isWordBoundary = isWordBoundary;
 		}
 
 		@Override
@@ -576,11 +594,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildMatcher() {
-			if (type != BoundaryEnum.Word && type != BoundaryEnum.NonWord) {
-				new BoundaryMatcherConstruct(this, type);
-				return;
-			}
-			// \b/\B: see design.md's "Boundary matching" section and the class doc for
+			// See design.md's "Boundary matching" section and the class doc for
 			// WordBoundaryMatcherConstruct for the full optimization rationale. In brief: both sides
 			// of the boundary (the character just consumed, and the one about to be) are classified
 			// as always-word/always-non-word/unknown at compile time; whichever side is statically
@@ -598,17 +612,16 @@ abstract class PatternConstruct {
 
 			if (prior != Wordness.UNKNOWN && peek != Wordness.UNKNOWN) {
 				boolean isBoundaryHere = (prior != peek);
-				boolean wantsBoundary = (type == BoundaryEnum.Word);
-				if (isBoundaryHere != wantsBoundary) {
+				if (isBoundaryHere != isWordBoundary) {
 					throw PatternSyntaxException.throwWithReferences(
 							pattern,
 							startIndex,
-							(type == BoundaryEnum.Word ? "\\b" : "\\B"),
+							(isWordBoundary ? "\\b" : "\\B"),
 							" at index ", startIndex,
 							" can never match: the preceding and following characters are ",
 							(isBoundaryHere ? "always different word-ness" : "always the same word-ness"),
 							" here, which is the opposite of what ",
-							(type == BoundaryEnum.Word ? "\\b" : "\\B"),
+							(isWordBoundary ? "\\b" : "\\B"),
 							" requires");
 				}
 				// Statically always satisfied: a zero-width no-op, so just pass straight through.
@@ -621,14 +634,14 @@ abstract class PatternConstruct {
 			if (peek == Wordness.UNKNOWN && prior == Wordness.UNKNOWN) {
 				// Neither side is statically known: fall back to comparing both at match time.
 				priorMatchType = WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.Unchecked;
-				peekMatchType = (type == BoundaryEnum.Word)
+				peekMatchType = isWordBoundary
 						? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeOppositePrior
 						: WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeSameAsPrior;
 			} else if (peek == Wordness.UNKNOWN) {
 				// prior is statically known -- fold it into a fixed direction for the (already
 				// available, no extra call needed) peeked character; never need matcher.peekPrevious().
 				boolean priorIsWord = (prior == Wordness.WORD);
-				boolean wantsWordPeek = (type == BoundaryEnum.Word) != priorIsWord;
+				boolean wantsWordPeek = isWordBoundary != priorIsWord;
 				priorMatchType = WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.Unchecked;
 				peekMatchType = wantsWordPeek
 						? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeWord
@@ -637,7 +650,7 @@ abstract class PatternConstruct {
 				// peek is statically known -- fold it into a fixed direction for matcher.peekPrevious(),
 				// which is the only case that still needs the extra backward-looking call.
 				boolean peekIsWord = (peek == Wordness.WORD);
-				boolean wantsWordPrior = (type == BoundaryEnum.Word) != peekIsWord;
+				boolean wantsWordPrior = isWordBoundary != peekIsWord;
 				priorMatchType = wantsWordPrior
 						? WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.PriorMustBeWord
 						: WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.PriorMustBeNonWord;
@@ -649,7 +662,7 @@ abstract class PatternConstruct {
 
 	/**
 	 * The set of code points that could be the LAST one consumed if {@code pc} matches here, if
-	 * that's statically known regardless of runtime input -- used by BoundaryConstruct's \b/\B
+	 * that's statically known regardless of runtime input -- used by WordBoundaryConstruct's \b/\B
 	 * compile-time optimization (see design.md's "Boundary matching" section) to classify the
 	 * character immediately preceding a boundary as always/never a "word" character, the same way
 	 * an ordinary entryMap already classifies the character immediately following one. Returns null

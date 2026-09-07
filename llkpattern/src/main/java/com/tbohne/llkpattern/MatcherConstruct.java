@@ -454,7 +454,7 @@ abstract class MatcherConstruct {
 	 * word character" classifications; but per the project owner (2026-09-07), \b/\B very often sits
 	 * next to a literal character or character class that is statically always-word or
 	 * always-non-word, in which case only ONE side needs checking at match time. {@code
-	 * BoundaryConstruct.buildMatcher()} does that compile-time classification (and folds the fully
+	 * WordBoundaryConstruct.buildMatcher()} does that compile-time classification (and folds the fully
 	 * statically-known case into either a compile error or a zero-width no-op, never even
 	 * constructing one of these) -- this class just interprets whichever of the two enums below ended
 	 * up not {@code Unchecked}.
@@ -493,7 +493,7 @@ abstract class MatcherConstruct {
 			super(owner, owner.next.matcher);
 			if (priorMustBeWord == PriorWordBoundaryMatchType.Unchecked
 					&& peekMustBeWord == PeekWordBoundaryMatchType.Unchecked) {
-				// BoundaryConstruct.buildMatcher() never builds one of these with both sides
+				// WordBoundaryConstruct.buildMatcher() never builds one of these with both sides
 				// Unchecked -- that's the fully-statically-known case, resolved at compile time into
 				// a compile error or a no-op pass-through instead of a WordBoundaryMatcherConstruct.
 				throw new IllegalStateException(

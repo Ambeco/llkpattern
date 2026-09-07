@@ -100,7 +100,7 @@ public class WordBoundaryTest {
   // --- Edge-of-input: \b/\B at the very start or end of the pattern, where peek()/peekPrevious()
   // are one code point away from actually running off the end of the backing array. "." is used
   // as the neighboring construct specifically because it's neither statically-word nor
-  // statically-non-word (see BoundaryConstruct.buildMatcher()'s Wordness.UNKNOWN case) -- that
+  // statically-non-word (see WordBoundaryConstruct.buildMatcher()'s Wordness.UNKNOWN case) -- that
   // forces the general runtime check, which is the only path that actually calls
   // Matcher#peekPrevious()/#peek() right at position 0 or regionEnd, instead of being folded away
   // at compile time. See Matcher#peek()/#peekPrevious() for the corresponding bounds checks

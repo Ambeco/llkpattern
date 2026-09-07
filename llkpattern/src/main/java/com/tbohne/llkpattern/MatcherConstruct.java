@@ -530,14 +530,12 @@ abstract class MatcherConstruct {
 									|| lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags) > 0);
 					break;
 				case PreviousMatchEnd: // \G
-				case Linebreak:
 				default:
 					// TODO(remaining_work.md "Boundary matching"): \G needs matcher *history* (where
 					// the previous match ended), not just the current position/surrounding
 					// characters like every other boundary here -- see remaining_work.md's "Open
 					// Questions" for the design question that raises (probably its own
 					// PreviousMatchEndConstruct/MatcherConstruct pair, not this shared one).
-					// Linebreak is never actually produced by PatternParser -- see remaining_work.md.
 					throw new UnsupportedOperationException(
 							"TODO: " + type + " boundary matching not yet implemented");
 			}

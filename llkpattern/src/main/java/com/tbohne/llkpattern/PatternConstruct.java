@@ -523,8 +523,7 @@ abstract class PatternConstruct {
 			InputBegin,
 			PreviousMatchEnd,
 			InputEndExceptTerminator,
-			InputEnd,
-			Linebreak
+			InputEnd
 		}
 
 		final BoundaryEnum type;

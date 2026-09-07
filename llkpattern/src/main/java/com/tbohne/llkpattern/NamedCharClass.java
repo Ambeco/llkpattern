@@ -136,12 +136,16 @@ enum NamedCharClass {
   Control(Source.UProperty, javaISOControl),
   White_Space(Source.UProperty, javaWhitespace),
   Digit(Source.UProperty, javaDigit),
+  // Bug fix (2026-09-06): this used to range over the FULL a-z/A-Z alphabet (and the fullwidth
+  // equivalent of the full alphabet), matching every letter as a "hex digit" instead of just
+  // a-f/A-F. Found via PosixAndJavaClassTest's \p{XDigit} coverage ("g" wrongly matched). See
+  // remaining_work.md.
   Hex_Digit(
       Source.UProperty,
       new ImmutableRangeSet.Builder<Integer>()
-                 .add(Range.closed(+'a', +'z')).add(Range.closed(+'A', +'Z'))
-                .add(Range.closed(+'0', +'9')).add(Range.closed(0xFF41, 0xFF5A))
-                .add(Range.closed(0xFF21, 0xFF3A)).add(Range.closed(0xFF10, 0xFF19))
+                 .add(Range.closed(+'a', +'f')).add(Range.closed(+'A', +'F'))
+                .add(Range.closed(+'0', +'9')).add(Range.closed(0xFF41, 0xFF46))
+                .add(Range.closed(0xFF21, 0xFF26)).add(Range.closed(0xFF10, 0xFF19))
                 .build()),
   Join_Control(
       Source.UProperty, new ImmutableRangeSet.Builder<Integer>().add(Range.closed(0x200C, 0x200D)).build()),

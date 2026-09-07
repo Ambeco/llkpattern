@@ -135,6 +135,7 @@ final class PatternParser {
 
   PatternConstruct parse() {
     QuantifiedUnion root = new QuantifiedUnion(pattern, 0, flags);
+    root.flags = flags;
     // The whole pattern isn't a capturing group -- only parseGroup() should assign a real
     // captureConstructIndex. Without this, root's default (0, same as an unassigned real group)
     // was misread as "this is capturing group 0" by anything checking captureConstructIndex != -1.
@@ -154,7 +155,9 @@ final class PatternParser {
     for (; ; ) {
       if ("()[]|.^$\0".indexOf(peek) > -1) {
         if (rawText.length() > 0) {
-          sequence.patterns.add(new LiteralString(rawTextStartIndex, index, rawText.toString()));
+          LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
+          literal.flags = flags;
+          sequence.patterns.add(literal);
           rawText.setLength(0);
           rawTextStartIndex = -1;
         }
@@ -204,6 +207,7 @@ final class PatternParser {
                     ? TreeRangeSet.<Integer>create().complement()
                     : TreeRangeSet.create(RegexCharacterClass.DOT.unicode);
             ComplexCharacter dot = new ComplexCharacter(index, dotRanges);
+            dot.flags = flags;
             sequence.patterns.add(parseQuantifiable(dot));
             advance(1);
             break;
@@ -236,14 +240,18 @@ final class PatternParser {
           }
         } else {
           if (rawText.length() > 0) {
-            sequence.patterns.add(new LiteralString(rawTextStartIndex, index, rawText.toString()));
+            LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
+            literal.flags = flags;
+            sequence.patterns.add(literal);
             rawText.setLength(0);
           }
           BoundaryConstruct boundaryConstruct = tryParseBoundary();
           if (boundaryConstruct != null) {
             sequence.patterns.add(boundaryConstruct);
           } else {
-            sequence.patterns.add(parseQuantifiable(parseComplexEscape(new ComplexCharacter(index))));
+            ComplexCharacter escapeChar = new ComplexCharacter(index);
+            escapeChar.flags = flags;
+            sequence.patterns.add(parseQuantifiable(parseComplexEscape(escapeChar)));
           }
         }
       } else {
@@ -255,10 +263,13 @@ final class PatternParser {
         advanceCodePoint();
         if (peek == '{' || peek == '?' || peek == '+' || peek == '*') {
           if (rawText.length() > 0) {
-            sequence.patterns.add(new LiteralString(rawTextStartIndex, index, rawText.toString()));
+            LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
+            literal.flags = flags;
+            sequence.patterns.add(literal);
             rawText.setLength(0);
           }
           ComplexCharacter complex = new ComplexCharacter(startIndex, fullChar);
+          complex.flags = flags;
           complex.endIndex = index;
           sequence.patterns.add(parseQuantifiable(complex));
         } else {
@@ -435,6 +446,7 @@ final class PatternParser {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
     }
     ComplexCharacter complex = new ComplexCharacter(index);
+    complex.flags = flags;
     boolean negate = false;
     advance(1);
     if (peek == '^') {
@@ -461,8 +473,10 @@ final class PatternParser {
                     ? complex.ranges
                     : intersect(intersectionSoFar, complex.ranges);
             if (negate) {
-              return new ComplexCharacter(
+              ComplexCharacter negated = new ComplexCharacter(
                   complex.startIndex, closeBracketIndex + 1, finalRanges.complement());
+              negated.flags = flags;
+              return negated;
             }
             complex.ranges = finalRanges;
             complex.endIndex = closeBracketIndex + 1;
@@ -713,9 +727,17 @@ final class PatternParser {
       throw throwUnexpectedChar("character classes \"\\p{...} must be wrapped in {}");
     }
     advance(1);
+    // Bug fix (2026-09-06): this used to increment `end` BEFORE checking pattern.charAt(end),
+    // meaning the loop never actually validated the name's very first character (at `index`
+    // itself) against [a-zA-Z_=], AND miscounted the name's length by one -- so a genuinely valid
+    // single-letter category name (\p{L}, \p{M}, \p{N}, \p{P}, \p{S}, \p{Z}, \p{C} all exist in
+    // NamedCharClass) was wrongly rejected by the "must have a name" check below, which compared
+    // against the pre-increment convention's off-by-one empty-name marker. Found via
+    // UnicodeClassTest. Restructured to check-then-advance so `end` always reflects the true
+    // (0-or-more) length of the name actually scanned.
     int end = index;
     for (; ; ) {
-      if (++end == pattern.length()) {
+      if (end == pattern.length()) {
         throw throwUnexpectedChar(
             "character class ", new CodePointReference(index), " is missing the closing }");
       }
@@ -723,13 +745,18 @@ final class PatternParser {
       if (c == '}') {
         break;
       }
-      if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '=') {
+      // '_' is required for real Unicode property/prefix names like "White_Space", "Hex_Digit",
+      // "Join_Control", "Noncharacter_Code_Point", and the "general_category=" prefix itself --
+      // without it, \p{IsWhite_Space} (and friends) couldn't even reach the name-lookup logic
+      // below, always failing here first. Found via UnicodeClassTest. See remaining_work.md.
+      if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '=' && c != '_') {
         throw throwUnexpectedChar(
-            "character classes \"\\p{...} must have names in [a-zA-Z=]. Name started at ",
+            "character classes \"\\p{...} must have names in [a-zA-Z_=]. Name started at ",
             new CodePointReference(index));
       }
+      end++;
     }
-    if (end == index + 1) {
+    if (end == index) {
       throw throwUnexpectedChar("escape character classes must have names");
     }
     String charClassName = pattern.substring(index, end);
@@ -739,14 +766,22 @@ final class PatternParser {
     // StringIndexOutOfBoundsException whenever a "\p{...}"/"\P{...}" construct was the very last
     // thing in the pattern (index + 1 == pattern.length()), e.g. the bare pattern "\p{Cs}".
     int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
+    // Bug fix (2026-09-06): this used to branch on `peek`/`peek2`, but `advance(end - index + 1)`
+    // just above already moved the parser's lookahead PAST the whole "\p{...}" construct -- so
+    // `peek`/`peek2` were actually the character(s) *following* the escape, not the first
+    // character(s) of the class name, making every Is/In/java-prefixed class (\p{IsAlphabetic},
+    // \p{javaLowerCase}, etc.) fail with "unknown named character class" unless the pattern text
+    // happened to coincidentally continue with 'I'/'j'. Fixed to check `charClassName` itself
+    // (captured before the advance), which is what these prefixes are actually part of. See
+    // remaining_work.md.
     NamedCharClass.CharacterClassPrefix prefix;
-    if (peek == 'I' && peek2 == 's') {
+    if (charClassName.startsWith("Is")) {
       prefix = NamedCharClass.CharacterClassPrefix.is;
       charClassName = charClassName.substring(2);
-    } else if (peek == 'I' && peek2 == 'n') {
+    } else if (charClassName.startsWith("In")) {
       prefix = NamedCharClass.CharacterClassPrefix.in;
       charClassName = charClassName.substring(2);
-    } else if (peek == 'j' && peek2 == 'a' && charClassName.startsWith("java")) {
+    } else if (charClassName.startsWith("java")) {
       prefix = NamedCharClass.CharacterClassPrefix.java;
     } else {
       int eqPos = charClassName.indexOf('=');
@@ -770,7 +805,13 @@ final class PatternParser {
     try {
       complex.endIndex = index;
       NamedCharClass namedClass = NamedCharClass.valueOf(charClassName);
-      complex.ranges.addAll(namedClass.get(prefix, flags));
+      RangeSet<Integer> namedRanges = namedClass.get(prefix, flags);
+      // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but
+      // never actually used -- "\P{...}" silently behaved exactly like "\p{...}" (always positive).
+      // complement() is intentionally left unclamped here (matching every other complement() in
+      // this file); ComplexCharacter#validRanges() clamps it to the valid code point domain at the
+      // point ranges are turned into a dispatch/entry map, same as [^...] and the other negations.
+      complex.ranges.addAll(positive ? namedRanges : namedRanges.complement());
       return complex;
     } catch (IllegalArgumentException e) {
       throw throwUnexpectedChar("unknown named character class \"", charClassName, "\"");
@@ -808,10 +849,18 @@ final class PatternParser {
   }
 
   private ComplexQuantifiedCharacter parseQuantifiable(ComplexCharacter construct) {
+    // construct.flags is already set by whoever built it (every ComplexCharacter creation site
+    // sets it directly, since it also needs the correct value for the never-quantified case, which
+    // never reaches here at all).
     return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, index, construct));
   }
 
   private <T extends QuantifiableConstruct> T parseQuantifiable(T construct) {
+    // Records the flags in effect where this (possibly-quantified) construct was written -- see
+    // PatternConstruct#flags -- so match-time CASE_INSENSITIVE folding stays scoped to an inline
+    // "(?i:...)" group instead of leaking pattern-wide (remaining_work.md's "Inline flag toggles
+    // don't actually locally scope anything").
+    construct.flags = flags;
     if (peek == '?') {
       construct.min = 0;
       // A bare "?" still needs a counter slot: even with max == 1, the compiled loop dispatch
@@ -875,10 +924,25 @@ final class PatternParser {
               new CodePointReference(startQuantifierIndex));
         }
         advance(1);
+      } else if (peek == '}') {
+        // Bug fix (2026-09-06): the bare "{n}" (exact-count, no comma) form never checked for or
+        // consumed its own closing '}' -- only the "{n,...}" branch above did. Left unconsumed,
+        // that '}' was then misread as a literal character immediately after the quantifier (e.g.
+        // "a{3}" only actually matched the 3-character string "aaa" followed by a literal '}').
+        // See remaining_work.md.
+        advance(1);
+      } else {
+        throw throwUnexpectedChar(
+            "Expected ',' or '}' to end quantifier started at ",
+            new CodePointReference(startQuantifierIndex));
       }
       construct.endIndex = index;
     }
-    if (peek == '?' || peek == '*') {
+    if (peek == '?' || peek == '+') {
+      // Bug fix (2026-09-06): checked for a trailing '*' instead of '+' -- '*' is never a valid
+      // quantifier-suffix character (only '?' for reluctant and '+' for possessive are), so a
+      // possessive suffix ("a*+", "a++", "a?+", "a{2,3}+") was never actually consumed, leaving a
+      // stray literal '+' in the pattern that broke matching. See remaining_work.md.
       advance(1); // reluctant and possessive quantifers are no-ops in this Pattern
       construct.endIndex = index;
     }

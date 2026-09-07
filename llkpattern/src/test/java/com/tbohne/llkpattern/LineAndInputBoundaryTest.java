@@ -10,8 +10,8 @@ import org.junit.runners.JUnit4;
 /**
  * \A, \z, \Z (always the true start/end of input, MULTILINE has no effect), and ^/$ (equivalent
  * to \A/\Z by default; match at line boundaries under MULTILINE) -- see design.md's "Boundary
- * matching" section. \b/\B are covered separately in WordBoundaryTest; \G (PreviousMatchEnd) and
- * Linebreak are still unimplemented -- see remaining_work.md.
+ * matching" section. \b/\B are covered separately in WordBoundaryTest; \G is covered separately
+ * in PreviousMatchEndTest (it isn't a position-based boundary at all, see that class's doc).
  */
 @RunWith(JUnit4.class)
 public class LineAndInputBoundaryTest {

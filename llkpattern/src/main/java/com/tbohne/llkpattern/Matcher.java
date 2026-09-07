@@ -103,6 +103,16 @@ public class Matcher implements MatchResult {
 	}
 
 	public boolean find(int start) {
+		if (pattern.anchorsToPreviousMatchEnd) {
+			// \G: no PatternConstruct/MatcherConstruct involved at all -- it's purely this flag,
+			// meaning "only try exactly here, don't scan forward looking for a later match." See
+			// PatternParser#anchorsToPreviousMatchEnd's doc.
+			boolean success = attemptMatch(start, false);
+			if (!success) {
+				hasMatch = false;
+			}
+			return success;
+		}
 		for (int i = start; i <= regionEnd; i++) {
 			// Unicode code points, not UTF-16 code units, are the atomic matching unit (see
 			// java.util.regex's own behavior, and JDK-8149446): a valid high+low surrogate pair must

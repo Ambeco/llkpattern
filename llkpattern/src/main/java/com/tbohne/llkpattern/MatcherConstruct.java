@@ -521,15 +521,10 @@ abstract class MatcherConstruct {
 				case InputEndExceptTerminator: // \Z
 					matchesHere = matchesEndExceptTerminator(matcher, flags);
 					break;
-				case PreviousMatchEnd: // \G
 				default:
-					// TODO(remaining_work.md "Boundary matching"): \G needs matcher *history* (where
-					// the previous match ended), not just the current position/surrounding
-					// characters like every other boundary here -- see remaining_work.md's "Open
-					// Questions" for the design question that raises (probably its own
-					// PreviousMatchEndConstruct/MatcherConstruct pair, not this shared one).
-					throw new UnsupportedOperationException(
-							"TODO: " + type + " boundary matching not yet implemented");
+					// Every BoundaryEnum value is handled above -- this is only reachable if a new one
+					// is ever added without updating this switch.
+					throw new AssertionError("Unhandled BoundaryEnum: " + type);
 			}
 			return matchesHere && matchNext(matcher, peeked);
 		}

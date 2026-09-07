@@ -92,6 +92,13 @@ final class PatternParser {
   private char peek;
   private int quantifiableIndex;
   private int captureConstructIndex;
+  // \G doesn't match any specific position in the input -- per the project owner (2026-09-07),
+  // it's really just a flag saying "anchor find() to exactly where the previous match ended,
+  // don't scan forward looking for a later one" (Matcher#matchEnd already tracks that position),
+  // so it has no PatternConstruct/MatcherConstruct representation at all. Set when \G is
+  // recognized (see tryParseBoundary's caller); exposed via anchorsToPreviousMatchEnd() for
+  // Ll1Pattern to carry forward for Matcher#find() to consult.
+  private boolean anchorsToPreviousMatchEnd = false;
   // Name -> captureConstructIndex, populated as each named group's real index is assigned (see
   // parseGroup). Exposed via getNamedGroups() for Ll1Pattern to carry forward for group(String).
   private final Map<String, Integer> namedGroups = new HashMap<>();
@@ -118,6 +125,11 @@ final class PatternParser {
   /** Named capturing groups' names mapped to their captureConstructIndex. */
   Map<String, Integer> getNamedGroups() {
     return namedGroups;
+  }
+
+  /** Whether the pattern used {@code \G} -- see the field's own doc for what that means. */
+  boolean anchorsToPreviousMatchEnd() {
+    return anchorsToPreviousMatchEnd;
   }
 
   private void advanceCodePoint() {
@@ -248,6 +260,24 @@ final class PatternParser {
             literal.flags = flags;
             sequence.patterns.add(literal);
             rawText.setLength(0);
+          }
+          if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'G') {
+            // \G doesn't match any specific position in the input, so it gets no PatternConstruct
+            // at all -- see anchorsToPreviousMatchEnd's doc. It's only meaningful as the very
+            // first thing in the whole pattern (i.e. this backslash must be at raw index 0);
+            // anywhere else it's ambiguous/pointless (find() has already committed to some other
+            // start-position semantics by the time anything else has been parsed) and this engine
+            // rejects it outright rather than silently doing nothing there like java.util.regex
+            // would, consistent with the project's general stance on unsatisfiable constructs.
+            if (index != 0) {
+              throw throwUnexpectedChar(
+                  "\\G is only allowed as the very first thing in the pattern -- it doesn't "
+                      + "match a position in the input, it just anchors find() to exactly where "
+                      + "the previous match ended (rather than scanning forward for one)");
+            }
+            advance(2);
+            anchorsToPreviousMatchEnd = true;
+            continue;
           }
           PatternConstruct boundaryConstruct = tryParseBoundary();
           if (boundaryConstruct != null) {
@@ -695,12 +725,6 @@ final class PatternParser {
       case 'A': {
         advance(2);
         BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputBegin);
-        b.flags = flags;
-        return b;
-      }
-      case 'G': {
-        advance(2);
-        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.PreviousMatchEnd);
         b.flags = flags;
         return b;
       }

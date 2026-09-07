@@ -519,7 +519,6 @@ abstract class PatternConstruct {
 	static final class BoundaryConstruct extends PatternConstruct {
 		enum BoundaryEnum {
 			InputBegin,
-			PreviousMatchEnd,
 			InputEndExceptTerminator,
 			InputEnd
 		}

@@ -48,7 +48,8 @@ public final class Ll1Pattern {
 				compiled,
 				parser.getQuantifiableCount(),
 				parser.getCaptureGroupCount(),
-				parser.getNamedGroups());
+				parser.getNamedGroups(),
+				parser.anchorsToPreviousMatchEnd());
 	}
 
 	public static boolean matches(String regex, CharSequence input) {
@@ -68,6 +69,11 @@ public final class Ll1Pattern {
 	final int quantifiableCount;
 	final int captureGroupCount;
 	final Map<String, Integer> namedGroups;
+	// \G doesn't match any specific position, so it has no MatcherConstruct representation at all
+	// -- it's purely a flag telling Matcher#find() to anchor to exactly where the previous match
+	// ended (Matcher#matchEnd), rather than scanning forward for a later match. See
+	// PatternParser#anchorsToPreviousMatchEnd's doc for the full rationale.
+	final boolean anchorsToPreviousMatchEnd;
 
 	Ll1Pattern(
 			String pattern,
@@ -75,13 +81,15 @@ public final class Ll1Pattern {
 			MatcherConstruct compiled,
 			int quantifiableCount,
 			int captureGroupCount,
-			Map<String, Integer> namedGroups) {
+			Map<String, Integer> namedGroups,
+			boolean anchorsToPreviousMatchEnd) {
 		this.pattern = pattern;
 		this.flags = flags;
 		this.compiled = compiled;
 		this.quantifiableCount = quantifiableCount;
 		this.captureGroupCount = captureGroupCount;
 		this.namedGroups = Collections.unmodifiableMap(namedGroups);
+		this.anchorsToPreviousMatchEnd = anchorsToPreviousMatchEnd;
 	}
 
 	public Predicate<String> asPredicate() {

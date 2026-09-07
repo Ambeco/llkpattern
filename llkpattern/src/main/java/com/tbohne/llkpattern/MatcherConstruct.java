@@ -512,12 +512,14 @@ abstract class MatcherConstruct {
 		boolean match(Matcher matcher, int peeked) {
 			// peekPrevious() is only actually called when some check below needs it -- checkPrior
 			// is exactly that: either the prior side has a fixed target of its own, or the peek
-			// side needs to compare against it.
+			// side needs to compare against it. checkPeek is the mirror image, for symmetry/clarity
+			// (peeked itself is already available for free, but isWordChar(peeked) is not free).
 			boolean checkPrior = priorMustBeWord != PriorWordBoundaryMatchType.Unchecked
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;
 			boolean priorIsWord = checkPrior && isWordChar(matcher.peekPrevious());
-			boolean peekIsWord = isWordChar(peeked);
+			boolean checkPeek = peekMustBeWord != PeekWordBoundaryMatchType.Unchecked;
+			boolean peekIsWord = checkPeek && isWordChar(peeked);
 
 			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
 				return false;

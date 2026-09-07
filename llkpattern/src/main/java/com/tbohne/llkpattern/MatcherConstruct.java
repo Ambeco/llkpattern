@@ -434,15 +434,114 @@ abstract class MatcherConstruct {
 			this.type = type;
 		}
 
+		/**
+		 * Length (in chars) of the line terminator starting at {@code input.charAt(index)}, or 0 if
+		 * there isn't one there -- {@code "\r\n"} counts as a single 2-char terminator, matching
+		 * {@code java.util.regex}'s default (non-{@code UNIX_LINES}) set: {@code \n}, {@code \r},
+		 * {@code \r\n}, {@code \u0085}, {@code \u2028}, {@code \u2029}. Under {@code UNIX_LINES},
+		 * only {@code \n} counts. Never looks past {@code limit} (the region end, per this engine's
+		 * "opaque bounds" stance -- see {@code Matcher#peekPrevious()}).
+		 */
+		private static int lineTerminatorLengthAt(String input, int index, int limit, int flags) {
+			if (index >= limit) {
+				return 0;
+			}
+			char c = input.charAt(index);
+			if (c == '\n') {
+				return 1;
+			}
+			if ((flags & Ll1Pattern.UNIX_LINES) != 0) {
+				return 0;
+			}
+			if (c == '\r') {
+				return (index + 1 < limit && input.charAt(index + 1) == '\n') ? 2 : 1;
+			}
+			return (c == '\u0085' || c == '\u2028' || c == '\u2029') ? 1 : 0;
+		}
+
+		/**
+		 * Length (in chars) of the line terminator ending exactly at {@code input.charAt(index - 1)}
+		 * (i.e. occupying {@code [index - length, index)}), or 0 if there isn't one -- the mirror
+		 * image of {@link #lineTerminatorLengthAt}, used for {@code ^}'s MULTILINE check (was the
+		 * character just before this position the end of a line terminator?). Never looks before
+		 * {@code floor} (the region start) or at/past {@code limit} (the region end).
+		 */
+		private static int lineTerminatorLengthBefore(String input, int index, int floor, int limit, int flags) {
+			if (index <= floor) {
+				return 0;
+			}
+			char c = input.charAt(index - 1);
+			if (c == '\n') {
+				boolean crlf = (flags & Ll1Pattern.UNIX_LINES) == 0
+						&& index - 2 >= floor
+						&& input.charAt(index - 2) == '\r';
+				return crlf ? 2 : 1;
+			}
+			if ((flags & Ll1Pattern.UNIX_LINES) != 0) {
+				return 0;
+			}
+			if (c == '\r') {
+				// A lone '\r' is its own complete terminator ONLY if it's not immediately followed by
+				// '\n' -- otherwise it's the first half of a "\r\n" pair, which only completes (and
+				// only counts as ending here) one position later, at index + 1.
+				boolean startsCrLf = index < limit && input.charAt(index) == '\n';
+				return startsCrLf ? 0 : 1;
+			}
+			return (c == '\u0085' || c == '\u2028' || c == '\u2029') ? 1 : 0;
+		}
+
+		/**
+		 * {@code \Z}: the end of the input, or immediately before the input's own final line
+		 * terminator (if it has one) -- i.e. a line terminator starting here that reaches exactly to
+		 * {@code regionEnd}, not merely one somewhere in the middle of the remaining input. Also
+		 * {@code $}'s definition when {@code MULTILINE} is off (see {@code java.util.regex.Pattern}'s
+		 * "Line terminators" section: without {@code MULTILINE}, {@code $} and {@code \Z} coincide).
+		 */
+		private boolean matchesEndExceptTerminator(Matcher matcher) {
+			if (matcher.pos == matcher.regionEnd) {
+				return true;
+			}
+			int len = lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags);
+			return len > 0 && matcher.pos + len == matcher.regionEnd;
+		}
+
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			// TODO(remaining_work.md "Boundary matching"): per design.md, this is the one open
-			// question in the matcher-graph shape -- a boundary depends on matcher state (position,
-			// surrounding characters), not just the next code point, so it may not fit this
-			// single-successor opcode shape as cleanly as the other constructs do. Word/NonWord
-			// (\b/\B) are handled by WordBoundaryMatcherConstruct instead -- everything else
-			// (^, $, \A, \G, \Z, \z, ...) is still unimplemented.
-			throw new UnsupportedOperationException("TODO: boundary matching not yet implemented");
+			boolean matchesHere;
+			switch (type) {
+				case InputBegin: // \A: always the true start of input, MULTILINE has no effect.
+					matchesHere = matcher.pos == matcher.regionStart;
+					break;
+				case InputEnd: // \z: always the true end of input, MULTILINE has no effect.
+					matchesHere = matcher.pos == matcher.regionEnd;
+					break;
+				case InputEndExceptTerminator: // \Z
+					matchesHere = matchesEndExceptTerminator(matcher);
+					break;
+				case LineBegin: // ^
+					matchesHere = matcher.pos == matcher.regionStart
+							|| ((flags & Ll1Pattern.MULTILINE) != 0
+									&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.regionStart, matcher.regionEnd, flags) > 0);
+					break;
+				case LineEnd: // $
+					matchesHere = (flags & Ll1Pattern.MULTILINE) == 0
+							? matchesEndExceptTerminator(matcher)
+							: (matcher.pos == matcher.regionEnd
+									|| lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags) > 0);
+					break;
+				case PreviousMatchEnd: // \G
+				case Linebreak:
+				default:
+					// TODO(remaining_work.md "Boundary matching"): \G needs matcher *history* (where
+					// the previous match ended), not just the current position/surrounding
+					// characters like every other boundary here -- see remaining_work.md's "Open
+					// Questions" for the design question that raises (probably its own
+					// PreviousMatchEndConstruct/MatcherConstruct pair, not this shared one).
+					// Linebreak is never actually produced by PatternParser -- see remaining_work.md.
+					throw new UnsupportedOperationException(
+							"TODO: " + type + " boundary matching not yet implemented");
+			}
+			return matchesHere && matchNext(matcher, peeked);
 		}
 	}
 

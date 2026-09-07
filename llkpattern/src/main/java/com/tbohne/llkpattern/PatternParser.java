@@ -212,11 +212,15 @@ final class PatternParser {
             advance(1);
             break;
           case '^':
-            sequence.patterns.add(new BoundaryConstruct(index, index+1, BoundaryEnum.LineBegin));
+            BoundaryConstruct lineBegin = new BoundaryConstruct(index, index+1, BoundaryEnum.LineBegin);
+            lineBegin.flags = flags;
+            sequence.patterns.add(lineBegin);
             advance(1);
             break;
           case '$':
-            sequence.patterns.add(new BoundaryConstruct(index, index+1, BoundaryEnum.LineEnd));
+            BoundaryConstruct lineEnd = new BoundaryConstruct(index, index+1, BoundaryEnum.LineEnd);
+            lineEnd.flags = flags;
+            sequence.patterns.add(lineEnd);
             advance(1);
             break;
           case ')':
@@ -676,24 +680,42 @@ final class PatternParser {
     }
     int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
     switch (peek2) {
-      case 'b':
+      case 'b': {
         advance(2);
-        return new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
-      case 'B':
+        WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
+        b.flags = flags;
+        return b;
+      }
+      case 'B': {
         advance(2);
-        return new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ false);
-      case 'A':
+        WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ false);
+        b.flags = flags;
+        return b;
+      }
+      case 'A': {
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.InputBegin);
-      case 'G':
+        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputBegin);
+        b.flags = flags;
+        return b;
+      }
+      case 'G': {
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.PreviousMatchEnd);
-      case 'Z':
+        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.PreviousMatchEnd);
+        b.flags = flags;
+        return b;
+      }
+      case 'Z': {
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.InputEndExceptTerminator);
-      case 'z':
+        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputEndExceptTerminator);
+        b.flags = flags;
+        return b;
+      }
+      case 'z': {
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.InputEnd);
+        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputEnd);
+        b.flags = flags;
+        return b;
+      }
     }
     return null;
   }

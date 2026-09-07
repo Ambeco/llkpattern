@@ -212,11 +212,11 @@ final class PatternParser {
             advance(1);
             break;
           case '^':
-            sequence.patterns.add(new BoundaryConstruct(index, index+1, BoundaryEnum.LineBegin));
+            sequence.patterns.add(new BoundaryConstruct(pattern, index, index+1, BoundaryEnum.LineBegin));
             advance(1);
             break;
           case '$':
-            sequence.patterns.add(new BoundaryConstruct(index, index+1, BoundaryEnum.LineEnd));
+            sequence.patterns.add(new BoundaryConstruct(pattern, index, index+1, BoundaryEnum.LineEnd));
             advance(1);
             break;
           case ')':
@@ -678,22 +678,22 @@ final class PatternParser {
     switch (peek2) {
       case 'b':
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.Word);
+        return new BoundaryConstruct(pattern, index-2, index, BoundaryEnum.Word);
       case 'B':
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.NonWord);
+        return new BoundaryConstruct(pattern, index-2, index, BoundaryEnum.NonWord);
       case 'A':
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.InputBegin);
+        return new BoundaryConstruct(pattern, index-2, index, BoundaryEnum.InputBegin);
       case 'G':
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.PreviousMatchEnd);
+        return new BoundaryConstruct(pattern, index-2, index, BoundaryEnum.PreviousMatchEnd);
       case 'Z':
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.InputEndExceptTerminator);
+        return new BoundaryConstruct(pattern, index-2, index, BoundaryEnum.InputEndExceptTerminator);
       case 'z':
         advance(2);
-        return new BoundaryConstruct(index-2, index, BoundaryEnum.InputEnd);
+        return new BoundaryConstruct(pattern, index-2, index, BoundaryEnum.InputEnd);
     }
     return null;
   }

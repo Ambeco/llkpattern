@@ -322,6 +322,15 @@ public class Matcher implements MatchResult {
 		return pos < regionEnd ? input.codePointAt(pos) : -1;
 	}
 
+	// Used by WordBoundaryMatcherConstruct (\b/\B), which is the only construct that needs to look
+	// backward instead of forward -- see design.md's "Boundary matching" section. Bounded at
+	// regionStart, not 0: useTransparentBounds() is still a stub (opaque bounds only), so a region's
+	// start is treated the same as true start-of-input, same as -1 is peek()'s "no more input"
+	// sentinel. codePointBefore (not charAt(pos-1)) to not split a surrogate pair.
+	int peekPrevious() {
+		return pos <= regionStart ? -1 : input.codePointBefore(pos);
+	}
+
 	boolean consumeLiteral(String value) {
 		if (pos + value.length() >= input.length()) {
 			return false;

@@ -268,6 +268,7 @@ abstract class MatcherConstruct {
 			this.value = value;
 		}
 
+		// TODO: optimize to compare the entire `String value` as a single operation.
 		boolean match(Matcher matcher, int peeked) {
 			int i=0;
 			do {
@@ -454,8 +455,102 @@ abstract class MatcherConstruct {
 			// TODO(remaining_work.md "Boundary matching"): per design.md, this is the one open
 			// question in the matcher-graph shape -- a boundary depends on matcher state (position,
 			// surrounding characters), not just the next code point, so it may not fit this
-			// single-successor opcode shape as cleanly as the other constructs do.
+			// single-successor opcode shape as cleanly as the other constructs do. Word/NonWord
+			// (\b/\B) are handled by WordBoundaryMatcherConstruct instead -- everything else
+			// (^, $, \A, \G, \Z, \z, ...) is still unimplemented.
 			throw new UnsupportedOperationException("TODO: boundary matching not yet implemented");
+		}
+	}
+
+	/**
+	 * {@code \b} (word boundary) / {@code \B} (non-word-boundary): unlike every other construct,
+	 * whether this matches depends on the character just BEFORE the current position, not just the
+	 * one at/after it -- see design.md's "Boundary matching" section. The general case needs to
+	 * inspect both {@code matcher.peekPrevious()} and {@code peeked} and compare their "is this a
+	 * word character" classifications; but per the project owner (2026-09-07), \b/\B very often sits
+	 * next to a literal character or character class that is statically always-word or
+	 * always-non-word, in which case only ONE side needs checking at match time. {@code
+	 * BoundaryConstruct.buildMatcher()} does that compile-time classification (and folds the fully
+	 * statically-known case into either a compile error or a zero-width no-op, never even
+	 * constructing one of these) -- this class just interprets whichever of the two enums below ended
+	 * up not {@code Unchecked}.
+	 */
+	static final class WordBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+		/** Whether {@code match()} needs to independently check {@code matcher.peekPrevious()}. */
+		enum PriorWordBoundaryMatchType {
+			Unchecked,
+			PriorMustBeWord,
+			PriorMustBeNonWord
+		}
+
+		/**
+		 * Whether/how {@code match()} needs to check {@code peeked} -- either against a fixed
+		 * word-ness (when the OTHER side, the preceding character, is statically known instead), or
+		 * against {@code matcher.peekPrevious()}'s actual word-ness (when neither side is statically
+		 * known).
+		 */
+		enum PeekWordBoundaryMatchType {
+			Unchecked,
+			PeekMustBeWord,
+			PeekMustNotBeWord,
+			PeekMustBeSameAsPrior,
+			PeekMustBeOppositePrior
+		}
+
+		final RangeSet<Integer> wordSet;
+		final PriorWordBoundaryMatchType priorMustBeWord;
+		final PeekWordBoundaryMatchType peekMustBeWord;
+
+		WordBoundaryMatcherConstruct(
+				PatternConstruct owner,
+				RangeSet<Integer> wordSet,
+				PriorWordBoundaryMatchType priorMustBeWord,
+				PeekWordBoundaryMatchType peekMustBeWord) {
+			super(owner, owner.next.matcher);
+			this.wordSet = wordSet;
+			this.priorMustBeWord = priorMustBeWord;
+			this.peekMustBeWord = peekMustBeWord;
+		}
+
+		private boolean isWordChar(int codePoint) {
+			return codePoint >= 0 && wordSet.contains(codePoint);
+		}
+
+		@Override
+		boolean match(Matcher matcher, int peeked) {
+			boolean matchesHere;
+			switch (peekMustBeWord) {
+				case PeekMustBeWord:
+					matchesHere = isWordChar(peeked);
+					break;
+				case PeekMustNotBeWord:
+					matchesHere = !isWordChar(peeked);
+					break;
+				case PeekMustBeSameAsPrior:
+					matchesHere = isWordChar(peeked) == isWordChar(matcher.peekPrevious());
+					break;
+				case PeekMustBeOppositePrior:
+					matchesHere = isWordChar(peeked) != isWordChar(matcher.peekPrevious());
+					break;
+				case Unchecked:
+				default:
+					switch (priorMustBeWord) {
+						case PriorMustBeWord:
+							matchesHere = isWordChar(matcher.peekPrevious());
+							break;
+						case PriorMustBeNonWord:
+							matchesHere = !isWordChar(matcher.peekPrevious());
+							break;
+						case Unchecked:
+						default:
+							// BoundaryConstruct.buildMatcher() never builds one of these with both sides
+							// Unchecked -- that's the fully-statically-known case, resolved at compile
+							// time into an error or a no-op pass-through instead.
+							throw new IllegalStateException(
+									"WordBoundaryMatcherConstruct built with neither side checked");
+					}
+			}
+			return matchesHere && matchNext(matcher, peeked);
 		}
 	}
 

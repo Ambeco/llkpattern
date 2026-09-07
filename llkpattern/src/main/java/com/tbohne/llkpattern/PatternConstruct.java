@@ -7,6 +7,7 @@ import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeMap;
 import com.google.common.collect.TreeRangeSet;
 import com.tbohne.llkpattern.MatcherConstruct.*;
+import com.tbohne.llkpattern.NamedCharClass.*;
 
 import java.util.Map.Entry;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
@@ -362,8 +363,16 @@ abstract class PatternConstruct {
 			// get to it).
 			PatternConstruct tail = next;
 			for (int i = patterns.size() - 1; i >= 0; i--) {
-				patterns.get(i).compile(tail);
-				tail = patterns.get(i);
+				PatternConstruct part = patterns.get(i);
+				if (part instanceof BoundaryConstruct && i > 0) {
+					BoundaryConstruct boundary = (BoundaryConstruct) part;
+					if (boundary.type == BoundaryConstruct.BoundaryEnum.Word
+							|| boundary.type == BoundaryConstruct.BoundaryEnum.NonWord) {
+						boundary.priorCharSet = lastCharSet(patterns.get(i - 1));
+					}
+				}
+				part.compile(tail);
+				tail = part;
 			}
 			entryMap = patterns.get(0).entryMap;
 			entryElse = patterns.get(0).entryElse;
@@ -524,10 +533,20 @@ abstract class PatternConstruct {
 			Linebreak
 		}
 
+		final String pattern;
 		final BoundaryEnum type;
 
-		BoundaryConstruct(int startIndex, int endIndex, BoundaryEnum type) {
+		// For Word/NonWord only: the set of code points that could be the last one consumed by
+		// whatever immediately precedes this boundary in its enclosing Sequence, if statically known
+		// -- set by Sequence.buildEntryMap (via lastCharSet(), below) before compile() runs; null
+		// (the default, e.g. when this boundary opens its Sequence, or isn't in one at all) means
+		// "not statically known", which is always a safe fallback, just a missed optimization. See
+		// design.md's "Boundary matching" section.
+		@Nullable RangeSet<Integer> priorCharSet;
+
+		BoundaryConstruct(String pattern, int startIndex, int endIndex, BoundaryEnum type) {
 			super(startIndex, endIndex);
+			this.pattern = pattern;
 			this.type = type;
 		}
 
@@ -536,10 +555,142 @@ abstract class PatternConstruct {
 			entryElse = this;
 		}
 
+		private enum Wordness {
+			WORD,
+			NON_WORD,
+			UNKNOWN
+		}
+
+		private static Wordness classify(@Nullable RangeSet<Integer> set, RangeSet<Integer> wordSet) {
+			if (set == null) {
+				return Wordness.UNKNOWN;
+			}
+			if (wordSet.enclosesAll(set)) {
+				return Wordness.WORD;
+			}
+			if (wordSet.complement().enclosesAll(set)) {
+				return Wordness.NON_WORD;
+			}
+			return Wordness.UNKNOWN;
+		}
+
 		@Override
 		void buildMatcher() {
-			new BoundaryMatcherConstruct(this, type);
+			if (type != BoundaryEnum.Word && type != BoundaryEnum.NonWord) {
+				new BoundaryMatcherConstruct(this, type);
+				return;
+			}
+			// \b/\B: see design.md's "Boundary matching" section and the class doc for
+			// WordBoundaryMatcherConstruct for the full optimization rationale. In brief: both sides
+			// of the boundary (the character just consumed, and the one about to be) are classified
+			// as always-word/always-non-word/unknown at compile time; whichever side is statically
+			// known doesn't need to be checked at match time at all.
+			RangeSet<Integer> wordSet = RegexCharacterClass.w.get(flags);
+			Wordness prior = classify(priorCharSet, wordSet);
+			RangeSet<Integer> peekRanges = null;
+			if (next.entryElse == null) {
+				peekRanges = TreeRangeSet.create();
+				for (Range<Integer> range : next.entryMap.asMapOfRanges().keySet()) {
+					peekRanges.add(range);
+				}
+			}
+			Wordness peek = classify(peekRanges, wordSet);
+
+			if (prior != Wordness.UNKNOWN && peek != Wordness.UNKNOWN) {
+				boolean isBoundaryHere = (prior != peek);
+				boolean wantsBoundary = (type == BoundaryEnum.Word);
+				if (isBoundaryHere != wantsBoundary) {
+					throw PatternSyntaxException.throwWithReferences(
+							pattern,
+							startIndex,
+							(type == BoundaryEnum.Word ? "\\b" : "\\B"),
+							" at index ", startIndex,
+							" can never match: the preceding and following characters are ",
+							(isBoundaryHere ? "always different word-ness" : "always the same word-ness"),
+							" here, which is the opposite of what ",
+							(type == BoundaryEnum.Word ? "\\b" : "\\B"),
+							" requires");
+				}
+				// Statically always satisfied: a zero-width no-op, so just pass straight through.
+				matcher = next.matcher;
+				return;
+			}
+
+			WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType priorMatchType;
+			WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType peekMatchType;
+			if (peek == Wordness.UNKNOWN && prior == Wordness.UNKNOWN) {
+				// Neither side is statically known: fall back to comparing both at match time.
+				priorMatchType = WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.Unchecked;
+				peekMatchType = (type == BoundaryEnum.Word)
+						? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeOppositePrior
+						: WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeSameAsPrior;
+			} else if (peek == Wordness.UNKNOWN) {
+				// prior is statically known -- fold it into a fixed direction for the (already
+				// available, no extra call needed) peeked character; never need matcher.peekPrevious().
+				boolean priorIsWord = (prior == Wordness.WORD);
+				boolean wantsWordPeek = (type == BoundaryEnum.Word) != priorIsWord;
+				priorMatchType = WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.Unchecked;
+				peekMatchType = wantsWordPeek
+						? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeWord
+						: WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustNotBeWord;
+			} else {
+				// peek is statically known -- fold it into a fixed direction for matcher.peekPrevious(),
+				// which is the only case that still needs the extra backward-looking call.
+				boolean peekIsWord = (peek == Wordness.WORD);
+				boolean wantsWordPrior = (type == BoundaryEnum.Word) != peekIsWord;
+				priorMatchType = wantsWordPrior
+						? WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.PriorMustBeWord
+						: WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.PriorMustBeNonWord;
+				peekMatchType = WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.Unchecked;
+			}
+			new WordBoundaryMatcherConstruct(this, wordSet, priorMatchType, peekMatchType);
 		}
+	}
+
+	/**
+	 * The set of code points that could be the LAST one consumed if {@code pc} matches here, if
+	 * that's statically known regardless of runtime input -- used by BoundaryConstruct's \b/\B
+	 * compile-time optimization (see design.md's "Boundary matching" section) to classify the
+	 * character immediately preceding a boundary as always/never a "word" character, the same way
+	 * an ordinary entryMap already classifies the character immediately following one. Returns null
+	 * ("not statically known") for anything that could match zero-width -- including this method
+	 * simply not recognizing the construct -- rather than chasing what an earlier sibling might
+	 * contribute in that case; that's always a safe fallback, just a missed optimization.
+	 */
+	static @Nullable RangeSet<Integer> lastCharSet(PatternConstruct pc) {
+		if (pc instanceof LiteralString) {
+			String value = ((LiteralString) pc).value;
+			return value.isEmpty()
+					? null
+					: TreeRangeSet.create(java.util.Set.of(Range.singleton(value.codePointBefore(value.length()))));
+		}
+		if (pc instanceof ComplexCharacter) {
+			return ((ComplexCharacter) pc).validRanges();
+		}
+		if (pc instanceof ComplexQuantifiedCharacter) {
+			ComplexQuantifiedCharacter cqc = (ComplexQuantifiedCharacter) pc;
+			return cqc.min >= 1 ? cqc.delegate.validRanges() : null;
+		}
+		if (pc instanceof QuantifiedUnion) {
+			QuantifiedUnion union = (QuantifiedUnion) pc;
+			if (union.min < 1 || union.constructs.isEmpty()) {
+				return null;
+			}
+			RangeSet<Integer> result = TreeRangeSet.create();
+			for (PatternConstruct branch : union.constructs) {
+				RangeSet<Integer> branchSet = lastCharSet(branch);
+				if (branchSet == null) {
+					return null;
+				}
+				result.addAll(branchSet);
+			}
+			return result;
+		}
+		if (pc instanceof Sequence) {
+			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
+			return patterns.isEmpty() ? null : lastCharSet(patterns.get(patterns.size() - 1));
+		}
+		return null;
 	}
 
 	static final class EndConstruct extends PatternConstruct {

@@ -1,6 +1,6 @@
 # Remaining Work
 
-Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1358 tests, 0 failing, 561 skipped (the scraped-corpus harness accounts for 561 golden rows × ~2 tests/row).
+Updated 2026-09-07. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1370 tests, 0 failing, 561 skipped (the scraped-corpus harness accounts for 561 golden rows × ~2 tests/row).
 
 ## HIGHEST PRIORITY
 
@@ -98,7 +98,7 @@ scraping/unescaping/engine change.
 ## Core implementation
 
 - [ ] Implement `MatcherConstruct.BackReferenceMatcherConstruct.match(...)` (currently throws; the node itself is now correctly wired into the graph, just the runtime behavior is missing).
-- [ ] Implement `MatcherConstruct.BoundaryMatcherConstruct.match(...)` (currently throws; same as above — structurally present, behaviorally stubbed). This needs matcher *state* (position, surrounding characters), not just the next code point, so it may need a different mechanism than a plain dispatch map — see design.md.
+- [ ] Implement `MatcherConstruct.BoundaryMatcherConstruct.match(...)` for the remaining `BoundaryEnum` values (`LineBegin`/`LineEnd`/`InputBegin`/`PreviousMatchEnd`/`InputEndExceptTerminator`/`InputEnd`/`Linebreak` — currently throws). `Word`/`NonWord` (`\b`/`\B`) are done (2026-09-07, see `WordBoundaryMatcherConstruct`/`WordBoundaryTest`): `Matcher#peekPrevious()` looks backward the same way `peek()` looks forward, and `BoundaryConstruct.buildMatcher()` classifies both the preceding and following character as statically always-word/always-non-word/unknown at compile time (via a new `PatternConstruct.lastCharSet()` for the preceding side, and the existing `entryMap`/`entryElse` for the following side), folding the fully-statically-known case into a compile-time `PatternSyntaxException` or a zero-width no-op, and otherwise only checking whichever side isn't statically known. `^`/`$`/etc. likely want the same `peekPrevious()` mechanism (e.g. `^` under `MULTILINE` needs to check the preceding character is a line terminator) but aren't done here.
 - [ ] Remaining `Matcher`/`Ll1Pattern` API gaps: `replaceAll`/`replaceFirst`/`appendReplacement`/`appendTail`/`quoteReplacement`, `split`/`splitAsStream`, `toMatchResult`, `hitEnd`/`requireEnd`, `useAnchoringBounds`/`hasAnchoringBounds`, `useTransparentBounds`/`hasTransparentBounds` — all still `UnsupportedOperationException` stubs. None of these are needed for the scraped-corpus differential test harness above (that only needs `matches`/`find`/`group`/`start`/`end`), so lower priority than that.
 - [ ] `region()`'s interaction with `hasAnchoringBounds`/`useAnchoringBounds`/`useTransparentBounds` (whether `^`/`$`/boundaries see past the region) isn't implemented at all yet — moot until `BoundaryMatcherConstruct` itself works, but worth remembering once it does.
 - [ ] `PatternConstruct.compile()` is typed `@Nullable MatcherConstruct` but, now that every construct type actually builds a matcher, likely always returns non-null in practice — worth dropping the `@Nullable` (and fixing `Ll1Pattern.compile()`'s unchecked-nullable assignment).

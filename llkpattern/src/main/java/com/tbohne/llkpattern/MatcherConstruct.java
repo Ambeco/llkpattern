@@ -426,83 +426,86 @@ abstract class MatcherConstruct {
 		}
 	}
 
+	/**
+	 * Length (in chars) of the line terminator starting at {@code input.charAt(index)}, or 0 if
+	 * there isn't one there -- {@code "\r\n"} counts as a single 2-char terminator, matching
+	 * {@code java.util.regex}'s default (non-{@code UNIX_LINES}) set: {@code \n}, {@code \r},
+	 * {@code \r\n}, {@code \u0085}, {@code \u2028}, {@code \u2029}. Under {@code UNIX_LINES},
+	 * only {@code \n} counts. Never looks past {@code limit} (the region end, per this engine's
+	 * "opaque bounds" stance -- see {@code Matcher#peekPrevious()}). Shared by {@link
+	 * BoundaryMatcherConstruct} ({@code \Z}) and {@link LineBoundaryMatcherConstruct} ({@code $}).
+	 */
+	private static int lineTerminatorLengthAt(String input, int index, int limit, int flags) {
+		if (index >= limit) {
+			return 0;
+		}
+		char c = input.charAt(index);
+		if (c == '\n') {
+			return 1;
+		}
+		if ((flags & Ll1Pattern.UNIX_LINES) != 0) {
+			return 0;
+		}
+		if (c == '\r') {
+			return (index + 1 < limit && input.charAt(index + 1) == '\n') ? 2 : 1;
+		}
+		return (c == '\u0085' || c == '\u2028' || c == '\u2029') ? 1 : 0;
+	}
+
+	/**
+	 * Length (in chars) of the line terminator ending exactly at {@code input.charAt(index - 1)}
+	 * (i.e. occupying {@code [index - length, index)}), or 0 if there isn't one -- the mirror
+	 * image of {@link #lineTerminatorLengthAt}, used for {@code ^}'s MULTILINE check (was the
+	 * character just before this position the end of a line terminator?). Never looks before
+	 * {@code floor} (the region start) or at/past {@code limit} (the region end). Used only by
+	 * {@link LineBoundaryMatcherConstruct} ({@code ^}) -- nothing else looks backward.
+	 */
+	private static int lineTerminatorLengthBefore(String input, int index, int floor, int limit, int flags) {
+		if (index <= floor) {
+			return 0;
+		}
+		char c = input.charAt(index - 1);
+		if (c == '\n') {
+			boolean crlf = (flags & Ll1Pattern.UNIX_LINES) == 0
+					&& index - 2 >= floor
+					&& input.charAt(index - 2) == '\r';
+			return crlf ? 2 : 1;
+		}
+		if ((flags & Ll1Pattern.UNIX_LINES) != 0) {
+			return 0;
+		}
+		if (c == '\r') {
+			// A lone '\r' is its own complete terminator ONLY if it's not immediately followed by
+			// '\n' -- otherwise it's the first half of a "\r\n" pair, which only completes (and
+			// only counts as ending here) one position later, at index + 1.
+			boolean startsCrLf = index < limit && input.charAt(index) == '\n';
+			return startsCrLf ? 0 : 1;
+		}
+		return (c == '\u0085' || c == '\u2028' || c == '\u2029') ? 1 : 0;
+	}
+
+	/**
+	 * {@code \Z}: the end of the input, or immediately before the input's own final line
+	 * terminator (if it has one) -- i.e. a line terminator starting here that reaches exactly to
+	 * {@code regionEnd}, not merely one somewhere in the middle of the remaining input. Also
+	 * {@code $}'s definition when {@code MULTILINE} is off (see {@code java.util.regex.Pattern}'s
+	 * "Line terminators" section: without {@code MULTILINE}, {@code $} and {@code \Z} coincide) --
+	 * shared by {@link BoundaryMatcherConstruct} and {@link LineBoundaryMatcherConstruct}.
+	 */
+	private static boolean matchesEndExceptTerminator(Matcher matcher, int flags) {
+		if (matcher.pos == matcher.regionEnd) {
+			return true;
+		}
+		int len = lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags);
+		return len > 0 && matcher.pos + len == matcher.regionEnd;
+	}
+
 	static final class BoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
 		final BoundaryEnum type;
 
 		BoundaryMatcherConstruct(PatternConstruct owner, BoundaryEnum type) {
 			super(owner, owner.next.matcher);
 			this.type = type;
-		}
-
-		/**
-		 * Length (in chars) of the line terminator starting at {@code input.charAt(index)}, or 0 if
-		 * there isn't one there -- {@code "\r\n"} counts as a single 2-char terminator, matching
-		 * {@code java.util.regex}'s default (non-{@code UNIX_LINES}) set: {@code \n}, {@code \r},
-		 * {@code \r\n}, {@code \u0085}, {@code \u2028}, {@code \u2029}. Under {@code UNIX_LINES},
-		 * only {@code \n} counts. Never looks past {@code limit} (the region end, per this engine's
-		 * "opaque bounds" stance -- see {@code Matcher#peekPrevious()}).
-		 */
-		private static int lineTerminatorLengthAt(String input, int index, int limit, int flags) {
-			if (index >= limit) {
-				return 0;
-			}
-			char c = input.charAt(index);
-			if (c == '\n') {
-				return 1;
-			}
-			if ((flags & Ll1Pattern.UNIX_LINES) != 0) {
-				return 0;
-			}
-			if (c == '\r') {
-				return (index + 1 < limit && input.charAt(index + 1) == '\n') ? 2 : 1;
-			}
-			return (c == '\u0085' || c == '\u2028' || c == '\u2029') ? 1 : 0;
-		}
-
-		/**
-		 * Length (in chars) of the line terminator ending exactly at {@code input.charAt(index - 1)}
-		 * (i.e. occupying {@code [index - length, index)}), or 0 if there isn't one -- the mirror
-		 * image of {@link #lineTerminatorLengthAt}, used for {@code ^}'s MULTILINE check (was the
-		 * character just before this position the end of a line terminator?). Never looks before
-		 * {@code floor} (the region start) or at/past {@code limit} (the region end).
-		 */
-		private static int lineTerminatorLengthBefore(String input, int index, int floor, int limit, int flags) {
-			if (index <= floor) {
-				return 0;
-			}
-			char c = input.charAt(index - 1);
-			if (c == '\n') {
-				boolean crlf = (flags & Ll1Pattern.UNIX_LINES) == 0
-						&& index - 2 >= floor
-						&& input.charAt(index - 2) == '\r';
-				return crlf ? 2 : 1;
-			}
-			if ((flags & Ll1Pattern.UNIX_LINES) != 0) {
-				return 0;
-			}
-			if (c == '\r') {
-				// A lone '\r' is its own complete terminator ONLY if it's not immediately followed by
-				// '\n' -- otherwise it's the first half of a "\r\n" pair, which only completes (and
-				// only counts as ending here) one position later, at index + 1.
-				boolean startsCrLf = index < limit && input.charAt(index) == '\n';
-				return startsCrLf ? 0 : 1;
-			}
-			return (c == '\u0085' || c == '\u2028' || c == '\u2029') ? 1 : 0;
-		}
-
-		/**
-		 * {@code \Z}: the end of the input, or immediately before the input's own final line
-		 * terminator (if it has one) -- i.e. a line terminator starting here that reaches exactly to
-		 * {@code regionEnd}, not merely one somewhere in the middle of the remaining input. Also
-		 * {@code $}'s definition when {@code MULTILINE} is off (see {@code java.util.regex.Pattern}'s
-		 * "Line terminators" section: without {@code MULTILINE}, {@code $} and {@code \Z} coincide).
-		 */
-		private boolean matchesEndExceptTerminator(Matcher matcher) {
-			if (matcher.pos == matcher.regionEnd) {
-				return true;
-			}
-			int len = lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags);
-			return len > 0 && matcher.pos + len == matcher.regionEnd;
 		}
 
 		@Override
@@ -516,18 +519,7 @@ abstract class MatcherConstruct {
 					matchesHere = matcher.pos == matcher.regionEnd;
 					break;
 				case InputEndExceptTerminator: // \Z
-					matchesHere = matchesEndExceptTerminator(matcher);
-					break;
-				case LineBegin: // ^
-					matchesHere = matcher.pos == matcher.regionStart
-							|| ((flags & Ll1Pattern.MULTILINE) != 0
-									&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.regionStart, matcher.regionEnd, flags) > 0);
-					break;
-				case LineEnd: // $
-					matchesHere = (flags & Ll1Pattern.MULTILINE) == 0
-							? matchesEndExceptTerminator(matcher)
-							: (matcher.pos == matcher.regionEnd
-									|| lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags) > 0);
+					matchesHere = matchesEndExceptTerminator(matcher, flags);
 					break;
 				case PreviousMatchEnd: // \G
 				default:
@@ -538,6 +530,39 @@ abstract class MatcherConstruct {
 					// PreviousMatchEndConstruct/MatcherConstruct pair, not this shared one).
 					throw new UnsupportedOperationException(
 							"TODO: " + type + " boundary matching not yet implemented");
+			}
+			return matchesHere && matchNext(matcher, peeked);
+		}
+	}
+
+	/**
+	 * {@code ^} (line begin) / {@code $} (line end): without {@code MULTILINE}, exactly {@code \A}/
+	 * {@code \Z} (see {@link #matchesEndExceptTerminator}); under {@code MULTILINE}, {@code ^} also
+	 * matches immediately after any line terminator ({@link #lineTerminatorLengthBefore}, a
+	 * backward scan -- the mirror of {@code \Z}'s forward one) and {@code $} immediately before any
+	 * line terminator ({@link #lineTerminatorLengthAt}). See design.md's "Boundary matching"
+	 * section.
+	 */
+	static final class LineBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+		final boolean isLineBegin; // true: ^, false: $
+
+		LineBoundaryMatcherConstruct(PatternConstruct owner, boolean isLineBegin) {
+			super(owner, owner.next.matcher);
+			this.isLineBegin = isLineBegin;
+		}
+
+		@Override
+		boolean match(Matcher matcher, int peeked) {
+			boolean matchesHere;
+			if (isLineBegin) {
+				matchesHere = matcher.pos == matcher.regionStart
+						|| ((flags & Ll1Pattern.MULTILINE) != 0
+								&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.regionStart, matcher.regionEnd, flags) > 0);
+			} else {
+				matchesHere = (flags & Ll1Pattern.MULTILINE) == 0
+						? matchesEndExceptTerminator(matcher, flags)
+						: (matcher.pos == matcher.regionEnd
+								|| lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags) > 0);
 			}
 			return matchesHere && matchNext(matcher, peeked);
 		}

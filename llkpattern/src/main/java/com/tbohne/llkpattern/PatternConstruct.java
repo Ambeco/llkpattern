@@ -518,8 +518,6 @@ abstract class PatternConstruct {
 
 	static final class BoundaryConstruct extends PatternConstruct {
 		enum BoundaryEnum {
-			LineBegin,
-			LineEnd,
 			InputBegin,
 			PreviousMatchEnd,
 			InputEndExceptTerminator,
@@ -541,6 +539,33 @@ abstract class PatternConstruct {
 		@Override
 		void buildMatcher() {
 			new BoundaryMatcherConstruct(this, type);
+		}
+	}
+
+	/**
+	 * {@code ^} (line begin) / {@code $} (line end). Split out from {@link BoundaryConstruct}
+	 * (2026-09-07) for the same reason {@code \b}/{@code \B} were: a real, non-stub
+	 * implementation with its own logic (MULTILINE-aware line-terminator scanning), distinct
+	 * enough from {@code BoundaryConstruct}'s remaining, still-unimplemented types that sharing
+	 * one {@code BoundaryEnum}-keyed dispatch added indirection for no benefit. See design.md's
+	 * "Boundary matching" section for the matching design.
+	 */
+	static final class LineBoundaryConstruct extends PatternConstruct {
+		final boolean isLineBegin; // true: ^, false: $
+
+		LineBoundaryConstruct(int startIndex, int endIndex, boolean isLineBegin) {
+			super(startIndex, endIndex);
+			this.isLineBegin = isLineBegin;
+		}
+
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			entryElse = this;
+		}
+
+		@Override
+		void buildMatcher() {
+			new LineBoundaryMatcherConstruct(this, isLineBegin);
 		}
 	}
 

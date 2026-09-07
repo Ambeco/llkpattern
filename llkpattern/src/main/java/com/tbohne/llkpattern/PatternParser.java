@@ -212,13 +212,13 @@ final class PatternParser {
             advance(1);
             break;
           case '^':
-            BoundaryConstruct lineBegin = new BoundaryConstruct(index, index+1, BoundaryEnum.LineBegin);
+            LineBoundaryConstruct lineBegin = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ true);
             lineBegin.flags = flags;
             sequence.patterns.add(lineBegin);
             advance(1);
             break;
           case '$':
-            BoundaryConstruct lineEnd = new BoundaryConstruct(index, index+1, BoundaryEnum.LineEnd);
+            LineBoundaryConstruct lineEnd = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ false);
             lineEnd.flags = flags;
             sequence.patterns.add(lineEnd);
             advance(1);

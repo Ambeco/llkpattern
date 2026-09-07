@@ -43,17 +43,20 @@ public class PosixAndJavaClassTest {
   }
 
   @Test
-  public void posix_digit_notActuallyImplemented_throwsInstead() {
-    // Confirmed gap (2026-09-06, see remaining_work.md): NamedCharClass.java has a POSIX "Digit"
-    // entry commented out (`// Digit(d.ascii, Digit),`) because the name "Digit" is already taken
-    // by the Source.UProperty entry a few lines above (backed by java.lang.Character.isDigit) --
-    // Java enum constants can't share a name. That UProperty entry only allows the "is"/"Is..."
-    // prefix (per its Source.allowedPrefixes), so the bare POSIX form "\p{Digit}" (prefix "none")
-    // fails NamedCharClass#get's Preconditions.checkArgument and gets reported as an unknown
-    // class. Documenting the CURRENT (unfortunate) behavior rather than asserting the correct one,
-    // per remaining_work.md's instruction for a real, tracked-but-not-yet-fixed gap.
-    org.junit.Assert.assertThrows(
-        PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{Digit}"));
+  public void posix_digit() {
+    // See NamedCharClass.PosixDigit's doc: bare "\p{Digit}" can't literally be the enum constant
+    // "Digit" (already claimed by \p{IsDigit}, which is always full-Unicode) -- PatternParser
+    // translates the name to "PosixDigit" instead, which defaults to ASCII only.
+    assertThat(Ll1Pattern.compile("\\p{Digit}").matcher("5").matches(), is(true));
+    assertThat(Ll1Pattern.compile("\\p{Digit}").matcher("a").matches(), is(false));
+    // ARABIC-INDIC DIGIT FIVE (U+0665): not ASCII, so only matches under UNICODE_CHARACTER_CLASS
+    // -- verified against real java.util.regex, which draws exactly this same line.
+    assertThat(Ll1Pattern.compile("\\p{Digit}").matcher("\u0665").matches(), is(false));
+    assertThat(
+        Ll1Pattern.compile("\\p{Digit}", Ll1Pattern.UNICODE_CHARACTER_CLASS)
+            .matcher("\u0665")
+            .matches(),
+        is(true));
   }
 
   @Test

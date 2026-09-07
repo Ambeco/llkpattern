@@ -189,7 +189,17 @@ enum NamedCharClass {
   Alpha(
       Source.POSIX,
       Alphabetic.unicode, /* slicedAscii=*/true),
-  // Digit(d.ascii, Digit),
+  // Named PosixDigit, not Digit -- a Java enum can't have two constants sharing a name, and
+  // `Digit` (above, Source.UProperty) is already claimed by \p{IsDigit}. They're NOT the same
+  // NamedCharClass despite the same underlying predicate: \p{IsDigit} is always full-Unicode
+  // (ascii == unicode == the full set, since UNICODE_CHARACTER_CLASS doesn't apply to "Is"
+  // property queries), but bare POSIX \p{Digit} must default to ASCII [0-9] and only widen to
+  // full Unicode under UNICODE_CHARACTER_CLASS -- reusing `Digit` here would silently match
+  // non-ASCII digits by default. PatternParser translates the bare name "Digit" to this
+  // constant's Java identifier "PosixDigit" before the NamedCharClass.valueOf() lookup.
+  PosixDigit(
+      Source.POSIX,
+      Digit.unicode, /* slicedAscii=*/true),
   Alnum(
       Source.POSIX,
       unionOf(Alphabetic.unicode, Digit.unicode)),

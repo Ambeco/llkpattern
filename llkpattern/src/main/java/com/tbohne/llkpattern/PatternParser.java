@@ -833,6 +833,12 @@ final class PatternParser {
       int eqPos = charClassName.indexOf('=');
       if (eqPos < 0) {
         prefix = NamedCharClass.CharacterClassPrefix.none;
+        if (charClassName.equals("Digit")) {
+          // Bare POSIX \p{Digit} can't be the NamedCharClass literally named "Digit" -- that Java
+          // identifier is already claimed by the (behaviorally different) \p{IsDigit} entry. See
+          // NamedCharClass.PosixDigit's doc for why they can't just share one instance.
+          charClassName = "PosixDigit";
+        }
       } else if (charClassName.startsWith("script=") || charClassName.startsWith("sc=")) {
         prefix = NamedCharClass.CharacterClassPrefix.script;
         charClassName = charClassName.substring(eqPos + 1);

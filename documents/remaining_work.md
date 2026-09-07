@@ -4,18 +4,20 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 ## HIGHEST PRIORITY
 
-- [ ] **Give `\p{Digit}` (bare POSIX form) its own working entry.** `NamedCharClass.java` has a POSIX
-      `Digit` entry *commented out* (`// Digit(d.ascii, Digit),`) because the name `Digit` is already
-      taken by the `Source.UProperty` entry a few lines above (Java enum constants can't share a
-      name), and that UProperty entry only allows the `Is`-prefixed access form. So there are only
-      **12** usable POSIX classes today, not the 13 Oracle documents (`Lower`, `Upper`, `ASCII`,
-      `Alpha`, `Alnum`, `Punct`, `Graph`, `Print`, `Blank`, `Cntrl`, `XDigit`, `Space` — no bare
-      `Digit`). Needs a design decision (e.g. renaming one of the two conflicting entries, or letting
-      one enum entry support more than one `Source`/prefix set) before implementing. Covered (as
-      throwing) by `PosixAndJavaClassTest#posix_digit_notActuallyImplemented_throwsInstead`.
-- [ ] Implement Unicode scripts (`\p{IsScript}`/`\p{script=Script}`) and blocks (`\p{InBlock}`/
-      `\p{block=Block}`) — currently no `NamedCharClass` entries use `Source.Script`/`Source.Block`
-      at all, so every such reference throws. Covered (as throwing) by `UnicodeClassTest`.
+- [ ] **Implement Unicode scripts** (`\p{IsScript}`/`\p{script=Script}`) — no `NamedCharClass` entry
+      uses `Source.Script` at all, so every such reference throws (covered, as throwing, by
+      `UnicodeClassTest`). The underlying data already exists: `unicodeanalyzer` already generated
+      one range set per script in `UnicodePredicates.java` (`LATIN`, `GREEK`, `CYRILLIC`, `HAN`,
+      `KHITAN_SMALL_SCRIPT`, ~160 total) -- confirmed 2026-09-07, this was previously assumed
+      unimplemented from scratch. What's missing is purely the `NamedCharClass` wiring, but at
+      ~160 entries, adding one enum constant per script (the pattern every other named class here
+      uses) is a lot of boilerplate for one feature -- worth restructuring `NamedCharClass` away
+      from one-Java-constant-per-name to a runtime `Map<String, NamedCharClass>`-style lookup
+      while doing this, rather than 160 more enum constants. Large enough to be its own session.
+- [ ] **Implement Unicode blocks** (`\p{InBlock}`/`\p{block=Block}`) -- unlike scripts, no
+      generator support exists for this at all (confirmed 2026-09-07: no block-named constant like
+      `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
+      just `NamedCharClass` wiring.
 
 ## Also remember for later (currently-unimplemented/deferred features)
 

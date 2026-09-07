@@ -42,6 +42,13 @@ abstract class MatcherConstruct {
 	RangeMap<Integer, MatcherConstruct> dispatchMap = TreeRangeMap.create();
 	@Nullable MatcherConstruct elseDispatch;
 
+	// The CASE_INSENSITIVE/UNICODE_CASE/etc. flags in effect where this node's PatternConstruct was
+	// parsed (see PatternConstruct#flags) -- NOT necessarily the pattern-wide
+	// Ll1Pattern.compile(pattern, flags) flags. This is what makes an inline "(?i:...)" actually
+	// scope case-insensitivity to just that group instead of the whole pattern: see "Inline flag
+	// toggles don't actually locally scope anything" in remaining_work.md.
+	final int flags;
+
 	/**
 	 * @param owner the PatternConstruct this MatcherConstruct implements. Assigning {@code
 	 *     owner.matcher = this} here, before subclass constructors resolve any dependencies, is
@@ -49,6 +56,7 @@ abstract class MatcherConstruct {
 	 */
 	MatcherConstruct(PatternConstruct owner) {
 		owner.matcher = this;
+		this.flags = owner.flags;
 	}
 
 	/**
@@ -56,9 +64,12 @@ abstract class MatcherConstruct {
 	 * PatternConstruct -- e.g. {@link LoopMatcherConstruct}/{@link EndLoopMatcherConstruct} (both
 	 * only ever reached via a {@link LoopDispatchMatcherConstruct}'s own dispatch map), or the
 	 * plain alternation dispatch wrapped inside a capturing group's Begin/EndCapture pair. Skips
-	 * self-registration since there's no single owning construct to register into.
+	 * self-registration since there's no single owning construct to register into, so the caller
+	 * must supply the local flags directly (normally the owning construct's own {@code flags}).
 	 */
-	MatcherConstruct() {}
+	MatcherConstruct(int flags) {
+		this.flags = flags;
+	}
 
 	abstract boolean match(Matcher matcher, int peeked);
 
@@ -71,7 +82,9 @@ abstract class MatcherConstruct {
 			// against that same map, rather than expanding every character class's ranges at compile
 			// time. Two lookups (not one) because there's no single "canonical case" that works for
 			// both an all-lowercase pattern matching an uppercase input and vice versa.
-			int flags = matcher.pattern.flags();
+			// Uses this node's own local `flags` (its PatternConstruct's parse-time flags), not
+			// matcher.pattern.flags(), so an inline "(?i:...)" only affects matching within its own
+			// scope instead of the whole pattern.
 			if ((flags & Ll1Pattern.CASE_INSENSITIVE) != 0) {
 				boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
 				int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
@@ -172,7 +185,7 @@ abstract class MatcherConstruct {
 				// lockstep), so it was latent rather than an active bug, but it's exactly backwards
 				// from what was intended and worth fixing now that this method is being touched.
 				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
-				if (!codePointsMatch(next, peeked, matcher.pattern.flags())) {
+				if (!codePointsMatch(next, peeked, flags)) {
 					return false;
 				}
 				peeked = matcher.consumeCodeUnits(units);
@@ -199,7 +212,8 @@ abstract class MatcherConstruct {
 		 * Internal (non-self-registering) variant, used when a capturing union's actual entry point
 		 * is a {@link BeginCaptureMatcherConstruct} that wraps this node instead.
 		 */
-		DispatchMatcherConstruct(RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
+		DispatchMatcherConstruct(RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse, int flags) {
+			super(flags);
 			populate(entryMap, entryElse);
 		}
 
@@ -270,7 +284,8 @@ abstract class MatcherConstruct {
 		final int quantifiableIndex;
 		final int max;
 
-		LoopMatcherConstruct(int quantifiableIndex, int max) {
+		LoopMatcherConstruct(int quantifiableIndex, int max, int flags) {
+			super(flags);
 			this.quantifiableIndex = quantifiableIndex;
 			this.max = max;
 		}
@@ -297,7 +312,8 @@ abstract class MatcherConstruct {
 		final int quantifiableIndex;
 		final int min;
 
-		EndLoopMatcherConstruct(int quantifiableIndex, int min) {
+		EndLoopMatcherConstruct(int quantifiableIndex, int min, int flags) {
+			super(flags);
 			this.quantifiableIndex = quantifiableIndex;
 			this.min = min;
 		}
@@ -347,6 +363,7 @@ abstract class MatcherConstruct {
 				// after recording the captured substring -- owner.matcher (== this) is already set by
 				// the super(owner) call above, so this is safe to compile immediately.
 				bodyCompileTarget = new PatternConstruct.CaptureEndMarker(owner.startIndex, captureConstructIndex, owner);
+				bodyCompileTarget.flags = owner.flags;
 				bodyCompileTarget.compile(owner);
 			}
 
@@ -355,8 +372,8 @@ abstract class MatcherConstruct {
 			PatternConstruct.MergedEntries result =
 					PatternConstruct.compileAndMergeCandidates(owner.pattern, candidates, bodyCompileTarget, "loop part");
 
-			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(owner.quantifiableIndex, owner.max);
-			EndLoopMatcherConstruct endLoopNode = new EndLoopMatcherConstruct(owner.quantifiableIndex, owner.min);
+			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(owner.quantifiableIndex, owner.max, owner.flags);
+			EndLoopMatcherConstruct endLoopNode = new EndLoopMatcherConstruct(owner.quantifiableIndex, owner.min, owner.flags);
 			endLoopNode.elseDispatch = next.matcher;
 
 			// Where a body-owned range's target actually gets recorded: directly on loopNode in the
@@ -364,7 +381,7 @@ abstract class MatcherConstruct {
 			// unconditionally, below) when capturing -- either way, `loopNode` is what the outer
 			// dispatchMap below routes "continue" characters to.
 			BeginCaptureMatcherConstruct beginCaptureNode =
-					capturing ? new BeginCaptureMatcherConstruct(captureConstructIndex) : null;
+					capturing ? new BeginCaptureMatcherConstruct(captureConstructIndex, owner.flags) : null;
 			MatcherConstruct bodyDispatchNode = capturing ? beginCaptureNode : loopNode;
 
 			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
@@ -420,7 +437,8 @@ abstract class MatcherConstruct {
 		 * dispatchMap/elseDispatch directly afterward (see LoopDispatchMatcherConstruct) rather than
 		 * this constructor taking one fixed target.
 		 */
-		BeginCaptureMatcherConstruct(int captureConstructIndex) {
+		BeginCaptureMatcherConstruct(int captureConstructIndex, int flags) {
+			super(flags);
 			this.captureConstructIndex = captureConstructIndex;
 		}
 

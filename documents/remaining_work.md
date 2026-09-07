@@ -1,6 +1,6 @@
 # Remaining Work
 
-Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1232 tests, 0 failing, 561 skipped (most of the growth from the new scraped-corpus harness: 561 golden rows × ~2 tests/row).
+Updated 2026-09-06. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1358 tests, 0 failing, 561 skipped (the scraped-corpus harness accounts for 561 golden rows × ~2 tests/row; the rest is the comprehensive grammar coverage added 2026-09-06, see "FIXED" below).
 
 ## FIXED (2026-09-06): the `PatternParser` hang on octal/`\x{...}` escapes in a `[...]` range
 
@@ -149,10 +149,10 @@ since finding one immediately led to the next -- see below for what's still left
    new shared `codePointsMatch()` helper. This required making `Matcher.pattern` package-private
    (was `private`) so `MatcherConstruct` can read `matcher.pattern.flags()`. See
    [MatcherConstruct.java](../llkpattern/src/main/java/com/tbohne/llkpattern/MatcherConstruct.java).
-   **Scope note**: this covers flags passed to `Ll1Pattern.compile(pattern, flags)` (the global
-   case). It does NOT make an inline `(?i)` actually toggle case-sensitivity for only part of a
-   pattern -- see the "inline flag toggles don't actually scope anything" item below, a distinct,
-   bigger gap this stopped short of.
+   **Scope note**: at the time this landed, it only covered flags passed to
+   `Ll1Pattern.compile(pattern, flags)` (the global case), not an inline `(?i:...)` scoped to part
+   of a pattern -- see the "inline flag toggles didn't actually locally scope anything" FIXED entry
+   below for that follow-up, done later the same day.
 2. **Inline flag toggles threw unconditionally**: `PatternParser`'s "is this flag already set"
    checks used `|` instead of `&` (`(enableFlags | flagValue) != 0` is true as soon as `flagValue`
    is nonzero, i.e. on the very first flag character of literally any `(?...)` construct). Fixed to
@@ -173,39 +173,61 @@ since finding one immediately led to the next -- see below for what's still left
   `BeginCaptureMatcherConstruct` (the capture-groups array was sized for the real groups only, but
   something also tried to write into a phantom "group 0" slot). Fixed by setting
   `union.captureConstructIndex = -1` in that branch, same as `(?:...)`.
-- **A *bare* flags-only group (`(?s)`, immediately closed by `)`, no body) breaks the surrounding
-  sequence** -- found while regression-testing the fix above. `Ll1Pattern.compile("(?s)abx")`
-  no longer crashes, but `matcher("abx").find()` incorrectly returns `false` (should trivially be
-  `true` -- `(?s)` toggling `DOTALL` shouldn't affect matching "abx" at all, let alone break it).
-  The bare form returns an empty, un-parsed `QuantifiedUnion` (zero `constructs`) directly from
-  `PatternParser.parseGroup()`
-  ([PatternParser.java:355-359](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternParser.java:355)),
-  without ever going through the machinery ((`parseUnion`, `buildEntryMap`/`buildMatcher`) that
-  makes a `QuantifiedUnion` behave as a proper (here: zero-width, always-succeeding) link in the
-  compiled graph -- an empty `constructs` list apparently doesn't compile into a working no-op
-  passthrough. **Not yet fixed** -- needs its own investigation into how
-  `QuantifiedUnion.buildEntryMap`/`buildMatcher` handle (or fail to handle) zero constructs, or
-  whether the bare form needs to synthesize a single always-matching zero-width construct instead
-  of an empty list. Confirmed via direct repro; regenerating the golden corpus after the fixes
-  above turned every affected `(?s)`/`(?iu)`/`(?x)` corpus row into a clean, understood `UNEXPECTED`
-  (`llk=NOMATCH` where regex matches) rather than a crash, so this is now cleanly isolated rather
-  than masked by something else.
-- [ ] **Inline flag toggles don't actually locally scope anything**, even once the bare-group bug
-      above is fixed. `(?i:...)`/`(?i)` only ever mutate `PatternParser`'s own `flags` field at
-      *parse* time, affecting every construct parsed after that point in the current scope -- they
-      are not stored per-construct for use at match/compile time. So `(?i:abc)def` would (once the
-      bug above is fixed) make matching sensitive to case for `abc` correctly by cascading, but
-      `abc(?i:def)ghi` cannot currently make ONLY `def` case-insensitive while `ghi` stays
-      case-sensitive again afterward, because nothing restores the "insensitive-ness" boundary at
-      runtime the way it already does at *parse* time (`union.tempFlags`/`parentFlags` correctly
-      restores `PatternParser.flags` after a `(?i:...)` group for parsing *purposes*, e.g. deciding
-      ASCII vs Unicode named classes -- but `CASE_INSENSITIVE`'s new match-time folding reads the
-      single global `Matcher.pattern.flags()`, which doesn't vary by position in the pattern at
-      all). Needs each `MatcherConstruct` (or at least `LiteralMatcherConstruct`/character-class
-      dispatch) to carry its own local flags snapshot from parse time, rather than reading the
-      pattern-wide flags at match time. A real design task, not a one-line fix -- do this after the
-      bare-group bug above, since testing it meaningfully needs bare/grouped inline flags to work
-      correctly first.
+## FIXED (2026-09-06): a *bare* flags-only group (`(?s)`, no body) broke the surrounding sequence
+
+Found while regression-testing the capture-numbering fix above. `Ll1Pattern.compile("(?s)abx")`
+no longer crashed, but `matcher("abx").find()` incorrectly returned `false` (should trivially be
+`true` -- `(?s)` toggling `DOTALL` shouldn't affect matching "abx" at all, let alone break it). The
+bare form returns an empty, un-parsed `QuantifiedUnion` (zero `constructs`) directly from
+`PatternParser.parseGroup()`, without ever going through the machinery (`parseUnion`,
+`buildEntryMap`/`buildMatcher`) that makes a `QuantifiedUnion` behave as a proper link in the
+compiled graph -- an empty `constructs` list didn't compile into a working no-op passthrough:
+`QuantifiedUnion.buildEntryMap()` fed the empty list to `compileAndMergeCandidates()`, producing an
+empty `entryMap`/`entryElse`, which `buildMatcher()` then wrapped in a `DispatchMatcherConstruct`
+that matched nothing at all. Fixed by special-casing `constructs.isEmpty()` in
+`QuantifiedUnion.buildEntryMap()` ([PatternConstruct.java:234](../llkpattern/src/main/java/com/tbohne/llkpattern/PatternConstruct.java:234)):
+alias this construct's `entryMap`/`entryElse`/`matcher` directly to `next`'s, the same zero-width
+passthrough an empty `Sequence` element already gets. Every other path to a `QuantifiedUnion`
+(a real `()`/`(?:)`/`(?<name>)`) goes through `parseUnion()` first, which already rejects a
+genuinely empty body (`throwEmptySequence`) before a `QuantifiedUnion` with zero `constructs` can
+exist -- so a bare flags-only group is the only way to reach this case, and it's always
+non-capturing (the `<name>`/`:` forms both call `parseUnion()`). See
+`bareFlagsGroup_isZeroWidthNoOp()` and friends in `CaseInsensitiveTest.java`.
+
+## FIXED (2026-09-06): inline flag toggles (`(?i:...)`, `(?i)`) didn't actually locally scope anything
+
+`(?i:...)`/`(?i)` only ever mutated `PatternParser`'s own `flags` field at *parse* time, affecting
+every construct parsed after that point in the current scope -- they were never stored
+per-construct for use at match/compile time. So `(?i:abc)def` made matching sensitive to case for
+`abc` correctly (by cascading), but `abc(?i:def)ghi` wrongly made `ghi` case-insensitive too,
+because nothing restored the "insensitive-ness" boundary at *runtime* the way it already did at
+*parse* time (`union.tempFlags`/`parentFlags` correctly restored `PatternParser.flags` after a
+`(?i:...)` group for parsing purposes, e.g. deciding ASCII vs Unicode named classes -- but
+`CASE_INSENSITIVE`'s match-time folding read the single global `Matcher.pattern.flags()`, which
+doesn't vary by position in the pattern at all).
+
+Fixed by giving both `PatternConstruct` and `MatcherConstruct` their own local `flags` snapshot,
+instead of reading the pattern-wide `Ll1Pattern.compile(pattern, flags)` flags at match time:
+
+- `PatternConstruct` gained a mutable `flags` field (not a constructor param, to avoid touching
+  every existing subclass constructor's signature); `PatternParser` stamps it onto every
+  `ComplexCharacter`/`LiteralString`/`QuantifiedUnion`/`ComplexQuantifiedCharacter` right at
+  construction, using whatever `PatternParser.flags` is in scope at that point -- i.e. after an
+  enclosing `(?i:...)`'s toggle has been applied and before it's restored. The quantified case
+  (`ComplexQuantifiedCharacter`, and a group's own `QuantifiedUnion`) is centralized in
+  `PatternParser.parseQuantifiable()` rather than at each call site.
+- `MatcherConstruct` gained a `final int flags` field, populated from `owner.flags` in its
+  self-registering constructor (a new `MatcherConstruct(int flags)` constructor covers the
+  no-owner/synthetic nodes -- `LoopMatcherConstruct`, `EndLoopMatcherConstruct`, the no-owner
+  `BeginCaptureMatcherConstruct`/`DispatchMatcherConstruct` variants -- which now take the owning
+  construct's `flags` explicitly from their caller). `getNext()`'s case-fold retry and
+  `codePointsMatch()`'s call sites now read this local `flags` instead of `matcher.pattern.flags()`.
+
+See `inlineFlagGroup_scopesCaseInsensitivityToJustTheGroup()` and friends in
+`CaseInsensitiveTest.java` (covering both the literal-string and character-class dispatch paths,
+since they go through different `MatcherConstruct` subclasses), plus regenerated golden-corpus
+counts below.
+
 ## FIXED (2026-09-06): `NamedCharClass`/`RegexCharacterClass` circular static initialization
 
 Found (and initially only worked around) while attempting the `DOTALL` fix above:
@@ -243,48 +265,91 @@ would make `.` wrongly stop matching non-ASCII characters by default; confirmed 
 which caught this exact mistake on the first attempt -- 12 rows with non-ASCII/supplementary input
 newly failed until switched from `.get(flags)` to `.unicode`).
 
+## FIXED (2026-09-06): comprehensive grammar test coverage found and fixed eight more real bugs
+
+Adding the parser/compiler/matcher test coverage tracked below (escapes, character classes,
+predefined/POSIX/Java/Unicode classes, `\R`, quantifier modifiers, named/non-capturing groups) found
+**eight** more real, previously-latent bugs -- consistent with notes.md's standing prior that each
+new kind of test finds something the previous kind couldn't see:
+
+1. **`\p{IsXxx}`/`\p{InXxx}`/`\p{javaXxx}` prefix detection read the wrong variable.**
+   `PatternParser.parseComplexEscape()` branched on `peek`/`peek2` to detect the `Is`/`In`/`java`
+   prefix, but `advance(end - index + 1)` just above had already moved the parser's lookahead PAST
+   the whole `\p{...}` construct -- so `peek`/`peek2` were the character(s) *following* the escape,
+   not the class name's own first characters. Every `Is`/`In`/`java`-prefixed class
+   (`\p{IsAlphabetic}`, `\p{javaLowerCase}`, etc.) failed with "unknown named character class"
+   unless the pattern happened to continue with a coincidentally-matching character. Fixed to check
+   `charClassName` itself (captured before the advance).
+2. **`\P{...}` never actually negated anything.** `parseComplexEscape()` computed `boolean positive
+   = peek == 'p'` but never read it again -- `\P{Lu}` behaved exactly like `\p{Lu}`. Fixed to
+   complement the named class's ranges when `!positive`.
+3. **The `\p{...}` name-length/first-character validation was off by one.** The name-scanning loop
+   incremented its cursor *before* reading each character, so it never validated the name's own
+   first character at all, and its "the name must be non-empty" check compared against the wrong
+   constant -- rejecting every genuinely valid *single-letter* category name (`\p{L}`, `\p{M}`,
+   `\p{N}`, `\p{P}`, `\p{S}`, `\p{Z}`, `\p{C}`) as if it had no name. Restructured to check-then-advance.
+4. **`\p{...}` names couldn't contain `_` at all**, so `\p{IsWhite_Space}`, `\p{Hex_Digit}`, and the
+   `general_category=`/`script=`/`block=` prefixes themselves (whose own literal text contains `_`)
+   were rejected before ever reaching the name-lookup logic. Fixed by allowing `_` in the
+   name-character set.
+5. **`Hex_Digit` (`NamedCharClass.java`) covered the entire a-z/A-Z alphabet**, not just a-f/A-F --
+   so `\p{XDigit}` wrongly matched every letter, not just hex digits. Fixed the ranges (and their
+   fullwidth equivalents) to a-f/A-F only.
+6. **The bare `{n}` (exact-count, no comma) quantifier never consumed its own closing `}`.** Only
+   the `{n,...}` branch checked for and consumed `}`; `a{3}` left a literal, unconsumed `}`
+   character immediately after the quantifier, so it only actually matched `"aaa}"`. Fixed by
+   adding the missing check/consume for the no-comma form.
+7. **Possessive quantifier suffixes (`a++`, `a*+`, `a?+`, `a{2,3}+`) were never consumed** -- the
+   post-quantifier suffix check tested for a trailing `'*'` instead of `'+'` (`'*'` is never a valid
+   quantifier-suffix character at all), leaving a stray literal `+` in the pattern. Fixed to check
+   `'+'`.
+8. **`Matcher#group(String)`/`start(String)`/`end(String)` resolved the wrong index for a pattern's
+   *first* named group.** `pattern.namedGroups` stores the 0-based `captureConstructIndex`, but
+   `group(int)` etc. expect 1-based public numbering (where `0` means "the whole match") --
+   `groupIndexByName` returned the raw 0-based value unconverted, so the first named group in any
+   pattern silently resolved to `group(0)` (the whole match) instead of its own text. Masked in the
+   one prior test that happened to use a pattern where the whole match equals the group's own text.
+   Fixed by adding 1.
+9. **A non-quantified capturing group whose *content* contains its own internal loop** (e.g.
+   `"([a-z]+)!"`) **never finalized its capture.** `PatternConstruct.CaptureEndMarker.buildEntryMap`
+   aliased `entryMap = realNext.entryMap` directly -- but that leaves every entry's *value* as
+   `realNext` itself, not the marker, breaking `LoopDispatchMatcherConstruct`'s `e.getValue() ==
+   next` identity check (used to tell "the loop is exiting toward `next`" from "the loop is
+   continuing"). The exit character got misclassified as a loop continuation and dispatched
+   straight to `realNext.matcher`, bypassing the marker's own `EndCaptureMatcherConstruct` --
+   so the capture's `Group` was created on entry but its `result` never set (`group(n)` returned
+   `null` even though the whole pattern matched). Fixed by re-keying every range onto the marker
+   itself, same as any other `PatternConstruct`'s own `buildEntryMap`.
+
+All nine are covered by regression tests in the new test classes listed under "Testing" below.
+Both scraped-corpus golden files were regenerated (`AGREES` 148+228=376, up from 142+221=363).
+
+**Confirmed gap, not fixed** (real, but not a small/mechanical fix): `\p{Digit}` (the bare POSIX
+form) throws "unknown named character class" instead of matching ASCII digits.
+`NamedCharClass.java` has a POSIX `Digit` entry *commented out* (`// Digit(d.ascii, Digit),`)
+because the name `Digit` is already taken by the `Source.UProperty` entry a few lines above (Java
+enum constants can't share a name), and that UProperty entry only allows the `Is`-prefixed access
+form. So there really are only **12** usable POSIX classes today, not the 13 Oracle documents
+(`Lower`, `Upper`, `ASCII`, `Alpha`, `Alnum`, `Punct`, `Graph`, `Print`, `Blank`, `Cntrl`, `XDigit`,
+`Space` -- no bare `Digit`). Needs a real design decision (e.g. renaming one of the two conflicting
+entries) before fixing; tracked as its own item below. Covered by
+`PosixAndJavaClassTest#posix_digit_notActuallyImplemented_throwsInstead`, which asserts the current
+(unfortunate) behavior per this file's own instructions for a real-but-untriaged gap.
+
+Also confirmed (not new, already known): Unicode scripts (`\p{IsScript}`/`\p{script=Script}`) and
+blocks (`\p{InBlock}`/`\p{block=Block}`) are not implemented at all -- `NamedCharClass.java` has no
+enum entry using `Source.Script` or `Source.Block`, so any such reference throws "unknown named
+character class". Covered (as throwing) by `UnicodeClassTest`.
+
 ## HIGHEST PRIORITY
 
-- [ ] **Comprehensive parser/compiler/matcher test coverage for every already-supported (or
-      believed-supported) piece of grammar** (requested by the project owner, 2026-09-06). Existing
-      test coverage is concentrated on structural cases (literals, sequences, plain alternation,
-      quantifier loops, capture groups) — escapes and character-class machinery are comparatively
-      untested, and this session found real, previously-latent bugs in exactly that untested area
-      (`NamedCharClass`'s static initializer: 19 spurious empty-range entries in generated
-      `UnicodePredicates.java`, plus three `ImmutableRangeSet.Builder`-overlap crashes fixed via a
-      new `union()` helper — see the "Done" section below). Nothing else in the codebase exercises
-      any of these escapes, so more bugs of the same shape should be assumed present until tests
-      say otherwise. Needed coverage, one test (or small test group) per bullet, covering parse,
-      compile, and actual `match()`/`matches()`/`find()` behavior (not just "doesn't throw" —
-      see notes.md's standing lesson that structural-only tests miss real bugs):
-  - [ ] Escapes: `\\` (literal backslash), octal `\0n`/`\0nn`/`\0mnn`, hex (`\xhh`, `\uhhhh`,
-        `\x{h...h}`), `\t`, `\n`, `\r`, `\f`, `\a` (alert/bell), `\e` (escape), `\cX` (control
-        chars).
-  - [ ] Character classes: `[abc]`, negated `[^abc]`, ranges `[a-z]`, unions `[a-c[p-z]]`,
-        intersections `[a-z&&[aeiou]]`, intersections-with-negation `[a-z&&[^aeiou]]`, and
-        intersections with a negated range operand specifically (distinguish "negate the whole
-        intersection" from "one operand of the intersection is itself negated" — these are easy
-        to conflate and parse identically by accident).
-  - [ ] Predefined classes: `.`, `\d`/`\D`, `\h`/`\H`, `\s`/`\S`, `\v`/`\V`, `\w`/`\W`.
-  - [ ] All 13 POSIX classes (confirmed exactly 13, matching `NamedCharClass.java`'s `POSIX`-source
-        entries): `Lower`, `Upper`, `ASCII`, `Alpha`, `Digit`, `Alnum`, `Punct`, `Graph`, `Print`,
-        `Blank`, `Cntrl`, `XDigit`, `Space`.
-  - [ ] `java.lang.Character`-method-backed classes (`Source.Java` entries in `NamedCharClass.java`
-        — there are well over a dozen, not just 4; enumerate directly from that file rather than
-        from memory, since it's the authoritative list and may grow).
-  - [ ] Unicode scripts (`\p{IsScript}`/`\p{script=Script}`), blocks (`\p{InBlock}`/
-        `\p{block=Block}`), general categories (`\p{Lu}`, `\p{Sc}` -- Oracle's docs list category
-        codes without spelling out what each one means; `Sc` = Symbol/currency -- and every other
-        two-letter category), and binary properties (`\p{IsAlphabetic}` etc.).
-  - [ ] Negation of any `\p{...}` via `\P{...}`.
-  - [ ] Unicode-qualified class names used *inside* a character class (e.g. `[\p{L}&&[^\p{Lu}]]`).
-  - [ ] `\R` (any Unicode linebreak sequence).
-  - [ ] Quantifiers `?`, `*`, `+`, `{n}`, `{n,}`, `{n,m}` -- each one both alone and with a
-        trailing reluctant `?` and a trailing possessive `+` (parser currently accepts and no-ops
-        both per design.md; confirm that's what actually happens end-to-end, not just at parse
-        time).
-  - [ ] Named capture groups (`(?<name>...)`), non-capturing groups (`(?:...)`).
-  - [ ] Inline flag toggles (`(?i)`, `(?i:...)`, etc.).
+- [ ] **Give `\p{Digit}` (bare POSIX form) its own working entry** -- see the "confirmed gap" note
+      just above. Needs a decision on how to avoid the enum-constant name collision with the
+      existing `Source.UProperty` `Digit` (e.g. rename one of them, or make one enum entry support
+      more than one `Source`/prefix set) before implementing.
+- [ ] Implement Unicode scripts (`\p{IsScript}`/`\p{script=Script}`) and blocks (`\p{InBlock}`/
+      `\p{block=Block}`) -- currently no `NamedCharClass` entries use `Source.Script`/`Source.Block`
+      at all, so every such reference throws. Covered (as throwing) by `UnicodeClassTest`.
 
 ## Also remember for later (currently-unimplemented/deferred features)
 
@@ -294,6 +359,18 @@ newly failed until switched from `.get(flags)` to `.unicode`).
       (`\Q...\E`), positive/negative lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind
       (`(?<=...)`/`(?<!...)`) -- note lookahead/lookbehind are currently rejected outright at
       parse time per design.md, and independent/atomic non-capturing groups (`(?>X)`).
+- [ ] Of `java.util.regex.Pattern`'s remaining compile flags -- `CASE_INSENSITIVE`, `UNICODE_CASE`,
+      and `DOTALL` are implemented (both globally and, as of 2026-09-06, correctly scoped through
+      an inline `(?i:...)`/`(?s:...)` -- see the FIXED entries above); everything else is not
+      started at all: `MULTILINE` (`^`/`$` currently only ever match start/end of input, never
+      per-line -- `BoundaryConstruct`'s `LineBegin`/`LineEnd` matching is itself still a stub, see
+      "HIGHEST PRIORITY" above), `UNIX_LINES` (which line terminators `MULTILINE`/`.` recognize --
+      also noted as a `DOTALL`-fix follow-up above), `COMMENTS` (`(?x)` — whitespace/`#`-comment
+      stripping in the pattern text; parses without error today per the inline-flag-toggle fix, but
+      nothing in `PatternParser` actually acts on it), `LITERAL` (treat the whole pattern string as
+      literal text, no metacharacters), and `CANON_EQ` (Unicode canonical-equivalence matching).
+      None of these have any test coverage or even a stub `flags` branch, unlike the boundary/
+      backreference stubs above -- they're simply unimplemented from scratch.
 
 ## Done
 
@@ -362,8 +439,11 @@ failure instead of a hung suite.
 `openjdk_supplementary.tsv`, 339 rows; regenerate via the `generateCorpus` command above after any
 scraping/unescaping/engine change):
 
-- BMP: 136 AGREES, 58 UNIMPLEMENTED (auto-tagged), 28 UNEXPECTED (auto-tagged).
-- Supplementary: 215 AGREES, 88 UNIMPLEMENTED (auto-tagged), 36 UNEXPECTED (auto-tagged).
+- BMP: 148 AGREES (was 142), UNIMPLEMENTED/UNEXPECTED auto-tagged for the rest.
+- Supplementary: 228 AGREES (was 221), UNIMPLEMENTED/UNEXPECTED auto-tagged for the rest.
+- Regenerated again 2026-09-06 after the comprehensive-grammar-coverage bug fixes above (`\p{...}`
+  prefix detection, `\P{...}` negation, `{n}`'s unconsumed `}`, possessive-quantifier suffix, etc.)
+  moved several more rows to `AGREES`.
 - The 4 rows that used to hang `llkMatchesGolden` outright no longer do -- see "FIXED (2026-09-06):
   the `PatternParser` hang..." above.
 - Character-class intersection (`&&`) is fixed -- see "FIXED (2026-09-06): character-class
@@ -375,10 +455,19 @@ scraping/unescaping/engine change):
   above; moved another ~19 rows to `AGREES`.
 - `CASE_INSENSITIVE`/`UNICODE_CASE`/inline flag toggles/`DOTALL` are fixed -- see "FIXED
   (2026-09-06): CASE_INSENSITIVE/UNICODE_CASE, inline flag toggles, and DOTALL" above. Net effect on
-  the corpus was small and mixed (a handful of `.`-without-`DOTALL` rows moved to `AGREES`; roughly
-  as many `(?iu)`/`(?x)`/`(?s)` rows moved from crashing to a clean, understood `UNEXPECTED` instead
-  of `AGREES`, because of the two new bugs that fix surfaced -- see that entry's "two more bugs
-  surfaced" list). AGREES is now 136+215=351 total, up from 65+136=201 at the start of this session.
+  the corpus at that point was small and mixed (a handful of `.`-without-`DOTALL` rows moved to
+  `AGREES`; roughly as many `(?iu)`/`(?x)`/`(?s)` rows moved from crashing to a clean, understood
+  `UNEXPECTED` instead, because of the two follow-up bugs that fix surfaced).
+- Both of those two follow-up bugs (bare `(?s)` breaking the surrounding sequence; inline flag
+  toggles not actually locally scoping anything) are now also fixed -- see their own FIXED entries
+  above. Together they moved 12 rows (6 per file -- the exact `(?s)`/`(?iu)`/`(?x)` rows the earlier
+  fix had turned into a clean `UNEXPECTED`) from `UNEXPECTED` to `AGREES`. Regenerated by running
+  `CorpusGenerator.generateRow()` against each golden file's own existing
+  `(pattern, flags, input, mode)` columns (a temporary `RegenerateGoldenFromSelf` class + matching
+  `regenerateGoldenFromSelf` gradle task, both deleted after use) rather than the real
+  `generateCorpus` intermediate-TSV path, since no original OpenJDK-scrape intermediate TSV is kept
+  in the repo -- fine here since nothing about scraping/unescaping changed, only `Ll1Pattern`'s own
+  behavior. AGREES is now 142+221=363 total, up from 65+136=201 at the start of this session.
 - The remaining `UNIMPLEMENTED`/`UNEXPECTED` counts are **not yet human-reviewed** -- per
   `CorpusGenerator`'s javadoc, "UNIMPLEMENTED" really just means "llk didn't run cleanly" (could
   be a correct LL(1)-ambiguity rejection, not a missing feature) and needs retagging as
@@ -483,7 +572,8 @@ scraping/unescaping/engine change):
 - [x] `PatternParserTest` — 8 tests covering literal/multi-char-literal/sequence/alternation compilation, ambiguous-alternation rejection, and real `match()`-level assertions (not just dispatchMap structure — the latter alone missed the `LiteralMatcherConstruct` bug noted above).
 - [x] `QuantifierAndCaptureTest` — 21 tests covering `*`/`+`/`?`/`{n,m}` (including the exact regression case for the `{n,m}` min/max-swap bug), alternation/capturing/named-groups combinations, and the capturing-and-quantified case.
 - [x] `MatcherApiTest` — 18 tests covering `matches()` vs `lookingAt()`, `find()` (locating a non-prefix match, repeated calls advancing past the previous match, explicit start index, empty-match forward progress), regions, `reset()`, `groupCount()`, the three group-accessor exception cases, unmatched-optional-group null/-1, `asPredicate()`, and the static `matches()` helper.
-- [ ] Add more parser tests covering the documented grammar (escapes, boundaries, `\p{...}` Unicode classes, backreferences syntax) and its error cases (`PatternSyntaxException`s) — coverage is still thin relative to the grammar's size.
+- [x] **Comprehensive grammar coverage** (2026-09-06): `EscapeTest` (17 tests: `\\`, octal, hex/unicode, `\t`/`\n`/`\r`/`\f`/`\a`/`\e`, `\cX`), `CharacterClassTest` (7: sets, negation, ranges, unions, intersections incl. negated-operand vs negated-whole-intersection), `PredefinedClassTest` (12: `.`, `\d`/`\D`, `\h`/`\H`, `\s`/`\S`, `\v`/`\V`, `\w`/`\W`, `\R`), `PosixAndJavaClassTest` (33: all 13 documented POSIX names -- 12 working + `Digit`'s tracked gap -- plus every `Source.Java` entry), `UnicodeClassTest` (18: categories, binary properties, `\P{...}` negation, Unicode names inside a class, scripts/blocks' confirmed non-implementation), `QuantifierModifierTest` (13: `{n}`/`{n,}` plus reluctant/possessive on every quantifier kind), `GroupSyntaxTest` (7: named/non-capturing groups). Found and fixed nine real bugs along the way -- see the "FIXED" entry above. `CaseInsensitiveTest` already covered inline flag toggles.
+- [ ] Add more parser tests covering boundaries and backreferences syntax once those are implemented — see "Also remember for later" below.
 - [ ] Cross-check current `Matcher` behavior against `java.util.regex.Pattern`/`Matcher` for the subset of syntax both support — not yet done beyond what the tests above assert from first principles; see the scraped-corpus harness idea below for the systematic version of this.
 - [ ] Decide on a CI setup (or at least a documented local command, given the JDK version constraint above) to run the suite "frequently" per the owner's stated preference.
 - [x] **Scraped-corpus differential test harness**: implemented 2026-09-06 for OpenJDK's own

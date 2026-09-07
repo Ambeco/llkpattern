@@ -60,6 +60,19 @@ public class PosixAndJavaClassTest {
   }
 
   @Test
+  public void posix_digit_internalNameNotExposed() {
+    // "PosixDigit" is only our internal NamedCharClass identifier for bare \p{Digit} (see
+    // posix_digit() above) -- it must not itself be accepted as pattern syntax. Verified real
+    // java.util.regex also rejects it ("Unknown character property name {PosixDigit}").
+    try {
+      Ll1Pattern.compile("\\p{PosixDigit}");
+      org.junit.Assert.fail("expected PatternSyntaxException");
+    } catch (PatternSyntaxException expected) {
+      assertThat(expected.getMessage().contains("PosixDigit"), is(true));
+    }
+  }
+
+  @Test
   public void posix_alnum() {
     assertThat(Ll1Pattern.compile("\\p{Alnum}").matcher("a").matches(), is(true));
     assertThat(Ll1Pattern.compile("\\p{Alnum}").matcher("5").matches(), is(true));

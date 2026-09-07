@@ -806,6 +806,10 @@ final class PatternParser {
       throw throwUnexpectedChar("escape character classes must have names");
     }
     String charClassName = pattern.substring(index, end);
+    // Kept for error messages below -- charClassName itself gets rewritten (prefix stripped,
+    // "Digit" -> "PosixDigit", etc.) before we're done, and a thrown message should always echo
+    // what the user actually typed, not our internal translation of it.
+    String originalCharClassName = charClassName;
     advance(end - index + 1);
     // Bounds-checked like every other lookahead-by-one in this file (e.g.
     // tryParseSingleCharEscape's own `peek2`) -- unguarded, this crashed with
@@ -838,6 +842,14 @@ final class PatternParser {
           // identifier is already claimed by the (behaviorally different) \p{IsDigit} entry. See
           // NamedCharClass.PosixDigit's doc for why they can't just share one instance.
           charClassName = "PosixDigit";
+        } else if (charClassName.equals("PosixDigit")) {
+          // "PosixDigit" is our own internal NamedCharClass identifier, not a name real
+          // java.util.regex (or this project's own documented syntax) ever accepts -- without this
+          // guard, NamedCharClass.valueOf("PosixDigit") below would find it and silently accept
+          // "\p{PosixDigit}" as if it were valid pattern syntax. Verified real java.util.regex
+          // rejects it with "Unknown character property name {PosixDigit}".
+          throw throwUnexpectedChar(
+              "unknown named character class \"", originalCharClassName, "\"");
         }
       } else if (charClassName.startsWith("script=") || charClassName.startsWith("sc=")) {
         prefix = NamedCharClass.CharacterClassPrefix.script;
@@ -866,7 +878,7 @@ final class PatternParser {
       complex.ranges.addAll(positive ? namedRanges : namedRanges.complement());
       return complex;
     } catch (IllegalArgumentException e) {
-      throw throwUnexpectedChar("unknown named character class \"", charClassName, "\"");
+      throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
     }
   }
 

@@ -41,10 +41,10 @@ original design — `LoopDispatchMatcherConstruct` in particular was invented by
 wasn't one of the intended opcodes. The corrected opcode set, confirmed with the project owner
 2026-09-07:
 
-- **`SingleDispatchingMatcherConstruct`** (abstract, holds `final MatcherConstruct next` + `final
-  MethodHandle nextMethod` bound to `next.match`, invoked instead of a virtual call): the base for
-  every node whose successor is fixed at construction time and never depends on which character was
-  seen. Subclasses: `SingleCharMatcherConstruct` (character-class membership test via a `RangeSet`,
+- **`SingleDispatchingMatcherConstruct`** (abstract, holds `final MatcherConstruct next`, called via
+  a plain virtual `next.match(...)`): the base for every node whose successor is fixed at
+  construction time and never depends on which character was seen. Subclasses: `SingleCharMatcherConstruct`
+  (character-class membership test via a `RangeSet`,
   not a `RangeMap` lookup — replaces the old "map every valid range to the same single target"
   approach), `LiteralMatcherConstruct`, `BeginCaptureMatcherConstruct`, `EndCaptureMatcherConstruct`,
   `EndLoopMatcherConstruct`, `BackReferenceMatcherConstruct`/`BoundaryMatcherConstruct` (still
@@ -75,16 +75,10 @@ wasn't one of the intended opcodes. The corrected opcode set, confirmed with the
   the actual per-branch routing → ... → `EndCaptureMatcherConstruct` → loops back to the entry node.
 - **`EndMatcherConstruct`** has no successor at all, so it extends neither base directly.
 
-The `MethodHandle` idea (originally proposed, then marked moot, back when every node had a
-`RangeMap`) is viable now that `SingleDispatchingMatcherConstruct.next` is genuinely fixed at
-construction time: each such node binds a `MethodHandle` to its successor's `match` method at
-construction and invokes that instead of a virtual call.
-
-**Direct-call `MethodHandle` binding (2026-09-07)**: the handle each `SingleDispatchingMatcherConstruct`
-binds is resolved via `findSpecial` (an `invokespecial`-style direct call to one exact override),
-not `findVirtual` + `bindTo` (an ordinary virtual dispatch pinned to a fixed receiver) -- per the
-project owner, this both skips the virtual lookup and lets the JIT inline the call directly. Getting
-there took two attempts, both worth recording since the gotcha is non-obvious:
+**`MethodHandle`-based dispatch: tried, then reverted (2026-09-06 through 2026-09-07).** The idea
+(a `SingleDispatchingMatcherConstruct` binding a `MethodHandle` to its successor's `match` method at
+construction, invoked instead of a plain virtual call) went through three iterations, each worth
+recording since the final call reverses the original premise:
 - **First attempt**: a single `final MethodHandle getMatchMethod()` in `MatcherConstruct` itself,
   calling `MethodHandles.lookup().findSpecial(getClass(), "match", type, getClass())`. This throws
   `IllegalAccessException` for most real successors: `findSpecial` requires `specialCaller` (the
@@ -101,20 +95,21 @@ there took two attempts, both worth recording since the gotcha is non-obvious:
   restriction above entirely. This worked (confirmed empirically) but was rejected by the project
   owner (2026-09-07): `privateLookupIn` is Java 9+/Android API 33+, and this project's Android
   floor is API 26 (core-library-level Java 8) -- API 33 covers under half of live Android devices,
-  API 26 over 55%.
-- **What actually shipped**: `getMatchMethod()` is `abstract` on `MatcherConstruct`; each concrete
-  leaf class overrides it with a one-line body calling a shared `bindMatchSpecial(MethodHandles.Lookup)`
-  helper. `MethodHandles.lookup()` is caller-sensitive -- resolved to whichever class's bytecode
-  contains the call, not the runtime type of the object it's called on -- so calling it from each
-  leaf class's own override (not a shared method in the abstract base) is what gives
-  `lookupClass() == that leaf class`, satisfying `findSpecial`'s requirement without
-  `privateLookupIn` at all. The per-class boilerplate is the price of staying on Java 7/Android
-  API 26-era `MethodHandles` (`findVirtual`/`findSpecial`/`bindTo` themselves are all fine at that
-  level; only `privateLookupIn` is the Java 9+/API 33 outlier). Trade-off worth naming: this moved
-  cost from "one static `findVirtual` handle, cheaply `bindTo` per node" to "one `findSpecial`
-  resolution per node" -- i.e. more pattern*-compile*-time cost in exchange for the inlining benefit
-  at match time; not benchmarked (see the scraped-corpus microbenchmark idea in remaining_work.md,
-  which already tracks compile time and match time as separate concerns).
+  API 26 over 55%. See notes.md for that Android-floor constraint in general.
+- **Third attempt**: `getMatchMethod()` made `abstract` on `MatcherConstruct`, with each concrete
+  leaf class overriding it with a one-line body calling a shared `bindMatchSpecial(MethodHandles.Lookup)`
+  helper -- `MethodHandles.lookup()` is caller-sensitive (resolved to whichever class's bytecode
+  contains the call, not the runtime type of the object it's called on), so calling it from each
+  leaf class's own override is what gives `lookupClass() == that leaf class`, satisfying
+  `findSpecial`'s requirement without `privateLookupIn`. This worked and shipped briefly.
+- **Reverted (2026-09-07, per the project owner, after further discussion elsewhere)**: a
+  `MethodHandle` invocation on a non-static receiver isn't reliably inlined by any JVM, and is
+  frequently *slower* than a plain virtual call even on newer Android runtimes -- the entire premise
+  behind trying this (that `findSpecial` + `invokeExact` would let the JIT inline the call) doesn't
+  hold. `SingleDispatchingMatcherConstruct.matchNext` is back to a plain `next.match(matcher,
+  peeked)`. Recorded here (rather than just deleted from history) so a future session doesn't
+  rediscover the same dead end -- if `MethodHandle`-based dispatch comes up again, the answer is
+  "already tried, verify with a real benchmark before repeating this."
 
 ### Code point range representation
 

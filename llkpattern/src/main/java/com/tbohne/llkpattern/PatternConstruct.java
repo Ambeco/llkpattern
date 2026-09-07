@@ -22,6 +22,16 @@ abstract class PatternConstruct {
 	final int startIndex;
 	int endIndex = -1;
 
+	// The parser's `flags` (CASE_INSENSITIVE/UNICODE_CASE/etc.) in effect at the moment this
+	// construct was parsed -- i.e. after any enclosing inline "(?i:...)" toggle has been applied,
+	// and before it's restored on group exit. Mutable (not a constructor param) purely to keep
+	// every existing PatternConstruct subclass constructor unchanged; PatternParser sets it right
+	// after each `new` call. Propagated to this construct's compiled MatcherConstruct (see
+	// MatcherConstruct's own `flags` field) so CASE_INSENSITIVE folding at match time is scoped to
+	// wherever the pattern was written case-insensitively, not the whole pattern's global flags --
+	// see "Inline flag toggles don't actually locally scope anything" in remaining_work.md.
+	int flags = 0;
+
 	@MonotonicNonNull MatcherConstruct matcher;
 
 	// The construct that comes after this one -- i.e. what compile() was last called with.
@@ -236,6 +246,23 @@ abstract class PatternConstruct {
 				buildLoopEntryMapAndMatcher(constructs, next, captureConstructIndex);
 				return;
 			}
+			if (constructs.isEmpty()) {
+				// Bug fix (2026-09-06): a bare flags-only group ("(?s)", no ":", no body) is the
+				// only way to reach this constructor with an empty `constructs` list -- every other
+				// path (a real "()"/"(?:)"/"(?<name>)") goes through parseUnion(), which rejects an
+				// empty body via throwEmptySequence before a QuantifiedUnion with zero constructs can
+				// ever exist. Previously this fell through to compileAndMergeCandidates() with an
+				// empty candidate list, producing an empty entryMap/entryElse -- i.e. a
+				// DispatchMatcherConstruct that matches nothing at all, silently breaking the
+				// surrounding sequence ("(?s)abx" stopped matching "abx"). A bare flags group is
+				// zero-width and always succeeds -- its only job was toggling `flags` for
+				// PatternParser, already done by the caller -- so just pass through to `next` exactly
+				// as an empty Sequence element would, instead of compiling as its own dispatch node.
+				entryMap = next.entryMap;
+				entryElse = next.entryElse;
+				matcher = next.matcher;
+				return;
+			}
 
 			// Compile every branch (tail-to-front relative to this union: each branch's "next" is
 			// this union's own "next" -- or, for a capturing group, a marker that ends the capture
@@ -245,6 +272,7 @@ abstract class PatternConstruct {
 			PatternConstruct compileTarget = next;
 			if (isCapturing()) {
 				compileTarget = new CaptureEndMarker(startIndex, captureConstructIndex, next);
+				compileTarget.flags = flags;
 				// Branches read `owner.next.matcher` while building their own matcher (tail-to-front),
 				// so compileTarget must already be fully compiled by then -- unlike a normal `next`,
 				// nothing else ever calls compile() on a freshly-constructed marker for us.
@@ -263,7 +291,7 @@ abstract class PatternConstruct {
 				return; // matcher was already built by buildLoopEntryMapAndMatcher, above.
 			}
 			if (isCapturing()) {
-				MatcherConstruct dispatch = new DispatchMatcherConstruct(entryMap, entryElse);
+				MatcherConstruct dispatch = new DispatchMatcherConstruct(entryMap, entryElse, flags);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
 			} else {
 				new DispatchMatcherConstruct(this);
@@ -293,8 +321,24 @@ abstract class PatternConstruct {
 			// realNext is already compiled by the time any of this marker's callers need it -- it's
 			// the capturing group's own `next`, which (like any `next`) was compiled before the group
 			// itself, tail-to-front.
-			entryMap = realNext.entryMap;
-			entryElse = realNext.entryElse;
+			//
+			// Bug fix (2026-09-06): this used to just alias `entryMap = realNext.entryMap` directly
+			// -- but that leaves every entry's VALUE as realNext itself (whatever realNext.buildEntryMap
+			// put there), not this marker. That silently broke identity checks like
+			// LoopDispatchMatcherConstruct's `e.getValue() == next` (used to tell "the loop is
+			// exiting toward `next`" from "the loop is continuing") whenever THIS marker was passed
+			// in as that `next` -- i.e. any non-quantified capturing group whose content contains its
+			// own internal loop, e.g. "([a-z]+)!": the exit character got misclassified as "continue
+			// the loop, dispatch straight to realNext.matcher", bypassing this marker's own
+			// EndCaptureMatcherConstruct entirely, so the capture's `result` was set on entry but
+			// never finalized (group(n) returned null even though the whole pattern matched). Found
+			// via GroupSyntaxTest. Fixed by re-keying every range onto `this` instead of realNext,
+			// same as any other PatternConstruct's own buildEntryMap does for itself.
+			for (java.util.Map.Entry<Range<Integer>, PatternConstruct> e :
+					realNext.entryMap.asMapOfRanges().entrySet()) {
+				entryMap.put(e.getKey(), this);
+			}
+			entryElse = realNext.entryElse != null ? this : null;
 		}
 
 		@Override

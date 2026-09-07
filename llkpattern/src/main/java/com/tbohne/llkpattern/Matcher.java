@@ -305,7 +305,14 @@ public class Matcher implements MatchResult {
 		if (index == null) {
 			throw new IllegalArgumentException("No group with name <" + name + ">");
 		}
-		return index;
+		// Bug fix (2026-09-06): pattern.namedGroups stores the 0-based captureConstructIndex (see
+		// PatternParser), but group(int)/start(int)/end(int) all expect the 1-based *public*
+		// numbering, where group 0 means "the whole match" -- returning the raw 0-based index
+		// unconverted meant the FIRST named group in any pattern (captureConstructIndex 0) silently
+		// resolved to group(0), i.e. always returned the whole match instead of that group's own
+		// text. Masked in existing tests where the whole match happened to equal the group's own
+		// text (e.g. a pattern that is just "(?<name>x)"). See remaining_work.md.
+		return index + 1;
 	}
 
 	// -1 is used throughout as the "no more input" sentinel passed to MatcherConstruct#match /

@@ -75,6 +75,13 @@ If both sides are statically known, the boundary either always holds (compiles t
 - `NamedCharClass` maps regex-style named classes (`\p{Alpha}`, `\p{IsGreek}`, `\p{general_category=Lu}`, etc.) to underlying predicates/ranges.
 - `UnicodePredicates` is a large (~12.9k line) generated-looking data file of Unicode category/script/block predicates. `unicodeanalyzer/` is presumably the code generator that produces it from Unicode Character Database source data.
 
+### Backreferences
+
+- Decided: backreferences (`\1`, `\k<name>`) are supported, with disjointness checked at **compile time** using a precise, statically-computed entry set — not the current `entryElse = this` catch-all in `BackReference`. Not yet implemented; see remaining_work.md.
+- A backreference's possible first characters are exactly the *referenced group's* possible first characters, computed by a new `firstCharSet()` AST helper mirroring the existing `lastCharSet()` used for `\b`/`\B`'s prior-character classification (same recursion shape: literal → first code point, character class → its ranges, sequence → first element, unquantified union → union of branches). Feeding this into the normal `RangeMap` disjointness check makes ordinary backreference usage (e.g. `(\w+)\s+\1`) compile with no special-casing, while genuinely ambiguous uses (e.g. `(a+)\1`, where the loop's continue-branch and the backreference's entry set both include `a`) are correctly rejected as a compile error, exactly like any other ambiguous alternation.
+- Possibly-empty referenced groups (e.g. `(a*)\1`, where `\1` can be zero-width) make `firstCharSet()` return unknown, falling back to the catch-all entry set — such patterns are rejected as ambiguous rather than given subtly wrong zero-width handling.
+- Forward references (`\1` before its group is defined, e.g. `\1(a)`) are rejected at compile time.
+
 ### Public API shape
 
 - `Ll1Pattern` and `Matcher` are designed to mirror `java.util.regex.Pattern`/`Matcher`'s public method surface, so callers can largely swap one for the other. See remaining_work.md for the current list of implemented vs. stubbed methods.
@@ -100,3 +107,12 @@ Considered for compiling a capturing, quantified construct (e.g. `(a)*`): give `
 - **Pros**: one fewer node type actually allocated per capturing-loop iteration (no separate internal `DispatchMatcherConstruct`).
 - **Cons**: breaks the clean Single/Multi dispatch split — a node meant to be single-successor gains a dispatch map, undermining the invariant that only `MultiDispatchingMatcherConstruct` subclasses ever branch on the next code point, and complicating `BeginCaptureMatcherConstruct` for every non-capturing-loop caller too.
 - **Decision**: rejected. The capturing-and-quantified case instead composes existing opcodes: `LoopMatcherConstruct` → `BeginCaptureMatcherConstruct` (plain single successor) → an internal (non-self-registering) `DispatchMatcherConstruct` → ... → `EndCaptureMatcherConstruct` → back to the loop's entry node.
+
+### Backreferences: catch-all entry set, dropping support, or a match-time check, instead of a precise compile-time entry set
+
+A backreference's possible first characters depend on what was actually captured at match time, so a naive compile-time treatment has to either give up precision or give up on compile time entirely. Considered instead of the precise `firstCharSet()` approach described above:
+
+- **(A) Drop backreferences entirely.** Simplest, and sidesteps the whole problem, but backreferences are commonly used (e.g. matching a repeated delimiter or tag) and most uses (anything not conditional/loop-tail) aren't actually ambiguous — dropping them unconditionally penalizes the common case to avoid the rare one.
+- **(B) Keep a catch-all entry set (`entryElse = this`, today's actual behavior) and document backreferences as always lowest-priority relative to sibling branches.** Requires no new AST analysis. But it's not really a *design* — it's documenting an accident of `BackReference`'s current stub implementation — and it produces silently-wrong-relative-to-`java.util.regex` results for any pattern where a sibling branch should legitimately win: e.g. `(a)(?:\1|b)` against `"ab"` would always try `\1` first, when the two branches are in fact statically disjoint (`{a}` vs `{b}`) and should dispatch exactly.
+- **(C) Defer the disjointness check to match time.** Would allow accepting patterns whose ambiguity can't be resolved statically at all, but makes matching non-total in a way nothing else in this engine is — every other construct's validity is fully known at compile time, and match failures are only ever "input didn't match," never "pattern itself turned out to be unsupported here." Introducing a runtime-detected-ambiguity failure mode breaks that guarantee for a single construct type.
+- **Decision**: rejected all three in favor of the precise `firstCharSet()`-based entry set (see "Backreferences" above), which is strictly more permissive than (A), doesn't require documenting (B)'s surprising priority rule since real disjointness is checked instead, and keeps ambiguity detection fully at compile time unlike (C).

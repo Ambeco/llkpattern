@@ -1,6 +1,6 @@
 # Remaining Work
 
-Updated 2026-09-07. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1370 tests, 0 failing, 561 skipped (the scraped-corpus harness accounts for 561 golden rows × ~2 tests/row).
+Updated 2026-09-07. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1381 tests, 0 failing, 561 skipped (the scraped-corpus harness accounts for 561 golden rows × ~2 tests/row).
 
 ## HIGHEST PRIORITY
 

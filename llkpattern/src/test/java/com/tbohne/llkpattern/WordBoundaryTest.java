@@ -96,4 +96,95 @@ public class WordBoundaryTest {
     org.junit.Assert.assertThrows(
         PatternSyntaxException.class, () -> Ll1Pattern.compile("a\\B "));
   }
+
+  // --- Edge-of-input: \b/\B at the very start or end of the pattern, where peek()/peekPrevious()
+  // are one code point away from actually running off the end of the backing array. "." is used
+  // as the neighboring construct specifically because it's neither statically-word nor
+  // statically-non-word (see BoundaryConstruct.buildMatcher()'s Wordness.UNKNOWN case) -- that
+  // forces the general runtime check, which is the only path that actually calls
+  // Matcher#peekPrevious()/#peek() right at position 0 or regionEnd, instead of being folded away
+  // at compile time. See Matcher#peek()/#peekPrevious() for the corresponding bounds checks
+  // (pos < regionEnd / pos <= regionStart) this is meant to exercise.
+
+  @Test
+  public void wordBoundary_atStartOfPattern_peekPreviousDoesNotReadBeforeStartOfInput() {
+    // \b is the pattern's very first construct -- peekPrevious() runs at pos == 0 == regionStart.
+    assertThat(Ll1Pattern.compile("\\b.").matcher("a").matches(), is(true));
+    assertThat(Ll1Pattern.compile("\\b.").matcher(" ").matches(), is(false));
+  }
+
+  @Test
+  public void wordBoundary_atEndOfPattern_peekDoesNotReadPastEndOfInput() {
+    // \b is the pattern's very last construct -- peek() runs at pos == input.length() == regionEnd.
+    assertThat(Ll1Pattern.compile(".\\b").matcher("a").matches(), is(true));
+    assertThat(Ll1Pattern.compile(".\\b").matcher(" ").matches(), is(false));
+  }
+
+  @Test
+  public void nonWordBoundary_atStartOfPattern_peekPreviousDoesNotReadBeforeStartOfInput() {
+    assertThat(Ll1Pattern.compile("\\B.").matcher("a").matches(), is(false));
+    assertThat(Ll1Pattern.compile("\\B.").matcher(" ").matches(), is(true));
+  }
+
+  @Test
+  public void nonWordBoundary_atEndOfPattern_peekDoesNotReadPastEndOfInput() {
+    assertThat(Ll1Pattern.compile(".\\B").matcher("a").matches(), is(false));
+    assertThat(Ll1Pattern.compile(".\\B").matcher(" ").matches(), is(true));
+  }
+
+  @Test
+  public void wordBoundary_onEmptyInput_bothPeekAndPeekPreviousAreAtTheSameEdge() {
+    // pos == regionStart == regionEnd == 0: both peek() and peekPrevious() hit their bounds check
+    // at once. Nothing to match either side of, so this can never satisfy \b -- the point here is
+    // just that compiling/matching it doesn't throw.
+    assertThat(Ll1Pattern.compile("\\b.?").matcher("").matches(), is(false));
+  }
+
+  // --- Direct Matcher#peek()/#peekPrevious() bounds checks, independent of \b/\B's own logic ---
+
+  @Test
+  public void peekPrevious_atStartOfInput_returnsSentinelInsteadOfReadingBeforeIndexZero() {
+    Matcher m = Ll1Pattern.compile(".*").matcher("a");
+    assertThat(m.pos, is(0));
+    assertThat(m.peekPrevious(), is(-1));
+  }
+
+  @Test
+  public void peekPrevious_onEmptyInput_returnsSentinel() {
+    Matcher m = Ll1Pattern.compile(".*").matcher("");
+    assertThat(m.peekPrevious(), is(-1));
+  }
+
+  @Test
+  public void peek_atEndOfInput_returnsSentinelInsteadOfReadingPastTheEnd() {
+    Matcher m = Ll1Pattern.compile(".*").matcher("a");
+    m.pos = 1; // == input.length()
+    assertThat(m.peek(), is(-1));
+  }
+
+  @Test
+  public void peekPrevious_atEndOfInput_readsTheLastCharacter() {
+    Matcher m = Ll1Pattern.compile(".*").matcher("a");
+    m.pos = 1; // == input.length()
+    assertThat(m.peekPrevious(), is((int) 'a'));
+  }
+
+  @Test
+  public void peekPrevious_respectsRegionStart_notJustIndexZero() {
+    // useTransparentBounds() is still a stub (see remaining_work.md), so region() is opaque:
+    // peekPrevious() must treat regionStart as its own start-of-input, not fall through to real
+    // index 0 and read a character outside the region.
+    Matcher m = Ll1Pattern.compile(".*").matcher("ab");
+    m.region(1, 2);
+    assertThat(m.pos, is(1));
+    assertThat(m.peekPrevious(), is(-1));
+  }
+
+  @Test
+  public void peekPrevious_doesNotSplitASurrogatePair() {
+    String supplementary = "😀"; // U+1F600, a single code point, 2 UTF-16 chars
+    Matcher m = Ll1Pattern.compile(".*").matcher(supplementary);
+    m.pos = supplementary.length();
+    assertThat(m.peekPrevious(), is(0x1F600));
+  }
 }

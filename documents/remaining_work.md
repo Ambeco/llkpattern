@@ -1,6 +1,6 @@
 # Remaining Work
 
-Updated 2026-09-07. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) passes: 1381 tests, 0 failing, 561 skipped (the scraped-corpus harness accounts for 561 golden rows × ~2 tests/row).
+Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) to check the current state of the suite; see notes.md for dated pass/fail history rather than this file.
 
 ## HIGHEST PRIORITY
 
@@ -20,11 +20,11 @@ Updated 2026-09-07. `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a 
 ## Also remember for later (currently-unimplemented/deferred features)
 
 - [ ] Once implemented, add the same depth of test coverage for: backreferences `\n` and
-      `\k<name>` (see `BackReferenceMatcherConstruct`, currently a stub -- also flagged in
-      design.md as "not actually context-free," may not fit the LL(1) model at all), quotation
-      (`\Q...\E`), positive/negative lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind
-      (`(?<=...)`/`(?<!...)`) -- note lookahead/lookbehind are currently rejected outright at
-      parse time per design.md, and independent/atomic non-capturing groups (`(?>X)`).
+      `\k<name>` (see `BackReferenceMatcherConstruct`, currently a stub, and the "Backreferences
+      and the LL(1) model" open question below), quotation (`\Q...\E`), positive/negative
+      lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind (`(?<=...)`/`(?<!...)`) --
+      note lookahead/lookbehind are currently rejected outright at parse time per design.md, and
+      independent/atomic non-capturing groups (`(?>X)`).
 - [ ] Of `java.util.regex.Pattern`'s remaining compile flags -- `CASE_INSENSITIVE`, `UNICODE_CASE`,
       and `DOTALL` are implemented (both globally and correctly scoped through an inline
       `(?i:...)`/`(?s:...)`); everything else is not started at all: `MULTILINE` (`^`/`$` currently
@@ -47,9 +47,9 @@ that, runs each tuple through both `java.util.regex` and `Ll1Pattern`, and write
 (`GoldenRow`/`GoldenTsv`) with an auto-tagged `status` column (`AGREES`/`UNIMPLEMENTED: ...`/
 `UNEXPECTED: ...` -- see `CorpusGenerator`'s javadoc; a first-pass heuristic, not human-verified).
 `ScrapedCorpusTestBase` is a JUnit4 `@Parameterized` base class; one concrete subclass per golden
-file (`OpenJdkBmpCorpusTest`, `OpenJdkSupplementaryCorpusTest`). Currently: BMP 148/222 AGREES,
-supplementary 228/339 AGREES; regenerate via the `generateCorpus` command above after any
-scraping/unescaping/engine change.
+file (`OpenJdkBmpCorpusTest`, `OpenJdkSupplementaryCorpusTest`) — regenerate via the
+`generateCorpus` command above after any scraping/unescaping/engine change. See notes.md for a
+dated AGREES-count snapshot rather than tracking that number here.
 
 **Next steps**:
 
@@ -98,7 +98,7 @@ scraping/unescaping/engine change.
 ## Core implementation
 
 - [ ] Implement `MatcherConstruct.BackReferenceMatcherConstruct.match(...)` (currently throws; the node itself is now correctly wired into the graph, just the runtime behavior is missing).
-- [ ] Implement `MatcherConstruct.BoundaryMatcherConstruct.match(...)` for the remaining `BoundaryEnum` values (`LineBegin`/`LineEnd`/`InputBegin`/`PreviousMatchEnd`/`InputEndExceptTerminator`/`InputEnd`/`Linebreak` — currently throws). `Word`/`NonWord` (`\b`/`\B`) are done (2026-09-07, see `WordBoundaryMatcherConstruct`/`WordBoundaryTest`): `Matcher#peekPrevious()` looks backward the same way `peek()` looks forward, and `BoundaryConstruct.buildMatcher()` classifies both the preceding and following character as statically always-word/always-non-word/unknown at compile time (via a new `PatternConstruct.lastCharSet()` for the preceding side, and the existing `entryMap`/`entryElse` for the following side), folding the fully-statically-known case into a compile-time `PatternSyntaxException` or a zero-width no-op, and otherwise only checking whichever side isn't statically known. `^`/`$`/etc. likely want the same `peekPrevious()` mechanism (e.g. `^` under `MULTILINE` needs to check the preceding character is a line terminator) but aren't done here.
+- [ ] Implement `MatcherConstruct.BoundaryMatcherConstruct.match(...)` for the remaining `BoundaryEnum` values (`LineBegin`/`LineEnd`/`InputBegin`/`PreviousMatchEnd`/`InputEndExceptTerminator`/`InputEnd`/`Linebreak` — currently throws). `Word`/`NonWord` (`\b`/`\B`) are done — see design.md's "Boundary matching" section for that design, which `^`/`$`/etc. likely want to reuse (e.g. `^` under `MULTILINE` needs `Matcher#peekPrevious()` to check the preceding character is a line terminator).
 - [ ] Remaining `Matcher`/`Ll1Pattern` API gaps: `replaceAll`/`replaceFirst`/`appendReplacement`/`appendTail`/`quoteReplacement`, `split`/`splitAsStream`, `toMatchResult`, `hitEnd`/`requireEnd`, `useAnchoringBounds`/`hasAnchoringBounds`, `useTransparentBounds`/`hasTransparentBounds` — all still `UnsupportedOperationException` stubs. None of these are needed for the scraped-corpus differential test harness above (that only needs `matches`/`find`/`group`/`start`/`end`), so lower priority than that.
 - [ ] `region()`'s interaction with `hasAnchoringBounds`/`useAnchoringBounds`/`useTransparentBounds` (whether `^`/`$`/boundaries see past the region) isn't implemented at all yet — moot until `BoundaryMatcherConstruct` itself works, but worth remembering once it does.
 - [ ] `PatternConstruct.compile()` is typed `@Nullable MatcherConstruct` but, now that every construct type actually builds a matcher, likely always returns non-null in practice — worth dropping the `@Nullable` (and fixing `Ll1Pattern.compile()`'s unchecked-nullable assignment).
@@ -127,7 +127,6 @@ scraping/unescaping/engine change.
     worth trying a `long[]` variant with 42 range/mask bits instead of `int[]`'s 11, trading larger
     per-entry size for fewer wasted bits when ranges/gaps are long.
 - [ ] `CodePointMap.ComplementCodePointMap` is only partially implemented (`entrySet`/`intersection`/`intersectionRejectingConflicts` throw `UnsupportedOperationException`) — fill in once there's a concrete caller/use case driving what's actually needed (`.` in a branching context is the likely first caller).
-- [ ] The `PatternConstruct.findFirstOverlap` ambiguity check is an O(candidates × ranges) manual scan rather than using `CodePointMap.intersectionRejectingConflicts` directly, because the latter's exception doesn't carry which range/candidate conflicted. Fine for realistic pattern sizes; revisit only if it matters in practice.
 
 ## Toolchain
 
@@ -146,3 +145,9 @@ scraping/unescaping/engine change.
 - [ ] Clarify the relationship between `llkpattern/` (current), `oldllkpattern/` (prior version, kept for reference) — is `oldllkpattern` still needed, or can it be removed/archived once the new implementation catches up?
 - [ ] Clarify what the `app/` Gradle module (looks like default Android app boilerplate) is for in this project — is it a demo/harness, or leftover scaffolding from `File > New Project` that can be deleted?
 - [ ] Fill in section 2 (High-Level Design) and section 3 (Current Progress) of [README.md](../README.md) in more depth as the design solidifies (still not a full design writeup in the README itself, which continues to point at design.md).
+
+## Open Questions
+
+- [ ] **Ambiguity-detection error quality**: `PatternConstruct.findFirstOverlap` (used by `QuantifiedUnion.buildEntryMap`'s ambiguity check) does an O(candidates × ranges) manual scan to find and report the first conflicting range, rather than using `CodePointMap.intersectionRejectingConflicts` directly — the latter throws immediately on any conflict but only carries stringified values, not the conflicting range/candidate needed for a useful `PatternSyntaxException`. Fine for realistic pattern sizes; revisit if this becomes a real cost, or if `intersectionRejectingConflicts`'s exception is ever extended to carry structured conflict info.
+- [ ] **Backreferences and the LL(1) model**: `BackReferenceMatcherConstruct` is unimplemented (see "Core implementation" above), and is also noted as "not actually context-free" in the parser's grammar comments — worth deciding whether/how they fit the LL(1) model at all, or whether they need a special-cased runtime check outside it, before implementing.
+- [ ] **Reluctant/possessive quantifiers' permanent semantics**: the parser currently accepts and no-ops `?`/`+` quantifier modifiers (per its own comment, "reluctant and possessive quantifiers are no-ops in this Pattern"). Confirm this is the intended permanent semantic (i.e., this engine has one matching behavior, and the reluctant/possessive distinction from `java.util.regex` doesn't apply here) and document it prominently for users migrating from `java.util.regex`, rather than leaving it as an implicit consequence of "no backtracking."

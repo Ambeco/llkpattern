@@ -28,9 +28,45 @@ _(Summary — see [documents/design.md](documents/design.md) for the full design
 
 The public API mirrors `java.util.regex.Pattern`/`Matcher` closely enough to be a near drop-in replacement for existing regex-based code, modulo the LL(1) expressiveness tradeoff described above.
 
-## 3. Current Progress
+### Sample usage
 
-The module compiles; its test suite passes fully (1484 tests, 0 failing, 561 skipped — see [documents/remaining_work.md](documents/remaining_work.md) for the JDK version this currently requires and the active TODO list). A scraped-corpus differential test harness (compares `Ll1Pattern` against `java.util.regex` on real test data mined from OpenJDK's own regex test suite) has already surfaced and helped fix several real bugs — see [documents/notes.md](documents/notes.md) for that history and remaining_work.md's "Scraped-corpus differential test harness" section for current corpus-agreement counts (most of the corpus's remaining `UNIMPLEMENTED`/`UNEXPECTED` rows are still-unimplemented features like lookaround/Unicode scripts, not yet human-triaged).
+```java
+// Compiling and matching looks exactly like java.util.regex:
+Ll1Pattern pattern = Ll1Pattern.compile("(\\d{3})-(\\d{4})");
+Matcher matcher = pattern.matcher("Call 555-1234 now");
+if (matcher.find()) {
+  System.out.println(matcher.group());   // "555-1234"
+  System.out.println(matcher.group(1));  // "555"
+}
+
+// A drop-in replacement for existing regex-based code is usually just this:
+// - java.util.regex.Pattern.compile(...)  ->  Ll1Pattern.compile(...)
+// - java.util.regex.Matcher              ->  com.tbohne.llkpattern.Matcher
+// (`Matcher`'s method surface mirrors java.util.regex.Matcher's directly.)
+
+// Two branches that could both match the same next character are a compile-time
+// error, not a silent ambiguity -- this is the LL(1) constraint the whole engine
+// is built around:
+Ll1Pattern.compile("a|ab"); // throws PatternSyntaxException: both branches start with 'a'
+```
+
+## 3. Remaining Work
+
+See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
+
+- **Unicode scripts/blocks** (`\p{IsScript}`/`\p{script=Script}`, `\p{InBlock}`/`\p{block=Block}`) — not wired up yet. Script data already exists in the generated `UnicodePredicates`; blocks need generator work too.
+- **Lookahead/lookaround, quotation (`\Q...\E`), atomic groups (`(?>X)`)** — not implemented; lookahead/lookbehind are currently rejected outright at parse time, since they can't be guaranteed to run in linear time.
+- **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch; `UNIX_LINES` is only partially honored (affects `^`/`$`/`\Z` but not yet `.`/`\s`/etc.'s line-terminator handling).
+- **Multi-digit backreferences** (`\12`+) — only `\1`-`\9` are supported today.
+- **`Matcher`/`Ll1Pattern` API gaps** — `replaceAll`/`replaceFirst`/`split` and friends, `region()`'s interaction with anchoring/transparent bounds, are still stubs.
+- **A fundamental, by-design divergence from backtracking regex**: for a handful of bounded/reluctant-quantifier edge cases (e.g. `a{2,3}` against `"aaaa"`), llkpattern's no-backtracking design can't reproduce `java.util.regex`'s backtracked result — this isn't a bug to fix, just a documented consequence of the LL(1) tradeoff. Relatedly, reluctant/possessive quantifier modifiers (`?`/`+` suffixes) are accepted but are permanent no-ops, since there's no backtracking for them to modify.
+- **More scraped-corpus sources planned** beyond OpenJDK — AOSP/libcore, RE2J (another non-backtracking engine, interesting as a design comparison), dregex, dk.brics.automaton, and DataDog/java-reggie are all identified candidates.
+- **Investigating a real-world performance oddity**: the desktop JMH benchmark run takes ~5-6 minutes wall-clock, notably longer than the equivalent on-device Android benchmark on a much lower-end phone (~45s-2min) — likely (not yet confirmed) because the two harnesses budget different amounts of work rather than a genuine hardware gap.
+- **`ArrayCodePointMap` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
+
+## 4. Current Progress
+
+The module compiles; its test suite passes fully: **1484 tests, 0 failing** — 362 hand-written unit/integration tests, plus **561 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite; more corpus sources are planned, see above) and 561 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
 
 In brief:
 
@@ -41,6 +77,26 @@ In brief:
 - **Supporting pieces**: `NamedCharClass`/`UnicodePredicates` (Unicode category/script/block support) and the `unicodeanalyzer` module (its code generator) are largely built out.
 - `oldllkpattern/` holds an earlier version of the implementation, kept for reference during the ongoing refactor.
 
-## 4. Authorship
+### Benchmarks
+
+Both tables are milliseconds per pass over the full OpenJDK-derived test corpus (lower is better), measured via JMH on desktop (`CorpusBenchmark`, [documents/benchmarks/corpus_benchmark_results.json](documents/benchmarks/corpus_benchmark_results.json)) and an instrumented on-device benchmark on Android (`AndroidCorpusBenchmark`, [documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json](documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json)). The two harnesses don't use identical corpus subsets, so treat cross-device comparisons as approximate — see remaining_work.md's benchmark sections for the full caveats.
+
+**Corpus compile time (ms/pass):**
+
+| | Intel-i7-9750H | Intel-i7-9750H | Pixel 3a | Pixel 3a |
+|---|---|---|---|---|
+| | regex | llkpattern | regex | llkpattern |
+| Compile | 0.102 | 1.872 | 6.70 | 101.69 |
+
+**Corpus match time (ms/pass):**
+
+| | Intel-i7-9750H | Intel-i7-9750H | Pixel 3a | Pixel 3a |
+|---|---|---|---|---|
+| | regex | llkpattern | regex | llkpattern |
+| Match | 0.052 | 0.049 | 3.77 | 1.54 |
+
+llkpattern currently compiles noticeably slower than `java.util.regex` on both devices (compilation does real ambiguity-detection work `java.util.regex` skips), and is still an active area of optimization — see notes.md for the compile-time performance history. Match time is roughly on par with `java.util.regex` on desktop and notably faster on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
+
+## 5. Authorship
 
 The original base implementation was written by [github.com/Ambeco](https://github.com/Ambeco). Claude (Anthropic) has taken over the implementation from that base, working under Ambeco's guidance and direction.

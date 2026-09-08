@@ -605,6 +605,12 @@ Notes to self about how to work on this project, and other context that doesn't 
   itself), the one boundary line in `PatternParser` that calls `NamedCharClass.get(...)`, and
   `TreeCodePointMap` (the deliberate `CodePointMap` test oracle) -- everything else in the compiled-
   graph/entry-point/runtime-dispatch/character-class family is `CodePointMap` now.
+- JMH afterward confirmed this was a real win, not just cleanup -- `containsFolded` was genuinely
+  on the match-time hot path, same as `dispatchMap` was for the `RangeMap` elimination: `llkCompile`
+  11.15ms -> **7.05ms/op** (-36.8% further), `llkMatch` 0.0663ms -> **0.044ms/op** (-33.6% further).
+  Against the very first pre-`ArrayCodePointMap` baseline (21.48ms/0.0917ms), that's **-67.2%
+  compile / -52.0% match** for this whole multi-day `CodePointMap` migration arc, `RangeMap` and
+  `RangeSet` combined.
 
 ## Misc
 

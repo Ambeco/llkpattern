@@ -68,7 +68,7 @@ final class CodePointMapBuilder<V> {
    * only partially overlapping, the overlap is deduplicated) same as {@link ArrayCodePointMap}'s
    * own {@code put} semantics.
    */
-  CodePointMap<V> build(ConflictHandler<V> onConflict) {
+  MutableCodePointMap<V> build(ConflictHandler<V> onConflict) {
     // Sort by min; ties broken by original add() order (Integer::compareTo composed with index is
     // overkill for the typically-tiny inputs here, so a plain stable sort on boxed indices is
     // used instead of hand-rolling one).
@@ -154,7 +154,7 @@ final class CodePointMapBuilder<V> {
     return result;
   }
 
-  CodePointMap<V> build() {
+  MutableCodePointMap<V> build() {
     return build(
         (range, value1, otherRange, value2) -> {
           throw new ConflictingMappingException(

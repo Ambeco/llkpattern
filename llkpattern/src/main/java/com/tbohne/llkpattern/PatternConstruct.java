@@ -10,7 +10,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 abstract class PatternConstruct {
 	final int startIndex;
@@ -164,65 +163,6 @@ abstract class PatternConstruct {
 
 	abstract void buildMatcher();
 
-	/**
-	 * Converts {@code branch}'s own entry-point ranges (a {@code CodePointMap<Boolean>} -- see
-	 * {@link #entryMap}'s doc for why the value there carries no information) into a {@code
-	 * CodePointMap<PatternConstruct>} whose every entry maps to {@code branch} itself -- the actual
-	 * identity {@link #entryMap} never bothered to store.
-	 */
-	static MutableCodePointMap<PatternConstruct> toValueMap(CodePointMap<Boolean> ranges, PatternConstruct branch) {
-		MutableCodePointMap<PatternConstruct> result = new ArrayCodePointMap<>();
-		result.ensureCapacity(ranges.entrySet().size());
-		// ranges.entrySet()'s iteration order is ascending (CodePointMap's own ordering contract),
-		// so this can use appendSorted's O(1)-amortized bulk path instead of put()'s general one.
-		for (Entry<CodePointMap.Range, Boolean> e : ranges.entrySet()) {
-			result.appendSorted(e.getKey().min, e.getKey().max, branch);
-		}
-		return result;
-	}
-
-	/**
-	 * Returns the first code point range present (with a different value) in both maps, or null
-	 * if none overlap. {@code CodePointMap.intersectionRejectingConflicts} would detect the same
-	 * thing, but throws immediately rather than letting us report which ranges/branches conflict.
-	 */
-	static @Nullable Entry<CodePointMap.Range, PatternConstruct> findFirstOverlap(
-			CodePointMap<PatternConstruct> merged, CodePointMap<PatternConstruct> branch) {
-		// Hoisted out of the loop below: entrySet() is a fresh (if now lazy) view each call, so
-		// calling it once per branchEntry here used to rebuild it branch.size() times over.
-		Set<Entry<CodePointMap.Range, PatternConstruct>> mergedEntries = merged.entrySet();
-		for (Entry<CodePointMap.Range, PatternConstruct> branchEntry : branch.entrySet()) {
-			for (Entry<CodePointMap.Range, PatternConstruct> mergedEntry : mergedEntries) {
-				int loMax = Math.min(branchEntry.getKey().max, mergedEntry.getKey().max);
-				int hiMin = Math.max(branchEntry.getKey().min, mergedEntry.getKey().min);
-				if (hiMin < loMax) {
-					return new CodePointMap.ImmutableEntry<>(
-							new CodePointMap.Range(hiMin, loMax), mergedEntry.getValue());
-				}
-			}
-		}
-		return null;
-	}
-
-	static MutableCodePointMap<PatternConstruct> mergeEntryMapRejectingAmbiguity(
-			String pattern, MutableCodePointMap<PatternConstruct> merged, PatternConstruct branch, String branchDescription) {
-		MutableCodePointMap<PatternConstruct> branchMap = toValueMap(branch.getEntryPointMap(), branch);
-		Entry<CodePointMap.Range, PatternConstruct> conflict = findFirstOverlap(merged, branchMap);
-		if (conflict != null) {
-			throw PatternSyntaxException.throwWithReferences(
-					pattern,
-					branch.startIndex,
-					branchDescription, " starting at index ", branch.startIndex,
-					" accepts character(s) ",
-					new PatternSyntaxException.CodePoint(conflict.getKey().min),
-					"-",
-					new PatternSyntaxException.CodePoint(conflict.getKey().max - 1),
-					", but a prior part of the same construct already claims those, which is not allowed");
-		}
-		merged.putAll(branchMap);
-		return merged;
-	}
-
 	/** Result of {@link #compileAndMergeCandidates}. */
 	static final class MergedEntries {
 		final MutableCodePointMap<PatternConstruct> ranges;
@@ -250,10 +190,13 @@ abstract class PatternConstruct {
 	 * QuantifiableConstruct.buildLoopEntryMap} respectively.
 	 */
 	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
-		MutableCodePointMap<PatternConstruct> merged = new ArrayCodePointMap<>();
+		// One CodePointMapBuilder for every candidate's entries, instead of the old approach's one
+		// intermediate ArrayCodePointMap per candidate (to re-key it from Boolean to PatternConstruct
+		// -- see the removed toValueMap) plus another for the running merge -- see
+		// design.md's "CodePointMapBuilder" section.
+		CodePointMapBuilder<PatternConstruct> builder = new CodePointMapBuilder<>();
 		PatternConstruct elseCandidate = null;
-		for (int i = 0; i < candidates.size(); i++) {
-			PatternConstruct candidate = candidates.get(i);
+		for (PatternConstruct candidate : candidates) {
 			if (candidate.getEntryElse() != null) {
 				if (elseCandidate != null) {
 					throw PatternSyntaxException.throwWithReferences(
@@ -266,8 +209,30 @@ abstract class PatternConstruct {
 				}
 				elseCandidate = candidate;
 			}
-			merged = mergeEntryMapRejectingAmbiguity(pattern, merged, candidate, candidateNounPlural + " #" + (i + 1));
+			for (Entry<CodePointMap.Range, Boolean> e : candidate.getEntryPointMap().entrySet()) {
+				builder.add(e.getKey().min, e.getKey().max, candidate);
+			}
 		}
+		MutableCodePointMap<PatternConstruct> merged = builder.build(
+				(range, value1, otherRange, value2) -> {
+					// Blame whichever of the two conflicting candidates comes later in `candidates` --
+					// the same one the old one-candidate-at-a-time merge always blamed, since every
+					// earlier candidate was already folded into `merged` by the time a later one
+					// conflicted with it.
+					int idx1 = candidates.indexOf(value1);
+					int idx2 = candidates.indexOf(value2);
+					PatternConstruct offender = idx2 > idx1 ? value2 : value1;
+					throw PatternSyntaxException.throwWithReferences(
+							pattern,
+							offender.startIndex,
+							candidateNounPlural, " #" + (Math.max(idx1, idx2) + 1),
+							" starting at index ", offender.startIndex,
+							" accepts character(s) ",
+							new PatternSyntaxException.CodePoint(range.min),
+							"-",
+							new PatternSyntaxException.CodePoint(range.max - 1),
+							", but a prior part of the same construct already claims those, which is not allowed");
+				});
 		return new MergedEntries(merged, elseCandidate);
 	}
 

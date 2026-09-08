@@ -6,23 +6,21 @@ Captured: 2026-09-08, via JMH's built-in `stack` profiler at 8-frame depth
   `./gradlew :llkpattern:jmh` after adding that profiler string, JAVA_HOME pointed at JDK 17/21,
   jmh { jvm = ".../jdk-25.0.3/bin/java.exe" } to match the committed corpus_benchmark_results.json
   baseline's JVM.)
-Code state: after the put()->appendSorted() and ArrayCodePointMap complement-constructor fixes
-  (commits 12db986, fd573b6), before the entryMap-aliasing pass this profile was gathered to
-  motivate.
+Code state: after the entryMap-aliasing fix (commit 8fe8c01) -- this replaces the prior sampling
+  in this file, which was captured before that fix to help motivate it.
 
 # JMH version: 1.36
 # VM version: JDK 25.0.3, Java HotSpot(TM) 64-Bit Server VM, 25.0.3+9-LTS-195
 # Warmup: 3 iterations, 10 s each; Measurement: 5 iterations, 10 s each
 
 Result "com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile":
-  4.194 +-(99.9%) 2.924 ms/op [Average]
-  (min, avg, max) = (3.618, 4.194, 5.452), stdev = 0.759
-  NOTE: unusually high variance/error bars on this particular run (stdev ~18% of the mean, vs.
-  ~5-6% on a typical clean run recorded elsewhere in notes.md) -- something on this machine was
-  contending for CPU during capture (a video was playing in the background); the *stack sample
-  below* (proportions, not absolute timing) is still meaningful, but don't read the 4.194ms/op
-  figure itself as a tight measurement -- see the committed corpus_benchmark_results.json for the
-  actual tracked ms/op baseline (captured without this contention).
+  2.044 +-(99.9%) 0.281 ms/op [Average]
+  (min, avg, max) = (1.948, 2.044, 2.113), stdev = 0.073
+  gc.alloc.rate.norm: 4958552.083 B/op -- matches the committed corpus_benchmark_results.json
+  baseline's allocation figure exactly, confirming this run reflects the same code; the ms/op
+  itself is a few percent higher here than that baseline's 1.872ms (ordinary run-to-run noise from
+  the added stack-sampling overhead, not a regression -- don't use this file's ms/op as the tracked
+  baseline, use corpus_benchmark_results.json for that).
 
 Stack profiler ([RUNNABLE] samples, 8-frame call chains, aggregated by leaf method):
 
@@ -33,33 +31,6 @@ Stack profiler ([RUNNABLE] samples, 8-frame call chains, aggregated by leaf meth
 ....[Thread state: RUNNABLE]........................................................................
  33.3%  50.0% <stack is empty, everything is filtered?>
   3.0%   4.5% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
-              com.tbohne.llkpattern.PatternConstruct$ComplexCharacter.buildEntryMap:683
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:109
-              com.tbohne.llkpattern.PatternConstruct.compile:128
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:725
-              com.tbohne.llkpattern.PatternConstruct.compile:133
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:572
-              com.tbohne.llkpattern.PatternConstruct.compile:133
-
-  2.4%   3.7% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildEntryMap:555
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:109
-              com.tbohne.llkpattern.PatternConstruct.compile:128
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:104
-              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
-              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_AverageTime:173
-
-  1.9%   2.8% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildEntryMap:713
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:109
-              com.tbohne.llkpattern.PatternConstruct.getEntryPointMap:91
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildEntryMap:554
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:109
-              com.tbohne.llkpattern.PatternConstruct.compile:128
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-
-  1.4%   2.1% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
               com.tbohne.llkpattern.ArrayCodePointMap.putAll:599
               com.tbohne.llkpattern.ArrayCodePointMap.<init>:89
               com.tbohne.llkpattern.PatternParser.parseUnion:264
@@ -68,59 +39,89 @@ Stack profiler ([RUNNABLE] samples, 8-frame call chains, aggregated by leaf meth
               com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:104
               com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
 
-  1.3%   1.9% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildEntryMap:713
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:109
-              com.tbohne.llkpattern.PatternConstruct.compile:128
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:572
-              com.tbohne.llkpattern.PatternConstruct.compile:133
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:104
-
-  1.2%   1.8% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
+  2.3%   3.4% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
               com.tbohne.llkpattern.ArrayCodePointMap.putAll:599
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryMapRejectingAmbiguity:205
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:252
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryMapRejectingAmbiguity:222
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:269
               com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:368
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:330
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:720
-              com.tbohne.llkpattern.PatternConstruct.compile:133
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:351
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:754
+              com.tbohne.llkpattern.PatternConstruct.compile:150
 
-  1.1%   1.6% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
+  2.1%   3.2% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
               com.tbohne.llkpattern.ArrayCodePointMap.putAll:599
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryMapRejectingAmbiguity:205
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:252
-              com.tbohne.llkpattern.PatternConstruct.compileAndMergeCandidates:269
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryMapRejectingAmbiguity:222
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:269
+              com.tbohne.llkpattern.PatternConstruct.compileAndMergeCandidates:286
               com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:358
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:330
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:720
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:351
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:754
 
-  0.9%   1.4% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
+  1.5%   2.2% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
               com.tbohne.llkpattern.ArrayCodePointMap.putAll:599
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryMapRejectingAmbiguity:205
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:252
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:311
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildEntryMap:705
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:109
-              com.tbohne.llkpattern.PatternConstruct.getEntryPointMap:91
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryMapRejectingAmbiguity:222
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:269
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:328
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildEntryMap:741
+              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:126
+              com.tbohne.llkpattern.PatternConstruct.getEntryPointMap:108
 
-  0.9%   1.3% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
+  1.4%   2.1% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
               com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:397
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:330
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:720
-              com.tbohne.llkpattern.PatternConstruct.compile:133
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:572
-              com.tbohne.llkpattern.PatternConstruct.compile:133
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:351
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:754
+              com.tbohne.llkpattern.PatternConstruct.compile:150
+              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:604
+              com.tbohne.llkpattern.PatternConstruct.compile:150
               com.tbohne.llkpattern.Ll1Pattern.compile:46
 
- 19.2%  28.8% <other>
+  1.3%   1.9% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:409
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:351
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:754
+              com.tbohne.llkpattern.PatternConstruct.compile:150
+              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:604
+              com.tbohne.llkpattern.PatternConstruct.compile:150
+              com.tbohne.llkpattern.Ll1Pattern.compile:46
+
+  1.3%   1.9% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
+              com.tbohne.llkpattern.ArrayCodePointMap.putAll:599
+              com.tbohne.llkpattern.PatternParser.parseComplexEscape:959
+              com.tbohne.llkpattern.PatternParser.parseUnion:348
+              com.tbohne.llkpattern.PatternParser.parse:189
+              com.tbohne.llkpattern.Ll1Pattern.compile:43
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:104
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
+
+  1.0%   1.5% com.tbohne.llkpattern.ArrayCodePointMap$1$1.next:274
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:408
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:351
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:754
+              com.tbohne.llkpattern.PatternConstruct.compile:150
+              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:604
+              com.tbohne.llkpattern.PatternConstruct.compile:150
+              com.tbohne.llkpattern.Ll1Pattern.compile:46
+
+  1.0%   1.5% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:479
+              com.tbohne.llkpattern.PatternConstruct.toValueMap:179
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryMapRejectingAmbiguity:209
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:269
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:368
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:351
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:754
+              com.tbohne.llkpattern.PatternConstruct.compile:150
+
+ 18.6%  27.9% <other>
 
 ....[Thread state: TIMED_WAITING]...................................................................
- 33.3% 100.0% java.lang.Object.wait0 (JVM housekeeping thread -- ReferenceQueue/CleanerImpl -- not
-                                      benchmark code)
+ 33.3% 100.0% java.lang.Object.wait0 (JVM housekeeping thread -- not benchmark code)
 
-Read: every top entry traces back through PatternConstruct's buildEntryMap()/buildMatcher() to an
-ArrayCodePointMap.appendSorted() or putAll() call -- i.e. compile-time cost here is essentially all
-CodePointMap construction/copying at various levels of the AST, spread across ~9 call sites
-(2-4.5% each) rather than concentrated in one, which is what motivated the entryMap-aliasing pass
-(see notes.md's dated entry) instead of trying to further optimize any single call site.
+Read: the previous version of this file (before the entryMap-aliasing fix) showed a similar shape
+but centered on ComplexCharacter/Sequence entry-map construction (~9 sites at 2-4.5% each). After
+aliasing removed most of those copies, the remaining top entries have shifted almost entirely to
+ComplexQuantifiedCharacter's *quantified* (loop) path -- buildLoopEntryMap/buildLoopMatcher and the
+DispatchMatcherConstruct loop-flavored constructor, which were deliberately NOT aliased (they
+project a genuinely PatternConstruct-valued merge result down to entryMap's Boolean-only type, a
+real guard against a 2026-09-06 identity bug -- see design.md's "entryMap aliasing" section). This
+is the expected remaining cost after the aliasing pass: real, necessary ambiguity-merge
+construction for quantified constructs, not leftover copying that could be aliased away too.

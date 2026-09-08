@@ -1,6 +1,7 @@
 plugins {
     id 'java-library'
     id 'org.checkerframework' version '0.6.3' apply false
+    id 'me.champeau.jmh' version '0.7.2'
     //id("net.ltgt.errorprone") version "3.1.0"
 }
 // TODO(remaining_work.md "toolchain"): the Checker Framework processor (defaulting to an old
@@ -29,6 +30,31 @@ dependencies {
     ext.checkerFrameworkVersion = '0.6.3'
     implementation "org.checkerframework:checker-qual:${checkerFrameworkVersion}"
     //annotationProcessor "org.checkerframework:checker:${checkerFrameworkVersion}"
+}
+
+// JMH microbenchmark comparing java.util.regex vs Ll1Pattern speed over the scraped-corpus
+// golden files' AGREES rows -- see documents/remaining_work.md's "Scraped-corpus microbenchmark"
+// entry and CorpusBenchmark's own javadoc. The jmh source set needs the test source set's output
+// (GoldenTsv/GoldenRow/MatchOutcome) and resources (the golden TSVs themselves) on its classpath,
+// since CorpusBenchmark reuses those rather than duplicating TSV-reading logic.
+sourceSets {
+    jmh {
+        compileClasspath += sourceSets.test.output
+        runtimeClasspath += sourceSets.test.output
+        resources.srcDirs += sourceSets.test.resources.srcDirs
+    }
+}
+
+jmh {
+    warmupIterations = 3
+    iterations = 5
+    fork = 1
+    // Console output (the plugin always prints a human-readable summary as the jmh task runs)
+    // plus a checked-in JSON baseline file -- see remaining_work.md's "results go both places"
+    // decision -- committed after a deliberate benchmark run so later runs can `git diff` it to
+    // spot regressions, rather than treated as always-fresh generated output.
+    resultFormat = 'JSON'
+    resultsFile = project.file("${rootDir}/documents/benchmarks/corpus_benchmark_results.json")
 }
 
 // Regenerates a scraped-corpus golden TSV file from a per-source "intermediate" TSV (see

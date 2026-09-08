@@ -96,25 +96,19 @@ dated AGREES-count snapshot rather than tracking that number here.
       apparently found an answer worth copying -- read it before building anything, don't just
       copy the "fuzz" label.
 
-## Scraped-corpus microbenchmark (idea)
+## Scraped-corpus microbenchmark
 
-- [ ] **Add a microbenchmark that compares `java.util.regex` vs `Ll1Pattern` speed over the
-      scraped-corpus golden files**. Sketch: load every golden row from `openjdk_bmp.tsv`/
-      `openjdk_supplementary.tsv` (and any later-added corpus files, see above), keep only rows
-      where `status == "AGREES"` (comparing speed on a row where the engines disagree about
-      *correctness* isn't meaningful), then time (a) `java.util.regex.Pattern.compile(...)` + the
-      matching call (`matches`/`lookingAt`/`find`, per the row's `mode`) and (b) `Ll1Pattern`'s
-      equivalent, and report both. Open questions to settle before building:
-  - JMH vs a hand-rolled JUnit timer loop -- JMH is the right tool for real microbenchmark rigor
-        (warmup iterations, fork isolation, avoiding dead-code elimination) but is a new build
-        dependency/plugin; a fake-it-with-JUnit version (loop N times, discard a warmup prefix,
-        report min/median/mean) is far less rigorous but zero new dependencies. Ask the project
-        owner which tradeoff they want once this is picked up.
-  - Compile time and match time probably need reporting separately (llk likely compiles slower --
-        it's building a full dispatch graph upfront -- but may match faster per-call; a combined
-        number would hide that story).
-  - Needs a decision on where results go: console output only (simplest), a checked-in baseline
-        file to diff against (catches regressions), or both.
+Done (2026-09-07): `CorpusBenchmark` (`llkpattern/src/jmh/java/.../corpus/CorpusBenchmark.java`),
+via the `me.champeau.jmh` Gradle plugin (see `llkpattern/build.gradle`'s `jmh {}` block). Loads
+every golden row from `openjdk_bmp.tsv`/`openjdk_supplementary.tsv`, keeps only rows where both
+engines compiled successfully (a stricter filter than `status == "AGREES"`, which also covers rows
+where both engines agree by both throwing the same compile exception -- not a speed sample), and
+times `java.util.regex` vs `Ll1Pattern` compile and match separately (`regexCompile`/`llkCompile`,
+`regexMatch`/`llkMatch` -- matches are pre-compiled once in `@Setup` so match timing never includes
+compile cost). Run via `./gradlew :llkpattern:jmh`; results print to console and are also written
+as JSON to `documents/benchmarks/corpus_benchmark_results.json` (only once the *entire* run
+completes -- an interrupted run leaves that file empty), meant to be committed as a baseline and
+diffed against on later runs to catch regressions.
 
 ## Core implementation
 

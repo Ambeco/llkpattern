@@ -1,0 +1,228 @@
+[
+    {
+        "jmhVersion" : "1.36",
+        "benchmark" : "com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Java\\jdk-17\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=C:\\Users\\mooin\\Dropbox\\Code\\Utilities\\java\\llpattern\\llkpattern\\build\\tmp\\jmh",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "17.0.12",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "17.0.12+8-LTS-286",
+        "warmupIterations" : 3,
+        "warmupTime" : "10 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "10 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 20.03556039197074,
+            "scoreError" : 0.8557244804080313,
+            "scoreConfidence" : [
+                19.17983591156271,
+                20.891284872378773
+            ],
+            "scorePercentiles" : {
+                "0.0" : 19.80851185770751,
+                "50.0" : 19.99748383233533,
+                "90.0" : 20.376541666666668,
+                "95.0" : 20.376541666666668,
+                "99.0" : 20.376541666666668,
+                "99.9" : 20.376541666666668,
+                "99.99" : 20.376541666666668,
+                "99.999" : 20.376541666666668,
+                "99.9999" : 20.376541666666668,
+                "100.0" : 20.376541666666668
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    20.376541666666668,
+                    19.884945526838965,
+                    19.99748383233533,
+                    20.11031907630522,
+                    19.80851185770751
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.36",
+        "benchmark" : "com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Java\\jdk-17\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=C:\\Users\\mooin\\Dropbox\\Code\\Utilities\\java\\llpattern\\llkpattern\\build\\tmp\\jmh",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "17.0.12",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "17.0.12+8-LTS-286",
+        "warmupIterations" : 3,
+        "warmupTime" : "10 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "10 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.10996862131441883,
+            "scoreError" : 0.0039249160204777095,
+            "scoreConfidence" : [
+                0.10604370529394112,
+                0.11389353733489653
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.10920394149429678,
+                "50.0" : 0.10970585713972507,
+                "90.0" : 0.11171868881372582,
+                "95.0" : 0.11171868881372582,
+                "99.0" : 0.11171868881372582,
+                "99.9" : 0.11171868881372582,
+                "99.99" : 0.11171868881372582,
+                "99.999" : 0.11171868881372582,
+                "99.9999" : 0.11171868881372582,
+                "100.0" : 0.11171868881372582
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    0.11171868881372582,
+                    0.10930882581181074,
+                    0.10920394149429678,
+                    0.10970585713972507,
+                    0.1099057933125357
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.36",
+        "benchmark" : "com.tbohne.llkpattern.corpus.CorpusBenchmark.regexCompile",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Java\\jdk-17\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=C:\\Users\\mooin\\Dropbox\\Code\\Utilities\\java\\llpattern\\llkpattern\\build\\tmp\\jmh",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "17.0.12",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "17.0.12+8-LTS-286",
+        "warmupIterations" : 3,
+        "warmupTime" : "10 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "10 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.10228043196723158,
+            "scoreError" : 0.0010562011007872588,
+            "scoreConfidence" : [
+                0.10122423086644432,
+                0.10333663306801884
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.10184030332332435,
+                "50.0" : 0.1023348806542295,
+                "90.0" : 0.10255753010814353,
+                "95.0" : 0.10255753010814353,
+                "99.0" : 0.10255753010814353,
+                "99.9" : 0.10255753010814353,
+                "99.99" : 0.10255753010814353,
+                "99.999" : 0.10255753010814353,
+                "99.9999" : 0.10255753010814353,
+                "100.0" : 0.10255753010814353
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    0.1023348806542295,
+                    0.10243861776140782,
+                    0.10255753010814353,
+                    0.10184030332332435,
+                    0.10223082798905274
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.36",
+        "benchmark" : "com.tbohne.llkpattern.corpus.CorpusBenchmark.regexMatch",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "C:\\Program Files\\Java\\jdk-17\\bin\\java.exe",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Djava.io.tmpdir=C:\\Users\\mooin\\Dropbox\\Code\\Utilities\\java\\llpattern\\llkpattern\\build\\tmp\\jmh",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "17.0.12",
+        "vmName" : "Java HotSpot(TM) 64-Bit Server VM",
+        "vmVersion" : "17.0.12+8-LTS-286",
+        "warmupIterations" : 3,
+        "warmupTime" : "10 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "10 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.05468117740363991,
+            "scoreError" : 0.0018343818526642209,
+            "scoreConfidence" : [
+                0.05284679555097569,
+                0.05651555925630413
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.05439145107289606,
+                "50.0" : 0.05452213676424128,
+                "90.0" : 0.05552423088224695,
+                "95.0" : 0.05552423088224695,
+                "99.0" : 0.05552423088224695,
+                "99.9" : 0.05552423088224695,
+                "99.99" : 0.05552423088224695,
+                "99.999" : 0.05552423088224695,
+                "99.9999" : 0.05552423088224695,
+                "100.0" : 0.05552423088224695
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    0.05439145107289606,
+                    0.0545549503898524,
+                    0.05452213676424128,
+                    0.05552423088224695,
+                    0.05441311790896291
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

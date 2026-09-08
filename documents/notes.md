@@ -273,6 +273,24 @@ Notes to self about how to work on this project, and other context that doesn't 
 - `./gradlew` daemons can get stuck on a stale/wrong JDK after `JAVA_HOME` changes mid-session or after a host JDK auto-updates; `./gradlew --stop` before retrying is a cheap first move when a build fails in a way that looks environmental (e.g. `Unsupported class file major version NN`) rather than a real compile error in the diff you just made — confirm by re-running the *unmodified* file/command to see if the failure predates your change.
 - Git on this machine warns `LF will be replaced by CRLF` on nearly every commit — that's this repo's line-ending normalization doing its job, not an error; ignore it.
 
+## Scraped-corpus microbenchmark (2026-09-08)
+
+- Built with JMH (via the `me.champeau.jmh` Gradle plugin), per the project owner's choice over a
+  hand-rolled JUnit timer loop -- real warmup/fork/dead-code-elimination rigor was worth the new
+  build dependency. Results go to both console and a checked-in JSON baseline (also the owner's
+  choice over console-only or a separate decision later).
+- First real run (JDK 17, this dev machine, 3 warmup + 5 measurement iterations @ 10s each, one
+  fork): `llkCompile` ~20 ms/op vs `regexCompile` ~0.10 ms/op (llk ~200x slower to compile --
+  expected, per the original design sketch, since it builds a full dispatch graph upfront), and
+  `llkMatch` ~0.11 ms/op vs `regexMatch` ~0.055 ms/op (llk ~2x slower per match call here, not
+  actually faster as the original sketch speculated might happen -- real data point, not yet
+  investigated further). Take the specific ratios with a grain of salt: single-fork, single-machine,
+  no `-prof`/`-lprof` isolation yet, and JMH's own compiler-blackhole-mode warning applies (see the
+  run's own printed caveats).
+- The results JSON is only written once the *entire* `jmh` task finishes; killing/timing out a
+  partial run leaves the file empty (`[]`) rather than partially populated -- don't mistake that for
+  "the benchmark found nothing."
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

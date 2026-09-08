@@ -125,10 +125,11 @@ desugaring this app module doesn't otherwise pull in). `FRACTION_OF_TEST_ROWS` s
 corpus for slower devices; results are written as JSON named after the actual device
 (`Build.MANUFACTURER`/`MODEL`/`DEVICE`) to the app's external files dir, since the point is
 comparing several phones with different hardware. GC counts during each measured benchmark are
-recorded via `Debug.getGlobalGcInvocationCount()`. A separate opt-in test
-(`testZZSamplingProfile`, run with `-e profile true`) captures an Android *sampling* profiler trace
-(`Debug.startMethodTracingSampling`, not full per-call tracing) for pulling into Android Studio's
-CPU Profiler.
+recorded via `Debug.getGlobalGcInvocationCount()`. A CPU sampling profiler for `llkMatch`
+(`testZZSamplingProfile`, an 8-frame-deep hand-rolled stack sampler) exists but is kept commented
+out in the checked-in file -- see the entry below -- so the file only runs the four timing
+benchmarks by default; uncomment it (and its imports, marked the same way) when profiling is
+actually needed again.
 - [x] ~~Run `./gradlew :app:connectedAndroidTest` against real hardware~~ -- done 2026-09-08 against
       a Pixel 3a (API 32): all 5 tests pass. Required two unrelated fixes to `app/build.gradle`,
       both pre-existing issues not caused by this test itself: `compileSdk` bumped 33 -> 36
@@ -159,8 +160,16 @@ CPU Profiler.
       truncated to `STACK_SAMPLE_DEPTH = 8` frames) rather than `Debug.startMethodTracingSampling`
       (tried first, but its sampling API has no way to cap stack depth -- see notes.md), aggregated
       into a plain-text table of hottest 8-frame call chains at
-      `documents/benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt`. Worth re-running both on
-      the other phones once convenient.
+      `documents/benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt`. That test's own code is
+      now commented out in `AndroidCorpusBenchmark.java` (both the method and its imports, each
+      marked with instructions on where its counterpart is) so a routine run only does the four
+      timing benchmarks -- uncomment both blocks, rebuild, and run just that method with:
+      ```
+      adb shell am instrument -w -e profile true \
+          -e class com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark#testZZSamplingProfile \
+          com.tbohne.llkpattern.test/androidx.test.runner.AndroidJUnitRunner
+      ```
+      Worth re-running both (timing and, less often, sampling) on the other phones once convenient.
 - [ ] If a device's `java.util.regex` disagrees with the golden files' recorded `regexMatchResult`
       (scraped on desktop), decide whether that's rare enough to ignore (the benchmark only times
       *speed*, not correctness, on-device) or common enough to need Android-specific golden columns

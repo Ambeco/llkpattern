@@ -753,6 +753,14 @@ Notes to self about how to work on this project, and other context that doesn't 
   133 distinct 8-frame chains over `PROFILE_ITERATIONS = 200` full-corpus passes); replaces an
   earlier `.trace`-file version of this test that was captured, then deleted once the hand-rolled
   version replaced it (see remaining_work.md).
+- Per the project owner's request, `testZZSamplingProfile` (and its supporting `formatChain`/
+  `writeSamplingProfile` methods, its two constants, and its sampling-only imports) were then
+  commented back out in `AndroidCorpusBenchmark.java` -- the checked-in file now only runs the four
+  timing benchmarks by default, with the sampling code left in place as a ready-to-uncomment block
+  (line-commented rather than wrapped in `/* */`, since the block itself contains javadoc `/** */`
+  comments that would otherwise close a wrapping block comment early) so the how-to isn't lost, but
+  it doesn't show up as a runnable `@Test` in the common case. Verified this still compiles and
+  that a normal run now shows "OK (4 tests)" with no fifth skipped test.
 
 ### CPU-sampling `llkCompile`/`llkMatch`, and fixing the `put()`-loop `appendSorted` regression it found (2026-09-08, same day)
 

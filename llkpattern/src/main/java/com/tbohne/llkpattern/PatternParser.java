@@ -102,6 +102,13 @@ final class PatternParser {
   // Name -> captureConstructIndex, populated as each named group's real index is assigned (see
   // parseGroup). Exposed via getNamedGroups() for Ll1Pattern to carry forward for group(String).
   private final Map<String, Integer> namedGroups = new HashMap<>();
+  // captureConstructIndex -> the already-fully-parsed QuantifiedUnion for that group, populated at
+  // the same point as namedGroups (parseGroup, once a group's ")" is reached). Backreferences
+  // (tryParseBackReference) look a referenced group up here: only a group already present -- i.e.
+  // already closed, textually before the "\1"/"\k<name>" -- can be referenced; anything else is a
+  // forward reference or an undefined group, both rejected at parse time. See design.md's
+  // "Backreferences" section.
+  private final Map<Integer, QuantifiedUnion> closedGroupsByIndex = new HashMap<>();
 
   PatternParser(String pattern, int flags) {
     this.pattern = pattern;
@@ -277,6 +284,11 @@ final class PatternParser {
             }
             advance(2);
             anchorsToPreviousMatchEnd = true;
+            continue;
+          }
+          PatternConstruct backReference = tryParseBackReference();
+          if (backReference != null) {
+            sequence.patterns.add(backReference);
             continue;
           }
           PatternConstruct boundaryConstruct = tryParseBoundary();
@@ -459,6 +471,7 @@ final class PatternParser {
       if (!union.captureName.isEmpty()) {
         namedGroups.put(union.captureName, union.captureConstructIndex);
       }
+      closedGroupsByIndex.put(union.captureConstructIndex, union);
     }
     advance(1);
     parseQuantifiable(union);
@@ -740,6 +753,78 @@ final class PatternParser {
         b.flags = flags;
         return b;
       }
+    }
+    return null;
+  }
+
+  /**
+   * {@code \1}-{@code \9} (numbered backreference) or {@code \k<name>} (named backreference), or
+   * null if {@code peek}/{@code peek2} don't start either form. Resolves the reference to its
+   * already-parsed {@code QuantifiedUnion} immediately (via {@code closedGroupsByIndex}/{@code
+   * namedGroups}), rejecting forward references and references to undefined groups here at parse
+   * time -- see design.md's "Backreferences" section and {@code closedGroupsByIndex}'s doc.
+   *
+   * <p>Only single-digit numbered backreferences ({@code \1}-{@code \9}) are supported -- unlike
+   * {@code java.util.regex}, which greedily consumes further digits when enough groups exist to
+   * make them part of the group number (e.g. {@code \12} can mean group 12 rather than group 1
+   * followed by a literal "2"). Patterns needing a 10th+ backreference aren't supported yet.
+   */
+  private @Nullable PatternConstruct tryParseBackReference() {
+    if (peek != '\\') {
+      throw new IllegalStateException("entered tryParseBackReference at illegal start point");
+    }
+    int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
+    if (peek2 >= '1' && peek2 <= '9') {
+      int startIndex = index;
+      int groupNumber = peek2 - '0';
+      int referencedIndex = groupNumber - 1;
+      QuantifiedUnion referenced = closedGroupsByIndex.get(referencedIndex);
+      if (referenced == null) {
+        throw PatternSyntaxException.throwWithReferences(
+            pattern,
+            startIndex,
+            "backreference \\", groupNumber, " refers to a group that either doesn't exist or ",
+            "hasn't been closed yet at this point in the pattern (forward references aren't ",
+            "supported) -- ", captureConstructIndex, " capturing group(s) defined so far");
+      }
+      advance(2);
+      BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
+      backReference.flags = flags;
+      return backReference;
+    }
+    if (peek2 == 'k') {
+      int startIndex = index;
+      advance(2);
+      if (peek != '<') {
+        throw throwUnexpectedChar("\\k must be followed by \"<name>\" naming a capturing group");
+      }
+      advance(1);
+      int startName = index;
+      while ((peek >= '0' && peek <= '9')
+          || (peek >= 'a' && peek <= 'z')
+          || (peek >= 'A' && peek <= 'Z')) {
+        advance(1);
+      }
+      if (peek != '>') {
+        throw throwUnexpectedChar(
+            "Character not allowed in backreference name. Expected '>' to match ",
+            new CodePointReference(startName));
+      }
+      String name = pattern.substring(startName, index);
+      advance(1);
+      Integer referencedIndex = namedGroups.get(name);
+      if (referencedIndex == null) {
+        throw PatternSyntaxException.throwWithReferences(
+            pattern,
+            startIndex,
+            "backreference \\k<", name, "> refers to a named group that either doesn't exist or ",
+            "hasn't been closed yet at this point in the pattern (forward references aren't ",
+            "supported)");
+      }
+      QuantifiedUnion referenced = closedGroupsByIndex.get(referencedIndex);
+      BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
+      backReference.flags = flags;
+      return backReference;
     }
     return null;
   }

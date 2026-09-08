@@ -12,7 +12,6 @@ import com.tbohne.llkpattern.PatternConstruct.QuantifiedUnion;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
@@ -401,28 +400,43 @@ abstract class MatcherConstruct {
 		}
 	}
 
+	/**
+	 * Matches whatever {@code captureConstructIndex}'s group actually captured last, then advances
+	 * to whatever comes next -- {@code \1}/{@code \k<name>}, resolved to a fixed
+	 * {@code captureConstructIndex} at parse time (see {@code PatternConstruct.BackReference}).
+	 */
 	static final class BackReferenceMatcherConstruct extends SingleDispatchingMatcherConstruct {
-		final @Nullable Integer id;
-		final @Nullable String name;
+		final int captureConstructIndex;
 
-		BackReferenceMatcherConstruct(PatternConstruct owner, int id) {
+		BackReferenceMatcherConstruct(PatternConstruct owner, int captureConstructIndex) {
 			super(owner, owner.next.matcher);
-			this.id = id;
-			this.name = null;
-		}
-
-		BackReferenceMatcherConstruct(PatternConstruct owner, @NonNull String name) {
-			super(owner, owner.next.matcher);
-			this.id = null;
-			this.name = name;
+			this.captureConstructIndex = captureConstructIndex;
 		}
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			// TODO(remaining_work.md "Backreferences"): backreferences aren't context-free (see
-			// PatternParser's grammar comment) -- this needs to look up the referenced group's
-			// already-matched text on `matcher` and compare it against upcoming input.
-			throw new UnsupportedOperationException("TODO: backreference matching not yet implemented");
+			Group group = matcher.captureGroups[captureConstructIndex];
+			if (group == null || group.result == null) {
+				// The referenced group never participated in the match (e.g. it's in a sibling
+				// alternation branch that wasn't taken) -- java.util.regex treats an unparticipated
+				// group's backreference as never matching, not as matching the empty string.
+				return false;
+			}
+			String value = group.result;
+			if (value.isEmpty()) {
+				return matchNext(matcher, peeked);
+			}
+			int i = 0;
+			do {
+				int next = value.codePointAt(i);
+				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
+				if (!codePointsMatch(next, peeked, flags)) {
+					return false;
+				}
+				peeked = matcher.consumeCodeUnits(units);
+				i += units;
+			} while (i < value.length());
+			return matchNext(matcher, peeked);
 		}
 	}
 

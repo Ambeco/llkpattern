@@ -21,12 +21,10 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 ## Also remember for later (currently-unimplemented/deferred features)
 
-- [ ] Once implemented, add the same depth of test coverage for: backreferences `\n` and
-      `\k<name>` (see `BackReferenceMatcherConstruct`, currently a stub, and the "Backreferences
-      and the LL(1) model" open question below), quotation (`\Q...\E`), positive/negative
-      lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind (`(?<=...)`/`(?<!...)`) --
-      note lookahead/lookbehind are currently rejected outright at parse time per design.md, and
-      independent/atomic non-capturing groups (`(?>X)`).
+- [ ] Once implemented, add the same depth of test coverage for: quotation (`\Q...\E`),
+      positive/negative lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind
+      (`(?<=...)`/`(?<!...)`) -- note lookahead/lookbehind are currently rejected outright at
+      parse time per design.md, and independent/atomic non-capturing groups (`(?>X)`).
 - [ ] Of `java.util.regex.Pattern`'s remaining compile flags -- `CASE_INSENSITIVE`, `UNICODE_CASE`,
       and `DOTALL` are implemented (both globally and correctly scoped through an inline
       `(?i:...)`/`(?s:...)`), and `MULTILINE`/`UNIX_LINES` are now implemented too, but *only* as
@@ -100,7 +98,25 @@ dated AGREES-count snapshot rather than tracking that number here.
 
 ## Core implementation
 
-- [ ] Implement `MatcherConstruct.BackReferenceMatcherConstruct.match(...)` (currently throws; the node itself is now correctly wired into the graph, just the runtime behavior is missing).
+- [ ] **A quantified/loop construct immediately followed by a composite (non-leaf) construct
+      crashes at match time with a NullPointerException** -- found 2026-09-07 while implementing
+      backreferences (reproduces on a plain pattern with no backreference at all, e.g.
+      `(a)(b)*(z)` against `"az"`). Root cause: `DispatchMatcherConstruct`'s loop-flavored
+      constructor and `QuantifiedUnion.buildEntryMap`'s own loop-exit detection use `e.getValue()
+      != next` identity checks to distinguish "the loop is exiting toward `next`" from "keep
+      looping", but only leaf constructs (`ComplexCharacter`/`LiteralString`/`BackReference`/
+      `CaptureEndMarker`) re-key their `entryMap` values onto `this` -- `Sequence`/`QuantifiedUnion`
+      alias their `entryMap` to whatever nested leaf actually built the range, so the identity
+      check silently never matches when `next` is itself a `Sequence`/`QuantifiedUnion` (a
+      capturing group, a non-capturing group, a multi-literal sequence, ...), misrouting the
+      loop's exit path back into the loop body. Likely fix: re-key `Sequence.buildEntryMap`/
+      `QuantifiedUnion.buildEntryMap`'s entryMap values onto `this`, the way `CaptureEndMarker`
+      already was fixed to (2026-09-06, see notes.md) for the identical reason. Flagged as a
+      background task (`task_9f5ec17e`); see notes.md for the corpus rows this affected.
+- [ ] Numbered backreferences only support a single digit (`\1`-`\9`) -- unlike `java.util.regex`,
+      which greedily consumes further digits when enough groups exist to make them part of the
+      group number (`\12` can mean group 12, not group 1 followed by literal "2"). A pattern
+      needing a 10th+ backreference isn't supported yet; see `PatternParser.tryParseBackReference`.
 - [ ] `MatcherConstruct.BoundaryMatcherConstruct.match(...)`: `InputBegin`/`InputEndExceptTerminator`/`InputEnd` (`\A`/`\Z`/`\z`) are implemented (position-and-surrounding-characters checks only, honoring `MULTILINE`/`UNIX_LINES` -- see design.md's "Boundary matching" section). `^`/`$` and `\b`/`\B` are separate, already-implemented pairs (`LineBoundaryConstruct`/`LineBoundaryMatcherConstruct`, `WordBoundaryConstruct`/`WordBoundaryMatcherConstruct`). `\G` isn't a position-based boundary at all and has no `MatcherConstruct` of its own -- see design.md's "Boundary matching" section.
 - [ ] Remaining `Matcher`/`Ll1Pattern` API gaps: `replaceAll`/`replaceFirst`/`appendReplacement`/`appendTail`/`quoteReplacement`, `split`/`splitAsStream`, `toMatchResult`, `hitEnd`/`requireEnd`, `useAnchoringBounds`/`hasAnchoringBounds`, `useTransparentBounds`/`hasTransparentBounds` — all still `UnsupportedOperationException` stubs. None of these are needed for the scraped-corpus differential test harness above (that only needs `matches`/`find`/`group`/`start`/`end`), so lower priority than that.
 - [ ] `region()`'s interaction with `hasAnchoringBounds`/`useAnchoringBounds`/`useTransparentBounds` (whether `^`/`$`/boundaries see past the region) isn't implemented at all yet -- `^`/`$`/`\A`/`\Z`/`\z`/`\b`/`\B` all currently hard-code the "opaque bounds" behavior (never look past `regionStart`/`regionEnd`), which is `useAnchoringBounds(true)`/`useTransparentBounds(false)`'s combination (the default) but not configurable to the other three.
@@ -152,8 +168,4 @@ dated AGREES-count snapshot rather than tracking that number here.
 ## Open Questions
 
 - [ ] **Ambiguity-detection error quality**: `PatternConstruct.findFirstOverlap` (used by `QuantifiedUnion.buildEntryMap`'s ambiguity check) does an O(candidates × ranges) manual scan to find and report the first conflicting range, rather than using `CodePointMap.intersectionRejectingConflicts` directly — the latter throws immediately on any conflict but only carries stringified values, not the conflicting range/candidate needed for a useful `PatternSyntaxException`. Fine for realistic pattern sizes; revisit if this becomes a real cost, or if `intersectionRejectingConflicts`'s exception is ever extended to carry structured conflict info.
-- [ ] **Implement backreferences using precise entry sets** (decision made; not yet implemented — see design.md's "Backreferences" section for the full rationale). Summary: add a `firstCharSet()` AST helper (mirrors the existing `lastCharSet()` used for `\b`/`\B`) that computes a backreference's possible first characters from the *referenced group's* AST, and feed that into the normal disjointness check instead of `BackReference`'s current catch-all `entryElse = this`. Remaining open sub-decisions to settle during implementation:
-  - Possibly-empty referenced groups (e.g. `(a*)\1`): `firstCharSet()` should return unknown/null for these (falls back to today's catch-all, i.e. rejected as ambiguous) rather than trying to also account for what follows.
-  - Forward references (`\1(a)`): reject at compile time.
-  - `BackReferenceMatcherConstruct.match(...)` itself (the runtime character-comparison logic) is still unimplemented on top of this.
 - [ ] **Reluctant/possessive quantifiers' permanent semantics**: the parser currently accepts and no-ops `?`/`+` quantifier modifiers (per its own comment, "reluctant and possessive quantifiers are no-ops in this Pattern"). Confirm this is the intended permanent semantic (i.e., this engine has one matching behavior, and the reluctant/possessive distinction from `java.util.regex` doesn't apply here) and document it prominently for users migrating from `java.util.regex`, rather than leaving it as an implicit consequence of "no backtracking."

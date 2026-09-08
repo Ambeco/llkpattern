@@ -58,6 +58,42 @@ Notes to self about how to work on this project, and other context that doesn't 
 - 2026-09-07: fixed a real gap the `\p{Digit}` fix introduced: `NamedCharClass.valueOf("PosixDigit")` made the *internal* identifier `PosixDigit` itself reachable as literal pattern syntax -- `\p{PosixDigit}` silently compiled instead of throwing. Verified real `java.util.regex` rejects it (`Unknown character property name {PosixDigit}`) before adding an explicit guard in `PatternParser` plus a test. Same fix also corrected the unrelated bug where a failed bare-name lookup's exception echoed the internally-translated name (`"PosixDigit"`) instead of what the user actually typed (`"Digit"`) -- `originalCharClassName` is now kept separately for error messages.
 - 2026-09-07: the project owner accepted backreference support in principle, then immediately spotted the real problem themselves: a conditional or loop-tail backreference's entry set isn't knowable from the AST alone the way `BackReference`'s current stub (`entryElse = this`, a catch-all) assumes, so it can conflict with sibling `RangeMap` branches in a way the compile-time disjointness check can't currently catch or resolve. Laid out three options (drop backreferences; document a priority favoring backreferences; check for conflicts at match time instead of compile time) without picking one. Before responding, verified with a real `java.util.regex` scratch program that the everyday case (`(\w+)\s+\1`) and the ambiguous case (`(a+)\1`) both behave the way the fourth (unlisted) option below assumes. Proposed and the project owner chose a fourth option instead: give backreferences a *precise* compile-time entry set (via a new `firstCharSet()` AST helper, mirroring the existing `lastCharSet()` used for `\b`/`\B`) computed from the referenced group, rather than a catch-all -- strictly more permissive than dropping them, avoids documenting (B)'s surprising priority rule (which, it turned out, is actually already `BackReference`'s accidental current behavior), and keeps ambiguity detection fully at compile time unlike (C). Recorded in design.md's new "Backreferences" section and "Alternatives Considered" entry; not yet implemented, see remaining_work.md.
 
+- 2026-09-07: implemented backreferences (`\1`-`\9`, `\k<name>`) end to end -- parsing
+  (`PatternParser.tryParseBackReference`, resolving a reference to its already-parsed
+  `QuantifiedUnion` immediately, rejecting forward references and undefined groups at parse
+  time), the compile-time precise entry set (`PatternConstruct.firstCharSet()`, mirroring the
+  existing `lastCharSet()`), and match-time comparison (`BackReferenceMatcherConstruct.match`,
+  comparing the referenced group's captured text against upcoming input, folding
+  `CASE_INSENSITIVE`/`UNICODE_CASE` the same way `LiteralMatcherConstruct` does; an
+  unparticipated group's backreference fails outright rather than matching empty, per
+  `java.util.regex`). This was the decision recorded 2026-09-07 earlier the same day (see
+  design.md's "Backreferences" section) -- implementing it surfaced two things worth recording:
+  - The scraped-corpus golden files needed retagging after this landed, since several rows'
+    previously-recorded `UNIMPLEMENTED: llk failed to compile` status was specifically because
+    the *old* `BackReference` stub's `entryElse = this` catch-all made almost any backreference
+    usage a guaranteed compile-time ambiguity error -- masking whatever the pattern would
+    actually do once backreferences worked. Retagged via the same one-off `RetagGolden` tool
+    pattern used on 2026-09-07 earlier (re-running `CorpusGenerator.generateRow` over each
+    existing row without re-scraping, then deleting the tool): BMP and supplementary golden files
+    each had 3 rows retagged. Two of those three now correctly `AGREES`; see the third bullet
+    below for the third.
+  - Found a real, pre-existing bug **unrelated to backreferences**, exposed only because
+    backreferences no longer force those patterns to fail at compile time: a quantified/loop
+    construct immediately followed by a composite (non-leaf) construct -- e.g. `(a)(b)*(z)`,
+    where the thing right after the `(b)*` loop is another capturing group -- throws a
+    `NullPointerException` at match time. Reproduces on plain, unmodified `main` with no
+    backreference involved at all (verified via `git stash` before diagnosing further). Root
+    cause: `Sequence`/`QuantifiedUnion`'s `buildEntryMap` never re-key their `entryMap` values
+    onto `this` the way leaf constructs (and `CaptureEndMarker`, fixed for the identical reason
+    on 2026-09-06) do -- so an identity check like `e.getValue() != next` (used by the loop
+    machinery to detect "this range means exit the loop toward `next`") silently never matches
+    when `next` is itself composite. Flagged as a background task rather than fixed in this
+    session (out of scope for "implement backreferences", and a cross-cutting fix); see
+    remaining_work.md.
+  - Numbered backreferences only support a single digit (`\1`-`\9`), unlike `java.util.regex`'s
+    greedy multi-digit parsing -- a deliberate scope-limiting decision for this session, not a
+    bug; see remaining_work.md.
+
 ## Tooling gotchas (this dev machine, Windows + git-bash)
 
 - The Bash tool here is git-bash; running Windows Java tools (`java -cp ...`) directly through it can silently mis-handle mixed forward-slash paths and `;`-separated classpaths. When invoking `java`/`javac` directly (outside Gradle) with an explicit classpath, prefer the PowerShell tool with native `C:\...` paths — that's what actually worked when regenerating `UnicodePredicates.java` from `unicodeanalyzer`.

@@ -401,28 +401,41 @@ abstract class PatternConstruct {
 		}
 	}
 
+	/**
+	 * {@code \1}/{@code \k<name>}. {@code referencedGroup} is resolved at parse time (see
+	 * PatternParser's {@code tryParseBackReference}) to the actual, already-fully-parsed
+	 * {@code QuantifiedUnion} the reference points at -- forward references and references to
+	 * undefined groups are rejected there, before a BackReference is ever constructed. See
+	 * design.md's "Backreferences" section for the full design.
+	 */
 	static final class BackReference extends PatternConstruct {
-		final @Nullable Integer id;
-		final @Nullable String name;
+		final int captureConstructIndex;
+		final QuantifiedUnion referencedGroup;
 
-		BackReference(int startIndex, int endIndex, @Nullable Integer id, @Nullable String name) {
+		BackReference(int startIndex, int endIndex, int captureConstructIndex, QuantifiedUnion referencedGroup) {
 			super(startIndex, endIndex);
-			this.id = id;
-			this.name = name;
+			this.captureConstructIndex = captureConstructIndex;
+			this.referencedGroup = referencedGroup;
 		}
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			entryElse = this;
+			RangeSet<Integer> firstChars = firstCharSet(referencedGroup);
+			if (firstChars == null) {
+				// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
+				// fall back to the catch-all entry set rather than risk silently wrong zero-width
+				// handling. See design.md's "Backreferences" section.
+				entryElse = this;
+				return;
+			}
+			for (Range<Integer> range : firstChars.asRanges()) {
+				entryMap.put(range, this);
+			}
 		}
 
 		@Override
 		void buildMatcher() {
-			if (name != null) {
-				new BackReferenceMatcherConstruct(this, name);
-			} else {
-				new BackReferenceMatcherConstruct(this, id);
-			}
+			new BackReferenceMatcherConstruct(this, captureConstructIndex);
 		}
 	}
 
@@ -725,6 +738,50 @@ abstract class PatternConstruct {
 		if (pc instanceof Sequence) {
 			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
 			return patterns.isEmpty() ? null : lastCharSet(patterns.get(patterns.size() - 1));
+		}
+		return null;
+	}
+
+	/**
+	 * The set of code points that could be the FIRST one consumed if {@code pc} matches here, if
+	 * that's statically known regardless of runtime input -- the mirror image of {@link
+	 * #lastCharSet}, used by {@code BackReference}'s compile-time entry-set computation (see
+	 * design.md's "Backreferences" section): a backreference's possible first characters are
+	 * exactly the referenced group's possible first characters. Returns null ("not statically
+	 * known") for anything that could match zero-width, same safe fallback as {@code lastCharSet}.
+	 */
+	static @Nullable RangeSet<Integer> firstCharSet(PatternConstruct pc) {
+		if (pc instanceof LiteralString) {
+			String value = ((LiteralString) pc).value;
+			return value.isEmpty()
+					? null
+					: TreeRangeSet.create(java.util.Set.of(Range.singleton(value.codePointAt(0))));
+		}
+		if (pc instanceof ComplexCharacter) {
+			return ((ComplexCharacter) pc).validRanges();
+		}
+		if (pc instanceof ComplexQuantifiedCharacter) {
+			ComplexQuantifiedCharacter cqc = (ComplexQuantifiedCharacter) pc;
+			return cqc.min >= 1 ? cqc.delegate.validRanges() : null;
+		}
+		if (pc instanceof QuantifiedUnion) {
+			QuantifiedUnion union = (QuantifiedUnion) pc;
+			if (union.min < 1 || union.constructs.isEmpty()) {
+				return null;
+			}
+			RangeSet<Integer> result = TreeRangeSet.create();
+			for (PatternConstruct branch : union.constructs) {
+				RangeSet<Integer> branchSet = firstCharSet(branch);
+				if (branchSet == null) {
+					return null;
+				}
+				result.addAll(branchSet);
+			}
+			return result;
+		}
+		if (pc instanceof Sequence) {
+			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
+			return patterns.isEmpty() ? null : firstCharSet(patterns.get(0));
 		}
 		return null;
 	}

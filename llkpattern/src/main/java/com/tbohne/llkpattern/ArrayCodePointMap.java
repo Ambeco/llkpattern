@@ -90,21 +90,52 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   }
 
   /**
-   * Builds the complement of {@code source}: {@code value} for every code point {@code source}
-   * has no mapping for, nothing for every code point it does. Package-private -- reached only via
-   * {@link CodePointMap#complement}, which is the type-safe public entry point.
+   * Builds the complement of {@code source}: {@code elseValue} for every code point {@code
+   * source} has no mapping for, nothing for every code point it does. Private -- reached only via
+   * {@link #complement}, which always passes {@code this} (so {@code source} is always an
+   * {@code ArrayCodePointMap}) and is itself the type-safe public entry point.
    *
-   * <p>This is always finite: {@code source.entrySet()} already resolves any else-value fill
-   * {@code source} itself has into concrete entries (see {@link #entrySet()} below), so punching
-   * a hole for each is exactly "not source" over the whole (bounded) code point domain -- no
-   * unbounded enumeration, unlike Guava {@code RangeSet#complement()}.
+   * <p>Reads {@code source}'s raw {@code keys}/{@code values} arrays directly rather than going
+   * through {@code entrySet()} -- avoids an {@code Entry}/{@code Range} allocation per entry, and
+   * (in the common case below) a whole-array copy instead of one {@code appendSorted} call per
+   * entry. Direct field access on another instance of this same class is fine in Java (private
+   * access is per-class, not per-instance).
    */
-  ArrayCodePointMap(CodePointMap<V> source, V value) {
-    this();
-    elseValue = value;
-    ensureCapacity(source.entrySet().size());
-    for (Entry<Range, V> e : source.entrySet()) {
-      appendSorted(e.getKey().min, e.getKey().max, null);
+  private ArrayCodePointMap(ArrayCodePointMap<V> source, V elseValue) {
+    if (source.elseValue == null) {
+      // Common case (and, as of 2026-09-08, the only one actually reached by any real caller --
+      // materializedComplement-style helpers exist specifically to avoid ever complementing an
+      // already else-valued map): source has no punched holes of its own, so every source entry
+      // becomes a punched hole here, and this map's own else-value fill covers every code point
+      // between them. A straight array copy, no per-entry work at all.
+      //
+      // Every source.values[i] is guaranteed non-null here (never just assumed): a null-valued
+      // entry is only ever produced by this very constructor, always together with setting
+      // elseValue non-null in the same call (see the field's own doc) -- since source.elseValue
+      // is null, source can't hold one. (setElseValue(null) resetting an already-else-valued map
+      // back to null-with-leftover-holes would violate that, but nothing in this codebase does
+      // that -- every setElseValue caller is a plain dispatch map built via populate()/putAll(),
+      // never a complement-derived one.)
+      this.elseValue = elseValue;
+      this.keys = Arrays.copyOf(source.keys, source.size);
+      this.values = newValuesArray(source.size); // all null, i.e. every entry a punched hole.
+      this.size = source.size;
+    } else {
+      // source is itself an else-valued (complement) map. Its own else-value fill means source
+      // HAS a mapping at every code point not covered by one of its entries, so the complement
+      // must stay unmapped there too -- this map's own else-value is null, not `elseValue`, and
+      // only source's own punched holes (where source explicitly has NO mapping, regardless of
+      // its else-value) become real entries here.
+      // source.size is an upper bound on how many entries we'll actually keep (only the
+      // null-valued ones), so this may over-allocate slightly -- still just one allocation
+      // either way, unlike starting at INITIAL_CAPACITY and growing into it via ensureCapacity.
+      keys = new int[source.size];
+      values = newValuesArray(source.size);
+      for (int i = 0; i < source.size; i++) {
+        if (source.values[i] == null) {
+          appendSorted(keyMin(source.keys[i]), keyMax(source.keys[i]), elseValue);
+        }
+      }
     }
   }
 
@@ -441,9 +472,12 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
         }
       }
     }
+    if (min < max) {
+      int chunkCount = (max - min + MAX_COUNT) / (MAX_COUNT + 1); // ceil((max - min) / 2048)
+      ensureCapacity(size + chunkCount); // one allocation for the whole call, not one per chunk.
+    }
     for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
       int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
-      ensureCapacity(size + 1);
       keys[size] = packKey(chunkMin, chunkMax - chunkMin - 1);
       values[size] = value;
       size++;

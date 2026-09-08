@@ -174,6 +174,18 @@ actually needed again.
       (scraped on desktop), decide whether that's rare enough to ignore (the benchmark only times
       *speed*, not correctness, on-device) or common enough to need Android-specific golden columns
       or forked golden files -- not yet checked against a real device.
+- [ ] **Investigate why the desktop `./gradlew :llkpattern:jmh` run (~5-6 minutes wall-clock) takes
+      so much longer than `AndroidCorpusBenchmark` on a Pixel 3a (~45s-2min depending on config) --
+      the project owner flagged this as surprising given the phone is much older/lower-end hardware.
+      Likely at least partly explained by the two harnesses timing fundamentally different amounts
+      of work rather than the same workload on different hardware: JMH's default here is a fixed
+      **wall-clock** budget per iteration (3 warmup + 5 measured, 10s each, x4 benchmarks = ~320s
+      just for the timing loop, before JVM/fork/Gradle-daemon startup), so it always runs as many
+      corpus passes as fit in 10s regardless of how fast that is; `AndroidCorpusBenchmark` instead
+      runs a fixed **iteration count** (currently 50 warmup / 1000 measured passes) and reports
+      however long that happens to take. Worth confirming this actually accounts for the gap (e.g.
+      by computing passes-per-second from each run's own numbers and comparing) before assuming
+      it's a real hardware/JIT difference worth chasing.
 
 ## Core implementation
 

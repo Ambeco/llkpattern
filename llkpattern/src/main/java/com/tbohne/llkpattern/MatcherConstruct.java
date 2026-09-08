@@ -377,9 +377,12 @@ abstract class MatcherConstruct {
 			// because BeginCapture itself is a pure single-successor opcode now.
 			if (capturing) {
 				MutableCodePointMap<PatternConstruct> bodyEntries = new ArrayCodePointMap<>();
+				// bodyEntries starts empty and result.ranges.entrySet() is already ascending; skipping
+				// the `next`-bound entries here is a filter, not a reorder, so the ones that remain are
+				// still strictly ascending -- appendSorted's O(1)-amortized bulk path still applies.
 				for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 					if (e.getValue() != next) {
-						bodyEntries.put(e.getKey().min, e.getKey().max, e.getValue());
+						bodyEntries.appendSorted(e.getKey().min, e.getKey().max, e.getValue());
 					}
 				}
 				DispatchMatcherConstruct bodyDispatch =
@@ -388,9 +391,10 @@ abstract class MatcherConstruct {
 						new BeginCaptureMatcherConstruct(captureConstructIndex, owner.flags, bodyDispatch);
 				loopNode.dispatchMap.setElseValue(beginCaptureNode); // unconditional: every continue attempt begins capturing.
 			} else {
+				// loopNode.dispatchMap starts empty and, as above, the filtered entries stay ascending.
 				for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 					if (e.getValue() != next) {
-						loopNode.dispatchMap.put(e.getKey().min, e.getKey().max, e.getValue().matcher);
+						loopNode.dispatchMap.appendSorted(e.getKey().min, e.getKey().max, e.getValue().matcher);
 					}
 				}
 				if (bodyOnlyResult.elseCandidate != null) {
@@ -398,8 +402,11 @@ abstract class MatcherConstruct {
 				}
 			}
 
+			// dispatchMap starts empty and result.ranges.entrySet() is already ascending, so
+			// appendSorted's O(1)-amortized bulk path applies -- every entry is kept (just remapped to
+			// endLoopNode/loopNode), so no filtering to worry about here.
 			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				dispatchMap.put(e.getKey().min, e.getKey().max, (e.getValue() == next) ? endLoopNode : loopNode);
+				dispatchMap.appendSorted(e.getKey().min, e.getKey().max, (e.getValue() == next) ? endLoopNode : loopNode);
 			}
 			if (bodyOnlyResult.elseCandidate == null) {
 				// Body claims no catchall of its own, so any character it doesn't explicitly claim
@@ -422,8 +429,11 @@ abstract class MatcherConstruct {
 		}
 
 		private void populate(CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
+			// dispatchMap starts empty and entryMap.entrySet() is already ascending, so appendSorted's
+			// O(1)-amortized bulk path applies here too (just a per-entry value transform, not a
+			// filter or reorder).
 			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : entryMap.entrySet()) {
-				dispatchMap.put(e.getKey().min, e.getKey().max, e.getValue().matcher);
+				dispatchMap.appendSorted(e.getKey().min, e.getKey().max, e.getValue().matcher);
 			}
 			dispatchMap.setElseValue(entryElse != null ? entryElse.matcher : null);
 		}

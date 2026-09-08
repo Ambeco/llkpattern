@@ -754,6 +754,50 @@ Notes to self about how to work on this project, and other context that doesn't 
   earlier `.trace`-file version of this test that was captured, then deleted once the hand-rolled
   version replaced it (see remaining_work.md).
 
+### CPU-sampling `llkCompile`/`llkMatch`, and fixing the `put()`-loop `appendSorted` regression it found (2026-09-08, same day)
+
+- The project owner asked for a local JMH run with CPU sampling, to see where compile-time cost
+  actually goes on this dev machine. JMH's built-in `stack` profiler (no external agent needed --
+  add `'stack'` to the `jmh { profilers = [...] }` list) at its default depth (leaf frame only)
+  immediately named `ArrayCodePointMap.put` as ~32% of `llkCompile`'s RUNNABLE samples -- but a
+  leaf-only sample can't say *why* it's hot. Re-ran with `'stack:lines=8;detailLine=true'` (8-frame
+  stacks with line numbers) to get real call chains, which is what actually answered the project
+  owner's follow-up question.
+- The 8-frame stacks traced every hot `put()` call back to the same shape, all over
+  `PatternConstruct`'s `buildEntryMap`/`buildMatcher` and `MatcherConstruct`'s `populate`/loop-
+  dispatch construction: copy (or value-transform, e.g. `PatternConstruct` -> its `.matcher`) an
+  already-sorted `entrySet()` (a merge result, a child construct's own entry map, etc.) one entry at
+  a time via `put()` into a destination that starts completely empty. This is exactly the case
+  `appendSorted` exists for (see design.md) -- but these ~9 call sites had never been switched over
+  from `put()`, apparently missed when `appendSorted` was added and when `putAll`'s optimized linear
+  merge was written (both from earlier sessions in this same `CodePointMap` arc, per the project
+  owner's recollection) since none of them are a `putAll` (they're copies into a *fresh* map, or
+  per-entry value transforms `putAll` can't express directly) -- easy to walk right past when
+  auditing for `putAll` opportunities specifically.
+- Fixed by switching all ~9 sites (`PatternConstruct`: `QuantifiableConstruct.buildLoopEntryMap`,
+  `QuantifiedUnion.buildEntryMap`'s bare-flags-group and main branches, `CaptureEndMarker`,
+  `Sequence.buildEntryMap`, `BackReference`, `ComplexCharacter`, `ComplexQuantifiedCharacter`;
+  `MatcherConstruct`: `DispatchMatcherConstruct`'s loop-flavored constructor (both the capturing
+  `bodyEntries` and non-capturing `loopNode.dispatchMap` branches, plus the main `dispatchMap` loop),
+  and `populate()`) from `put(min, max, value)` to `appendSorted(min, max, value)`. Safe because
+  every one of them starts from a fresh, empty destination map and only ever filters (never
+  reorders) an already-ascending source -- a filtered subsequence of an ascending sequence is still
+  ascending, so `appendSorted`'s ascending-order requirement holds even at the sites that skip some
+  source entries (e.g. the loop-dispatch sites' `if (e.getValue() != next)` guard). `NamedCharClass`'s
+  hand-written literal-building `build()` helper is deliberately NOT among these -- see its own doc
+  for why those specific literals are NOT in ascending order.
+- Full suite green: 1484 tests, 0 failing -- no count change (pure internal optimization, no
+  behavior change).
+- JMH (JDK 25, matching the committed baseline): `llkCompile` **7.05ms -> 2.85ms/op (-59.5%)**,
+  `llkMatch` 0.044ms -> 0.048ms/op (flat -- this fix is entry-map/dispatch-map *construction*, not
+  the match loop itself; `regexMatch` moved by a similar small amount in the same run, so this is
+  noise, not a regression). This is by far the single biggest win in the whole multi-day
+  `CodePointMap`/`RangeMap`/`RangeSet` elimination arc -- bigger than the `dispatchMap` or
+  `ComplexCharacter` migrations that motivated switching off Guava in the first place, which makes
+  sense in hindsight: those earlier migrations got the *representation* right but left the
+  `CodePointMap`-level construction code still calling the general-purpose `put()` everywhere,
+  never actually switched over to the bulk-append path it was designed to enable.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

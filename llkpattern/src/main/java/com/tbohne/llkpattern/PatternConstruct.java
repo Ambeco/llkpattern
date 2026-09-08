@@ -309,8 +309,11 @@ abstract class PatternConstruct {
 				candidates.add(next);
 			}
 			MergedEntries result = mergeEntryPoints(pattern, candidates, "loop part");
+			// entryMap starts empty and result.ranges.entrySet() is already ascending (CodePointMap's
+			// ordering contract), so appendSorted's O(1)-amortized bulk path applies directly -- no
+			// need for put()'s general splice-and-shift.
 			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				entryMap.put(e.getKey().min, e.getKey().max, true);
+				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = result.entryElse() != null ? this : null;
 		}
@@ -389,8 +392,9 @@ abstract class PatternConstruct {
 				// PatternParser, already done by the caller -- so just pass through to `next` exactly
 				// as an empty Sequence element would, instead of compiling as its own dispatch node.
 				// Re-keyed onto `this` rather than aliased -- same reasoning as the main branch below.
+				// entryMap starts empty and the source is already ascending, so appendSorted applies.
 				for (Entry<CodePointMap.Range, Boolean> e : next.getEntryPointMap().entrySet()) {
-					entryMap.put(e.getKey().min, e.getKey().max, true);
+					entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 				}
 				entryElse = next.getEntryElse() != null ? this : null;
 				// matcher isn't assigned here (unlike the pre-split design) -- next.matcher may not be
@@ -423,8 +427,10 @@ abstract class PatternConstruct {
 			// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
 			// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
 			entryElse = rawEntryElse != null ? this : null;
+			// entryMap starts empty and rawEntryMap.entrySet() is already ascending, so appendSorted
+			// applies.
 			for (Entry<CodePointMap.Range, PatternConstruct> e : rawEntryMap.entrySet()) {
-				entryMap.put(e.getKey().min, e.getKey().max, true);
+				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
 		}
 
@@ -498,9 +504,10 @@ abstract class PatternConstruct {
 			// EndCaptureMatcherConstruct entirely, so the capture's `result` was set on entry but
 			// never finalized (group(n) returned null even though the whole pattern matched). Found
 			// via GroupSyntaxTest. Fixed by re-keying every range onto `this` instead of realNext,
-			// same as any other PatternConstruct's own buildEntryMap does for itself.
+			// same as any other PatternConstruct's own buildEntryMap does for itself. entryMap starts
+			// empty and the source is already ascending, so appendSorted applies.
 			for (Entry<CodePointMap.Range, Boolean> e : realNext.getEntryPointMap().entrySet()) {
-				entryMap.put(e.getKey().min, e.getKey().max, true);
+				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = realNext.getEntryElse() != null ? this : null;
 		}
@@ -543,8 +550,9 @@ abstract class PatternConstruct {
 			// path, i.e. does it lead to `next`" test whenever `next` is a Sequence. See
 			// remaining_work.md's dated bug entry (a quantified loop immediately followed by a
 			// composite construct, e.g. "(a)(b)*(z)", crashed at match time because of exactly this).
+			// entryMap starts empty and the source is already ascending, so appendSorted applies.
 			for (Entry<CodePointMap.Range, Boolean> e : patterns.get(0).getEntryPointMap().entrySet()) {
-				entryMap.put(e.getKey().min, e.getKey().max, true);
+				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = patterns.get(0).getEntryElse() != null ? this : null;
 		}
@@ -614,8 +622,10 @@ abstract class PatternConstruct {
 				entryElse = this;
 				return;
 			}
+			// entryMap starts empty and firstChars.entrySet() is already ascending, so appendSorted
+			// applies.
 			for (Entry<CodePointMap.Range, Boolean> e : firstChars.entrySet()) {
-				entryMap.put(e.getKey().min, e.getKey().max, true);
+				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
 		}
 
@@ -667,8 +677,10 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
+			// entryMap starts empty and validRanges().entrySet() is already ascending, so appendSorted
+			// applies.
 			for (Entry<CodePointMap.Range, Boolean> e : validRanges().entrySet()) {
-				entryMap.put(e.getKey().min, e.getKey().max, true);
+				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = dotElse;
 		}
@@ -696,8 +708,9 @@ abstract class PatternConstruct {
 			// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
 			// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
 			// that happens in buildMatcher(), below.
+			// entryMap starts empty and the source is already ascending, so appendSorted applies.
 			for (Entry<CodePointMap.Range, Boolean> e : delegate.validRanges().entrySet()) {
-				entryMap.put(e.getKey().min, e.getKey().max, true);
+				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
 		}
 

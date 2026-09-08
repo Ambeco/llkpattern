@@ -1,7 +1,6 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.RangeSet;
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.Matcher.Group;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
@@ -109,17 +108,27 @@ abstract class MatcherConstruct {
 	 * map: a character class has exactly one successor regardless of *which* member character was
 	 * seen, so all it needs is a yes/no membership test, not a lookup keyed by the character.
 	 */
-	static boolean containsFolded(RangeSet<Integer> ranges, int peeked, int flags) {
-		if (ranges.contains(peeked)) {
+	static boolean containsFolded(CodePointMap<Boolean> ranges, int peeked, int flags) {
+		// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is checked FIRST and
+		// unconditionally, unlike getNext()'s use of getExplicit() for a similar-looking check: a
+		// negated class (e.g. "[^a-z]") is an else-value map, and its else-value fill legitimately
+		// covers every real code point it doesn't explicitly exclude -- membership here has to see
+		// that fill (hence get(), not getExplicit()), but -1 is never a real code point, so it must
+		// never be reported a "member" of even a total (else-valued) ranges map. This is the same
+		// domain guard ComplexCharacter#validRanges() used to provide via clamping a Guava RangeSet.
+		if (peeked == -1) {
+			return false;
+		}
+		if (ranges.get(peeked) != null) {
 			return true;
 		}
-		if (peeked == -1 || (flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
 			return false;
 		}
 		boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
 		int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
 		int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
-		return (upper != peeked && ranges.contains(upper)) || (lower != peeked && ranges.contains(lower));
+		return (upper != peeked && ranges.get(upper) != null) || (lower != peeked && ranges.get(lower) != null);
 	}
 
 	/**
@@ -228,7 +237,7 @@ abstract class MatcherConstruct {
 	 * membership test, not a dispatch: every member character leads to the same single successor.
 	 */
 	static final class SingleCharMatcherConstruct extends SingleDispatchingMatcherConstruct {
-		final RangeSet<Integer> validRanges;
+		final CodePointMap<Boolean> validRanges;
 
 		SingleCharMatcherConstruct(ComplexCharacter owner) {
 			super(owner, owner.next.matcher);
@@ -638,13 +647,13 @@ abstract class MatcherConstruct {
 			PeekMustBeOppositePrior
 		}
 
-		final RangeSet<Integer> wordSet;
+		final CodePointMap<Boolean> wordSet;
 		final PriorWordBoundaryMatchType priorMustBeWord;
 		final PeekWordBoundaryMatchType peekMustBeWord;
 
 		WordBoundaryMatcherConstruct(
 				PatternConstruct owner,
-				RangeSet<Integer> wordSet,
+				CodePointMap<Boolean> wordSet,
 				PriorWordBoundaryMatchType priorMustBeWord,
 				PeekWordBoundaryMatchType peekMustBeWord) {
 			super(owner, owner.next.matcher);
@@ -662,7 +671,7 @@ abstract class MatcherConstruct {
 		}
 
 		private boolean isWordChar(int codePoint) {
-			return codePoint >= 0 && wordSet.contains(codePoint);
+			return codePoint >= 0 && wordSet.containsKey(codePoint);
 		}
 
 		@Override

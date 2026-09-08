@@ -560,6 +560,52 @@ Notes to self about how to work on this project, and other context that doesn't 
   apparently dead even before this change, unrelated to it.
 - Full suite green: 1478 tests, 0 failing, no count change (pure refactor).
 
+### Migrating `ComplexCharacter` off Guava `RangeSet` onto `CodePointMap` (2026-09-08, same day)
+
+- The project owner asked to finish the `RangeSet` elimination now that `complement`/else-value
+  existed. Scoped bottom-up (leaf to root, not starting at `PatternParser`) since each layer's type
+  change forces the next: `CharacterClass.java` first (confirmed dead, deleted alone before
+  anything else -- a clean recompile with it removed had zero errors), then `MatcherConstruct
+  .containsFolded`/`SingleCharMatcherConstruct.validRanges` (the profiled hot path), then
+  `PatternConstruct.ComplexCharacter.ranges`/`validRanges()`/`firstCharSet`/`lastCharSet`/
+  `WordBoundaryConstruct`, then `PatternParser`'s 15-ish `RangeSet`-building call sites, compiling
+  and testing after each layer.
+- The one real correctness trap, caught before it became a bug (not via a test failure): `.
+  validRanges()`'s whole reason for existing used to be clamping Guava's unbounded `complement()`
+  to `[0, MAX_CODE_POINT]` so it couldn't swallow `-1` (Matcher's end-of-input sentinel).
+  `CodePointMap`'s else-value fill is already bounded to that same domain by construction (see the
+  `complement`/else-value entry above) -- so the clamp itself is unnecessary now, but `-1` isn't:
+  `getOrDefault`/`get` don't domain-check their argument at all, so an else-valued `ranges.get(-1)`
+  would still return the else-value, wrongly reporting `-1` a "member." Fixed by having
+  `containsFolded` check `peeked == -1` first and unconditionally, *before* consulting the map --
+  deliberately different from `MultiDispatchingMatcherConstruct.getNext()`'s use of `getExplicit()`
+  from the previous entry above: `getNext()` needs to distinguish "no explicit entry" from "else-
+  value fill" for its own case-fold fallback, but `containsFolded`'s fill genuinely IS membership
+  (a negated class matches everything it doesn't exclude) -- using `getExplicit()` here would have
+  made a negated class wrongly fail to match its own else-value-filled members. Added
+  `RangeSetMigrationTest` to lock this in, plus DOTALL-at-end-of-input and a DOTALL branch inside a
+  union (to confirm `findFirstOverlap`/ambiguity detection still see an else-valued "everything"
+  branch as claiming everything, not as empty).
+- `&&` intersection (`[a-z&&[^aeiou]]`) used to be `a.removeAll(b.complement())` (Guava `RangeSet`
+  has no in-place intersect) -- replaced with a direct intersection (per `a`-entry, `b.intersection
+  (min, max)`, which is already else-value-aware) rather than porting the complement-based formula,
+  since materializing a complement just to subtract it would be wasted work now that a real
+  intersection is just as easy to write.
+- `NamedCharClass`/`UnicodePredicates` were deliberately left untouched, exactly per the plan from
+  the `complement` session above: their `.complement()`/union-heavy static initializers already
+  have documented circular-init fragility, so converting per-constant there would run that machinery
+  through `CodePointMap` during class init instead of at consumption. Added
+  `RangeSetCodePointMaps.toCodePointMap` as the one-time adapter at the actual consumption points
+  (`PatternParser`'s `\d`/`\p{...}`/`\R` handling and `WordBoundaryConstruct`'s `\w` lookup) --
+  eagerly clamped/materialized rather than else-valued, since these are one-time, already-fully-known
+  conversions where that's simplest.
+- Full suite green: 1484 tests, 0 failing (1478 + 6 new `RangeSetMigrationTest` cases). The only
+  Guava `RangeSet`/`RangeMap` left anywhere in `llkpattern/src/main` is `NamedCharClass.java`/
+  `UnicodePredicates.java` (deliberately, as above), `RangeSetCodePointMaps.java` (the adapter
+  itself), the one boundary line in `PatternParser` that calls `NamedCharClass.get(...)`, and
+  `TreeCodePointMap` (the deliberate `CodePointMap` test oracle) -- everything else in the compiled-
+  graph/entry-point/runtime-dispatch/character-class family is `CodePointMap` now.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

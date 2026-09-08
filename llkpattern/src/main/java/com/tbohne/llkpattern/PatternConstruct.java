@@ -1,9 +1,5 @@
 package com.tbohne.llkpattern;
 
-import com.google.common.collect.DiscreteDomain;
-import com.google.common.collect.Range;
-import com.google.common.collect.RangeSet;
-import com.google.common.collect.TreeRangeSet;
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.MatcherConstruct.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
@@ -610,7 +606,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			RangeSet<Integer> firstChars = firstCharSet(referencedGroup);
+			CodePointMap<Boolean> firstChars = firstCharSet(referencedGroup);
 			if (firstChars == null) {
 				// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
 				// fall back to the catch-all entry set rather than risk silently wrong zero-width
@@ -618,9 +614,8 @@ abstract class PatternConstruct {
 				entryElse = this;
 				return;
 			}
-			for (Range<Integer> range : firstChars.asRanges()) {
-				Range<Integer> canon = range.canonical(DiscreteDomain.integers());
-				entryMap.put(canon.lowerEndpoint(), canon.upperEndpoint(), true);
+			for (Entry<CodePointMap.Range, Boolean> e : firstChars.entrySet()) {
+				entryMap.put(e.getKey().min, e.getKey().max, true);
 			}
 		}
 
@@ -632,27 +627,22 @@ abstract class PatternConstruct {
 
 	static final class ComplexCharacter
 			extends PatternConstruct {
-		RangeSet<Integer> ranges = TreeRangeSet.create();
+		MutableCodePointMap<Boolean> ranges = new ArrayCodePointMap<>();
 		@Nullable PatternConstruct dotElse;
 
-		ComplexCharacter(int startIndex, RangeSet<Integer> ranges) {
+		ComplexCharacter(int startIndex, MutableCodePointMap<Boolean> ranges) {
 			super(startIndex);
 			this.ranges = ranges;
 		}
 
-		ComplexCharacter(int startIndex, int endIndex, RangeSet<Integer> ranges) {
-			super(startIndex, endIndex);
-			this.ranges = ranges;
-		}
-
-		ComplexCharacter(int startIndex, int endIndex, RangeSet<Integer> ranges, boolean positiveMatch) {
+		ComplexCharacter(int startIndex, int endIndex, MutableCodePointMap<Boolean> ranges) {
 			super(startIndex, endIndex);
 			this.ranges = ranges;
 		}
 
 		ComplexCharacter(int startIndex, int character) {
 			super(startIndex);
-			ranges.add(Range.singleton(character));
+			ranges.put(character, character + 1, true);
 		}
 
 		ComplexCharacter(int startIndex) {
@@ -660,26 +650,25 @@ abstract class PatternConstruct {
 		}
 
 		/**
-		 * {@code ranges} clamped to the actual Unicode code point domain {@code [0,
-		 * MAX_CODE_POINT]}. Every {@code Range.complement()} in this codebase (negated classes via
-		 * {@code [^...]}, {@code .}, and built-ins like {@code \D}/{@code \S}/{@code \W}) produces a
-		 * mathematically unbounded {@code RangeSet} that extends to {@code Integer.MIN_VALUE}/{@code
-		 * MAX_VALUE} -- Guava has no concept of "the codepoint domain" to bound it to. Left unclamped,
-		 * such a range can swallow {@code -1}, the sentinel {@code Matcher} uses throughout for
-		 * "no more input" (see {@code Matcher#peek}), making a negated class at end-of-input look
-		 * like a match and crash trying to then consume a code point past the end of the string. Every
-		 * caller that turns {@code ranges} into an actual dispatch/entry map (as opposed to still
-		 * combining/negating them further) must go through this, not raw {@code ranges.asRanges()}.
+		 * {@code ranges} itself -- kept as a method (rather than exposing the field directly to every
+		 * caller) since this used to also clamp to the code point domain before {@link CodePointMap}
+		 * existed: Guava {@code RangeSet#complement()} (negated classes via {@code [^...]}, {@code .},
+		 * built-ins like {@code \D}/{@code \S}/{@code \W}) produced a mathematically unbounded
+		 * result that could swallow {@code -1}, the sentinel {@code Matcher} uses for "no more input"
+		 * (see {@code Matcher#peek}). {@code CodePointMap}'s else-value-based {@link
+		 * CodePointMap#complement} is always finite over {@code [0, MAX_CODE_POINT]} by construction
+		 * (see its own doc), so no clamping is needed here any more -- {@link
+		 * MatcherConstruct#containsFolded} instead guards {@code -1} directly, since a
+		 * else-valued {@code ranges} would otherwise report it a "member" via the fill.
 		 */
-		RangeSet<Integer> validRanges() {
-			return ranges.subRangeSet(Range.closed(0, Character.MAX_CODE_POINT));
+		CodePointMap<Boolean> validRanges() {
+			return ranges;
 		}
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			for (Range<Integer> range : validRanges().asRanges()) {
-				Range<Integer> canon = range.canonical(DiscreteDomain.integers());
-				entryMap.put(canon.lowerEndpoint(), canon.upperEndpoint(), true);
+			for (Entry<CodePointMap.Range, Boolean> e : validRanges().entrySet()) {
+				entryMap.put(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = dotElse;
 		}
@@ -707,9 +696,8 @@ abstract class PatternConstruct {
 			// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
 			// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
 			// that happens in buildMatcher(), below.
-			for (Range<Integer> range : delegate.validRanges().asRanges()) {
-				Range<Integer> canon = range.canonical(DiscreteDomain.integers());
-				entryMap.put(canon.lowerEndpoint(), canon.upperEndpoint(), true);
+			for (Entry<CodePointMap.Range, Boolean> e : delegate.validRanges().entrySet()) {
+				entryMap.put(e.getKey().min, e.getKey().max, true);
 			}
 		}
 
@@ -793,7 +781,7 @@ abstract class PatternConstruct {
 		// Sequence.buildEntryMap (via lastCharSet(), below) before compile() runs; null (the
 		// default, e.g. when this boundary opens its Sequence, or isn't in one at all) means "not
 		// statically known", which is always a safe fallback, just a missed optimization.
-		@Nullable RangeSet<Integer> priorCharSet;
+		@Nullable CodePointMap<Boolean> priorCharSet;
 
 		WordBoundaryConstruct(String pattern, int startIndex, int endIndex, boolean isWordBoundary) {
 			super(startIndex, endIndex);
@@ -812,14 +800,38 @@ abstract class PatternConstruct {
 			UNKNOWN
 		}
 
-		private static Wordness classify(@Nullable RangeSet<Integer> set, RangeSet<Integer> wordSet) {
+		/** True if every code point in {@code a} is also in {@code b}. */
+		private static boolean isSubsetOf(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
+			for (Entry<CodePointMap.Range, Boolean> e : a.entrySet()) {
+				if (!b.containsKeys(e.getKey().min, e.getKey().max)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/** True if no code point in {@code a} is also in {@code b}. */
+		private static boolean isDisjointFrom(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
+			for (Entry<CodePointMap.Range, Boolean> e : a.entrySet()) {
+				if (!b.intersection(e.getKey().min, e.getKey().max).isEmpty()) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private static Wordness classify(@Nullable CodePointMap<Boolean> set, CodePointMap<Boolean> wordSet) {
 			if (set == null) {
 				return Wordness.UNKNOWN;
 			}
-			if (wordSet.enclosesAll(set)) {
+			// Computed directly as subset/disjoint checks against wordSet, rather than via
+			// wordSet.complement() the way the old RangeSet#enclosesAll version did -- no need to
+			// materialize a complement just to test disjointness (see CodePointMap#complement's doc:
+			// it would still be correct here, just wasted work for a query this cheap already).
+			if (isSubsetOf(set, wordSet)) {
 				return Wordness.WORD;
 			}
-			if (wordSet.complement().enclosesAll(set)) {
+			if (isDisjointFrom(set, wordSet)) {
 				return Wordness.NON_WORD;
 			}
 			return Wordness.UNKNOWN;
@@ -832,15 +844,11 @@ abstract class PatternConstruct {
 			// of the boundary (the character just consumed, and the one about to be) are classified
 			// as always-word/always-non-word/unknown at compile time; whichever side is statically
 			// known doesn't need to be checked at match time at all.
-			RangeSet<Integer> wordSet = RegexCharacterClass.w.get(flags);
+			CodePointMap<Boolean> wordSet = RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.w.get(flags));
 			Wordness prior = classify(priorCharSet, wordSet);
-			RangeSet<Integer> peekRanges = null;
-			if (next.getEntryElse() == null) {
-				peekRanges = TreeRangeSet.create();
-				for (Entry<CodePointMap.Range, Boolean> e : next.getEntryPointMap().entrySet()) {
-					peekRanges.add(Range.closedOpen(e.getKey().min, e.getKey().max));
-				}
-			}
+			// next's own entry-point map is already exactly a CodePointMap<Boolean> -- no separate
+			// RangeSet needs building here any more.
+			CodePointMap<Boolean> peekRanges = next.getEntryElse() == null ? next.getEntryPointMap() : null;
 			Wordness peek = classify(peekRanges, wordSet);
 
 			if (prior != Wordness.UNKNOWN && peek != Wordness.UNKNOWN) {
@@ -903,12 +911,14 @@ abstract class PatternConstruct {
 	 * simply not recognizing the construct -- rather than chasing what an earlier sibling might
 	 * contribute in that case; that's always a safe fallback, just a missed optimization.
 	 */
-	static @Nullable RangeSet<Integer> lastCharSet(PatternConstruct pc) {
+	static @Nullable CodePointMap<Boolean> lastCharSet(PatternConstruct pc) {
 		if (pc instanceof LiteralString) {
 			String value = ((LiteralString) pc).value;
-			return value.isEmpty()
-					? null
-					: TreeRangeSet.create(java.util.Set.of(Range.singleton(value.codePointBefore(value.length()))));
+			if (value.isEmpty()) {
+				return null;
+			}
+			int cp = value.codePointBefore(value.length());
+			return singletonCodePointMap(cp);
 		}
 		if (pc instanceof ComplexCharacter) {
 			return ((ComplexCharacter) pc).validRanges();
@@ -922,13 +932,13 @@ abstract class PatternConstruct {
 			if (union.min < 1 || union.constructs.isEmpty()) {
 				return null;
 			}
-			RangeSet<Integer> result = TreeRangeSet.create();
+			MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
 			for (PatternConstruct branch : union.constructs) {
-				RangeSet<Integer> branchSet = lastCharSet(branch);
+				CodePointMap<Boolean> branchSet = lastCharSet(branch);
 				if (branchSet == null) {
 					return null;
 				}
-				result.addAll(branchSet);
+				result.putAll(branchSet);
 			}
 			return result;
 		}
@@ -939,6 +949,12 @@ abstract class PatternConstruct {
 		return null;
 	}
 
+	private static CodePointMap<Boolean> singletonCodePointMap(int codePoint) {
+		MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+		result.put(codePoint, codePoint + 1, true);
+		return result;
+	}
+
 	/**
 	 * The set of code points that could be the FIRST one consumed if {@code pc} matches here, if
 	 * that's statically known regardless of runtime input -- the mirror image of {@link
@@ -947,12 +963,10 @@ abstract class PatternConstruct {
 	 * exactly the referenced group's possible first characters. Returns null ("not statically
 	 * known") for anything that could match zero-width, same safe fallback as {@code lastCharSet}.
 	 */
-	static @Nullable RangeSet<Integer> firstCharSet(PatternConstruct pc) {
+	static @Nullable CodePointMap<Boolean> firstCharSet(PatternConstruct pc) {
 		if (pc instanceof LiteralString) {
 			String value = ((LiteralString) pc).value;
-			return value.isEmpty()
-					? null
-					: TreeRangeSet.create(java.util.Set.of(Range.singleton(value.codePointAt(0))));
+			return value.isEmpty() ? null : singletonCodePointMap(value.codePointAt(0));
 		}
 		if (pc instanceof ComplexCharacter) {
 			return ((ComplexCharacter) pc).validRanges();
@@ -966,13 +980,13 @@ abstract class PatternConstruct {
 			if (union.min < 1 || union.constructs.isEmpty()) {
 				return null;
 			}
-			RangeSet<Integer> result = TreeRangeSet.create();
+			MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
 			for (PatternConstruct branch : union.constructs) {
-				RangeSet<Integer> branchSet = firstCharSet(branch);
+				CodePointMap<Boolean> branchSet = firstCharSet(branch);
 				if (branchSet == null) {
 					return null;
 				}
-				result.addAll(branchSet);
+				result.putAll(branchSet);
 			}
 			return result;
 		}

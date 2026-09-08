@@ -1,8 +1,7 @@
 package com.tbohne.llkpattern;
 
-import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
-import com.google.common.collect.TreeRangeSet;
+import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import com.tbohne.llkpattern.PatternConstruct.*;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
@@ -12,6 +11,7 @@ import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -250,10 +250,17 @@ final class PatternParser {
             // UNICODE_CHARACTER_CLASS controls) -- but "." matching only ASCII characters by
             // default would be wrong; "." always means "any character" (modulo the newline
             // exclusion here), regardless of UNICODE_CHARACTER_CLASS.
-            RangeSet<Integer> dotRanges =
-                (flags & Pattern.DOTALL) != 0
-                    ? TreeRangeSet.<Integer>create().complement()
-                    : TreeRangeSet.create(RegexCharacterClass.DOT.unicode);
+            MutableCodePointMap<Boolean> dotRanges;
+            if ((flags & Pattern.DOTALL) != 0) {
+              // "Everything" is exactly an else-value with no explicit entries -- see
+              // CodePointMap#getElseValue's doc for why that's always a finite, valid map here
+              // rather than the mathematically-unbounded RangeSet Guava's complement() used to
+              // produce.
+              dotRanges = new ArrayCodePointMap<>();
+              dotRanges.setElseValue(true);
+            } else {
+              dotRanges = RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.DOT.unicode);
+            }
             ComplexCharacter dot = new ComplexCharacter(index, dotRanges);
             dot.flags = flags;
             // Bug fix (2026-09-07): parseQuantifiable(dot) used to be called BEFORE this advance(1),
@@ -566,7 +573,7 @@ final class PatternParser {
     // not that run happens to be wrapped in its own "[...]". So `complex.ranges` below always
     // accumulates only the *current* union-operand run; `intersectionSoFar` (null until the first
     // "&&" is seen) holds the running intersection of every completed operand run before it.
-    @Nullable RangeSet<Integer> intersectionSoFar = null;
+    @Nullable CodePointMap<Boolean> intersectionSoFar = null;
     for (; ; ) {
       switch (peek) {
         case '\0':
@@ -575,26 +582,26 @@ final class PatternParser {
           if (index > complex.startIndex + 1) {
             int closeBracketIndex = index;
             advance(1); // consume the ']' -- callers expect peek to be past this construct
-            RangeSet<Integer> finalRanges =
+            CodePointMap<Boolean> finalRanges =
                 intersectionSoFar == null
                     ? complex.ranges
                     : intersect(intersectionSoFar, complex.ranges);
             if (negate) {
               ComplexCharacter negated = new ComplexCharacter(
-                  complex.startIndex, closeBracketIndex + 1, finalRanges.complement());
+                  complex.startIndex, closeBracketIndex + 1, toMutable(finalRanges.complement(true)));
               negated.flags = flags;
               return negated;
             }
-            complex.ranges = finalRanges;
+            complex.ranges = toMutable(finalRanges);
             complex.endIndex = closeBracketIndex + 1;
             return complex;
           } else {
-            complex.ranges.add(Range.singleton(+']'));
+            complex.ranges.put(+']', +']' + 1, true);
             advance(1);
             break;
           }
         case '-':
-          complex.ranges.add(Range.singleton(+'-'));
+          complex.ranges.put(+'-', +'-' + 1, true);
           advance(1);
           break;
         case '\\':
@@ -603,7 +610,7 @@ final class PatternParser {
             if (peek == '-') {
               parseMaybeRangePredicate(complex, eCodePoint);
             } else {
-              complex.ranges.add(Range.singleton(eCodePoint));
+              complex.ranges.put(eCodePoint, eCodePoint + 1, true);
             }
           } else {
             parseComplexEscape(complex);
@@ -614,7 +621,7 @@ final class PatternParser {
           // of the enclosing union, e.g. "[a-c[p-z]]" or an operand of "&&" in "[[a-b]&&[c-d]]".
           // Union its ranges into the current operand run; "&&" (below) intersects whole runs,
           // not individual members, so this is exactly like unioning in any other member.
-          complex.ranges.addAll(parseComplexCharacter().ranges);
+          complex.ranges.putAll(parseComplexCharacter().ranges);
           break;
         case '&':
           if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
@@ -628,7 +635,7 @@ final class PatternParser {
                 intersectionSoFar == null
                     ? complex.ranges
                     : intersect(intersectionSoFar, complex.ranges);
-            complex.ranges = TreeRangeSet.create();
+            complex.ranges = new ArrayCodePointMap<>();
             break;
           }
           // fallthrough
@@ -638,17 +645,37 @@ final class PatternParser {
           if (peek == '-') {
             parseMaybeRangePredicate(complex, codePoint);
           } else {
-            complex.ranges.add(Range.singleton(codePoint));
+            complex.ranges.put(codePoint, codePoint + 1, true);
           }
       }
     }
   }
 
-  /** {@code a & b}, computed as {@code a - complement(b)} since Guava's {@link RangeSet} has no
-   *  in-place intersect. Mutates and returns {@code a}. */
-  private static RangeSet<Integer> intersect(RangeSet<Integer> a, RangeSet<Integer> b) {
-    a.removeAll(b.complement());
-    return a;
+  /**
+   * {@code a & b} (both members required), computed directly as "keep a's entries where b also has
+   * a mapping" rather than {@code a - complement(b)} the way the old Guava-{@code RangeSet} version
+   * had to (Guava has no in-place intersect) -- {@code b.intersection(min, max)} is already
+   * else-value-aware (see {@link CodePointMap#intersection}), so this handles either operand being
+   * a complement (e.g. {@code [a-z&&[^aeiou]]}) without materializing one, unlike the old
+   * complement-based formula, which would have.
+   */
+  private static MutableCodePointMap<Boolean> intersect(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
+    MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+    for (Entry<CodePointMap.Range, Boolean> aEntry : a.entrySet()) {
+      for (Entry<CodePointMap.Range, Boolean> bEntry :
+          b.intersection(aEntry.getKey().min, aEntry.getKey().max).entrySet()) {
+        result.put(bEntry.getKey().min, bEntry.getKey().max, true);
+      }
+    }
+    return result;
+  }
+
+  /** {@code ranges} itself if already mutable, else a mutable copy -- see {@code intersect}'s and
+   *  {@code complement}'s return types, both of which may hand back either. */
+  private static MutableCodePointMap<Boolean> toMutable(CodePointMap<Boolean> ranges) {
+    return (ranges instanceof MutableCodePointMap)
+        ? (MutableCodePointMap<Boolean>) ranges
+        : new ArrayCodePointMap<>(ranges);
   }
 
   static private final String META_CHARACTERS = "^.[]$()*{}?+|\\";
@@ -895,14 +922,15 @@ final class PatternParser {
     }
     advance(1);
     if (peek == 'R') {
-      complex.ranges.addAll(RegexCharacterClass.R.get(flags));
+      complex.ranges.putAll(RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.R.get(flags)));
       advance(1);
       complex.endIndex = index;
       return complex;
     }
     if (peek != 'p' && peek != 'P') {
       try {
-        complex.ranges.addAll(RegexCharacterClass.valueOf(Character.toString(peek)).get(flags));
+        complex.ranges.putAll(
+            RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.valueOf(Character.toString(peek)).get(flags)));
         advance(1);
         complex.endIndex = index;
         return complex;
@@ -1003,10 +1031,10 @@ final class PatternParser {
       RangeSet<Integer> namedRanges = namedClass.get(prefix, flags);
       // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but
       // never actually used -- "\P{...}" silently behaved exactly like "\p{...}" (always positive).
-      // complement() is intentionally left unclamped here (matching every other complement() in
-      // this file); ComplexCharacter#validRanges() clamps it to the valid code point domain at the
-      // point ranges are turned into a dispatch/entry map, same as [^...] and the other negations.
-      complex.ranges.addAll(positive ? namedRanges : namedRanges.complement());
+      // Guava's complement() here is left unclamped (same as every other Guava complement() in
+      // this file) -- RangeSetCodePointMaps.toCodePointMap clamps to the code point domain while
+      // converting, same as it does for an already-positive set.
+      complex.ranges.putAll(RangeSetCodePointMaps.toCodePointMap(positive ? namedRanges : namedRanges.complement()));
       return complex;
     } catch (IllegalArgumentException e) {
       throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
@@ -1019,8 +1047,8 @@ final class PatternParser {
     }
     advance(1);
     if (peek == ']') {
-      complex.ranges.add(Range.singleton(startCodePoint));
-      complex.ranges.add(Range.singleton(+'-'));
+      complex.ranges.put(startCodePoint, startCodePoint + 1, true);
+      complex.ranges.put(+'-', +'-' + 1, true);
     } else if (peek == '\\') {
       int endCodePoint = tryParseSingleCharEscape();
       if (endCodePoint == -1) {
@@ -1029,7 +1057,7 @@ final class PatternParser {
                 + "then move "
                 + "'-' to be the first character in the []");
       }
-      complex.ranges.add(Range.closed(startCodePoint, endCodePoint));
+      complex.ranges.put(startCodePoint, endCodePoint + 1, true);
     } else {
       int endCodePoint = pattern.codePointAt(index);
       if (endCodePoint <= startCodePoint) {
@@ -1039,7 +1067,7 @@ final class PatternParser {
                 + "'-' to be the first character in the []");
       }
       advanceCodePoint();
-      complex.ranges.add(Range.closed(startCodePoint, endCodePoint));
+      complex.ranges.put(startCodePoint, endCodePoint + 1, true);
     }
   }
 

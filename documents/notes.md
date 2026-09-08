@@ -290,6 +290,22 @@ Notes to self about how to work on this project, and other context that doesn't 
 - The results JSON is only written once the *entire* `jmh` task finishes; killing/timing out a
   partial run leaves the file empty (`[]`) rather than partially populated -- don't mistake that for
   "the benchmark found nothing."
+- Added JMH's built-in `GCProfiler` (`profilers = ['gc']` in the `jmh {}` block) per the project
+  owner's request for GC count and a memory delta, after clarifying "native memory" isn't
+  applicable here: neither `java.util.regex` nor `Ll1Pattern` does any off-heap/JNI allocation, so
+  real Native Memory Tracking (`-XX:NativeMemoryTracking` + `jcmd VM.native_memory diff`) would show
+  nothing for either engine -- heap allocation-rate (`gc.alloc.rate.norm`, bytes/op) is the
+  meaningful equivalent for a pure-Java comparison like this, and needed no extra JVM flags or
+  jcmd scripting, just the one profiler flag. Adds `gc.alloc.rate`/`gc.alloc.rate.norm`/`gc.count`/
+  `gc.time` as secondary metrics on every existing benchmark.
+- Second full run's numbers (same machine/JDK, now with GC profiling on): times matched the first
+  run closely (`llkCompile` ~21.5 ms/op, `regexCompile` ~0.10 ms/op, `llkMatch` ~0.09 ms/op,
+  `regexMatch` ~0.055 ms/op). The allocation numbers tell a more nuanced story than the raw times
+  alone: llk allocates ~26x more per compile (~10.5 MB/op vs ~405 KB/op -- consistent with building
+  a full dispatch graph upfront) but only ~1.4x more per match (~121 KB/op vs ~84 KB/op) -- match-time
+  allocation is much closer between the two engines than the ~1.7x match-time ratio might suggest,
+  worth keeping in mind when profiling tomorrow (the time gap may be more about work-per-allocation
+  than allocation volume).
 
 ## Misc
 

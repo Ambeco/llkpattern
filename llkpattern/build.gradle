@@ -46,6 +46,12 @@ sourceSets {
 }
 
 jmh {
+    // GCProfiler adds gc.count/gc.time (GCs triggered and time spent in them during measurement)
+    // and gc.alloc.rate.norm (heap bytes allocated per op) as secondary metrics on every existing
+    // benchmark -- see documents/notes.md's 2026-09-08 entry for why this doesn't extend to real
+    // native (off-heap) memory tracking: both java.util.regex and Ll1Pattern are pure Java (no
+    // JNI/off-heap allocation), so there's nothing for Native Memory Tracking to show here.
+    profilers = ['gc']
     warmupIterations = 3
     iterations = 5
     fork = 1

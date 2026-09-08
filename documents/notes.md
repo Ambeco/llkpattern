@@ -898,6 +898,53 @@ Notes to self about how to work on this project, and other context that doesn't 
   that the improvement is real, not measurement drift. Updated `README.md`'s benchmark table and
   remaining_work.md's "On-device (Android) corpus benchmark" section accordingly.
 
+### `CodePointMapBuilder`/`addCodePointsTo`: two false starts before the real win (2026-09-08)
+
+- The project owner's stated design: the few `PatternConstruct`s that actually need a real
+  `CodePointMap` (`ComplexCharacter`, `QuantifiedUnion`/`ComplexQuantifiedCharacter` for ambiguity
+  detection, `MultiDispatchingMatcherConstruct` for dispatch) would own a `CodePointMapBuilder<T>`
+  and call `addCodePointsTo(builder, value)` on candidates to populate it; everything else would
+  delegate. First landed the builder itself (`CodePointMapBuilder`, replacing
+  `toValueMap`/`mergeEntryMapRejectingAmbiguity`/`findFirstOverlap` -- one allocation for the whole
+  merge instead of one per candidate plus a nested-loop overlap scan) -- real, measured win on its
+  own, no further work needed to realize it.
+- Adding `addCodePointsTo` overrides on top (so a leaf candidate never even builds/caches its own
+  `entryMap`) looked right by inspection but **did nothing** on the first attempt: `mergeEntryPoints`
+  still called `candidate.getEntryElse()` *before* `candidate.addCodePointsTo(...)`, and
+  `getEntryElse()` shares `ensureEntryPointBuilt()` with `getEntryPointMap()` -- so every candidate's
+  full `buildEntryMap()` (and its allocation) ran anyway, just via a different call site than
+  before. Fixed by adding `claimsEntryElse()`, a push-safe mirror of `addCodePointsTo` for exactly
+  the "does this candidate claim the catch-all" question, so nothing forces the pull.
+- Even with that fixed, a targeted canary (temporarily making `LiteralString.buildEntryMap` throw,
+  then compiling `"a|b"`) still fired. Root cause: `PatternConstruct.compile()` calls
+  `ensureEntryPointBuilt()` **unconditionally** before `buildMatcher()`, for every construct, always
+  has (this is the same call the project owner asked to remove earlier this session, and was told
+  not to -- correctly, for constructs whose `buildMatcher()` *does* read `buildEntryMap()`'s output).
+  So even after the merge itself stopped pulling, `QuantifiedUnion.buildMatcher`'s `part.compile(...)`
+  loop over each branch re-triggered the exact same pull independently. Fixed with a new
+  `needsEntryPointBeforeMatcher()` hook (default `true`), overridden `false` only where `buildMatcher()`
+  is verified to read nothing `buildEntryMap()` sets -- see design.md's section of the same name.
+- The canary also revealed that `LiteralString`'s own opt-out wasn't sufficient by itself: every
+  union/loop branch that's a bare literal or character class is parsed as a one-element `Sequence`
+  wrapping it, not the leaf directly, and `Sequence.buildMatcher()` (already verified independent of
+  `buildEntryMap()`'s output -- it does its own tail-to-front `next` wiring via each part's own
+  `compile()` call) needed the same opt-out for the fix to reach real patterns. Confirmed via the
+  same canary technique before trusting it.
+- Verified correctness (not just "suite stays green," which was true even with the ordering bug
+  still present, since the pull path is a superset of correct behavior): re-ran `(a?)+`, `(?:a?)+`,
+  `[ab]?a`, `a?a`, `a|ab` and confirmed each still throws `PatternSyntaxException` specifically (not
+  `StackOverflowError`) via a standalone harness outside the test suite, alongside the full 1487+9
+  test suite.
+- Measured (not assumed) the actual win via JMH: `CorpusBenchmark.llkCompile` went from 1.872 to
+  **1.534 ms/op** (-18%), and its `gc.alloc.rate.norm` secondary metric from 4,958,552 to
+  **3,566,024 B/op** (-28%) -- confirming the allocation reduction is real, not just structurally
+  plausible. `regexCompile`/`regexMatch`/`llkMatch` moved by less than run-to-run noise, as expected
+  since nothing here touches match-time code.
+- Left for later (see remaining_work.md's "`CodePointMapBuilder`/`addCodePointsTo` follow-ups"
+  section): extending `needsEntryPointBeforeMatcher()` to the quantified-loop case (plausible, not
+  yet measured), and a proposed `BackReference` alias to its referenced group's own entry point
+  (needs verifying against a nullable referenced group's cycle behavior first, not yet done).
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

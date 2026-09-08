@@ -127,6 +127,51 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * Pushes this construct's own entry-point ranges directly into {@code builder}, tagged with
+	 * {@code tag} -- the push-based counterpart to {@link #getEntryPointMap()}, used by {@link
+	 * #mergeEntryPoints} instead of pulling each candidate's own (cached) {@link #entryMap} and
+	 * re-keying it. A candidate that's a pure leaf (e.g. {@code LiteralString}) or a pure alias
+	 * ({@code Sequence}, {@code CaptureEndMarker}) overrides this to push straight through --
+	 * skipping materializing (and caching) its own {@code entryMap} purely to be scanned once by
+	 * an ancestor's merge -- see design.md's "CodePointMapBuilder / addCodePointsTo" section.
+	 *
+	 * <p>Default just pulls through the ordinary cached, cycle-guarded {@link #getEntryPointMap()}
+	 * -- correct for any construct, and REQUIRED (not just correct) for the "real consumers" that
+	 * actually own ambiguity-checked ranges of their own ({@code ComplexCharacter}'s own ranges,
+	 * and any {@code QuantifiedUnion}/{@code ComplexQuantifiedCharacter} that merges multiple
+	 * candidates via {@code buildLoopEntryMap}): overriding those to push their own raw entries
+	 * directly would skip the cycle guard {@link #ensureEntryPointBuilt} provides, needed because
+	 * a quantified construct's own body can point its {@code next} right back at this same
+	 * construct for a nullable loop (e.g. {@code (a?)+}) -- see {@code
+	 * QuantifiableConstruct.buildLoopEntryMap}'s {@code part.next = this}. Only override this for
+	 * a construct that either has no recursion at all (a true leaf) or delegates to exactly one
+	 * other, structurally-fixed construct (never blindly through {@code next}, unless whatever
+	 * `next` might resolve to is itself guaranteed to still be state-checked -- see {@code
+	 * QuantifiedUnion}'s bare-flags-group override for the one case that does this safely).
+	 */
+	<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+		for (Entry<CodePointMap.Range, Boolean> e : getEntryPointMap().entrySet()) {
+			builder.add(e.getKey().min, e.getKey().max, tag);
+		}
+	}
+
+	/**
+	 * Push-safe mirror of {@code getEntryElse() != null}, used by {@link #mergeEntryPoints}
+	 * alongside {@link #addCodePointsTo} instead of {@link #getEntryElse()} directly. This
+	 * matters because {@link #getEntryElse()} forces the SAME full, cached {@link #buildEntryMap}
+	 * that {@link #getEntryPointMap()} does (they share one {@link #ensureEntryPointBuilt} call) --
+	 * calling it on every candidate before {@link #addCodePointsTo} would silently force every
+	 * candidate's entryMap to materialize anyway, defeating the whole point of pushing. Every
+	 * override here mirrors {@link #addCodePointsTo}'s own delegation exactly, for the same
+	 * reason: a leaf never claims the catch-all (so returns {@code false} outright), a pure alias
+	 * asks whatever it aliases, and a "real consumer" falls back to the default (pull-based, cycle-
+	 * guarded) below.
+	 */
+	boolean claimsEntryElse() {
+		return getEntryElse() != null;
+	}
+
+	/**
 	 * Compiles this construct (and, transitively, whatever it depends on) into a MatcherConstruct
 	 * graph, returning the node that represents "start matching this construct here". See
 	 * design.md's "The compile() algorithm and cycle handling" section.
@@ -141,7 +186,9 @@ abstract class PatternConstruct {
 			return matcher;
 		}
 		this.next = next;
-		ensureEntryPointBuilt();
+		if (needsEntryPointBeforeMatcher()) {
+			ensureEntryPointBuilt();
+		}
 		if (matcher == null) {
 			// buildMatcher() constructs `new SomeMatcherConstruct(this, ...)`, whose constructor's
 			// first act is `this.matcher = it` (see MatcherConstruct's class doc) -- so `matcher` is
@@ -162,6 +209,28 @@ abstract class PatternConstruct {
 	abstract void buildEntryMap(PatternConstruct next);
 
 	abstract void buildMatcher();
+
+	/**
+	 * Whether {@link #compile} needs to run {@link #ensureEntryPointBuilt} before {@link
+	 * #buildMatcher} -- {@code true} by default, since most {@code buildMatcher()} overrides read
+	 * fields that only {@code buildEntryMap()} populates (e.g. {@code QuantifiedUnion}'s {@code
+	 * compileTarget}/{@code rawEntryMap}/{@code rawEntryElse}). Override to {@code false} ONLY for
+	 * a construct whose {@code buildMatcher()} reads nothing {@code buildEntryMap()} sets -- a true
+	 * leaf like {@code LiteralString}/{@code ComplexCharacter}, whose matcher is built entirely
+	 * from their own constructor-supplied data. This is what lets such a leaf, when reached only as
+	 * a merge candidate (via {@link #addCodePointsTo}/{@link #claimsEntryElse}), skip materializing
+	 * its own {@link #entryMap} entirely -- otherwise {@code compile()}'s own unconditional {@code
+	 * ensureEntryPointBuilt()} call (needed for every OTHER construct) would force that allocation
+	 * right back, defeating the whole point of pushing instead of pulling. Safe even for a leaf
+	 * that participates in the entry-point cycle guard's graph, because a leaf's {@code
+	 * buildEntryMap()} never reads {@code next} at all -- leaving it at {@code
+	 * ENTRY_POINT_NOT_STARTED} after {@code compile()} can't corrupt anything a later, genuine pull
+	 * (e.g. {@code Sequence.buildEntryMap}'s {@code getEntryPointMap()} call) would need; it just
+	 * defers the same computation to whenever (if ever) that pull actually happens.
+	 */
+	boolean needsEntryPointBeforeMatcher() {
+		return true;
+	}
 
 	/** Result of {@link #compileAndMergeCandidates}. */
 	static final class MergedEntries {
@@ -197,7 +266,7 @@ abstract class PatternConstruct {
 		CodePointMapBuilder<PatternConstruct> builder = new CodePointMapBuilder<>();
 		PatternConstruct elseCandidate = null;
 		for (PatternConstruct candidate : candidates) {
-			if (candidate.getEntryElse() != null) {
+			if (candidate.claimsEntryElse()) {
 				if (elseCandidate != null) {
 					throw PatternSyntaxException.throwWithReferences(
 							pattern,
@@ -209,9 +278,7 @@ abstract class PatternConstruct {
 				}
 				elseCandidate = candidate;
 			}
-			for (Entry<CodePointMap.Range, Boolean> e : candidate.getEntryPointMap().entrySet()) {
-				builder.add(e.getKey().min, e.getKey().max, candidate);
-			}
+			candidate.addCodePointsTo(builder, candidate);
 		}
 		MutableCodePointMap<PatternConstruct> merged = builder.build(
 				(range, value1, otherRange, value2) -> {
@@ -360,6 +427,33 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+			if (isUnquantified() && constructs.isEmpty()) {
+				// Bare flags-only group ("(?i)", no body) -- same aliasing as buildEntryMap: passes
+				// straight through to `next` (this union contributes nothing of its own). Safe even
+				// though `next` could resolve back to an ancestor loop still under construction (see
+				// buildLoopEntryMap's `part.next = this`) -- whatever `next` turns out to be, if it's
+				// itself a QuantifiableConstruct it keeps the state-checked default below, so the
+				// cycle is still caught there, just one level further down.
+				next.addCodePointsTo(builder, tag);
+				return;
+			}
+			// Both the quantified case (own `next` might loop back here via a nullable body -- see
+			// buildLoopEntryMap) and the unquantified-with-branches case (a real ambiguity-checked
+			// merge of `constructs`) need the ordinary cycle-guarded, cached path.
+			super.addCodePointsTo(builder, tag);
+		}
+
+		@Override
+		boolean claimsEntryElse() {
+			if (isUnquantified() && constructs.isEmpty()) {
+				// Mirrors addCodePointsTo's bare-flags-group case exactly -- see its comment.
+				return next.claimsEntryElse();
+			}
+			return super.claimsEntryElse();
+		}
+
+		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
 				buildLoopEntryMap(constructs, next);
@@ -483,6 +577,26 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+			// realNext is a fixed field (unlike `next`, never reassigned to point back at some
+			// ancestor mid-construction), so delegating straight through can't participate in the
+			// one cycle this engine actually has (a nullable loop body) -- safe to bypass this
+			// marker's own cycle guard entirely, same reasoning as its buildEntryMap override.
+			realNext.addCodePointsTo(builder, tag);
+		}
+
+		@Override
+		boolean claimsEntryElse() {
+			return realNext.claimsEntryElse();
+		}
+
+		@Override
+		boolean needsEntryPointBeforeMatcher() {
+			// buildMatcher() below reads only realNext.matcher -- nothing buildEntryMap() sets.
+			return false;
+		}
+
+		@Override
 		void buildEntryMap(PatternConstruct next) {
 			// realNext is already compiled by the time any of this marker's callers need it -- it's
 			// the capturing group's own `next`, which (like any `next`) was compiled before the group
@@ -526,23 +640,62 @@ abstract class PatternConstruct {
 			super(startIndex);
 		}
 
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			// A sequence's own entry point is exactly its first element's -- entering the sequence
-			// means entering its first element, regardless of what the rest of the sequence looks
-			// like. Wire every element's `next` pointer tail-to-front FIRST (a plain field
-			// assignment, not a compile() call) so a nullable element can still fold in what follows
-			// it when asked for its own entry point below -- but deliberately don't compile() (build
-			// matchers for) anything here: that's buildMatcher()'s job, below. This split is what
-			// lets a loop nested at the tail of this sequence ask an enclosing loop (this sequence's
-			// own `next`, if it's a loop) for ITS entry point mid-construction, without forcing that
-			// enclosing loop's own (still in-progress) matcher build to finish first -- see
-			// design.md's "Entry-point computation vs. matcher compilation" section.
+		/**
+		 * Wires every element's {@code next} pointer tail-to-front (a plain field assignment, not a
+		 * {@code compile()} call) so a nullable element can still fold in what follows it when asked
+		 * for its own entry point -- shared by {@link #buildEntryMap} and {@link #addCodePointsTo},
+		 * since either one might run first (or, harmlessly, both -- this is idempotent) depending on
+		 * whether this Sequence is reached by a pull or a push. See design.md's "Entry-point
+		 * computation vs. matcher compilation" section for why the split from compiling matters.
+		 */
+		private void wireElementNextPointers() {
 			PatternConstruct tail = next;
 			for (int i = patterns.size() - 1; i >= 0; i--) {
 				patterns.get(i).next = tail;
 				tail = patterns.get(i);
 			}
+		}
+
+		@Override
+		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+			// Same aliasing as buildEntryMap below: a sequence's own entry point is exactly its
+			// first element's. patterns.get(0) is a fixed field (never reassigned the way `next`
+			// is), so delegating straight through can't itself introduce a cycle -- but its OWN
+			// entry-point computation still depends on the tail-to-front wiring below having run.
+			wireElementNextPointers();
+			patterns.get(0).addCodePointsTo(builder, tag);
+		}
+
+		@Override
+		boolean claimsEntryElse() {
+			wireElementNextPointers();
+			return patterns.get(0).claimsEntryElse();
+		}
+
+		@Override
+		boolean needsEntryPointBeforeMatcher() {
+			// buildMatcher() below does its own tail-to-front `next` wiring independently (via each
+			// part.compile(tail) call), and never reads entryMap/entryElse -- so, unlike buildEntryMap
+			// above (whose wiring/entryMap-caching exists purely to answer an ANCESTOR's pull), this
+			// Sequence's own matcher build needs nothing buildEntryMap() would have computed. This is
+			// what lets a leaf branch reached only through a Sequence (e.g. a plain "a" union branch,
+			// always parsed as a one-element Sequence) skip its own entryMap allocation too --
+			// otherwise this Sequence's own compile() would force the pull right back regardless of
+			// what the leaf itself does.
+			return false;
+		}
+
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			// A sequence's own entry point is exactly its first element's -- entering the sequence
+			// means entering its first element, regardless of what the rest of the sequence looks
+			// like. Wire every element's `next` pointer tail-to-front FIRST -- but deliberately don't
+			// compile() (build matchers for) anything here: that's buildMatcher()'s job, below. This
+			// split is what lets a loop nested at the tail of this sequence ask an enclosing loop
+			// (this sequence's own `next`, if it's a loop) for ITS entry point mid-construction,
+			// without forcing that enclosing loop's own (still in-progress) matcher build to finish
+			// first -- see design.md's "Entry-point computation vs. matcher compilation" section.
+			wireElementNextPointers();
 			// Aliased directly, not re-keyed -- unlike QuantifiedUnion.rawEntryMap (a genuinely
 			// PatternConstruct-valued map, where re-keying onto `this` is load-bearing -- see its own
 			// doc for the 2026-09-06 bug that motivated it), entryMap's values are always Boolean
@@ -579,6 +732,29 @@ abstract class PatternConstruct {
 		LiteralString(int startIndex, int endIndex, String value) {
 			super(startIndex, endIndex);
 			this.value = value;
+		}
+
+		@Override
+		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+			// A true leaf, and never recursive -- safe to push its single code point directly
+			// without ever materializing (or caching) this construct's own entryMap. buildEntryMap
+			// below still exists for whatever DOES pull via getEntryPointMap() (e.g. this
+			// LiteralString as a Sequence's first element) -- and, thanks to
+			// needsEntryPointBeforeMatcher()'s override below, compile() no longer forces that pull
+			// on its own, so a LiteralString reached only via addCodePointsTo genuinely never pays
+			// for it.
+			builder.add(value.codePointAt(0), tag);
+		}
+
+		@Override
+		boolean claimsEntryElse() {
+			return false; // never sets entryElse -- see buildEntryMap.
+		}
+
+		@Override
+		boolean needsEntryPointBeforeMatcher() {
+			// buildMatcher() below reads nothing buildEntryMap() sets -- see the base class doc.
+			return false;
 		}
 
 		@Override
@@ -678,6 +854,28 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+			// A true leaf, and never recursive -- push directly from `ranges` rather than going
+			// through getEntryPointMap()/ensureEntryPointBuilt (which would just return this same
+			// data anyway, since entryMap is aliased straight to validRanges() below).
+			for (Entry<CodePointMap.Range, Boolean> e : validRanges().entrySet()) {
+				builder.add(e.getKey().min, e.getKey().max, tag);
+			}
+		}
+
+		@Override
+		boolean claimsEntryElse() {
+			return dotElse != null; // mirrors buildEntryMap's `entryElse = dotElse` exactly.
+		}
+
+		@Override
+		boolean needsEntryPointBeforeMatcher() {
+			// buildMatcher() below (new SingleCharMatcherConstruct(this)) reads `ranges` directly off
+			// this instance, not entryMap -- see the base class doc.
+			return false;
+		}
+
+		@Override
 		void buildEntryMap(PatternConstruct next) {
 			// Aliased directly: a character class's own entry point IS exactly its own valid ranges,
 			// not a separate copy of them -- entryMap and ranges/validRanges() were always meant to
@@ -698,6 +896,28 @@ abstract class PatternConstruct {
 		ComplexQuantifiedCharacter(String pattern, int startIndex, ComplexCharacter delegate) {
 			super(pattern, startIndex, delegate.endIndex);
 			this.delegate = delegate;
+		}
+
+		@Override
+		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+			if (!isUnquantified()) {
+				// Real dispatch/ambiguity-checked case -- must go through the ordinary cycle-guarded
+				// path (this construct's own `next` might loop back here, e.g. a nullable body like
+				// `[ab]{0,2}` -- see buildLoopEntryMap).
+				super.addCodePointsTo(builder, tag);
+				return;
+			}
+			// Unquantified: same aliasing as buildEntryMap -- exactly delegate's own ranges,
+			// regardless of what follows, so safe to push straight through.
+			delegate.addCodePointsTo(builder, tag);
+		}
+
+		@Override
+		boolean claimsEntryElse() {
+			if (!isUnquantified()) {
+				return super.claimsEntryElse();
+			}
+			return false; // the unquantified case's buildEntryMap never sets entryElse.
 		}
 
 		@Override

@@ -873,6 +873,31 @@ Notes to self about how to work on this project, and other context that doesn't 
   `PatternSyntaxException`. Confirmed by running (not just written speculatively) before reporting
   back: all three throw as expected. Full suite: 1487 tests (1484 + 3), 0 failing.
 
+### Re-running the Pixel 3a corpus benchmark after this session's compile-time fixes (2026-09-08, same day)
+
+- The project owner unlocked their Pixel 3a and asked for the on-device benchmark to be re-run,
+  since the checked-in numbers predated this session's `appendSorted`/`entryMap`-aliasing work.
+  `./gradlew :app:connectedAndroidTest` ran clean (4/4 tests, 0 failed) -- but the results JSON
+  (written to the app's external-storage files dir) was gone by the time it could be pulled:
+  that Gradle task uninstalls both APKs after the run, and uninstalling an app on this device wipes
+  its `/sdcard/Android/data/<package>/files/` directory along with it, per standard Android
+  behavior. Confirmed via `adb shell pm list packages` (neither `com.tbohne.llkpattern` nor its
+  `.test` package existed post-run) before concluding this rather than guessing.
+- Worked around by installing both already-built APKs manually (`adb install -r` on
+  `app/build/outputs/apk/debug/app-debug.apk` and `.../androidTest/debug/
+  app-debug-androidTest.apk`) and running via `adb shell am instrument -w
+  com.tbohne.llkpattern.test/androidx.test.runner.AndroidJUnitRunner` directly -- bypassing
+  Gradle's own install/uninstall lifecycle entirely, same invocation style already documented for
+  the (separate) sampling test. Pulled the JSON immediately afterward via `adb pull` (needed
+  `MSYS_NO_PATHCONV=1` in this git-bash environment -- without it, bash mangles the leading
+  `/sdcard/...` into a Windows path before it reaches `adb`).
+- New committed baseline: `llkCompile` 101.7ms -> **41.47ms/pass** (~2.4x, consistent with the
+  desktop-side `-73.4%` this session's fixes produced), `llkMatch` 1.54ms -> **1.26ms/pass**;
+  `regexCompile`/`regexMatch` essentially unchanged (6.70->6.56ms, 3.77->3.77ms), as expected since
+  nothing touched by this session's fixes affects `java.util.regex` at all -- a useful sanity check
+  that the improvement is real, not measurement drift. Updated `README.md`'s benchmark table and
+  remaining_work.md's "On-device (Android) corpus benchmark" section accordingly.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

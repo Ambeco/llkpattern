@@ -146,14 +146,28 @@ actually needed again.
       `MEASURED_ITERATIONS` bumped to 50/1000, landing at ~124s wall-clock (`am instrument`'s own
       "Time:" figure), comfortably under 5 minutes with margin for slower devices. Current
       committed baseline (`documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json`,
-      full corpus, 1000 measured iterations): `llkCompile` ~15.2x slower than `regexCompile`
-      (101.7ms vs 6.7ms/pass); `llkMatch` is actually *faster* than `regexMatch` at this row count
-      and iteration depth (1.54ms vs 3.77ms/pass) -- notably different from the small-fraction
-      run's `llkMatch` being slower, and from the desktop JMH ratio (see
-      `corpus_benchmark_results.json`) where `llkMatch` is slower than `regexMatch` -- not yet
-      investigated further (different row mix at full fraction, ART vs HotSpot JIT behavior,
-      and/or genuine device-specific dispatch performance are all plausible; worth another look if
-      it matters for a real decision, but out of scope for just standing up this harness).
+      full corpus, 1000 measured iterations, re-run 2026-09-08 after this session's `appendSorted`/
+      `entryMap`-aliasing compile-time fixes): `llkCompile` ~6.3x slower than `regexCompile`
+      (41.47ms vs 6.56ms/pass -- down from an earlier 101.7ms/6.7ms baseline before those fixes,
+      consistent with the desktop-side improvement); `llkMatch` is actually *faster* than
+      `regexMatch` at this row count and iteration depth (1.26ms vs 3.77ms/pass) -- notably
+      different from the small-fraction run's `llkMatch` being slower, and from the desktop JMH
+      ratio (see `corpus_benchmark_results.json`) where `llkMatch` is slower than `regexMatch` --
+      not yet investigated further (different row mix at full fraction, ART vs HotSpot JIT
+      behavior, and/or genuine device-specific dispatch performance are all plausible; worth
+      another look if it matters for a real decision, but out of scope for just standing up this
+      harness).
+      **Gotcha found re-running this** (2026-09-08): `./gradlew :app:connectedAndroidTest` installs
+      both APKs, runs the tests, and then uninstalls them afterward -- and uninstalling an app on
+      this device wipes its `/sdcard/Android/data/<package>/files/` directory (standard Android
+      behavior), taking the just-written results JSON with it before it can be pulled. Worked
+      around by installing both APKs manually (`adb install -r
+      app/build/outputs/apk/debug/app-debug.apk` and the matching `.../androidTest/debug/
+      app-debug-androidTest.apk`) and running via `adb shell am instrument -w
+      com.tbohne.llkpattern.test/androidx.test.runner.AndroidJUnitRunner` directly instead --
+      exactly the invocation already documented below for the sampling test, which is presumably
+      why that one never hit this. Pull promptly after that command returns, before doing anything
+      else that might trigger a reinstall/uninstall cycle.
       Also captured a CPU sampling profile of `llkMatch` (`testZZSamplingProfile`, `-e profile
       true`, `PROFILE_ITERATIONS = 200` full-corpus passes): a hand-rolled sampler (a background
       thread periodically snapshotting the benchmark thread via `Thread.getAllStackTraces()`,

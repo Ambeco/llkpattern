@@ -467,6 +467,27 @@ final class PatternParser {
           throw throwUnexpectedChar("Not a valid group special construct for a capture group.");
       }
     }
+    // Bug fix (2026-09-07): captureConstructIndex used to be assigned AFTER parseUnion(union)
+    // returned, i.e. in closing-paren order -- but this is a recursive-descent parser, so nested
+    // groups' own parseGroup() calls (and thus their OWN index assignment) always complete before
+    // the call returns here for the OUTER group, meaning an outer group's index always ended up
+    // HIGHER than any of its nested groups' indices, backwards from every other regex engine's
+    // (and this engine's own group(int)/start(int)/end(int) numbering contract's) "outer group
+    // opened first, gets the lower number" convention -- e.g. "(a(b)(c))" assigned group 1="b",
+    // group 2="c", group 3="a(b)(c)" instead of the expected 1="a(b)(c)", 2="b", 3="c". Assigning
+    // the index here instead, right after the "(" / "(?...)" prefix is parsed and BEFORE
+    // recursing into the group's own content, fixes this: index assignment now happens in
+    // opening-paren order, exactly matching every other capturing-group numbering convention.
+    // Named-group registration moves alongside it for the same reason. `closedGroupsByIndex`
+    // (used by backreferences to detect forward references) still only gets populated once the
+    // group is fully closed, below -- unaffected by this change, and still correctly rejects a
+    // backreference to a group that hasn't closed yet, including a self-reference.
+    if (union.captureConstructIndex != -1) {
+      union.captureConstructIndex = captureConstructIndex++;
+      if (!union.captureName.isEmpty()) {
+        namedGroups.put(union.captureName, union.captureConstructIndex);
+      }
+    }
     QuantifiedUnion ignored = parseUnion(union);
     if (index == pattern.length()) {
       throw throwUnexpectedChar(
@@ -477,10 +498,6 @@ final class PatternParser {
     }
     union.endIndex = index;
     if (union.captureConstructIndex != -1) {
-      union.captureConstructIndex = captureConstructIndex++;
-      if (!union.captureName.isEmpty()) {
-        namedGroups.put(union.captureName, union.captureConstructIndex);
-      }
       closedGroupsByIndex.put(union.captureConstructIndex, union);
     }
     advance(1);

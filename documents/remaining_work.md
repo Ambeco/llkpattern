@@ -56,6 +56,32 @@ dated AGREES-count snapshot rather than tracking that number here.
 
 - [ ] Human triage pass over every non-`AGREES` row in both golden files -- retag
       `EXPECTED_DIVERGENCE` vs leave as a real bug to fix, per `CorpusGenerator`'s status scheme.
+      Progress (2026-09-07): triaged all `UNEXPECTED` rows (both engines completed but disagreed --
+      the `UNIMPLEMENTED` rows, where llk simply doesn't support a feature yet, weren't in scope
+      for this pass). Found and fixed two real bugs this way (see the "Core implementation"
+      section's history in notes.md): `Matcher#attemptMatch` never reset `quantifiableCounts`/
+      `captureGroups` between separate match attempts (so a loop's iteration counter leaked across
+      `find()`'s internal scan positions and repeated `matches()`/`lookingAt()`/`find()` calls),
+      and capturing groups were numbered in closing-paren order instead of opening-paren order for
+      any nested group. 33 `UNEXPECTED` rows dropped to 15 as a result. The remaining 15 fall into
+      three categories, none fixed yet:
+      - **A real, deeper bug** (not yet fixed -- see "Core implementation" below): a quantified/
+        loop construct whose own body contains ANOTHER quantified/loop construct fails to match at
+        all, even the trivial single-iteration case (e.g. `(a(b)?)+` fails against `"a"`).
+      - `(?x)` (`COMMENTS`) rows -- not a new finding, just confirms the already-tracked
+        unimplemented-flag gap above; these rows should be retagged `EXPECTED_DIVERGENCE`
+        (or left `UNEXPECTED` but understood, not further "investigated") until `COMMENTS` is
+        implemented, at which point they should flip to `AGREES`.
+      - Bounded/reluctant quantifier edge cases where the engine's no-backtracking design cannot
+        produce the same match `java.util.regex` does even though llk's own greedy result is
+        internally consistent (e.g. `a{2,3}` against `"aaaa"`: llk cannot tell "stop at 3" from
+        "keep going" without a distinguishing next character, since nothing follows the loop, so
+        it hard-fails at every position where a 4th `a` follows the first three and instead matches
+        the *tail* 3 `a`s rather than `java.util.regex`'s backtracked leading 3; reluctant
+        (`?`) quantifiers being a documented no-op compounds this for `{n,m}?` cases). These are a
+        fundamental consequence of the engine's design (see README's own "tradeoff: not every
+        pattern a traditional regex engine accepts can be expressed this way"), not bugs -- should
+        be retagged `EXPECTED_DIVERGENCE` with that rationale, not left as "needs investigation."
 - [ ] More sources, each as its own `scrape_<source>.py` + golden file + `ScrapedCorpusTestBase`
       subclass (the pipeline already supports this cleanly):
   - [ ] **AOSP/libcore**: `https://android.googlesource.com/platform/libcore/+/refs/heads/main/ojluni/src/test/java/util/regex/`
@@ -98,6 +124,33 @@ dated AGREES-count snapshot rather than tracking that number here.
 
 ## Core implementation
 
+- [ ] **A quantified/loop construct whose own body contains ANOTHER quantified/loop construct
+      fails to match at all** -- found 2026-09-07 while triaging the scraped-corpus harness's
+      `UNEXPECTED` rows (`^(aa(bb)?)+$` and similar). Minimal repro: `(a(b)?)+` (or even
+      non-capturing, `(?:ab?)+`) fails to match `"a"`, even though a single iteration ("a" with
+      the optional "b" absent) should trivially succeed.
+      - Root cause (diagnosed, not yet fixed): a `QuantifiableConstruct`'s own advertised
+        `entryMap`/`entryElse` (used by an ANCESTOR as "what does this whole loop construct accept
+        as its next character") is only populated at the very END of `DispatchMatcherConstruct`'s
+        loop-flavored constructor -- after its `body` candidates have already been fully compiled.
+        But when `body` itself contains ANOTHER quantified construct, that INNER loop's own
+        `compileAndMergeCandidates` call needs to read the OUTER loop's `entryMap`/`entryElse` too
+        (as one of ITS candidates, since `next` for the inner loop's body IS the outer loop's own
+        `owner`) -- and at that point, recursively, the outer's `entryMap`/`entryElse` are still
+        empty (nothing put yet). The inner loop's own "exit toward the outer loop" branch ends up
+        with NO entry characters mapped to it at all (merging in an empty candidate contributes
+        nothing), so at match time, once the inner optional/loop's own body doesn't match, there is
+        nowhere to dispatch to and the whole match fails.
+      - This is a compile-time-ordering / forward-reference problem, not a simple off-by-one: the
+        outer loop's own entry set genuinely can't be known until its whole body (including any
+        nested loop) is compiled, but the nested loop needs that same entry set mid-compilation.
+        Fixing it likely needs either (a) a two-pass computation of a `QuantifiableConstruct`'s own
+        advertised entry set (compute the body's own first-character set for exposure purposes
+        before compiling the body "for real"), or (b) routing a nested loop's "exit toward an
+        ancestor loop still under construction" case through match-time dispatch on `owner.matcher`
+        directly rather than through the ambiguity-checked `entryMap`/`entryElse` mechanism for
+        that one case. Needs real design thought before attempting -- flagged rather than patched
+        in the session that found it (see notes.md).
 - [ ] Numbered backreferences only support a single digit (`\1`-`\9`) -- unlike `java.util.regex`,
       which greedily consumes further digits when enough groups exist to make them part of the
       group number (`\12` can mean group 12, not group 1 followed by literal "2"). A pattern

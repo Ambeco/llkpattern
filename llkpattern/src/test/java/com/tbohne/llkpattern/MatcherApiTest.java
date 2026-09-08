@@ -159,4 +159,63 @@ public class MatcherApiTest {
   public void staticMatches_delegatesToMatcherMatches() {
     assertThat(Ll1Pattern.matches("a+", "aaa"), is(true));
   }
+
+  // --- Per-attempt state (quantifiableCounts/captureGroups) must not leak between separate match
+  // attempts -- see remaining_work.md's dated bug entry. A loop's iteration counter is normally
+  // only reset to 0 when its own EndLoopMatcherConstruct exit fires; an attempt that instead fails
+  // by exceeding `max` (LoopMatcherConstruct's own check) never reaches that reset, so without an
+  // explicit per-attempt reset in Matcher#attemptMatch, a later attempt (a different find() scan
+  // position, or a second matches()/lookingAt()/find() call on a reused Matcher) would read a
+  // stale, nonzero counter and could spuriously satisfy a `min` check it should have failed.
+
+  @Test
+  public void find_boundedQuantifier_doesNotLeakLoopCountAcrossScanPositions() {
+    // "a{2,3}" hard-fails (no backtracking) at every start position where a 4th 'a' follows the
+    // first three, since nothing after the loop can tell "stop at 3" from "keep going" -- find()
+    // must NOT let that failed attempt's loop counter leak into scanning the next position, which
+    // used to spuriously "match" an empty string once the counter happened to already exceed min.
+    Matcher m = Ll1Pattern.compile("a{2,3}").matcher("aaaa");
+    assertThat(m.find(), is(true));
+    assertThat(m.group(), is("aaa"));
+  }
+
+  @Test
+  public void find_optionalQuantifier_doesNotLeakCaptureStateAcrossScanPositions() {
+    Matcher m = Ll1Pattern.compile("a?b").matcher("aaaab");
+    assertThat(m.find(), is(true));
+    assertThat(m.group(), is("ab"));
+  }
+
+  @Test
+  public void quantifiedCapturingGroup_doesNotSpuriouslyMatchAfterFailedEarlierPosition() {
+    // Before the fix, a failed attempt at an earlier find() scan position could leave a nonzero
+    // loop counter that let "(ab)+" spuriously satisfy its own min==1 check with an empty match,
+    // even though "ab" never actually occurs in the input.
+    Matcher m = Ll1Pattern.compile("(ab)+").matcher("aiiiiw");
+    assertThat(m.find(), is(false));
+  }
+
+  // --- Capturing group numbering must follow opening-paren order, not closing-paren order -- see
+  // remaining_work.md's dated bug entry: a recursive-descent parser's nested groups always finish
+  // parsing (and, before the fix, always finished claiming their index) before the enclosing
+  // group's own call returns, which backwards-numbered every pattern with nested capturing groups.
+
+  @Test
+  public void nestedCapturingGroups_numberedInOpeningOrder() {
+    Matcher m = Ll1Pattern.compile("(a(b)(c))").matcher("abc");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("abc")); // outermost group opened first
+    assertThat(m.group(2), is("b"));
+    assertThat(m.group(3), is("c"));
+  }
+
+  @Test
+  public void deeplyNestedCapturingGroups_numberedInOpeningOrder() {
+    Matcher m = Ll1Pattern.compile("((a)(b(c)))").matcher("abc");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("abc"));
+    assertThat(m.group(2), is("a"));
+    assertThat(m.group(3), is("bc"));
+    assertThat(m.group(4), is("c"));
+  }
 }

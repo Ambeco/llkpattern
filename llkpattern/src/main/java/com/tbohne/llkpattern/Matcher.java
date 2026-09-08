@@ -229,6 +229,13 @@ public class Matcher implements MatchResult {
 		hasMatch = false;
 		matchStart = -1;
 		matchEnd = -1;
+		resetPerAttemptState();
+	}
+
+	/** The per-attempt state a fresh match attempt must never see left over from an earlier one --
+	 *  see {@link #attemptMatch}'s doc for why this must run before EVERY attempt, not just on an
+	 *  explicit reset()/reset(String). */
+	private void resetPerAttemptState() {
 		java.util.Arrays.fill(quantifiableCounts, 0);
 		java.util.Arrays.fill(captureGroups, null);
 	}
@@ -285,6 +292,26 @@ public class Matcher implements MatchResult {
 	private boolean attemptMatch(int from, boolean requireFullMatch) {
 		pos = from;
 		this.requireFullMatch = requireFullMatch;
+		// Bug fix (2026-09-07): quantifiableCounts/captureGroups used to only get reset by
+		// reset()/reset(String) -- never per attempt -- so a loop's iteration counter (incremented by
+		// LoopMatcherConstruct as it consumes each repetition) leaked from one match attempt into the
+		// next whenever an attempt failed WITHOUT reaching its own EndLoopMatcherConstruct exit (the
+		// only place a counter gets reset to 0), which happens routinely: e.g. a bounded {n,m} loop
+		// whose body character overlaps with what comes after it (unavoidable when nothing follows
+		// the loop at all, since EndConstruct's catch-all entryElse always looks like "keep going")
+		// hits its own max bound and hard-fails via LoopMatcherConstruct's own "loopCount > max"
+		// check, leaving the counter non-zero. find()'s internal scan over successive start positions
+		// (and any other back-to-back matches() /lookingAt()/find() calls on a reused Matcher without
+		// an intervening reset()) would then read that stale, nonzero counter on the NEXT attempt,
+		// letting a since-satisfied `min` check spuriously pass on an attempt that should have started
+		// counting from zero -- e.g. "a{2,3}" against "aaaa" hard-failed at every real start position,
+		// then spuriously "matched" an empty string at the end of input once a leftover count of 3
+		// (from an earlier failed attempt) made EndLoopMatcherConstruct's "loopCount(0-that-should've-
+		// been) < min" check pass. Confirmed via the scraped-corpus harness's un-triaged UNEXPECTED
+		// rows -- this single bug explains most of them: bounded quantifiers, optional ("?")
+		// constructs, and quantified capturing groups all showed wrong matches/no-matches whenever a
+		// find() scan or repeated match attempt was involved, not just a single matches() call.
+		resetPerAttemptState();
 		boolean success = pattern.compiled.match(this, peek());
 		if (success) {
 			hasMatch = true;

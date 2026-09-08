@@ -162,6 +162,49 @@ Notes to self about how to work on this project, and other context that doesn't 
   over the whole string, to isolate "does the quantifier apply to dot" from the separate,
   already-tested ambiguity-with-a-following-literal case). Full suite green: 1428 tests, 0
   failing, 561 skipped.
+- 2026-09-07 (same day, yet later still): per the project owner, triaged all of the scraped-corpus
+  harness's un-triaged `UNEXPECTED` rows (33 of them -- "both engines ran to completion but
+  disagree," as opposed to `UNIMPLEMENTED`, where llk doesn't support a feature at all) rather than
+  continuing to defer it, since the "." fix just above had already found a real bug hiding in that
+  backlog. Found and fixed two more real bugs this way, both pre-existing since well before this
+  session (confirmed via `git stash` against the pre-session commit before fixing either):
+  1. **`Matcher#attemptMatch` never reset `quantifiableCounts`/`captureGroups` between separate
+     match attempts** -- only `reset()`/`reset(String)` did. A loop's iteration counter is
+     normally reset to 0 only when its own `EndLoopMatcherConstruct` exit fires; an attempt that
+     instead hard-fails by exceeding `max` (`LoopMatcherConstruct`'s own check, with no
+     backtracking to undo it) never reaches that reset, leaving a stale nonzero counter for the
+     NEXT attempt to read -- routinely triggered by `find()`'s own internal scan over successive
+     start positions. Confirmed via `a{2,3}` against `"aaaa"`: every real start position hard-fails
+     (see the second bullet below for why), and without this fix, find() went on to spuriously
+     "match" an empty string at the very end of input once a leftover count from an earlier failed
+     attempt happened to already satisfy `min`. Also affected `a?b` (matched only `"b"` instead of
+     `"ab"`) and `(ab)+` against input with no `"ab"` substring at all (spuriously matched empty).
+     Fixed by resetting both arrays at the top of every `attemptMatch` call (factored into a shared
+     `resetPerAttemptState()`, also used by `resetMatchState()`).
+  2. **Capturing groups were numbered in closing-paren order, not opening-paren order.** A
+     recursive-descent parser's nested `parseGroup()` calls always finish (and, before this fix,
+     always finished claiming their `captureConstructIndex`) before the enclosing group's own call
+     returns -- so `"(a(b)(c))"` assigned group 1="b", group 2="c", group 3="a(b)(c)" instead of
+     the expected (and what every other regex engine, and this engine's own numbering-consuming
+     code, assumes) group 1="a(b)(c)", group 2="b", group 3="c". Backwards for any pattern with
+     nested capturing groups. Fixed by assigning `captureConstructIndex` (and registering a named
+     group) right after parsing the `(`/`(?...)` prefix, before recursing into the group's own
+     content, instead of after `parseUnion` returns -- `closedGroupsByIndex` (used by
+     backreferences' forward-reference check) still only gets populated once the group is fully
+     closed, unaffected by this change.
+  - After both fixes, 33 `UNEXPECTED` rows dropped to 15 (BMP 12→6, supplementary 21→11 --
+    numbers from an earlier snapshot mid-triage, not the exact before/after of each individual
+    fix). Retagged both golden files twice, once per fix (same `RetagGolden` one-off pattern,
+    written and deleted each time).
+  - The remaining 15 rows split into three categories, recorded in remaining_work.md rather than
+    repeated here: a third real bug (a quantified/loop construct whose body contains another
+    quantified/loop construct fails to match at all -- diagnosed in detail, not yet fixed, flagged
+    as its own remaining_work.md item since the fix needs real design thought), the already-tracked
+    unimplemented `COMMENTS`/`(?x)` flag, and bounded/reluctant-quantifier edge cases that are a
+    fundamental consequence of this engine's no-backtracking design (not bugs) and should be
+    retagged `EXPECTED_DIVERGENCE` rather than left as "needs investigation."
+  - Full suite green throughout: 1433 tests, 0 failing, 561 skipped, after adding regression
+    coverage in `MatcherApiTest` for both fixes.
 
 ## Tooling gotchas (this dev machine, Windows + git-bash)
 

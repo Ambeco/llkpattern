@@ -1,21 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
-    <annotationProcessing>
-      <profile name="Gradle Imported" enabled="true">
-        <outputRelativeToContentRoot value="true" />
-        <processorPath useClasspath="false">
-          <entry name="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker/3.19.0/67de250ed4c9ebcc318fd58599c0499ea6c7388d/checker-3.19.0.jar" />
-          <entry name="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker-util/3.19.0/34443d39e7e09831978d720f5b92ef7704e9352f/checker-util-3.19.0.jar" />
-          <entry name="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.checkerframework/checker-qual/3.19.0/838b42bb6f7f73315167b359d24649845cef1c48/checker-qual-3.19.0.jar" />
-          <entry name="$PROJECT_DIR$/llkpattern/build/checkerframework" />
-        </processorPath>
-        <module name="llkpattern.llkpattern.main" />
-        <module name="llkpattern.llkpattern.test" />
-      </profile>
-    </annotationProcessing>
     <bytecodeTargetLevel target="1.8">
       <module name="ll1parser.app" target="17" />
+      <module name="llkpattern.oldllkpattern.main" target="11" />
+      <module name="llkpattern.oldllkpattern.test" target="11" />
     </bytecodeTargetLevel>
   </component>
 </project>

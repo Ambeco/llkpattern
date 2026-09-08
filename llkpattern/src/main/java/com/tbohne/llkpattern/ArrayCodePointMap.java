@@ -1,8 +1,11 @@
 package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
+import java.util.AbstractSet;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -14,29 +17,40 @@ import org.checkerframework.checker.nullness.qual.PolyNull;
  * {@code [min, max)} range convention this class follows.
  *
  * <p>Each entry is a contiguous run of code points {@code [min, min + count]} (inclusive of both
- * ends) mapped to a single value. Entries are stored as {@code long keys[i]} packed as {@code (min
- * << 11) | count} -- {@code min} in the high 21 bits, {@code count} (the number of <i>additional</i>
- * code points after {@code min} sharing the value, so a single-code-point entry has {@code count ==
- * 0}) in the low 11 bits -- alongside a parallel {@code values[i]} array holding the value for that
- * entry. {@code keys} is kept sorted by {@code min}, so lookup is a binary search. Adjacent entries
- * with equal values are coalesced together on every mutation -- so, for example, two separate
- * {@code put} calls for touching ranges with the same value produce one entry, not two -- except
- * where doing so would exceed a single entry's 2048-code-point capacity (the 11-bit count field's
- * range): a range longer than that is unavoidably split across multiple consecutive entries, which
- * *is* observable through {@link #entrySet()} (each entry is at most 2048 code points long) even
- * though the whole range maps to one logical value throughout.
+ * ends) mapped to a single value. Entries are stored as {@code int keys[i]} packed as {@code (min
+ * << 11) | count} -- {@code min} (21 bits, enough for the full {@code [0, MAX_CODE_POINT]} range)
+ * in the high bits, {@code count} (the number of <i>additional</i> code points after {@code min}
+ * sharing the value, so a single-code-point entry has {@code count == 0}) in the low 11 bits --
+ * alongside a parallel {@code values[i]} array holding the value for that entry. 21+11 bits fit
+ * exactly in an {@code int}, so no {@code long} is needed despite {@code min}'s high bit landing on
+ * the sign bit for code points at/above {@code 0x100000} (plane 16) -- every read extracts {@code
+ * min} via the unsigned {@code >>>} shift rather than ever comparing packed keys directly, which
+ * sidesteps that entirely. {@code keys} is kept sorted by {@code min}, so lookup is a binary
+ * search.
  *
- * <p>Unlike {@link TreeCodePointMap} (which delegates to Guava's {@code TreeRangeMap} and does not
- * coalesce at all), two separate {@code put} calls for adjacent ranges with the same value produce
- * a single coalesced entry here, not two (capacity permitting) -- this class's {@code equals}/
+ * <p>Every mutator ({@link #put}, {@link #remove}, {@link #appendSorted}) is localized to the
+ * region of the array it actually touches (found via the same binary search lookup uses), not a
+ * scan of the whole map -- building up an n-entry map via n {@code put}/{@code appendSorted} calls
+ * is therefore O(n) amortized, not O(n^2). Adjacent entries with equal values are coalesced
+ * together where doing so doesn't exceed a single entry's 2048-code-point capacity (the 11-bit
+ * count field's range); a range longer than that is unavoidably split across multiple consecutive
+ * entries, which *is* observable through {@link #entrySet()} even though it maps to one logical
+ * value throughout. Unlike {@link TreeCodePointMap} (whose Guava {@code TreeRangeMap} backing never
+ * auto-coalesces), that means two separate {@code put} calls for adjacent ranges with the same
+ * value produce one entry here, not two (capacity permitting) -- this class's {@code equals}/
  * {@code entrySet} operate on that coalesced, canonical form.
+ *
+ * <p>The backing arrays start at capacity 1 (most instances here are small -- see {@link
+ * PatternConstruct}, the only real caller, which builds one of these per union/loop-dispatch node)
+ * and grow by 1.5x via {@link #ensureCapacity} as needed; call {@link #ensureCapacity} directly
+ * first if the eventual size is known ahead of time, to skip the growth altogether.
  */
 public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   // count occupies the low 11 bits (max 2047, i.e. entries span at most 2048 code points).
   private static final int COUNT_BITS = 11;
   private static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
 
-  private static final int INITIAL_CAPACITY = 16;
+  private static final int INITIAL_CAPACITY = 1;
 
   // Parallel arrays, kept sorted by min (equivalently, by key, since min occupies the high bits
   // and comparisons here always extract min rather than comparing keys as raw ints -- see the
@@ -44,12 +58,12 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   // `size` is the logical entry count; `keys.length`/`values.length` (always equal) are capacity,
   // which can run ahead of `size` -- see ensureCapacity -- so every access below is bounded by
   // `size`, never by the arrays' own length.
-  private long[] keys;
+  private int[] keys;
   private V[] values;
   private int size;
 
   public ArrayCodePointMap() {
-    keys = new long[INITIAL_CAPACITY];
+    keys = new int[INITIAL_CAPACITY];
     values = newValuesArray(INITIAL_CAPACITY);
     size = 0;
   }
@@ -65,27 +79,28 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   }
 
   /** Grows the backing arrays (by 1.5x, or to {@code minCapacity} if that's bigger) if needed. */
-  private void ensureCapacity(int minCapacity) {
+  @Override
+  public void ensureCapacity(int minCapacity) {
     if (keys.length < minCapacity) {
-      int newCapacity = Math.max(minCapacity, keys.length + (keys.length >> 1));
+      int newCapacity = Math.max(minCapacity, keys.length + (keys.length >> 1) + 1);
       keys = Arrays.copyOf(keys, newCapacity);
       values = Arrays.copyOf(values, newCapacity);
     }
   }
 
-  private static long packKey(int min, int count) {
-    return ((long) min << COUNT_BITS) | count;
+  private static int packKey(int min, int count) {
+    return (min << COUNT_BITS) | count;
   }
 
-  private static int keyMin(long key) {
-    return (int) (key >>> COUNT_BITS);
+  private static int keyMin(int key) {
+    return key >>> COUNT_BITS;
   }
 
-  private static int keyCount(long key) {
-    return (int) (key & MAX_COUNT);
+  private static int keyCount(int key) {
+    return key & MAX_COUNT;
   }
 
-  private static int keyMax(long key) { // exclusive
+  private static int keyMax(int key) { // exclusive
     return keyMin(key) + keyCount(key) + 1;
   }
 
@@ -104,6 +119,27 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
       }
     }
     return result;
+  }
+
+  /**
+   * The half-open index range {@code [start, end)} of existing entries overlapping {@code [min,
+   * max)}, found via {@link #floorIndex} rather than a scan -- entries are sorted and disjoint, so
+   * this is always a contiguous run.
+   */
+  private int windowStart(int min) {
+    int idx = floorIndex(min);
+    if (idx < 0 || keyMax(keys[idx]) <= min) {
+      idx++;
+    }
+    return idx;
+  }
+
+  private int windowEnd(int start, int max) {
+    int end = start;
+    while (end < size && keyMin(keys[end]) < max) {
+      end++;
+    }
+    return end;
   }
 
   @Override
@@ -126,11 +162,38 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
 
   @Override
   public Set<Entry<Range, V>> entrySet() {
-    Set<Entry<Range, V>> result = new java.util.LinkedHashSet<>();
-    for (int i = 0; i < size; i++) {
-      result.add(new ImmutableEntry<>(new Range(keyMin(keys[i]), keyMax(keys[i])), values[i]));
-    }
-    return result;
+    // A lazy view, not an eager copy: entrySet() itself is O(1), and iterating/short-circuiting
+    // (e.g. PatternConstruct.findFirstOverlap's early return) costs only what it actually visits.
+    // AbstractSet supplies Set-contract equals()/hashCode() (size + per-element comparison) from
+    // just size()/iterator(), which is what this class's own equals()/hashCode() rely on.
+    return new AbstractSet<Entry<Range, V>>() {
+      @Override
+      public Iterator<Entry<Range, V>> iterator() {
+        return new Iterator<Entry<Range, V>>() {
+          private int i = 0;
+
+          @Override
+          public boolean hasNext() {
+            return i < size;
+          }
+
+          @Override
+          public Entry<Range, V> next() {
+            if (i >= size) {
+              throw new NoSuchElementException();
+            }
+            Entry<Range, V> entry = new ImmutableEntry<>(new Range(keyMin(keys[i]), keyMax(keys[i])), values[i]);
+            i++;
+            return entry;
+          }
+        };
+      }
+
+      @Override
+      public int size() {
+        return size;
+      }
+    };
   }
 
   @Override
@@ -145,16 +208,15 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   @Override
   public CodePointMap<V> intersection(int min, int max) {
     ArrayCodePointMap<V> result = new ArrayCodePointMap<>();
-    int idx = Math.max(0, floorIndex(min));
-    for (int i = idx; i < size; i++) {
-      long key = keys[i];
+    int start = windowStart(min);
+    int end = windowEnd(start, max);
+    result.ensureCapacity(end - start);
+    for (int i = start; i < end; i++) {
+      int key = keys[i];
       int lo = Math.max(min, keyMin(key));
       int hi = Math.min(max, keyMax(key));
       if (lo < hi) {
-        result.put(lo, hi, values[i]);
-      }
-      if (keyMin(key) >= max) {
-        break;
+        result.appendSorted(lo, hi, values[i]);
       }
     }
     return result;
@@ -166,9 +228,10 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     for (Entry<Range, V> otherEntry : other.entrySet()) {
       int min = otherEntry.getKey().min;
       int max = otherEntry.getKey().max;
-      int idx = Math.max(0, floorIndex(min));
-      for (int i = idx; i < size && keyMin(keys[i]) < max; i++) {
-        long key = keys[i];
+      int start = windowStart(min);
+      int end = windowEnd(start, max);
+      for (int i = start; i < end; i++) {
+        int key = keys[i];
         int lo = Math.max(min, keyMin(key));
         int hi = Math.min(max, keyMax(key));
         if (lo < hi) {
@@ -193,56 +256,107 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
 
   @Override
   public void put(int min, int max, V value) {
-    remove(min, max);
-    // Split into <= MAX_COUNT+1-length chunks before inserting, so no single entry's count field
-    // overflows.
+    int start = windowStart(min);
+    int end = windowEnd(start, max);
+    boolean keepLeft = start < end && keyMin(keys[start]) < min;
+    boolean keepRight = start < end && keyMax(keys[end - 1]) > max;
+    int chunkCount = (max - min + MAX_COUNT) / (MAX_COUNT + 1); // ceil((max - min) / 2048)
+    int replCount = (keepLeft ? 1 : 0) + chunkCount + (keepRight ? 1 : 0);
+
+    int[] replKeys = new int[replCount];
+    V[] replValues = newValuesArray(replCount);
+    int w = 0;
+    if (keepLeft) {
+      int entryMin = keyMin(keys[start]);
+      replKeys[w] = packKey(entryMin, min - entryMin - 1);
+      replValues[w] = values[start];
+      w++;
+    }
     for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
       int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
-      insert(chunkMin, chunkMax, value);
+      replKeys[w] = packKey(chunkMin, chunkMax - chunkMin - 1);
+      replValues[w] = value;
+      w++;
     }
-    coalesceAround(min, max);
+    if (keepRight) {
+      int entryMax = keyMax(keys[end - 1]);
+      replKeys[w] = packKey(max, entryMax - max - 1);
+      replValues[w] = values[end - 1];
+      w++;
+    }
+
+    spliceWindow(start, end, replKeys, replValues);
+    // The only new adjacencies this put() could have created are at the two edges of the spliced
+    // region -- anything already coalesced elsewhere in the map is untouched. Check the right edge
+    // first so a merge there can't shift the still-unchecked left edge's indices.
+    tryCoalesceAt(start + replCount - 1);
+    tryCoalesceAt(start - 1);
   }
 
-  /** Inserts a single new entry {@code [min, max)}; caller guarantees no overlap with existing entries. */
-  private void insert(int min, int max, V value) {
-    int idx = floorIndex(min) + 1; // insertion point: first entry with min > `min`
-    ensureCapacity(size + 1);
-    System.arraycopy(keys, idx, keys, idx + 1, size - idx);
-    System.arraycopy(values, idx, values, idx + 1, size - idx);
-    keys[idx] = packKey(min, max - min - 1);
-    values[idx] = value;
-    size++;
+  /** Bulk-appends a single entry; see {@link MutableCodePointMap#appendSorted}'s contract. */
+  @Override
+  public void appendSorted(int min, int max, V value) {
+    if (size > 0) {
+      int lastIdx = size - 1;
+      int lastKey = keys[lastIdx];
+      if (keyMax(lastKey) == min && Objects.equals(values[lastIdx], value)) {
+        int mergeLen = Math.min(MAX_COUNT - keyCount(lastKey), max - min);
+        if (mergeLen > 0) {
+          keys[lastIdx] = packKey(keyMin(lastKey), keyCount(lastKey) + mergeLen);
+          min += mergeLen;
+        }
+      }
+    }
+    for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
+      int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
+      ensureCapacity(size + 1);
+      keys[size] = packKey(chunkMin, chunkMax - chunkMin - 1);
+      values[size] = value;
+      size++;
+    }
+  }
+
+  /** Replaces the entries at {@code [start, end)} with {@code replKeys}/{@code replValues}, shifting the tail as needed. */
+  private void spliceWindow(int start, int end, int[] replKeys, V[] replValues) {
+    int delta = replKeys.length - (end - start);
+    int oldSize = size;
+    if (delta > 0) {
+      ensureCapacity(size + delta);
+    }
+    if (delta != 0) {
+      System.arraycopy(keys, end, keys, end + delta, oldSize - end);
+      System.arraycopy(values, end, values, end + delta, oldSize - end);
+    }
+    System.arraycopy(replKeys, 0, keys, start, replKeys.length);
+    System.arraycopy(replValues, 0, values, start, replValues.length);
+    size = oldSize + delta;
+    for (int i = size; i < oldSize; i++) {
+      values[i] = null; // don't keep replaced-away values reachable
+    }
   }
 
   /**
-   * Merges adjacent entries with equal values. Coalescing only ever removes entries (never adds
-   * any), so this always compacts safely in place: the write cursor never overtakes the read
-   * cursor.
+   * If the entries at {@code idx} and {@code idx + 1} are adjacent, equal-valued, and merge within
+   * a single entry's capacity, merges them (shrinking the map by one entry).
    */
-  private void coalesceAround(int min, int max) {
-    int writeIdx = 0;
-    for (int i = 0; i < size; i++) {
-      long key = keys[i];
-      V value = values[i];
-      if (writeIdx > 0) {
-        long prevKey = keys[writeIdx - 1];
-        V prevValue = values[writeIdx - 1];
-        if (keyMax(prevKey) == keyMin(key) && Objects.equals(prevValue, value)) {
-          int mergedCount = keyCount(prevKey) + keyCount(key) + 1;
-          if (mergedCount <= MAX_COUNT) {
-            keys[writeIdx - 1] = packKey(keyMin(prevKey), mergedCount);
-            continue;
-          }
-        }
-      }
-      keys[writeIdx] = key;
-      values[writeIdx] = value;
-      writeIdx++;
+  private void tryCoalesceAt(int idx) {
+    if (idx < 0 || idx + 1 >= size) {
+      return;
     }
-    for (int i = writeIdx; i < size; i++) {
-      values[i] = null; // don't keep coalesced-away values reachable
+    int a = keys[idx];
+    int b = keys[idx + 1];
+    if (keyMax(a) != keyMin(b) || !Objects.equals(values[idx], values[idx + 1])) {
+      return;
     }
-    size = writeIdx;
+    int mergedCount = keyCount(a) + keyCount(b) + 1;
+    if (mergedCount > MAX_COUNT) {
+      return;
+    }
+    keys[idx] = packKey(keyMin(a), mergedCount);
+    System.arraycopy(keys, idx + 2, keys, idx + 1, size - idx - 2);
+    System.arraycopy(values, idx + 2, values, idx + 1, size - idx - 2);
+    values[size - 1] = null;
+    size--;
   }
 
   @Override
@@ -257,9 +371,113 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     return before;
   }
 
+  /**
+   * Merges {@code other}'s entries into this map, {@code other} winning on overlap -- see {@link
+   * MutableCodePointMap#putAll}. Implemented as a single sorted sweep over this map's own entries
+   * (already sorted) and {@code other.entrySet()} (sorted per {@link CodePointMap}'s ordering
+   * contract) rather than one {@link #put} call per source entry: each {@code other} entry is
+   * appended as-is, and whatever of this map's own entries falls outside every {@code other}
+   * entry -- the parts {@code other} doesn't overwrite -- is appended around it. This is O(this
+   * map's size + other's size); when this map starts empty, the sweep degenerates to appending
+   * every {@code other} entry directly; no separate fast path is needed for that case.
+   */
   @Override
   public void putAll(CodePointMap<V> other) {
-    other.forEach((range, value) -> put(range.min, range.max, value));
+    if (other.isEmpty()) {
+      return;
+    }
+    int[] oldKeys = keys;
+    V[] oldValues = values;
+    int oldSize = size;
+    keys = new int[INITIAL_CAPACITY];
+    values = newValuesArray(INITIAL_CAPACITY);
+    size = 0;
+    ensureCapacity(oldSize + other.entrySet().size()); // upper bound on the merged result's size
+
+    // `i` is the next not-yet-fully-emitted entry of this map's original data; a "pending"
+    // in-progress one (possibly a partial leftover after being trimmed by an `other` entry) is
+    // tracked in pendingMin/pendingMax/pendingValue rather than mutating oldKeys/oldValues.
+    int i = 0;
+    boolean pending = false;
+    int pendingMin = 0;
+    int pendingMax = 0;
+    V pendingValue = null;
+    for (Entry<Range, V> otherEntry : other.entrySet()) {
+      int oMin = otherEntry.getKey().min;
+      int oMax = otherEntry.getKey().max;
+      // Emit whatever of this map's original data lies entirely before oMin.
+      while (true) {
+        if (!pending) {
+          if (i >= oldSize) {
+            break;
+          }
+          pendingMin = keyMin(oldKeys[i]);
+          pendingMax = keyMax(oldKeys[i]);
+          pendingValue = oldValues[i];
+          pending = true;
+          i++;
+        }
+        if (pendingMin >= oMin) {
+          break; // this pending entry starts at/after oMin -- nothing left to emit before it
+        }
+        int emitMax = Math.min(pendingMax, oMin);
+        appendSorted(pendingMin, emitMax, pendingValue);
+        if (emitMax >= pendingMax) {
+          pending = false;
+        } else {
+          pendingMin = emitMax; // the rest overlaps `other`; handled by the loop below
+        }
+      }
+      appendSorted(oMin, oMax, otherEntry.getValue());
+      // Discard whatever of this map's original data `other`'s entry just overwrote.
+      while (true) {
+        if (!pending) {
+          if (i >= oldSize) {
+            break;
+          }
+          pendingMin = keyMin(oldKeys[i]);
+          pendingMax = keyMax(oldKeys[i]);
+          pendingValue = oldValues[i];
+          pending = true;
+          i++;
+        }
+        if (pendingMin >= oMax) {
+          break; // doesn't overlap this `other` entry -- leave it for a later one, or the tail
+        }
+        if (pendingMax <= oMax) {
+          pending = false; // fully overwritten
+        } else {
+          pendingMin = oMax; // partially overwritten; the remainder starts right after `other`
+          break;
+        }
+      }
+    }
+    // Emit whatever of this map's original data is left after the last `other` entry.
+    if (pending) {
+      appendSorted(pendingMin, pendingMax, pendingValue);
+    }
+    while (i < oldSize) {
+      appendSorted(keyMin(oldKeys[i]), keyMax(oldKeys[i]), oldValues[i]);
+      i++;
+    }
+  }
+
+  @Override
+  public CodePointMap<V> union(CodePointMap<V> other) {
+    // Overrides CodePointMap.union's default, which hardcodes `new TreeCodePointMap<>(this)`
+    // regardless of the receiver's actual type -- calling it here would silently hand back a
+    // TreeCodePointMap instead of an ArrayCodePointMap (the same bug PatternConstruct used to have
+    // via an unchecked cast on this exact method -- see notes.md).
+    ArrayCodePointMap<V> result = new ArrayCodePointMap<>(this);
+    result.putAll(other);
+    return result;
+  }
+
+  @Override
+  public CodePointMap<V> difference(CodePointMap<V> other) {
+    ArrayCodePointMap<V> result = new ArrayCodePointMap<>(this);
+    result.removeAll(other);
+    return result;
   }
 
   @Override
@@ -267,54 +485,76 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     if (size == 0 || min >= max) {
       return;
     }
-    // Entries are sorted and disjoint, so at most one entry can strictly contain [min, max) on
-    // both sides -- the one case that turns 1 entry into 2 and so needs an extra slot. Every other
-    // touched entry maps to 0 or 1 output entries, so the general loop below always has room to
-    // compact in place (write cursor <= read cursor). Handling the growth case separately, up
-    // front, keeps that loop simple and safe.
-    int splitIdx = floorIndex(min);
-    if (splitIdx >= 0) {
-      long splitKey = keys[splitIdx];
-      int entryMin = keyMin(splitKey);
-      int entryMax = keyMax(splitKey);
-      if (entryMin < min && entryMax > max) {
-        V value = values[splitIdx];
-        ensureCapacity(size + 1);
-        System.arraycopy(keys, splitIdx + 1, keys, splitIdx + 2, size - splitIdx - 1);
-        System.arraycopy(values, splitIdx + 1, values, splitIdx + 2, size - splitIdx - 1);
-        keys[splitIdx] = packKey(entryMin, min - entryMin - 1);
-        values[splitIdx] = value;
-        keys[splitIdx + 1] = packKey(max, entryMax - max - 1);
-        values[splitIdx + 1] = value;
-        size++;
-        return;
-      }
+    int start = windowStart(min);
+    int end = windowEnd(start, max);
+    if (start >= end) {
+      return; // nothing overlaps [min, max)
     }
-    int writeIdx = 0;
-    for (int i = 0; i < size; i++) {
-      long key = keys[i];
-      V value = values[i];
+    if (end - start == 1) {
+      // A single entry is touched: every case below is a plain field edit or a lone insert/
+      // delete, never the general multi-entry splice -- no scratch arrays needed.
+      int key = keys[start];
       int entryMin = keyMin(key);
       int entryMax = keyMax(key);
-      if (entryMax <= min || entryMin >= max) {
-        keys[writeIdx] = key;
-        values[writeIdx] = value;
-        writeIdx++;
-      } else if (entryMin < min) {
-        keys[writeIdx] = packKey(entryMin, min - entryMin - 1);
-        values[writeIdx] = value;
-        writeIdx++;
-      } else if (entryMax > max) {
-        keys[writeIdx] = packKey(max, entryMax - max - 1);
-        values[writeIdx] = value;
-        writeIdx++;
+      boolean keepLeft = entryMin < min;
+      boolean keepRight = entryMax > max;
+      if (keepLeft && keepRight) {
+        // Removing the middle: shrink this entry down to its left remainder, then insert the
+        // right remainder right after it.
+        keys[start] = packKey(entryMin, min - entryMin - 1);
+        insertSingle(start + 1, packKey(max, entryMax - max - 1), values[start]);
+      } else if (keepLeft) {
+        // Removing the end of the range: just shorten this entry -- no shift needed.
+        keys[start] = packKey(entryMin, min - entryMin - 1);
+      } else if (keepRight) {
+        // Removing the start of the range: just move this entry's start forward -- no shift
+        // needed.
+        keys[start] = packKey(max, entryMax - max - 1);
+      } else {
+        // The whole entry is removed.
+        deleteRange(start, start + 1);
       }
-      // else: entry lies entirely within [min, max) -- fully removed, contributes nothing.
+      return;
     }
-    for (int i = writeIdx; i < size; i++) {
+    // Multiple entries are touched: right-trim the first (if `min` falls inside it) and left-trim
+    // the last (if `max` falls inside it) in place, then delete whatever's strictly between (and
+    // now possibly the first/last themselves, if they weren't trimmed) in one shift. This can only
+    // shrink the map -- the one case that grows it (a single entry split in two) is handled above.
+    if (keyMin(keys[start]) < min) {
+      int entryMin = keyMin(keys[start]);
+      keys[start] = packKey(entryMin, min - entryMin - 1);
+      start++;
+    }
+    if (keyMax(keys[end - 1]) > max) {
+      int entryMax = keyMax(keys[end - 1]);
+      keys[end - 1] = packKey(max, entryMax - max - 1);
+      end--;
+    }
+    deleteRange(start, end);
+  }
+
+  /** Shifts the tail down over {@code [from, to)}, removing those entries. */
+  private void deleteRange(int from, int to) {
+    if (from >= to) {
+      return;
+    }
+    System.arraycopy(keys, to, keys, from, size - to);
+    System.arraycopy(values, to, values, from, size - to);
+    int newSize = size - (to - from);
+    for (int i = newSize; i < size; i++) {
       values[i] = null; // don't keep removed values reachable
     }
-    size = writeIdx;
+    size = newSize;
+  }
+
+  /** Inserts one new entry at {@code idx}, shifting the tail up to make room. */
+  private void insertSingle(int idx, int key, V value) {
+    ensureCapacity(size + 1);
+    System.arraycopy(keys, idx, keys, idx + 1, size - idx);
+    System.arraycopy(values, idx, values, idx + 1, size - idx);
+    keys[idx] = key;
+    values[idx] = value;
+    size++;
   }
 
   @Override

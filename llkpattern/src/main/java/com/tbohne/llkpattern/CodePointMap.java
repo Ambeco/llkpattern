@@ -27,9 +27,16 @@ import org.checkerframework.checker.nullness.qual.PolyNull;
  * com.google.common.collect.Range#closedOpen}. A single code point {@code cp} is represented as
  * {@code [cp, cp+1)}.
  *
- * <p>{@link TreeCodePointMap} is the (currently only) implementation, delegating to Guava's
- * {@code TreeRangeMap}. The interface exists so that implementation can later be swapped for
- * something more specialized to the Unicode code point space, without disturbing callers.
+ * <p>{@link ArrayCodePointMap} is the implementation real callers should use; {@link
+ * TreeCodePointMap} (a Guava {@code TreeRangeMap} adapter) exists only as its differential-test
+ * oracle -- see {@code CodePointMapDifferentialTest}.
+ *
+ * <p><b>Ordering contract:</b> {@link #entrySet()} (and everything built on it -- {@link
+ * #forEach}, {@link #iterator()}, {@link #stream()}) always yields entries in ascending order by
+ * {@link Range#min}. Every implementation maintains this already (it falls straight out of being
+ * a map of disjoint ranges over an ordered domain), so this is a formal guarantee, not an
+ * incidental detail: it's what lets {@link MutableCodePointMap#putAll} do a linear sorted-merge
+ * instead of one insertion per source entry, and any future implementation must preserve it.
  *
  * @param <V> the value type. This interface does not support {@code null} values: a {@code null}
  *     result from a query method means "no mapping", matching {@link Map#get}.
@@ -46,6 +53,7 @@ public interface CodePointMap<V> {
   /** Returns true if every code point in {@code [min, max)} has a mapping. */
   boolean containsKeys(int min, int max);
 
+  /** In ascending order by {@link Range#min} -- see the class doc's ordering contract. */
   Set<Entry<Range, V>> entrySet();
 
   default @Nullable V get(int codePoint) {
@@ -122,6 +130,25 @@ public interface CodePointMap<V> {
 
     /** Maps every code point in {@code [min, max)} to {@code value}, replacing any prior mapping. */
     void put(int min, int max, V value);
+
+    /**
+     * Bulk-loads a single entry, skipping whatever overlap-checking/coalescing work {@link #put}
+     * normally does. Callers must supply entries for a given map in ascending {@code min} order
+     * (per the class doc's ordering contract), building that map up from empty. The default here
+     * just forwards to {@link #put}, for implementations (like {@link TreeCodePointMap}, which
+     * exists only as a differential-test oracle) that don't need the optimization; {@link
+     * ArrayCodePointMap} provides the real O(1)-amortized override.
+     */
+    default void appendSorted(int min, int max, V value) {
+      put(min, max, value);
+    }
+
+    /**
+     * Optional capacity hint for implementations backed by a resizable array (see {@link
+     * ArrayCodePointMap}): preallocate room for {@code minEntries} upcoming entries, to avoid
+     * incremental array growth when the eventual size is known ahead of time. No-op by default.
+     */
+    default void ensureCapacity(int minEntries) {}
 
     @Nullable
     V compute(int codePoint, CodePointRemapFunction<V> remappingFunction);

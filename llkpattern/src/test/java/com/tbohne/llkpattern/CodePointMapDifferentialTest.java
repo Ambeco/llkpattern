@@ -49,6 +49,42 @@ public class CodePointMapDifferentialTest {
     }
   }
 
+  @Test
+  public void randomPutAll_agreesWithTreeCodePointMap() {
+    // Dedicated coverage for ArrayCodePointMap.putAll's sorted-merge sweep (see its class doc) --
+    // separate from the put()/remove() trials above, since it's a large enough algorithm on its
+    // own to deserve its own randomized stress rather than only the tiny hand-written union_*
+    // cases in CodePointMapTestBase.
+    Random random = new Random(7);
+    for (int trial = 0; trial < 200; trial++) {
+      TreeCodePointMap<String> expectedBase = randomMap(random, new TreeCodePointMap<>());
+      ArrayCodePointMap<String> actualBase = new ArrayCodePointMap<>();
+      actualBase.putAll(expectedBase);
+      TreeCodePointMap<String> expectedOther = randomMap(random, new TreeCodePointMap<>());
+      ArrayCodePointMap<String> actualOther = new ArrayCodePointMap<>();
+      actualOther.putAll(expectedOther);
+
+      TreeCodePointMap<String> expected = new TreeCodePointMap<>(expectedBase);
+      expected.putAll(expectedOther);
+      ArrayCodePointMap<String> actual = new ArrayCodePointMap<>(actualBase);
+      actual.putAll(actualOther);
+
+      assertAgree(trial, expected, actual);
+    }
+  }
+
+  private static TreeCodePointMap<String> randomMap(Random random, TreeCodePointMap<String> map) {
+    for (int op = 0; op < 20; op++) {
+      int min = randomCodePoint(random);
+      int span = 1 + random.nextInt(3000);
+      int max = Math.min(CodePointMap.MAX_CODE_POINT + 1, min + span);
+      if (max > min) {
+        map.put(min, max, "v" + random.nextInt(4));
+      }
+    }
+    return map;
+  }
+
   private static int randomCodePoint(Random random) {
     // Bias sampling toward the 0x0FFFxx-0x10xxxx boundary, since that's where a signed-int
     // packing bug (min << 11 setting the sign bit) would show up.

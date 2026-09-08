@@ -343,6 +343,63 @@ Notes to self about how to work on this project, and other context that doesn't 
 - Full suite after the swap: 1476 tests, 0 failing, 561 skipped (up from the prior 1443/561
   baseline — the new coverage above accounts for the difference).
 
+### JMH regression found post-swap, and three follow-up fixes (2026-09-08)
+
+- Running `CorpusBenchmark` after the swap surfaced a real regression the test suite couldn't
+  catch (it checks correctness, not speed): `llkCompile` went from 21.5ms/op to 94.3ms/op (+339%),
+  while `regexCompile`/`regexMatch` (which never touch this code) only moved ~+30% -- that's this
+  machine's noise floor for a same-session before/after comparison, so the `llkCompile` number was
+  real, not noise. GC got *cheaper* (fewer/shorter pauses) but allocation/op more than doubled
+  (10.5MB -> 24.2MB), pointing at CPU-bound array-shuffling work, not GC pressure.
+- Root cause (confirmed by the project owner's read, not just guessed): `remove()` and
+  `coalesceAround()` -- both run on *every* `put()` call -- unconditionally rescanned the entire
+  array regardless of where `[min, max)` actually fell. Building an n-entry map via n `put()` calls
+  (exactly what `PatternConstruct.toCodePointMap`'s per-entry loop, and `putAll`'s default
+  one-`put()`-per-source-entry forwarding, both do) was therefore O(n^2), not O(n). Fixed in three
+  steps, each independently verified against the full suite and a re-run of `CorpusBenchmark`:
+  1. Rewrote `put()`/`remove()` to use the existing binary-search lookup to find the exact window
+     of entries `[min, max)` overlaps, touching only that window (plus O(1) boundary-coalesce
+     checks) instead of the whole array. Also added `MutableCodePointMap.appendSorted` (bulk-append
+     assuming ascending, non-overlapping input) and `ArrayCodePointMap.ensureCapacity` (now public,
+     also added to the interface as a hint), and switched `toCodePointMap` to use both instead of
+     `put()`. Result: llkCompile 94.3ms -> 41.1ms (but a very noisy run, +-22ms error bar).
+  2. Simplified `remove()` further per the project owner's suggested case breakdown (a single
+     touched entry is a plain field edit -- shorten it, move its start, or split it in two with one
+     `insertSingle` -- never the general multi-entry path; multiple touched entries trim the first/
+     last in place and delete what's strictly between via one shift), eliminating the small scratch
+     `int[]`/`V[]` arrays `put()`'s general path was still allocating per call.
+  3. Formalized "entrySet() (and everything built on it) is always ascending by min" as a
+     `CodePointMap` interface-level ordering contract (documented in its class doc) rather than an
+     implementation detail `appendSorted`'s callers had to trust informally -- every implementation
+     already satisfied it, so this didn't change behavior, but it's what makes the next point sound.
+     Rewrote `ArrayCodePointMap.putAll` from "one `put()` per source entry" into a single sorted
+     merge sweep (two-pointer walk over this map's own entries and `other`'s, `other` winning on
+     overlap -- see its own doc comment for the algorithm), which also *removes* the separate
+     from-empty fast path since the general sweep degenerates to it automatically when this map
+     starts empty. Added `CodePointMapDifferentialTest.randomPutAll_agreesWithTreeCodePointMap`
+     (200 trials merging two random maps) as dedicated stress coverage for this, beyond the small
+     hand-written `union_*` cases in `CodePointMapTestBase`.
+  Also fixed, while investigating: `CodePointMap.union()`'s default hard-codes `new
+  TreeCodePointMap<>(this)` regardless of the receiver's actual type -- the same class of bug
+  already found once in `PatternConstruct` (see above). `ArrayCodePointMap` now overrides `union`/
+  `difference` to construct the correct concrete type. `ArrayCodePointMap.entrySet()` was also
+  changed from an eager `LinkedHashSet` copy to a lazy view (cheap to call, pay only for what you
+  iterate) after noticing `PatternConstruct.findFirstOverlap` called `merged.entrySet()` *inside*
+  its outer loop -- rebuilding merged's full entry set once per branch entry -- which was hoisted
+  out as its own fix alongside the view change.
+  Final result after all three fixes: llkCompile 21.5ms -> 33.8ms/op (+57.5% against a same-run
+  noise floor of ~+6%, so ~+50% real), allocation/op 10.5MB -> 17.2MB. Down from the initial +339%/
+  2.3x regression, but not fully closed -- left for the project owner's own planned profiling pass
+  to find what's left (candidates raised in discussion: `floorIndex`'s binary search over the very
+  small maps that dominate this workload -- worth comparing against a linear scan below some size
+  threshold -- or `entrySet()`'s remaining per-call allocation, e.g. `putAll`'s `other.entrySet()
+  .size()` capacity-hint call).
+- Also switched `ArrayCodePointMap`'s packed key from `long` to `int` (21+11 bits fits exactly;
+  the `long` was unnecessary and doubled `keys[]`'s memory footprint for no reason) and its initial
+  array capacity from 16 down to 1 (most instances here are small -- one per union/loop-dispatch
+  node in `PatternConstruct`, and many have a single entry) -- both raised by the project owner
+  during this same investigation, not separately discovered.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

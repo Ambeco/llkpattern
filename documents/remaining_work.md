@@ -138,6 +138,16 @@ diffed against on later runs to catch regressions.
       design sketch for the array-backed map, but neither implementation actually has this split
       today (both are mutable-only) -- worth doing for both together if immutability is ever
       wanted, rather than giving only the newer class a shape the older one lacks.
+- [ ] **Profile `ArrayCodePointMap`'s remaining `llkCompile` regression**: after fixing an O(n^2)
+      blowup found via `CorpusBenchmark` post-swap (see notes.md's 2026-09-08 entry for the full
+      story), `llkCompile` is still ~+50% slower than the pre-`ArrayCodePointMap` baseline (real
+      signal, not noise -- confirmed against `regexCompile`'s same-run noise floor). Project owner
+      plans to profile and find where the remaining time goes; candidates raised in discussion:
+      `floorIndex`'s binary search over the very small maps that dominate `PatternConstruct`'s
+      usage (worth comparing against a linear scan below some size threshold, maybe ~64 entries --
+      not yet tried, deliberately deferred pending profiling data rather than guessed at), or
+      `entrySet()`'s remaining per-call allocation (e.g. `putAll`'s `other.entrySet().size()`
+      capacity-hint call still walks/builds a full view just to count it).
 - [ ] **Followup experiment** for `ArrayCodePointMap`: shrink the range field to 10 bits and use the
     freed 11th bit as a mask-vs-range flag. When set, the 10 "range" bits are instead a bitmask of
     which of the 10 code points *after* `min` also map to this value (not required to be

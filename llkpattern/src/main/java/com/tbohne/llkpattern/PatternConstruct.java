@@ -17,6 +17,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 abstract class PatternConstruct {
 	static final RangeMap<Integer, PatternConstruct> EMPTY_MAP = TreeRangeMap.create();
@@ -149,10 +150,14 @@ abstract class PatternConstruct {
 
 	/** Converts a Guava RangeMap (arbitrary bound types) into a CodePointMap ({@code [min,max)}). */
 	static MutableCodePointMap<PatternConstruct> toCodePointMap(RangeMap<Integer, PatternConstruct> rangeMap) {
+		Map<Range<Integer>, PatternConstruct> asMap = rangeMap.asMapOfRanges();
 		MutableCodePointMap<PatternConstruct> result = new ArrayCodePointMap<>();
-		for (Entry<Range<Integer>, PatternConstruct> e : rangeMap.asMapOfRanges().entrySet()) {
+		result.ensureCapacity(asMap.size());
+		// asMap's iteration order is ascending by range (a RangeMap's own invariant), so this can
+		// use appendSorted's O(1)-amortized bulk path instead of put()'s general one.
+		for (Entry<Range<Integer>, PatternConstruct> e : asMap.entrySet()) {
 			Range<Integer> canon = e.getKey().canonical(DiscreteDomain.integers());
-			result.put(canon.lowerEndpoint(), canon.upperEndpoint(), e.getValue());
+			result.appendSorted(canon.lowerEndpoint(), canon.upperEndpoint(), e.getValue());
 		}
 		return result;
 	}
@@ -164,8 +169,11 @@ abstract class PatternConstruct {
 	 */
 	static @Nullable Entry<CodePointMap.Range, PatternConstruct> findFirstOverlap(
 			CodePointMap<PatternConstruct> merged, CodePointMap<PatternConstruct> branch) {
+		// Hoisted out of the loop below: entrySet() is a fresh (if now lazy) view each call, so
+		// calling it once per branchEntry here used to rebuild it branch.size() times over.
+		Set<Entry<CodePointMap.Range, PatternConstruct>> mergedEntries = merged.entrySet();
 		for (Entry<CodePointMap.Range, PatternConstruct> branchEntry : branch.entrySet()) {
-			for (Entry<CodePointMap.Range, PatternConstruct> mergedEntry : merged.entrySet()) {
+			for (Entry<CodePointMap.Range, PatternConstruct> mergedEntry : mergedEntries) {
 				int loMax = Math.min(branchEntry.getKey().max, mergedEntry.getKey().max);
 				int hiMin = Math.max(branchEntry.getKey().min, mergedEntry.getKey().min);
 				if (hiMin < loMax) {

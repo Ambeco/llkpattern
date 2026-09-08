@@ -36,6 +36,21 @@ public class PredefinedClassTest {
   }
 
   @Test
+  public void digit_isAsciiByDefault_widensUnderUnicodeCharacterClass() {
+    // ARABIC-INDIC DIGIT FIVE (U+0665): not ASCII, so only matches \d under
+    // UNICODE_CHARACTER_CLASS -- verified against real java.util.regex, which draws exactly this
+    // same line (same distinction as bare \p{Digit}, see PosixAndJavaClassTest.posix_digit()).
+    assertThat(Ll1Pattern.compile("\\d").matcher("\u0665").matches(), is(false));
+    assertThat(
+        Ll1Pattern.compile("\\d", Ll1Pattern.UNICODE_CHARACTER_CLASS).matcher("\u0665").matches(),
+        is(true));
+    assertThat(Ll1Pattern.compile("\\D").matcher("\u0665").matches(), is(true));
+    assertThat(
+        Ll1Pattern.compile("\\D", Ll1Pattern.UNICODE_CHARACTER_CLASS).matcher("\u0665").matches(),
+        is(false));
+  }
+
+  @Test
   public void horizontalWhitespace_matchesTab() {
     assertThat(Ll1Pattern.compile("\\h").matcher("\t").matches(), is(true));
     assertThat(Ll1Pattern.compile("\\h").matcher("a").matches(), is(false));

@@ -891,9 +891,9 @@ final class PatternParser {
       throw throwUnexpectedChar("escape character classes must have names");
     }
     String charClassName = pattern.substring(index, end);
-    // Kept for error messages below -- charClassName itself gets rewritten (prefix stripped,
-    // "Digit" -> "PosixDigit", etc.) before we're done, and a thrown message should always echo
-    // what the user actually typed, not our internal translation of it.
+    // Kept for error messages below -- charClassName itself gets its prefix stripped ("Is"/"In"/
+    // "script="/etc.) before we're done, and a thrown message should always echo what the user
+    // actually typed, not the stripped-down name used for the NamedCharClass.valueOf() lookup.
     String originalCharClassName = charClassName;
     advance(end - index + 1);
     // Bounds-checked like every other lookahead-by-one in this file (e.g.
@@ -909,6 +909,9 @@ final class PatternParser {
     // happened to coincidentally continue with 'I'/'j'. Fixed to check `charClassName` itself
     // (captured before the advance), which is what these prefixes are actually part of. See
     // remaining_work.md.
+    // Bare "Digit" needs no special-casing here -- NamedCharClass.Digit itself accepts both the
+    // `none` prefix (this branch, ASCII-default/flag-sensitive) and `is` (always full-Unicode,
+    // see NamedCharClass.Digit's own doc for why it's the one name that needs both).
     NamedCharClass.CharacterClassPrefix prefix;
     if (charClassName.startsWith("Is")) {
       prefix = NamedCharClass.CharacterClassPrefix.is;
@@ -918,37 +921,20 @@ final class PatternParser {
       charClassName = charClassName.substring(2);
     } else if (charClassName.startsWith("java")) {
       prefix = NamedCharClass.CharacterClassPrefix.java;
+    } else if (charClassName.startsWith("script=") || charClassName.startsWith("sc=")) {
+      prefix = NamedCharClass.CharacterClassPrefix.script;
+      charClassName = charClassName.substring(charClassName.indexOf('=') + 1);
+    } else if (charClassName.startsWith("block=") || charClassName.startsWith("blk=")) {
+      prefix = NamedCharClass.CharacterClassPrefix.block;
+      charClassName = charClassName.substring(charClassName.indexOf('=') + 1);
+    } else if (charClassName.startsWith("general_category=") || charClassName.startsWith("gc=")) {
+      prefix = NamedCharClass.CharacterClassPrefix.general_category;
+      charClassName = charClassName.substring(charClassName.indexOf('=') + 1);
+    } else if (charClassName.indexOf('=') < 0) {
+      prefix = NamedCharClass.CharacterClassPrefix.none;
     } else {
-      int eqPos = charClassName.indexOf('=');
-      if (eqPos < 0) {
-        prefix = NamedCharClass.CharacterClassPrefix.none;
-        if (charClassName.equals("Digit")) {
-          // Bare POSIX \p{Digit} can't be the NamedCharClass literally named "Digit" -- that Java
-          // identifier is already claimed by the (behaviorally different) \p{IsDigit} entry. See
-          // NamedCharClass.PosixDigit's doc for why they can't just share one instance.
-          charClassName = "PosixDigit";
-        } else if (charClassName.equals("PosixDigit")) {
-          // "PosixDigit" is our own internal NamedCharClass identifier, not a name real
-          // java.util.regex (or this project's own documented syntax) ever accepts -- without this
-          // guard, NamedCharClass.valueOf("PosixDigit") below would find it and silently accept
-          // "\p{PosixDigit}" as if it were valid pattern syntax. Verified real java.util.regex
-          // rejects it with "Unknown character property name {PosixDigit}".
-          throw throwUnexpectedChar(
-              "unknown named character class \"", originalCharClassName, "\"");
-        }
-      } else if (charClassName.startsWith("script=") || charClassName.startsWith("sc=")) {
-        prefix = NamedCharClass.CharacterClassPrefix.script;
-        charClassName = charClassName.substring(eqPos + 1);
-      } else if (charClassName.startsWith("block=") || charClassName.startsWith("blk=")) {
-        prefix = NamedCharClass.CharacterClassPrefix.block;
-        charClassName = charClassName.substring(eqPos + 1);
-      } else if (charClassName.startsWith("general_category=") || charClassName.startsWith("gc=")) {
-        prefix = NamedCharClass.CharacterClassPrefix.general_category;
-        charClassName = charClassName.substring(eqPos + 1);
-      } else {
-        throw throwUnexpectedChar(
-            "unknown Unicode prefix in character class \"", charClassName, "\"");
-      }
+      throw throwUnexpectedChar(
+          "unknown Unicode prefix in character class \"", charClassName, "\"");
     }
 
     try {

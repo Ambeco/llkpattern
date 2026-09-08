@@ -44,9 +44,10 @@ public class PosixAndJavaClassTest {
 
   @Test
   public void posix_digit() {
-    // See NamedCharClass.PosixDigit's doc: bare "\p{Digit}" can't literally be the enum constant
-    // "Digit" (already claimed by \p{IsDigit}, which is always full-Unicode) -- PatternParser
-    // translates the name to "PosixDigit" instead, which defaults to ASCII only.
+    // Digit is the one NamedCharClass reachable under two different prefixes (see its own doc):
+    // bare "\p{Digit}" (prefix `none`) is ASCII-default and only widens to full-Unicode under
+    // UNICODE_CHARACTER_CLASS, while "\p{IsDigit}" (prefix `is`, see java_isDigit_alwaysUnicode
+    // below) is always full-Unicode regardless of the flag.
     assertThat(Ll1Pattern.compile("\\p{Digit}").matcher("5").matches(), is(true));
     assertThat(Ll1Pattern.compile("\\p{Digit}").matcher("a").matches(), is(false));
     // ARABIC-INDIC DIGIT FIVE (U+0665): not ASCII, so only matches under UNICODE_CHARACTER_CLASS
@@ -60,16 +61,10 @@ public class PosixAndJavaClassTest {
   }
 
   @Test
-  public void posix_digit_internalNameNotExposed() {
-    // "PosixDigit" is only our internal NamedCharClass identifier for bare \p{Digit} (see
-    // posix_digit() above) -- it must not itself be accepted as pattern syntax. Verified real
-    // java.util.regex also rejects it ("Unknown character property name {PosixDigit}").
-    try {
-      Ll1Pattern.compile("\\p{PosixDigit}");
-      org.junit.Assert.fail("expected PatternSyntaxException");
-    } catch (PatternSyntaxException expected) {
-      assertThat(expected.getMessage().contains("PosixDigit"), is(true));
-    }
+  public void java_isDigit_alwaysUnicode() {
+    // Unlike bare \p{Digit} above, \p{IsDigit} never honors UNICODE_CHARACTER_CLASS -- verified
+    // against real java.util.regex.
+    assertThat(Ll1Pattern.compile("\\p{IsDigit}").matcher("\u0665").matches(), is(true));
   }
 
   @Test

@@ -142,4 +142,17 @@ public class UnicodeClassTest {
     org.junit.Assert.assertThrows(
         PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{block=Greek}"));
   }
+
+  @Test
+  public void unknownClassName_throwsWithTheNameActuallyTyped() {
+    // "PosixDigit" is not any name real java.util.regex or this project's own syntax accepts (it
+    // used to be an internal-only NamedCharClass identifier here, before NamedCharClass.Digit was
+    // made to answer to both the `none` and `is` prefixes directly -- see its doc). Kept as a
+    // regression test that an unrecognized name is simply rejected, and that the exception message
+    // echoes what was actually typed rather than any internal name translation.
+    PatternSyntaxException e =
+        org.junit.Assert.assertThrows(
+            PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{PosixDigit}"));
+    assertThat(e.getMessage().contains("PosixDigit"), is(true));
+  }
 }

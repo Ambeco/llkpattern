@@ -135,7 +135,20 @@ enum NamedCharClass {
               UnicodePredicates.OTHER_PUNCTUATION)),
   Control(Source.UProperty, javaISOControl),
   White_Space(Source.UProperty, javaWhitespace),
-  Digit(Source.UProperty, javaDigit),
+  // Digit is reachable both as the bare POSIX class \p{Digit} (ASCII-default, widens to
+  // full-Unicode only under UNICODE_CHARACTER_CLASS) and as the Unicode binary property
+  // \p{IsDigit} (always full-Unicode, the flag never applies) -- the only one of the 13 POSIX
+  // class names that also happens to be spelled identically to a Unicode binary property name
+  // (every other POSIX/UProperty pair differs, e.g. Alpha/Alphabetic, Space/White_Space, so no
+  // other POSIX class needs this). Verified against real java.util.regex: bare \p{Alphabetic} and
+  // \p{White_Space} both throw "Unknown character property name", confirming this dual-prefix
+  // reachability really is unique to Digit, not a rule that should apply more broadly. Needs the
+  // explicit prefix-set override below since neither Source.POSIX (none only) nor Source.UProperty
+  // (is only) permits both by itself; get()'s prefix check (see below) handles making the `is`
+  // half always-full-Unicode regardless of flags.
+  Digit(
+      ImmutableSet.of(CharacterClassPrefix.none, CharacterClassPrefix.is),
+      Source.UProperty, javaDigit.unicode, /* slicedAscii=*/true),
   // Bug fix (2026-09-06): this used to range over the FULL a-z/A-Z alphabet (and the fullwidth
   // equivalent of the full alphabet), matching every letter as a "hex digit" instead of just
   // a-f/A-F. Found via PosixAndJavaClassTest's \p{XDigit} coverage ("g" wrongly matched). See
@@ -189,17 +202,6 @@ enum NamedCharClass {
   Alpha(
       Source.POSIX,
       Alphabetic.unicode, /* slicedAscii=*/true),
-  // Named PosixDigit, not Digit -- a Java enum can't have two constants sharing a name, and
-  // `Digit` (above, Source.UProperty) is already claimed by \p{IsDigit}. They're NOT the same
-  // NamedCharClass despite the same underlying predicate: \p{IsDigit} is always full-Unicode
-  // (ascii == unicode == the full set, since UNICODE_CHARACTER_CLASS doesn't apply to "Is"
-  // property queries), but bare POSIX \p{Digit} must default to ASCII [0-9] and only widen to
-  // full Unicode under UNICODE_CHARACTER_CLASS -- reusing `Digit` here would silently match
-  // non-ASCII digits by default. PatternParser translates the bare name "Digit" to this
-  // constant's Java identifier "PosixDigit" before the NamedCharClass.valueOf() lookup.
-  PosixDigit(
-      Source.POSIX,
-      Digit.unicode, /* slicedAscii=*/true),
   Alnum(
       Source.POSIX,
       unionOf(Alphabetic.unicode, Digit.unicode)),
@@ -316,17 +318,23 @@ enum NamedCharClass {
   }
 
   final Source source;
+  // Which prefixes this constant may legally be looked up under -- defaults to source's own set,
+  // but see the Digit constant above for the one case (a name shared between a POSIX class and a
+  // Unicode binary property) that needs to override this to allow prefixes from both families.
+  final ImmutableSet<CharacterClassPrefix> allowedPrefixes;
   final ImmutableRangeSet<Integer> ascii;
   final ImmutableRangeSet<Integer> unicode;
 
   NamedCharClass(Source source, NamedCharClass delegate) {
     this.source = source;
+    this.allowedPrefixes = source.allowedPrefixes;
     this.ascii = delegate.ascii;
     this.unicode = delegate.unicode;
   }
 
   NamedCharClass(Source source, ImmutableRangeSet<Integer> unicode) {
     this.source = source;
+    this.allowedPrefixes = source.allowedPrefixes;
     this.ascii = unicode;
     this.unicode = unicode;
   }
@@ -334,7 +342,16 @@ enum NamedCharClass {
   static final boolean SLICED_ASCII = true;
   NamedCharClass(
       Source source, ImmutableRangeSet<Integer> unicode, boolean slicedAscii) {
+    this(source.allowedPrefixes, source, unicode, slicedAscii);
+  }
+
+  // Only used by Digit -- see its own comment for why it needs prefixes from both Source.POSIX
+  // and Source.UProperty rather than just inheriting one Source's set.
+  NamedCharClass(
+      ImmutableSet<CharacterClassPrefix> allowedPrefixes,
+      Source source, ImmutableRangeSet<Integer> unicode, boolean slicedAscii) {
     this.source = source;
+    this.allowedPrefixes = allowedPrefixes;
     this.ascii = unicode.intersection(UnicodePredicates.ascii);
     this.unicode = unicode;
   }
@@ -342,12 +359,22 @@ enum NamedCharClass {
   NamedCharClass(
       Source source, ImmutableRangeSet<Integer> ascii, ImmutableRangeSet<Integer> unicode) {
     this.source = source;
+    this.allowedPrefixes = source.allowedPrefixes;
     this.ascii = ascii;
     this.unicode = unicode;
   }
 
   ImmutableRangeSet<Integer> get(CharacterClassPrefix prefix, int flags) {
-    Preconditions.checkArgument(source.allowedPrefixes.contains(prefix));
+    Preconditions.checkArgument(allowedPrefixes.contains(prefix));
+    // Any Unicode-property-style prefix (\p{IsXxx}, \p{script=Xxx}, \p{block=Xxx},
+    // \p{general_category=Xxx}) always means "exactly this Unicode-defined set" -- the
+    // ASCII/full-Unicode split (governed by UNICODE_CHARACTER_CLASS) only applies to a bare POSIX
+    // class name or a "java"-prefixed java.lang.Character-method class. This is what lets Digit
+    // (see above) serve both \p{Digit} (flag-sensitive) and \p{IsDigit} (always full-Unicode) from
+    // one constant instead of needing a separate always-full-Unicode duplicate.
+    if (prefix != CharacterClassPrefix.none && prefix != CharacterClassPrefix.java) {
+      return unicode;
+    }
     return ((flags & Pattern.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
   }
 
@@ -364,7 +391,13 @@ enum NamedCharClass {
   enum RegexCharacterClass {
     DOT(ImmutableRangeSet.<Integer>of(Range.singleton(+'\n')).complement()),
     d(Digit),
-    D(Digit.unicode.complement()),
+    // Bug fix (2026-09-07): this used to be a single-RangeSet `D(Digit.unicode.complement())`,
+    // which (like every other single-RangeSet constructor call here) is flag-insensitive -- so \D
+    // always matched the complement of the *full-Unicode* digit set, ignoring
+    // UNICODE_CHARACTER_CLASS entirely (unlike \S/\W below, which already complement `ascii`/
+    // `unicode` separately). Found via PredefinedClassTest's \d/\D UNICODE_CHARACTER_CLASS
+    // coverage, added alongside the NamedCharClass.Digit/PosixDigit merge (see its own doc).
+    D(Digit.ascii.complement(), Digit.unicode.complement()),
     h(new ImmutableRangeSet.Builder<Integer>()
           .add(Range.singleton(+'\t'))
           .add(Range.singleton(0x00A0))

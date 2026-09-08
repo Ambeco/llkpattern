@@ -74,6 +74,16 @@ public class UnicodeClassTest {
   public void property_isWhiteSpace() {
     assertThat(Ll1Pattern.compile("\\p{IsWhite_Space}").matcher(" ").matches(), is(true));
     assertThat(Ll1Pattern.compile("\\p{IsWhite_Space}").matcher("a").matches(), is(false));
+    // Bug fix (2026-09-07): NamedCharClass.White_Space used to delegate to javaWhitespace
+    // (Character.isWhitespace), which deliberately excludes NO-BREAK SPACE (U+00A0) as
+    // "non-breaking" -- but the real Unicode White_Space property does include it. Verified
+    // against real java.util.regex before fixing (see White_Space's own doc for the rest of the
+    // affected code points).
+    assertThat(Ll1Pattern.compile("\\p{IsWhite_Space}").matcher("\u00a0").matches(), is(true));
+    // U+180E (MONGOLIAN VOWEL SEPARATOR) is sometimes mistaken for whitespace -- it was removed
+    // from the Unicode White_Space property in Unicode 6.3, and real java.util.regex agrees it's
+    // not one.
+    assertThat(Ll1Pattern.compile("\\p{IsWhite_Space}").matcher("\u180e").matches(), is(false));
   }
 
   @Test

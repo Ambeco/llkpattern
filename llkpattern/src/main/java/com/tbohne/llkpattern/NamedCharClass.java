@@ -134,7 +134,33 @@ enum NamedCharClass {
               UnicodePredicates.INITIAL_QUOTE_PUNCTUATION, UnicodePredicates.FINAL_QUOTE_PUNCTUATION,
               UnicodePredicates.OTHER_PUNCTUATION)),
   Control(Source.UProperty, javaISOControl),
-  White_Space(Source.UProperty, javaWhitespace),
+  // Bug fix (2026-09-07): this used to delegate to javaWhitespace (Character.isWhitespace), but
+  // the real Unicode White_Space binary property and Character.isWhitespace() are NOT the same
+  // set -- Character.isWhitespace()'s own javadoc deliberately excludes NO-BREAK SPACE (U+00A0),
+  // NARROW NO-BREAK SPACE (U+202F), and MEDIUM MATHEMATICAL SPACE (U+205F) as "non-breaking",
+  // while the Unicode property includes them. Found via adding systematic ASCII-vs-Unicode test
+  // coverage for \p{Space}/\p{Blank} (both widen off this set under UNICODE_CHARACTER_CLASS) --
+  // verified against real java.util.regex (including that U+180E, sometimes assumed to be
+  // whitespace, is correctly excluded -- it was removed from the Unicode White_Space property in
+  // Unicode 6.3) before fixing. Hand-built rather than reused from RegexCharacterClass's `h`/`v`
+  // (whose union is the same set, modulo `h`'s own inclusion of U+180E) to avoid the
+  // NamedCharClass<->RegexCharacterClass circular static-init dependency documented on Space
+  // below -- this is the same literal-duplication tradeoff Space's own ASCII set already makes.
+  White_Space(
+      Source.UProperty,
+      new ImmutableRangeSet.Builder<Integer>()
+          .add(Range.closed(+'\t', +'\r')) // U+0009-000D
+          .add(Range.singleton(+' '))
+          .add(Range.singleton(0x0085))
+          .add(Range.singleton(0x00A0))
+          .add(Range.singleton(0x1680))
+          .add(Range.closed(0x2000, 0x200A))
+          .add(Range.singleton(0x2028))
+          .add(Range.singleton(0x2029))
+          .add(Range.singleton(0x202F))
+          .add(Range.singleton(0x205F))
+          .add(Range.singleton(0x3000))
+          .build()),
   // Digit is reachable both as the bare POSIX class \p{Digit} (ASCII-default, widens to
   // full-Unicode only under UNICODE_CHARACTER_CLASS) and as the Unicode binary property
   // \p{IsDigit} (always full-Unicode, the flag never applies) -- the only one of the 13 POSIX
@@ -202,9 +228,15 @@ enum NamedCharClass {
   Alpha(
       Source.POSIX,
       Alphabetic.unicode, /* slicedAscii=*/true),
+  // Bug fix (2026-09-07): this used to be a single-RangeSet constructor call (ascii == unicode),
+  // so \p{Alnum} always matched the full-Unicode alphanumeric set, ignoring
+  // UNICODE_CHARACTER_CLASS entirely -- found via adding systematic ASCII-vs-Unicode coverage for
+  // every POSIX/java class (see PosixAndJavaClassTest), verified against real java.util.regex.
+  // slicedAscii's intersection with UnicodePredicates.ascii correctly reduces this union down to
+  // plain ASCII [0-9A-Za-z], matching POSIX Alnum's real default behavior.
   Alnum(
       Source.POSIX,
-      unionOf(Alphabetic.unicode, Digit.unicode)),
+      unionOf(Alphabetic.unicode, Digit.unicode), /* slicedAscii=*/true),
   Punct(
       Source.POSIX,
       new ImmutableRangeSet.Builder<Integer>()
@@ -254,9 +286,20 @@ enum NamedCharClass {
           .build(),
       union(Graph.unicode, Blank.unicode)
           .difference(Cntrl.unicode)),
+  // Bug fix (2026-09-07): this used to be a single-RangeSet constructor call using only
+  // Hex_Digit.unicode (ASCII a-f/A-F/0-9 plus their fullwidth forms) -- both flag-insensitive
+  // (ascii == unicode, so UNICODE_CHARACTER_CLASS was ignored) AND, independently, missing real
+  // java.util.regex's actual widened definition. Verified against real java.util.regex: under
+  // UNICODE_CHARACTER_CLASS, \p{XDigit} also matches any Unicode decimal digit from *any* script
+  // (e.g. DEVANAGARI DIGIT ZERO, U+0966) -- because java.util.regex's widened XDigit is really
+  // `Character.digit(cp, 16) != -1`, and Character.digit() accepts any digit whose numeric value
+  // (0-9 for a decimal digit) is below the requested radix, not just the literal Unicode Hex_Digit
+  // property. So the full-Unicode set is `union(Hex_Digit.unicode, Digit.unicode)`, not just
+  // Hex_Digit.unicode; found via adding systematic ASCII-vs-Unicode coverage for every POSIX/java
+  // class (see PosixAndJavaClassTest).
   XDigit(
       Source.POSIX,
-      Hex_Digit.unicode),
+      unionOf(Hex_Digit.unicode, Digit.unicode), /* slicedAscii=*/true),
   // Bug fix (2026-09-06): this used to read RegexCharacterClass.s.ascii, but RegexCharacterClass.s
   // itself (below) reads White_Space (right above) -- a genuine two-way dependency between this
   // enum and RegexCharacterClass, whichever's static initializer runs second sees the other's

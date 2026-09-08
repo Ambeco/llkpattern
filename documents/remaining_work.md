@@ -118,6 +118,18 @@ dated AGREES-count snapshot rather than tracking that number here.
 
 ## Core implementation
 
+- [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable**
+      (e.g. `(a?)+`), instead of relying solely on the entry-point-computation guard added
+      2026-09-08 (see design.md's "Entry-point computation vs. matcher compilation" section) to
+      catch it as a compile-time `PatternSyntaxException`. Checked (2026-09-08): no such parse-time
+      check exists today -- `PatternParser` has nothing recognizing a nullable quantifier body, so
+      the guard is currently the *only* thing catching these patterns, not a backstop for
+      parser-level rejection as originally hoped. A `NestedQuantifierCombinatorialTest` was added
+      the same day to prove the guard itself is reachable and never escapes as anything other than
+      `PatternSyntaxException` across ~600 nested-quantifier pattern shapes. A parse-time version
+      would need a `nullable(construct)` AST recursion (a third sibling to `firstCharSet()`/
+      `lastCharSet()`) and would only be a diagnostic-quality improvement (an earlier, more
+      specific error message) -- not a correctness fix, since the guard already catches every case.
 - [ ] Numbered backreferences only support a single digit (`\1`-`\9`) -- unlike `java.util.regex`,
       which greedily consumes further digits when enough groups exist to make them part of the
       group number (`\12` can mean group 12, not group 1 followed by literal "2"). A pattern

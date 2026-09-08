@@ -205,6 +205,22 @@ Notes to self about how to work on this project, and other context that doesn't 
     retagged `EXPECTED_DIVERGENCE` rather than left as "needs investigation."
   - Full suite green throughout: 1433 tests, 0 failing, 561 skipped, after adding regression
     coverage in `MatcherApiTest` for both fixes.
+- 2026-09-07 (same day, yet later still): implemented `COMMENTS` (`(?x)`) per the project owner
+  (deemed "probably straightforward" once the other two bugs were fixed and out of the way, rather
+  than deferred to a separate session like the deeper nested-quantifier bug). Added
+  `PatternParser.skipComments()` -- strips a run of whitespace and `#`-to-end-of-line comments,
+  a no-op when the flag isn't set -- called at three points: the top of `parseUnion`'s main loop
+  (between any two top-level tokens), right after a plain character's own inline "is a quantifier
+  next?" check (which peeks at the very next character without going back through the main loop,
+  so needed its own call), and at the top of `parseQuantifiable` (covering every other atom type --
+  bracket classes, groups, "."). Never called from inside `[...]` (whitespace stays significant in
+  a character class, matching real regex) or from the flag-list/group-name scanning loops (those
+  have their own tighter grammars). Existing inline-flag-scoping machinery (used by `(?i:...)`/
+  `(?s:...)`) handled `(?x:...)` correctly for free, confirmed by a dedicated scoping test. Fixed
+  the three exact `(?x)`-with-whitespace corpus rows in each golden file (retagged, all now
+  `AGREES`) plus additional cases (whitespace between an atom and its quantifier, e.g. `"a * b"`)
+  found while writing `CommentsFlagTest`. 33 `UNEXPECTED` corpus rows (see the entry above) down to
+  12. Full suite green: 1439 tests, 0 failing, 561 skipped.
 
 ## Tooling gotchas (this dev machine, Windows + git-bash)
 

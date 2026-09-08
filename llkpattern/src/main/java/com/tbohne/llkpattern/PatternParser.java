@@ -152,6 +152,34 @@ final class PatternParser {
     peek = index < pattern.length() ? pattern.charAt(index) : '\0';
   }
 
+  /**
+   * Under {@code COMMENTS} ({@code (?x)}), strips any run of whitespace and {@code #}-to-end-of-
+   * line comments starting at the current position -- a no-op otherwise. Called wherever the
+   * parser is about to inspect {@code peek} to decide what comes next (the top of {@code
+   * parseUnion}'s main loop, {@code parseQuantifiable}'s entry, and right after a group's opening
+   * "(") so that insignificant whitespace/comments are transparently skipped between any two
+   * meaningful tokens, matching {@code java.util.regex}'s documented {@code COMMENTS} behavior.
+   * Deliberately never called from inside a {@code [...]} character class (it's not in scope
+   * there, same as real regex -- whitespace inside a class is always significant) or while
+   * scanning a name/flag list mid-token (those have their own tighter grammars).
+   */
+  private void skipComments() {
+    if ((flags & Pattern.COMMENTS) == 0) {
+      return;
+    }
+    for (; ; ) {
+      if (Character.isWhitespace(peek)) {
+        advance(1);
+      } else if (peek == '#') {
+        while (peek != '\n' && peek != '\0') {
+          advance(1);
+        }
+      } else {
+        return;
+      }
+    }
+  }
+
   PatternConstruct parse() {
     QuantifiedUnion root = new QuantifiedUnion(pattern, 0, flags);
     root.flags = flags;
@@ -172,6 +200,7 @@ final class PatternParser {
     int rawTextStartIndex = -1;
     StringBuilder rawText = new StringBuilder();
     for (; ; ) {
+      skipComments();
       if ("()[]|.^$\0".indexOf(peek) > -1) {
         if (rawText.length() > 0) {
           LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
@@ -317,6 +346,10 @@ final class PatternParser {
         }
         int fullChar = pattern.codePointAt(index);
         advanceCodePoint();
+        // Under COMMENTS, a quantifier suffix can be separated from its atom by whitespace/a
+        // comment ("a * b" means "a*b") -- skip past any before checking for one, same as
+        // parseQuantifiable does for every other atom type (bracket classes, groups, ".").
+        skipComments();
         if (peek == '{' || peek == '?' || peek == '+' || peek == '*') {
           if (rawText.length() > 0) {
             LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
@@ -1018,6 +1051,9 @@ final class PatternParser {
   }
 
   private <T extends QuantifiableConstruct> T parseQuantifiable(T construct) {
+    // Under COMMENTS, whitespace/comments between an atom and its quantifier suffix ("a *") are
+    // insignificant too, same as everywhere else outside a character class.
+    skipComments();
     // Records the flags in effect where this (possibly-quantified) construct was written -- see
     // PatternConstruct#flags -- so match-time CASE_INSENSITIVE folding stays scoped to an inline
     // "(?i:...)" group instead of leaking pattern-wide (remaining_work.md's "Inline flag toggles

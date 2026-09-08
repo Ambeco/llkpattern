@@ -26,17 +26,16 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       (`(?<=...)`/`(?<!...)`) -- note lookahead/lookbehind are currently rejected outright at
       parse time per design.md, and independent/atomic non-capturing groups (`(?>X)`).
 - [ ] Of `java.util.regex.Pattern`'s remaining compile flags -- `CASE_INSENSITIVE`, `UNICODE_CASE`,
-      and `DOTALL` are implemented (both globally and correctly scoped through an inline
-      `(?i:...)`/`(?s:...)`), and `MULTILINE`/`UNIX_LINES` are now implemented too, but *only* as
-      far as `^`/`$`/`\Z` (`BoundaryMatcherConstruct`) consult them -- `.`/`\s`/etc. under
-      `UNIX_LINES` (which characters count as line terminators for those) is still unaffected
-      by the flag, so `UNIX_LINES` is only partially honored. `COMMENTS` (`(?x)` — whitespace/
-      `#`-comment stripping in the pattern text; parses without error today but nothing in
-      `PatternParser` actually acts on it), `LITERAL` (treat the whole pattern string as literal
-      text, no metacharacters), and `CANON_EQ` (Unicode canonical-equivalence matching) are not
-      started at all. None of
-      these have any test coverage or even a stub `flags` branch, unlike the boundary/backreference
-      stubs above -- they're simply unimplemented from scratch.
+      `DOTALL`, and now `COMMENTS` (`(?x)`, implemented 2026-09-07 -- see `CommentsFlagTest`/
+      `PatternParser.skipComments()`) are implemented (both globally and correctly scoped through
+      an inline `(?i:...)`/`(?s:...)`/`(?x:...)`), and `MULTILINE`/`UNIX_LINES` are now implemented
+      too, but *only* as far as `^`/`$`/`\Z` (`BoundaryMatcherConstruct`) consult them --
+      `.`/`\s`/etc. under `UNIX_LINES` (which characters count as line terminators for those) is
+      still unaffected by the flag, so `UNIX_LINES` is only partially honored. `LITERAL` (treat the
+      whole pattern string as literal text, no metacharacters) and `CANON_EQ` (Unicode
+      canonical-equivalence matching) are not started at all. Neither has any test coverage or even
+      a stub `flags` branch, unlike the boundary/backreference stubs above -- they're simply
+      unimplemented from scratch.
 
 ## Scraped-corpus differential test harness
 
@@ -63,15 +62,12 @@ dated AGREES-count snapshot rather than tracking that number here.
       `captureGroups` between separate match attempts (so a loop's iteration counter leaked across
       `find()`'s internal scan positions and repeated `matches()`/`lookingAt()`/`find()` calls),
       and capturing groups were numbered in closing-paren order instead of opening-paren order for
-      any nested group. 33 `UNEXPECTED` rows dropped to 15 as a result. The remaining 15 fall into
-      three categories, none fixed yet:
+      any nested group. Then implemented `COMMENTS` (`(?x)`, see the flags item above), which
+      resolved the corpus's `(?x)`-with-whitespace rows too. 33 `UNEXPECTED` rows dropped to 12 as
+      a result. The remaining 12 fall into two categories, neither fixed yet:
       - **A real, deeper bug** (not yet fixed -- see "Core implementation" below): a quantified/
         loop construct whose own body contains ANOTHER quantified/loop construct fails to match at
         all, even the trivial single-iteration case (e.g. `(a(b)?)+` fails against `"a"`).
-      - `(?x)` (`COMMENTS`) rows -- not a new finding, just confirms the already-tracked
-        unimplemented-flag gap above; these rows should be retagged `EXPECTED_DIVERGENCE`
-        (or left `UNEXPECTED` but understood, not further "investigated") until `COMMENTS` is
-        implemented, at which point they should flip to `AGREES`.
       - Bounded/reluctant quantifier edge cases where the engine's no-backtracking design cannot
         produce the same match `java.util.regex` does even though llk's own greedy result is
         internally consistent (e.g. `a{2,3}` against `"aaaa"`: llk cannot tell "stop at 3" from

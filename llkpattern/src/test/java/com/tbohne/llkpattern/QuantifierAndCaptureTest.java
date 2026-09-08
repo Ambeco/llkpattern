@@ -249,4 +249,38 @@ public class QuantifierAndCaptureTest {
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".*z"));
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".+z"));
   }
+
+  // --- Nested quantified/loop constructs -- see remaining_work.md's former "Core implementation"
+  // entry and design.md's "Entry-point computation vs. matcher compilation" section for the bug
+  // this used to hit: a loop whose body itself contains another loop, where the inner loop's
+  // "exit toward the outer loop" branch had no characters mapped to it at all. ---
+
+  @Test
+  public void loopContainingAnotherLoop_matchesSingleIteration() {
+    // The minimal repro from remaining_work.md: a single iteration of the outer "+" ("a" with the
+    // optional "b" absent) should trivially succeed.
+    assertThat(matches("(a(b)?)+", "a"), is(true));
+  }
+
+  @Test
+  public void loopContainingAnotherLoop_matchesMultipleIterations() {
+    assertThat(matches("(a(b)?)+", "aabab"), is(true));
+    assertThat(matches("(a(b)?)+", "aaa"), is(true));
+  }
+
+  @Test
+  public void loopContainingAnotherLoop_nonCapturing_stillMatches() {
+    assertThat(matches("(?:ab?)+", "a"), is(true));
+    assertThat(matches("(?:ab?)+", "ababa"), is(true));
+  }
+
+  @Test
+  public void nestedQuantifiedLoop_wholeBodyNullable_rejectedAtCompileTime() {
+    // "(a?)+": the outer loop's only body part can match zero characters, so its own entry point
+    // would require itself to already be known -- a genuine cycle, and also an infinite-loop
+    // hazard in its own right (an iteration that consumes nothing). Must be a compile-time error,
+    // not a stack overflow or a silently-wrong dispatch.
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(a?)+"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?:a?)+"));
+  }
 }

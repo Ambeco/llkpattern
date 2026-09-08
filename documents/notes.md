@@ -221,6 +221,50 @@ Notes to self about how to work on this project, and other context that doesn't 
   `AGREES`) plus additional cases (whitespace between an atom and its quantifier, e.g. `"a * b"`)
   found while writing `CommentsFlagTest`. 33 `UNEXPECTED` corpus rows (see the entry above) down to
   12. Full suite green: 1439 tests, 0 failing, 561 skipped.
+- 2026-09-08: fixed the nested-quantifier-in-loop-body bug flagged 2026-09-07 (`(a(b)?)+` failing
+  to match `"a"`) -- the project owner designed the fix (a lazy, memoized, cycle-guarded
+  `getEntryPointMap()`/`getEntryElse()` pair replacing direct `entryMap`/`entryElse` field reads,
+  mirroring the existing `matcher` self-registration trick but for entry-point computation instead
+  of matcher construction), refined through several rounds with the advisor and the owner
+  correcting the assistant's mis-traces along the way (see design.md's "Entry-point computation vs.
+  matcher compilation" section for the resulting design and its rationale). Two real, distinct bugs
+  had to be found and fixed, both empirically (implementing the design, then debugging why the
+  target patterns still failed rather than assuming the design was complete):
+  1. `Sequence`'s and `QuantifiedUnion`'s (plain, non-loop) entry-point computation had to be split
+     from their matcher-wiring compile order -- a sequence's own entry set is always just its first
+     element's, computable without touching the rest of the sequence at all, but the OLD code
+     computed it only after fully compiling (matcher-building) every element tail-to-front. Left
+     coupled that way, asking an enclosing construct for its entry point early (exactly what a
+     nested loop's own construction needs to do) triggered a premature full compile of everything
+     after it in the sequence, before what comes AFTER *that* was itself compiled yet -- an NPE
+     (`LiteralMatcherConstruct`'s `next` field null) on patterns with no nesting bug at all (e.g.
+     `(?:a)b`), caught immediately by the full suite.
+  2. Even with entry-point computation correctly decoupled, the nested-loop case still failed to
+     match (not a crash -- just returned `false`) until debugged with throwaway trace prints. Root
+     cause: a loop's own *advertised* entry point (used for ambiguity-checking against siblings) is
+     deliberately narrow -- only its continuation characters, e.g. an outer `+` loop only advertises
+     the character that continues it, not "anything else" -- but its REAL matcher graph always has
+     a way to handle "anything else" (by trying to exit). The nested loop's real dispatch
+     construction was requiring `next` (the outer loop) to have registered an explicit catchall in
+     that narrow advertised set before routing "exit" there at all, which an outer loop legitimately
+     never does. Fixed by deriving the loop's own unconditional "else, try to exit" fallback from
+     whether ITS OWN BODY has a catchall (via a separate `mergeEntryPoints(body-only)` call), not
+     from whether `next` happens to have one -- `next`'s own dispatch handles acceptance/rejection
+     on its own terms either way.
+  - Verified against the specific regression list the advisor named up front (not just the new
+    tests): `(a)(b)*(z)`, `(ab)+`, `a?b`, `(あ+ぃ)+`, `[a-z]+z` (still correctly rejected as
+    ambiguous) all still pass, alongside the new nested-loop cases. Full suite: 1443 tests, 0
+    failing, 561 skipped (up from 1439/0/561 -- four new tests in `QuantifierAndCaptureTest`).
+  - Also added, per the advisor's point about the fix being user-reachable: a loop whose entire
+    body can match zero characters (e.g. `(a?)+`) is a genuine, unbreakable self-reference under
+    this scheme (computing its own entry point requires that same entry point already be known) --
+    now a `PatternSyntaxException` naming the loop's start index, rather than a stack overflow or a
+    silent wrong answer; also a real infinite-loop hazard in its own right, not just an artifact of
+    the implementation technique.
+  - Retagged both scraped-corpus golden files (same one-off `RetagGolden` tool pattern used in
+    earlier sessions, written and deleted again): BMP 2 rows retagged, supplementary 5 rows
+    retagged -- all 7 were exactly the `UNEXPECTED: ... needs investigation` rows this bug had been
+    causing, now correctly `AGREES`.
 
 ## Tooling gotchas (this dev machine, Windows + git-bash)
 

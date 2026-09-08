@@ -278,7 +278,7 @@ abstract class MatcherConstruct {
 		/** Self-registering: this becomes {@code owner.matcher}, auto-populated from its entry set. */
 		DispatchMatcherConstruct(PatternConstruct owner) {
 			super(owner);
-			populate(owner.entryMap, owner.entryElse);
+			populate(owner.getEntryPointMap(), owner.getEntryElse());
 		}
 
 		/**
@@ -347,6 +347,16 @@ abstract class MatcherConstruct {
 			candidates.add(next);
 			PatternConstruct.MergedEntries result =
 					PatternConstruct.compileAndMergeCandidates(owner.pattern, candidates, bodyCompileTarget, "loop part");
+			// Whether `body` ITSELF (not `next`) claims a catchall -- e.g. a loop body that's a lone
+			// "." -- as opposed to `result.elseCandidate`, which conflates in whatever `next` happens
+			// to formally advertise. `next`'s own *advertised* entry set is deliberately narrow (only
+			// its own continuation characters -- see design.md's "Entry-point computation vs. matcher
+			// compilation" section), even when `next` is itself a loop whose real matcher graph always
+			// has SOME way to handle "anything else" (by trying to exit). So whether this loop's own
+			// exit path should be reachable for a character neither side explicitly claims must be
+			// decided from `body` alone, not from whether `next` happened to register a catchall.
+			PatternConstruct.MergedEntries bodyOnlyResult =
+					PatternConstruct.mergeEntryPoints(owner.pattern, body, "loop part");
 
 			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(owner.quantifiableIndex, owner.max, owner.flags);
 			EndLoopMatcherConstruct endLoopNode =
@@ -363,9 +373,8 @@ abstract class MatcherConstruct {
 						bodyEntries.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
 					}
 				}
-				PatternConstruct bodyEntryElse =
-						(result.elseCandidate != null && result.elseCandidate != next) ? result.elseCandidate : null;
-				DispatchMatcherConstruct bodyDispatch = new DispatchMatcherConstruct(bodyEntries, bodyEntryElse, owner.flags);
+				DispatchMatcherConstruct bodyDispatch =
+						new DispatchMatcherConstruct(bodyEntries, bodyOnlyResult.elseCandidate, owner.flags);
 				BeginCaptureMatcherConstruct beginCaptureNode =
 						new BeginCaptureMatcherConstruct(captureConstructIndex, owner.flags, bodyDispatch);
 				loopNode.elseDispatch = beginCaptureNode; // unconditional: every continue attempt begins capturing.
@@ -375,8 +384,8 @@ abstract class MatcherConstruct {
 						loopNode.dispatchMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue().matcher);
 					}
 				}
-				if (result.elseCandidate != null && result.elseCandidate != next) {
-					loopNode.elseDispatch = result.elseCandidate.matcher;
+				if (bodyOnlyResult.elseCandidate != null) {
+					loopNode.elseDispatch = bodyOnlyResult.elseCandidate.matcher;
 				}
 			}
 
@@ -384,26 +393,24 @@ abstract class MatcherConstruct {
 				Range<Integer> range = Range.closedOpen(e.getKey().min, e.getKey().max);
 				dispatchMap.put(range, (e.getValue() == next) ? endLoopNode : loopNode);
 			}
-			if (result.elseCandidate != null) {
+			if (bodyOnlyResult.elseCandidate == null) {
+				// Body claims no catchall of its own, so any character it doesn't explicitly claim
+				// should always try to exit -- regardless of whether `next` happens to have registered
+				// an explicit catchall. `next`'s own dispatch (reached via endLoopNode) will correctly
+				// accept or reject it on its own terms (e.g. an ancestor loop's own continue-vs-exit
+				// check) -- this node doesn't need to pre-verify that itself.
+				elseDispatch = endLoopNode;
+			} else if (result.elseCandidate != null) {
 				elseDispatch = (result.elseCandidate == next) ? endLoopNode : loopNode;
 			}
 
-			// This construct's own entry set, as seen by whatever ambiguity check an ancestor (e.g.
-			// an enclosing union or loop) runs on it: always the body's ranges; also `next`'s ranges
-			// (entering zero times is valid) when min == 0. Re-keyed onto `owner` itself (not
-			// e.getValue(), whatever nested candidate happened to build the range) for the same reason
-			// PatternConstruct.Sequence/QuantifiedUnion.buildEntryMap re-key onto `this`: an ancestor
-			// comparing entries against `owner` by identity (e.g. this very check, one level up, if
-			// `owner` is itself some other loop's `next`) must see `owner`, not one of its own body
-			// parts' leaves.
-			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				if (e.getValue() != next || owner.min == 0) {
-					owner.entryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), owner);
-				}
-			}
-			if (result.elseCandidate != null && (result.elseCandidate != next || owner.min == 0)) {
-				owner.entryElse = owner;
-			}
+			// owner's own entry set (as seen by whatever ambiguity check an ancestor runs on it) is
+			// NOT computed here -- it's computed earlier, by PatternConstruct.QuantifiableConstruct's
+			// buildLoopEntryMap(), before this constructor (built from buildMatcher()) ever runs. See
+			// design.md's "Entry-point computation vs. matcher compilation" section for why that
+			// split is what lets a loop nested in this construct's own body ask `owner` for its entry
+			// set without forcing owner's (still in-progress, right here) matcher construction to
+			// finish first.
 		}
 
 		private void populate(RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {

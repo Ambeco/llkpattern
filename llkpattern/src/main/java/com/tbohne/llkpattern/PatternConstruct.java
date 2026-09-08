@@ -44,11 +44,33 @@ abstract class PatternConstruct {
 
 	// Which PatternConstruct handles each possible next code point, once this construct (and
 	// anything it can trivially skip, e.g. an optional quantifier) has matched. Populated by
-	// buildEntryMap(); consumed while compiling a containing QuantifiedUnion/Sequence to detect
-	// ambiguous branches, and to build the MatcherConstruct graph.
+	// buildEntryMap() (lazily, via ensureEntryPointBuilt() -- see getEntryPointMap()/getEntryElse()
+	// below); consumed while compiling a containing QuantifiedUnion/Sequence to detect ambiguous
+	// branches, and to build the MatcherConstruct graph. Never read directly outside this
+	// construct's own buildEntryMap() -- every other reader goes through the getters.
 	RangeMap<Integer, PatternConstruct> entryMap = TreeRangeMap.create();
 	@MonotonicNonNull PatternConstruct entryElse;
 
+	private static final int ENTRY_POINT_NOT_STARTED = 0;
+	private static final int ENTRY_POINT_CONSTRUCTING = 1;
+	private static final int ENTRY_POINT_CONSTRUCTED = 2;
+	private int entryPointState = ENTRY_POINT_NOT_STARTED;
+
+	/**
+	 * Thrown by {@link #ensureEntryPointBuilt} when computing a construct's own entry point would
+	 * require that same computation to already be finished -- i.e. a quantified construct whose
+	 * body can match zero characters (e.g. {@code (a?)+}), the one case this engine can't assign a
+	 * meaningful "what comes next" set to. Caught and re-thrown as a {@link PatternSyntaxException}
+	 * by {@code Ll1Pattern.compile()}, which has the full pattern string this needs for a proper
+	 * message. See design.md's "Entry-point computation vs. matcher compilation" section.
+	 */
+	static final class EntryPointCycleException extends RuntimeException {
+		final int startIndex;
+
+		EntryPointCycleException(int startIndex) {
+			this.startIndex = startIndex;
+		}
+	}
 
 	PatternConstruct(int startIndex) {
 		this.startIndex = startIndex;
@@ -57,6 +79,34 @@ abstract class PatternConstruct {
 	PatternConstruct(int startIndex, int endIndex) {
 		this.startIndex = startIndex;
 		this.endIndex = endIndex;
+	}
+
+	/**
+	 * This construct's own entry point -- see design.md's "Entry-point computation vs. matcher
+	 * compilation" section. Lazily triggers {@link #buildEntryMap} on first call, independent of
+	 * whether this construct has been (or is being) {@link #compile}d.
+	 */
+	final RangeMap<Integer, PatternConstruct> getEntryPointMap() {
+		ensureEntryPointBuilt();
+		return entryMap;
+	}
+
+	/** As {@link #getEntryPointMap()}, for the catch-all half of the entry point. */
+	final @Nullable PatternConstruct getEntryElse() {
+		ensureEntryPointBuilt();
+		return entryElse;
+	}
+
+	private void ensureEntryPointBuilt() {
+		if (entryPointState == ENTRY_POINT_CONSTRUCTED) {
+			return;
+		}
+		if (entryPointState == ENTRY_POINT_CONSTRUCTING) {
+			throw new EntryPointCycleException(startIndex);
+		}
+		entryPointState = ENTRY_POINT_CONSTRUCTING;
+		buildEntryMap(next);
+		entryPointState = ENTRY_POINT_CONSTRUCTED;
 	}
 
 	/**
@@ -74,7 +124,7 @@ abstract class PatternConstruct {
 			return matcher;
 		}
 		this.next = next;
-		buildEntryMap(next);
+		ensureEntryPointBuilt();
 		if (matcher == null) {
 			// buildMatcher() constructs `new SomeMatcherConstruct(this, ...)`, whose constructor's
 			// first act is `this.matcher = it` (see MatcherConstruct's class doc) -- so `matcher` is
@@ -84,6 +134,14 @@ abstract class PatternConstruct {
 		return matcher;
 	}
 
+	/**
+	 * Populates this construct's own {@link #entryMap}/{@link #entryElse}. Called at most once per
+	 * construct, lazily, via {@link #ensureEntryPointBuilt} -- never call this directly. Must not
+	 * trigger any other construct's {@link #compile}/{@link #buildMatcher} -- only entry-point
+	 * getters (and, for a body part whose own entry point might need to see what follows it, a
+	 * direct {@link #next} field assignment) -- see design.md's "Entry-point computation vs.
+	 * matcher compilation" section for why.
+	 */
 	abstract void buildEntryMap(PatternConstruct next);
 
 	abstract void buildMatcher();
@@ -120,7 +178,7 @@ abstract class PatternConstruct {
 
 	static TreeCodePointMap<PatternConstruct> mergeEntryMapRejectingAmbiguity(
 			String pattern, TreeCodePointMap<PatternConstruct> merged, PatternConstruct branch, String branchDescription) {
-		TreeCodePointMap<PatternConstruct> branchMap = toCodePointMap(branch.entryMap);
+		TreeCodePointMap<PatternConstruct> branchMap = toCodePointMap(branch.getEntryPointMap());
 		Entry<CodePointMap.Range, PatternConstruct> conflict = findFirstOverlap(merged, branchMap);
 		if (conflict != null) {
 			throw PatternSyntaxException.throwWithReferences(
@@ -148,27 +206,26 @@ abstract class PatternConstruct {
 		}
 
 		@Nullable PatternConstruct entryElse() {
-			return elseCandidate != null ? elseCandidate.entryElse : null;
+			return elseCandidate != null ? elseCandidate.getEntryElse() : null;
 		}
 	}
 
 	/**
-	 * Compiles each of {@code candidates} against {@code compileTarget} (harmless/idempotent if a
-	 * candidate is already compiled -- e.g. {@code compileTarget} itself, when it's included as one
-	 * of the candidates), then merges their entry ranges, rejecting the first ambiguity: two
-	 * candidates whose entry ranges overlap, or two candidates that both accept "any other
-	 * character". Used both for plain alternation ({@code candidates} = a union's branches) and for
-	 * loop dispatch ({@code candidates} = a loop's body parts plus its own {@code next}, since
-	 * "keep looping" vs "exit" must be just as unambiguous as any other branch choice).
+	 * Merges {@code candidates}' own entry points (via {@link #getEntryPointMap}/{@link
+	 * #getEntryElse}, not {@link #compile} -- see design.md's "Entry-point computation vs. matcher
+	 * compilation" section), rejecting the first ambiguity: two candidates whose entry ranges
+	 * overlap, or two candidates that both accept "any other character". Used both for plain
+	 * alternation ({@code candidates} = a union's branches) and for loop dispatch ({@code
+	 * candidates} = a loop's body parts, plus its own {@code next} when the loop can match zero
+	 * times), by way of {@link #compileAndMergeCandidates} and {@code
+	 * QuantifiableConstruct.buildLoopEntryMap} respectively.
 	 */
-	static MergedEntries compileAndMergeCandidates(
-			String pattern, List<PatternConstruct> candidates, PatternConstruct compileTarget, String candidateNounPlural) {
+	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
 		TreeCodePointMap<PatternConstruct> merged = new TreeCodePointMap<>();
 		PatternConstruct elseCandidate = null;
 		for (int i = 0; i < candidates.size(); i++) {
 			PatternConstruct candidate = candidates.get(i);
-			candidate.compile(compileTarget);
-			if (candidate.entryElse != null) {
+			if (candidate.getEntryElse() != null) {
 				if (elseCandidate != null) {
 					throw PatternSyntaxException.throwWithReferences(
 							pattern,
@@ -183,6 +240,21 @@ abstract class PatternConstruct {
 			merged = mergeEntryMapRejectingAmbiguity(pattern, merged, candidate, candidateNounPlural + " #" + (i + 1));
 		}
 		return new MergedEntries(merged, elseCandidate);
+	}
+
+	/**
+	 * Compiles each of {@code candidates} against {@code compileTarget} (harmless/idempotent if a
+	 * candidate is already compiled -- e.g. {@code compileTarget} itself, when it's included as one
+	 * of the candidates) -- needed here (unlike {@link #mergeEntryPoints}) because this is used to
+	 * build the actual dispatch graph, which needs every candidate's real {@code MatcherConstruct}
+	 * -- then merges their entry points exactly as {@link #mergeEntryPoints} does.
+	 */
+	static MergedEntries compileAndMergeCandidates(
+			String pattern, List<PatternConstruct> candidates, PatternConstruct compileTarget, String candidateNounPlural) {
+		for (PatternConstruct candidate : candidates) {
+			candidate.compile(compileTarget);
+		}
+		return mergeEntryPoints(pattern, candidates, candidateNounPlural);
 	}
 
 	static abstract class QuantifiableConstruct extends PatternConstruct {
@@ -207,19 +279,39 @@ abstract class PatternConstruct {
 		}
 
 		/**
-		 * Builds the loop matcher graph (a plain {@code DispatchMatcherConstruct}, built via its
-		 * loop-flavored constructor -- see MatcherConstruct and design.md) AND this construct's own
-		 * {@code entryMap}/{@code entryElse}, for the quantified ({@code !isUnquantified()}) case.
-		 * Must be called from {@code buildEntryMap} (not {@code buildMatcher}) -- the self-registering
-		 * constructor needs to run, setting {@code this.matcher}, before {@code body}'s own
-		 * {@code compile()} calls, since they dispatch back to {@code this} once they finish matching.
+		 * Computes this construct's own entry point for the quantified ({@code
+		 * !isUnquantified()}) case -- called from {@code buildEntryMap}. {@code FIRST(body)} (the
+		 * union of {@code body}'s own entry points, each body part's {@code next} pointed at {@code
+		 * this} since continuing the loop always eventually routes back here), unioned with {@code
+		 * next}'s own entry point when {@code min == 0} (skipping this construct entirely is valid).
+		 * Deliberately reads ONLY entry points, never {@code compile()}s anything -- see design.md's
+		 * "Entry-point computation vs. matcher compilation" section for why that's what lets a loop
+		 * nested inside another loop's body resolve without forcing a cycle.
 		 */
-		void buildLoopEntryMapAndMatcher(List<PatternConstruct> body, PatternConstruct next) {
-			buildLoopEntryMapAndMatcher(body, next, -1);
+		void buildLoopEntryMap(List<PatternConstruct> body, PatternConstruct next) {
+			for (PatternConstruct part : body) {
+				part.next = this;
+			}
+			List<PatternConstruct> candidates = new ArrayList<>(body);
+			if (min == 0) {
+				candidates.add(next);
+			}
+			MergedEntries result = mergeEntryPoints(pattern, candidates, "loop part");
+			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
+				entryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), this);
+			}
+			entryElse = result.entryElse() != null ? this : null;
 		}
 
-		/** As above, but also a capturing group (e.g. {@code (a)*}) -- see DispatchMatcherConstruct. */
-		void buildLoopEntryMapAndMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
+		/**
+		 * Builds the actual loop matcher graph -- a plain {@code DispatchMatcherConstruct}, built via
+		 * its loop-flavored constructor, see MatcherConstruct and design.md -- for the quantified
+		 * case. Called from {@code buildMatcher()}, after {@code buildLoopEntryMap} (above) has
+		 * already computed this construct's own entry point, since the self-registering constructor
+		 * needs {@code this.matcher} set before {@code body}'s own {@code compile()} calls, which
+		 * dispatch back to {@code this} once they finish matching.
+		 */
+		void buildLoopMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
 			new DispatchMatcherConstruct(this, body, next, captureConstructIndex);
 		}
 	}
@@ -244,6 +336,16 @@ abstract class PatternConstruct {
 		RangeMap<Integer, PatternConstruct> rawEntryMap = TreeRangeMap.create();
 		@Nullable PatternConstruct rawEntryElse;
 
+		// The unquantified-and-non-empty case's actual compile target (`next` itself, or a
+		// CaptureEndMarker for a capturing group) -- computed once in buildEntryMap() (cheaply, no
+		// compile() calls) and reused by buildMatcher() to actually compile the branches against it.
+		// Kept as a field rather than recomputed, since buildMatcher() needs the SAME CaptureEndMarker
+		// instance buildEntryMap() already used to compute rawEntryMap/rawEntryElse's identities.
+		// @Nullable only because it has no meaningful value before buildEntryMap() runs -- by the
+		// time buildMatcher() reads it (unguarded), compile()'s ensureEntryPointBuilt() guarantees
+		// buildEntryMap() already has, in this (unquantified, non-empty-constructs) branch.
+		@Nullable PatternConstruct compileTarget;
+
 		QuantifiedUnion(String pattern, int startIndex, int parentFlags) {
 			super(pattern, startIndex);
 			this.parentFlags = parentFlags;
@@ -256,7 +358,7 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
-				buildLoopEntryMapAndMatcher(constructs, next, captureConstructIndex);
+				buildLoopEntryMap(constructs, next);
 				return;
 			}
 			if (constructs.isEmpty()) {
@@ -272,29 +374,33 @@ abstract class PatternConstruct {
 				// PatternParser, already done by the caller -- so just pass through to `next` exactly
 				// as an empty Sequence element would, instead of compiling as its own dispatch node.
 				// Re-keyed onto `this` rather than aliased -- same reasoning as the main branch below.
-				for (Entry<Range<Integer>, PatternConstruct> e : next.entryMap.asMapOfRanges().entrySet()) {
+				for (Entry<Range<Integer>, PatternConstruct> e : next.getEntryPointMap().asMapOfRanges().entrySet()) {
 					entryMap.put(e.getKey(), this);
 				}
-				entryElse = next.entryElse != null ? this : null;
-				matcher = next.matcher;
+				entryElse = next.getEntryElse() != null ? this : null;
+				// matcher isn't assigned here (unlike the pre-split design) -- next.matcher may not be
+				// built yet at this point (see design.md's "Entry-point computation vs. matcher
+				// compilation" section); buildMatcher() assigns it once next really is compiled.
 				return;
 			}
 
-			// Compile every branch (tail-to-front relative to this union: each branch's "next" is
-			// this union's own "next" -- or, for a capturing group, a marker that ends the capture
-			// before reaching the real next -- since choosing a branch doesn't itself consume
-			// anything) and merge their entry ranges, rejecting any two branches that could both
-			// match the same next code point -- the core LL(1) restriction this library is built on.
-			PatternConstruct compileTarget = next;
+			// Determine every branch's compile target (tail-to-front relative to this union: each
+			// branch's "next" is this union's own "next" -- or, for a capturing group, a marker that
+			// ends the capture before reaching the real next -- since choosing a branch doesn't itself
+			// consume anything) and merge their entry points, rejecting any two branches that could
+			// both match the same next code point -- the core LL(1) restriction this library is built
+			// on. Deliberately doesn't compile() anything here (branches, or compileTarget itself) --
+			// see design.md's "Entry-point computation vs. matcher compilation" section; buildMatcher()
+			// does the real compiling, once `next` is guaranteed to already be compiled.
+			compileTarget = next;
 			if (isCapturing()) {
 				compileTarget = new CaptureEndMarker(startIndex, captureConstructIndex, next);
 				compileTarget.flags = flags;
-				// Branches read `owner.next.matcher` while building their own matcher (tail-to-front),
-				// so compileTarget must already be fully compiled by then -- unlike a normal `next`,
-				// nothing else ever calls compile() on a freshly-constructed marker for us.
-				compileTarget.compile(next);
 			}
-			MergedEntries result = compileAndMergeCandidates(pattern, constructs, compileTarget, "union subpattern");
+			for (PatternConstruct part : constructs) {
+				part.next = compileTarget;
+			}
+			MergedEntries result = mergeEntryPoints(pattern, constructs, "union subpattern");
 			rawEntryElse = result.entryElse();
 			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 				rawEntryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
@@ -312,7 +418,23 @@ abstract class PatternConstruct {
 		@Override
 		void buildMatcher() {
 			if (!isUnquantified()) {
-				return; // matcher was already built by buildLoopEntryMapAndMatcher, above.
+				buildLoopMatcher(constructs, next, captureConstructIndex);
+				return;
+			}
+			if (constructs.isEmpty()) {
+				// Bare flags-only group -- see buildEntryMap()'s matching case. `next` is guaranteed
+				// compiled by now (tail-to-front compile order), unlike when buildEntryMap() ran.
+				matcher = next.matcher;
+				return;
+			}
+			if (isCapturing()) {
+				// compileTarget (a CaptureEndMarker) must itself be compiled before the branches below,
+				// since building its own EndCaptureMatcherConstruct needs `next.matcher` -- guaranteed
+				// available now (unlike when buildEntryMap() computed compileTarget's entry point).
+				compileTarget.compile(next);
+			}
+			for (PatternConstruct part : constructs) {
+				part.compile(compileTarget);
 			}
 			if (isCapturing()) {
 				// Uses rawEntryMap/rawEntryElse, not the (rekeyed-to-`this`) entryMap/entryElse fields --
@@ -365,10 +487,10 @@ abstract class PatternConstruct {
 			// via GroupSyntaxTest. Fixed by re-keying every range onto `this` instead of realNext,
 			// same as any other PatternConstruct's own buildEntryMap does for itself.
 			for (java.util.Map.Entry<Range<Integer>, PatternConstruct> e :
-					realNext.entryMap.asMapOfRanges().entrySet()) {
+					realNext.getEntryPointMap().asMapOfRanges().entrySet()) {
 				entryMap.put(e.getKey(), this);
 			}
-			entryElse = realNext.entryElse != null ? this : null;
+			entryElse = realNext.getEntryElse() != null ? this : null;
 		}
 
 		@Override
@@ -387,9 +509,40 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
+			// A sequence's own entry point is exactly its first element's -- entering the sequence
+			// means entering its first element, regardless of what the rest of the sequence looks
+			// like. Wire every element's `next` pointer tail-to-front FIRST (a plain field
+			// assignment, not a compile() call) so a nullable element can still fold in what follows
+			// it when asked for its own entry point below -- but deliberately don't compile() (build
+			// matchers for) anything here: that's buildMatcher()'s job, below. This split is what
+			// lets a loop nested at the tail of this sequence ask an enclosing loop (this sequence's
+			// own `next`, if it's a loop) for ITS entry point mid-construction, without forcing that
+			// enclosing loop's own (still in-progress) matcher build to finish first -- see
+			// design.md's "Entry-point computation vs. matcher compilation" section.
+			PatternConstruct tail = next;
+			for (int i = patterns.size() - 1; i >= 0; i--) {
+				patterns.get(i).next = tail;
+				tail = patterns.get(i);
+			}
+			// Re-key every range onto `this` instead of aliasing patterns.get(0).entryMap directly --
+			// same fix as CaptureEndMarker (2026-09-06, see its own doc): aliasing leaves every entry's
+			// VALUE as whatever nested leaf construct originally built the range, not this Sequence,
+			// which silently breaks identity checks like a containing loop's "is this range the exit
+			// path, i.e. does it lead to `next`" test whenever `next` is a Sequence. See
+			// remaining_work.md's dated bug entry (a quantified loop immediately followed by a
+			// composite construct, e.g. "(a)(b)*(z)", crashed at match time because of exactly this).
+			for (Entry<Range<Integer>, PatternConstruct> e : patterns.get(0).getEntryPointMap().asMapOfRanges().entrySet()) {
+				entryMap.put(e.getKey(), this);
+			}
+			entryElse = patterns.get(0).getEntryElse() != null ? this : null;
+		}
+
+		@Override
+		void buildMatcher() {
 			// Compile tail-to-front: the last element's next is this sequence's own next, and each
 			// earlier element's next is the element right after it (already compiled by the time we
-			// get to it).
+			// get to it). A Sequence has no matching behavior of its own -- it's exactly whatever its
+			// first element compiled to.
 			PatternConstruct tail = next;
 			for (int i = patterns.size() - 1; i >= 0; i--) {
 				PatternConstruct part = patterns.get(i);
@@ -399,23 +552,6 @@ abstract class PatternConstruct {
 				part.compile(tail);
 				tail = part;
 			}
-			// Re-key every range onto `this` instead of aliasing patterns.get(0).entryMap directly --
-			// same fix as CaptureEndMarker (2026-09-06, see its own doc): aliasing leaves every entry's
-			// VALUE as whatever nested leaf construct originally built the range, not this Sequence,
-			// which silently breaks identity checks like a containing loop's "is this range the exit
-			// path, i.e. does it lead to `next`" test whenever `next` is a Sequence. See
-			// remaining_work.md's dated bug entry (a quantified loop immediately followed by a
-			// composite construct, e.g. "(a)(b)*(z)", crashed at match time because of exactly this).
-			for (Entry<Range<Integer>, PatternConstruct> e : patterns.get(0).entryMap.asMapOfRanges().entrySet()) {
-				entryMap.put(e.getKey(), this);
-			}
-			entryElse = patterns.get(0).entryElse != null ? this : null;
-		}
-
-		@Override
-		void buildMatcher() {
-			// A Sequence has no matching behavior of its own -- it's exactly whatever its first
-			// element compiled to (already compiled by buildEntryMap, above).
 			matcher = patterns.get(0).matcher;
 		}
 	}
@@ -547,10 +683,12 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
-				buildLoopEntryMapAndMatcher(List.of(delegate), next);
+				buildLoopEntryMap(List.of(delegate), next);
 				return;
 			}
-			delegate.compile(next);
+			// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
+			// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
+			// that happens in buildMatcher(), below.
 			for (Range<Integer> range : delegate.validRanges().asRanges()) {
 				entryMap.put(range, this);
 			}
@@ -559,10 +697,12 @@ abstract class PatternConstruct {
 		@Override
 		void buildMatcher() {
 			if (!isUnquantified()) {
-				return; // matcher was already built by buildLoopEntryMapAndMatcher, above.
+				buildLoopMatcher(List.of(delegate), next, -1);
+				return;
 			}
 			// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
-			// delegate ComplexCharacter (already compiled by buildEntryMap, above).
+			// delegate ComplexCharacter.
+			delegate.compile(next);
 			matcher = delegate.matcher;
 		}
 	}
@@ -676,9 +816,9 @@ abstract class PatternConstruct {
 			RangeSet<Integer> wordSet = RegexCharacterClass.w.get(flags);
 			Wordness prior = classify(priorCharSet, wordSet);
 			RangeSet<Integer> peekRanges = null;
-			if (next.entryElse == null) {
+			if (next.getEntryElse() == null) {
 				peekRanges = TreeRangeSet.create();
-				for (Range<Integer> range : next.entryMap.asMapOfRanges().keySet()) {
+				for (Range<Integer> range : next.getEntryPointMap().asMapOfRanges().keySet()) {
 					peekRanges.add(range);
 				}
 			}

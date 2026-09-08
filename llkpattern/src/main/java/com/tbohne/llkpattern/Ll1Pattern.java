@@ -41,7 +41,22 @@ public final class Ll1Pattern {
 	public static Ll1Pattern compile(String pattern, int flags) {
 		PatternParser parser = new PatternParser(pattern, flags);
 		PatternConstruct parsed = parser.parse();
-		MatcherConstruct compiled = parsed.compile(new PatternConstruct.EndConstruct(parsed.endIndex));
+		MatcherConstruct compiled;
+		try {
+			compiled = parsed.compile(new PatternConstruct.EndConstruct(parsed.endIndex));
+		} catch (PatternConstruct.EntryPointCycleException e) {
+			// See design.md's "Entry-point computation vs. matcher compilation" section: this fires
+			// only for a quantified construct whose entire body can match zero characters (e.g.
+			// "(a?)+"), which also makes it an infinite-loop hazard in its own right.
+			throw PatternSyntaxException.throwWithReferences(
+					pattern,
+					e.startIndex,
+					"the quantified construct starting at index ", e.startIndex,
+					" has a body that can match zero characters, so its own \"what comes next\" set can't ",
+					"be determined -- besides being unsupported here, a loop whose body can match nothing ",
+					"is also an infinite-loop hazard; rewrite it so every iteration consumes at least one ",
+					"character");
+		}
 		return new Ll1Pattern(
 				pattern,
 				flags,

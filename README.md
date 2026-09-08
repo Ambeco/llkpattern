@@ -18,7 +18,7 @@ _(TBD — see [documents/design.md](documents/design.md))_
 
 ## 3. Current Progress
 
-The module compiles; its test suite passes fully (1439 tests, 0 failing, 561 skipped — see [documents/remaining_work.md](documents/remaining_work.md) for the JDK version this currently requires and the active TODO list). A scraped-corpus differential test harness (compares `Ll1Pattern` against `java.util.regex` on real test data mined from OpenJDK's own regex test suite) has already surfaced and helped fix several real bugs — see [documents/notes.md](documents/notes.md) for that history and remaining_work.md's "Scraped-corpus differential test harness" section for current corpus-agreement counts (most of the corpus's remaining `UNIMPLEMENTED`/`UNEXPECTED` rows are still-unimplemented features like lookaround/Unicode scripts, not yet human-triaged).
+The module compiles; its test suite passes fully (1443 tests, 0 failing, 561 skipped — see [documents/remaining_work.md](documents/remaining_work.md) for the JDK version this currently requires and the active TODO list). A scraped-corpus differential test harness (compares `Ll1Pattern` against `java.util.regex` on real test data mined from OpenJDK's own regex test suite) has already surfaced and helped fix several real bugs — see [documents/notes.md](documents/notes.md) for that history and remaining_work.md's "Scraped-corpus differential test harness" section for current corpus-agreement counts (most of the corpus's remaining `UNIMPLEMENTED`/`UNEXPECTED` rows are still-unimplemented features like lookaround/Unicode scripts, not yet human-triaged).
 
 In brief:
 

@@ -201,4 +201,52 @@ public class QuantifierAndCaptureTest {
     assertThat(matches("(b)*cd", "cd"), is(true));
     assertThat(matches("(b)*cd", "bbcd"), is(true));
   }
+
+  // --- Dot (.) quantified -- see remaining_work.md's dated bug entry: PatternParser used to check
+  // for a quantifier suffix on "." before advancing past the "." itself, so `peek` was still '.'
+  // at that point and the check always failed -- "." was silently never actually quantifiable;
+  // ".*z" parsed as an unquantified "." followed by the literal text "*z". Since "." matches
+  // essentially everything (see NamedCharClass.RegexCharacterClass.DOT: all but '\n'), a
+  // quantified "." followed by an ordinary literal is itself always ambiguous under this engine's
+  // LL(1) restriction (exactly like "[a-z]+z" -- see the last test below) -- these tests instead
+  // use "." as the pattern's own tail (matches() over the whole string, nothing after the loop to
+  // conflict with) to isolate "does the quantifier actually apply to the dot" from that unrelated
+  // ambiguity.
+
+  @Test
+  public void dotStar_matchesZeroOrMoreOfAnyCharacter() {
+    assertThat(matches("a.*", "a"), is(true));
+    assertThat(matches("a.*", "abbb"), is(true));
+    // Would have (wrongly) required the literal text "*" (as a 1-character match) before this fix.
+    assertThat(matches("a.*", "a*"), is(true));
+    assertThat(matches("a*", "a*"), is(false)); // sanity check: "a*" alone does NOT match "a*"
+  }
+
+  @Test
+  public void dotPlus_requiresAtLeastOneCharacter() {
+    assertThat(matches("a.+", "a"), is(false));
+    assertThat(matches("a.+", "ab"), is(true));
+  }
+
+  @Test
+  public void dotQuestion_matchesZeroOrOneCharacter() {
+    assertThat(matches("a.?", "a"), is(true));
+    assertThat(matches("a.?", "ab"), is(true));
+    assertThat(matches("a.?", "abb"), is(false));
+  }
+
+  @Test
+  public void dotBraceQuantifier_honorsExplicitBounds() {
+    assertThat(matches("a.{2}", "abb"), is(true));
+    assertThat(matches("a.{2}", "ab"), is(false));
+  }
+
+  @Test
+  public void dotQuantifier_ambiguousWithFollowingLiteral_rejectedAtCompileTime() {
+    // "." (which matches 'z' too) competing with a following literal 'z' for the same next
+    // character is exactly as ambiguous as "[a-z]+z" -- both must be compile-time errors, not a
+    // silently-wrong match.
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".*z"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".+z"));
+  }
 }

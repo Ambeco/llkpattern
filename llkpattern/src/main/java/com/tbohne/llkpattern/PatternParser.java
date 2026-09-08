@@ -227,8 +227,18 @@ final class PatternParser {
                     : TreeRangeSet.create(RegexCharacterClass.DOT.unicode);
             ComplexCharacter dot = new ComplexCharacter(index, dotRanges);
             dot.flags = flags;
-            sequence.patterns.add(parseQuantifiable(dot));
+            // Bug fix (2026-09-07): parseQuantifiable(dot) used to be called BEFORE this advance(1),
+            // so it checked for a quantifier suffix (?/*/+/{n,m}) while `peek` was still '.' itself --
+            // never seeing the real following character, so "." was silently never quantifiable at
+            // all: ".*z" parsed as an unquantified "." followed by the literal text "*z", not "any
+            // number of any characters then z". Every other quantifiable construct (bracket classes,
+            // plain literals) already advances past its own token before checking for a quantifier --
+            // "." is the one construct that didn't. Found while triaging the scraped-corpus harness's
+            // un-triaged UNEXPECTED rows (several ".*"/".+" rows turned out to be this, not a genuine
+            // behavior divergence). Fixed by advancing first, matching every other call site's
+            // convention.
             advance(1);
+            sequence.patterns.add(parseQuantifiable(dot));
             break;
           case '^':
             LineBoundaryConstruct lineBegin = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ true);

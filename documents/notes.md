@@ -139,6 +139,29 @@ Notes to self about how to work on this project, and other context that doesn't 
     non-BMP-codepoint versions of both). Full suite green afterward (including the new
     `QuantifierAndCaptureTest` regression coverage added for this fix): 1423 tests, 0 failing,
     561 skipped.
+- 2026-09-07 (same day, yet later): found and fixed a second, unrelated real bug while triaging
+  the scraped-corpus harness's un-triaged `UNEXPECTED` rows (48 of them, tracked as an open item in
+  remaining_work.md's "Next steps") -- `.` (dot) was silently never actually quantifiable at all:
+  `PatternParser`'s `'.'` case called `parseQuantifiable(dot)` *before* `advance(1)`, so the
+  quantifier-suffix check ran while `peek` was still `'.'` itself and never saw the real following
+  character -- every other quantifiable construct (bracket classes, plain literals) already
+  advances past its own token first. Confirmed via a throwaway program:
+  `Ll1Pattern.compile(".*z").matcher("a*z").find()` returned `true` (matched the literal text
+  `"a*z"`), not "any characters then z". Found by testing the `.+ぃ`-family un-triaged rows by hand
+  rather than assuming they were expected reluctant/possessive-quantifier divergences (the
+  documented, actually-expected category) -- a quick standalone `.+z"`/`".*z"` scratch test caught
+  the real cause on the first try. Fixed by swapping the order (advance, then check for a
+  quantifier), matching every other call site's convention. This retroactively explains most of
+  the `.{quantifier}` rows in that un-triaged set: they weren't behavior divergences at all, just
+  this parser bug -- and, now fixed, several flip to a *new*, also-correct outcome: a quantified
+  "." immediately followed by an ordinary literal (e.g. `.*ぃ`) is now correctly detected as
+  LL(1)-ambiguous at compile time (since "." matches nearly everything, including whatever
+  literal follows it) -- exactly the same category of rejection `[a-z]+z`/`a+a` already got, not a
+  new bug. Retagged both golden files again (10 BMP rows, 13 supplementary rows); added dedicated
+  regression tests in `QuantifierAndCaptureTest` (using "." as the pattern's own tail, matches()
+  over the whole string, to isolate "does the quantifier apply to dot" from the separate,
+  already-tested ambiguity-with-a-following-literal case). Full suite green: 1428 tests, 0
+  failing, 561 skipped.
 
 ## Tooling gotchas (this dev machine, Windows + git-bash)
 

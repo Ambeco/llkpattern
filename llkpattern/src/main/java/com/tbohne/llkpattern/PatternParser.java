@@ -1,6 +1,5 @@
 package com.tbohne.llkpattern;
 
-import com.google.common.collect.RangeSet;
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import com.tbohne.llkpattern.PatternConstruct.*;
@@ -259,7 +258,10 @@ final class PatternParser {
               dotRanges = new ArrayCodePointMap<>();
               dotRanges.setElseValue(true);
             } else {
-              dotRanges = RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.DOT.unicode);
+              // Copied rather than aliased: RegexCharacterClass.DOT.unicode is a shared static
+              // instance, and ComplexCharacter.ranges is mutable (further && / negation processing
+              // may still write into it elsewhere in this parser).
+              dotRanges = new ArrayCodePointMap<>(RegexCharacterClass.DOT.unicode);
             }
             ComplexCharacter dot = new ComplexCharacter(index, dotRanges);
             dot.flags = flags;
@@ -678,6 +680,32 @@ final class PatternParser {
         : new ArrayCodePointMap<>(ranges);
   }
 
+  /**
+   * The complement of {@code set}, eagerly enumerated as real entries rather than kept as a
+   * {@link CodePointMap#complement} else-value fill. Unlike the {@code [^...]}/DOTALL negation
+   * above (which hands its {@code complement()} result straight to a new {@code ComplexCharacter}
+   * as that construct's entire {@code ranges}, so the else-value is preserved and later consulted
+   * via {@code get()}), this one feeds {@code complex.ranges.putAll(...)} -- merging into an
+   * already-populated map -- and {@code putAll} only copies explicit entries, silently dropping an
+   * else-value fill. Used for {@code \P{...}}, whose negated set must actually be enumerable.
+   */
+  private static CodePointMap<Boolean> materializeComplement(CodePointMap<Boolean> set) {
+    MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+    int codePoint = 0;
+    while (codePoint <= CodePointMap.MAX_CODE_POINT) {
+      if (set.containsKey(codePoint)) {
+        codePoint++;
+        continue;
+      }
+      int start = codePoint;
+      while (codePoint <= CodePointMap.MAX_CODE_POINT && !set.containsKey(codePoint)) {
+        codePoint++;
+      }
+      result.appendSorted(start, codePoint, Boolean.TRUE);
+    }
+    return result;
+  }
+
   static private final String META_CHARACTERS = "^.[]$()*{}?+|\\";
   static private final String CONTROL_CODES = "@ABCDEFGHIJKLMNOPQRTSTUVWXYZ[\\]^_";
   private int tryParseSingleCharEscape() {
@@ -922,15 +950,14 @@ final class PatternParser {
     }
     advance(1);
     if (peek == 'R') {
-      complex.ranges.putAll(RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.R.get(flags)));
+      complex.ranges.putAll(RegexCharacterClass.R.get(flags));
       advance(1);
       complex.endIndex = index;
       return complex;
     }
     if (peek != 'p' && peek != 'P') {
       try {
-        complex.ranges.putAll(
-            RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.valueOf(Character.toString(peek)).get(flags)));
+        complex.ranges.putAll(RegexCharacterClass.valueOf(Character.toString(peek)).get(flags));
         advance(1);
         complex.endIndex = index;
         return complex;
@@ -1028,13 +1055,14 @@ final class PatternParser {
     try {
       complex.endIndex = index;
       NamedCharClass namedClass = NamedCharClass.valueOf(charClassName);
-      RangeSet<Integer> namedRanges = namedClass.get(prefix, flags);
+      CodePointMap<Boolean> namedRanges = namedClass.get(prefix, flags);
       // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but
       // never actually used -- "\P{...}" silently behaved exactly like "\p{...}" (always positive).
-      // Guava's complement() here is left unclamped (same as every other Guava complement() in
-      // this file) -- RangeSetCodePointMaps.toCodePointMap clamps to the code point domain while
-      // converting, same as it does for an already-positive set.
-      complex.ranges.putAll(RangeSetCodePointMaps.toCodePointMap(positive ? namedRanges : namedRanges.complement()));
+      // materializeComplement (not CodePointMap#complement) since complex.ranges' entrySet() gets
+      // walked directly by later processing (&&, ambiguity checks) -- an else-value-based
+      // complement's entrySet() would be the empty holes, not the actual negated membership. See
+      // NamedCharClass#materializedComplement's doc for the same trap.
+      complex.ranges.putAll(positive ? namedRanges : materializeComplement(namedRanges));
       return complex;
     } catch (IllegalArgumentException e) {
       throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");

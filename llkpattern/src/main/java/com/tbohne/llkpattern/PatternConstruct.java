@@ -844,7 +844,7 @@ abstract class PatternConstruct {
 			// of the boundary (the character just consumed, and the one about to be) are classified
 			// as always-word/always-non-word/unknown at compile time; whichever side is statically
 			// known doesn't need to be checked at match time at all.
-			CodePointMap<Boolean> wordSet = RangeSetCodePointMaps.toCodePointMap(RegexCharacterClass.w.get(flags));
+			CodePointMap<Boolean> wordSet = RegexCharacterClass.w.get(flags);
 			Wordness prior = classify(priorCharSet, wordSet);
 			// next's own entry-point map is already exactly a CodePointMap<Boolean> -- no separate
 			// RangeSet needs building here any more.

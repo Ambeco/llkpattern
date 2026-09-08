@@ -612,6 +612,75 @@ Notes to self about how to work on this project, and other context that doesn't 
   compile / -52.0% match** for this whole multi-day `CodePointMap` migration arc, `RangeMap` and
   `RangeSet` combined.
 
+### Migrating `NamedCharClass`/`UnicodePredicates` off Guava `RangeSet` onto `CodePointMap` (2026-09-08, next day)
+
+- The project owner asked to finish the elimination that the two sessions above deliberately deferred
+  (the "circular-init fragility" note on `NamedCharClass`'s union-heavy static initializers). Done
+  bottom-up as before: `unicodeanalyzer`'s generator first, then `NamedCharClass`, then the two
+  remaining consumption points.
+- `UnicodeAnalyzer` now emits `UnicodePredicates` as `CodePointMap<Boolean>` fields built via
+  `ArrayCodePointMap#appendSorted` (previously `ImmutableRangeSet.Builder`). `categories()`/
+  `scripts()`/`printRanges()` pull their ranges out of a `HashMap`/`HashSet`, so (unlike the already-
+  ascending-order `intPredicate()` scan) they needed an explicit sort by `min` first --
+  `appendSorted` requires ascending order and silently corrupts the map otherwise, unlike the old
+  `Builder`, which tolerated any insertion order. The generator now also emits the file's package/
+  imports/class declaration/closing brace itself (previously hand-assembled once and pasted around),
+  including a "DO NOT EDIT" javadoc and a `javax.annotation.processing.Generated` annotation (not
+  `javax.annotation.Generated` -- that one was removed from the JDK in 9) carrying the generation
+  date -- this doubles as the "documented/scripted way to regenerate" item from remaining_work.md,
+  via the new `./gradlew :unicodeanalyzer:generateUnicodePredicates` task.
+- Found and fixed a real Gradle bug while wiring that task up: `standardOutput = new
+  FileOutputStream(path)` assigned directly in the task block runs at project*-configuration* time,
+  not task-execution time -- since this is a multi-project build, that meant the file got truncated
+  to zero bytes on *every* Gradle invocation that touches this project, including an unrelated
+  `:llkpattern:compileJava`. Fixed by moving the `FileOutputStream` construction into `doFirst {}`.
+  Cost a couple of confusing "cannot find symbol: UnicodePredicates" compile failures before the
+  actual cause (an empty file, not a real missing class) was traced.
+- `NamedCharClass`'s ~200 hand-written literal `Range.closed`/`singleton`/`closedOpen` calls all
+  needed individual `[min, max)` conversion (Guava's `closed`/`singleton` are inclusive-max) --
+  no mechanical find/replace covers this, since the right `+1` depends on each call's own bound
+  type. Replaced the `ImmutableRangeSet.Builder` chains with a small `build(Consumer<
+  MutableCodePointMap<Boolean>>)` helper backed by plain `put` (not `appendSorted`, since several of
+  these literals -- `Hex_Digit`'s a-f/A-F/0-9/fullwidth-digit ordering, `h`/`v`/`R` similarly -- add
+  entries out of ascending order, which `appendSorted` doesn't tolerate).
+- The other real trap: `CodePointMap#complement(value)` is an else-value fill whose `entrySet()` is
+  the *holes*, not the complement's members -- silently inverting anything that iterates entries
+  (unions, `PatternParser`'s ambiguity check) rather than just calling `get()`/`containsKey()`. Every
+  complement-derived constant (`Assigned`, `Graph`'s unicode side, and `RegexCharacterClass`'s `D`/
+  `H`/`S`/`V`/`W`) now goes through a `materializedComplement` helper that sweeps `[0,
+  MAX_CODE_POINT]` and builds real entries instead -- mirroring the choice the retired
+  `RangeSetCodePointMaps.toCodePointMap` made for the same reason. `PatternParser`'s own `\P{...}`
+  handling needed an identical `materializeComplement` (its `[^...]`/`DOTALL` negation, by contrast,
+  correctly keeps using `CodePointMap#complement`'s else-value fill as-is, since that result becomes
+  a `ComplexCharacter`'s entire `ranges` field rather than being merged via `putAll` into an
+  already-populated one -- `putAll` only copies explicit entries, which is exactly what would drop
+  an else-value fill on the floor).
+- `RangeSetCodePointMaps.java` (the one-time Guava-to-`CodePointMap` adapter from the prior session)
+  is now dead and deleted -- `PatternParser`/`WordBoundaryConstruct` call `NamedCharClass`/
+  `RegexCharacterClass`'s `get(...)` directly, since it already returns a `CodePointMap<Boolean>`.
+- No golden-membership dump test was added (the existing `PosixAndJavaClassTest`/
+  `PredefinedClassTest`/`RangeSetMigrationTest`/`UnicodeClassTest` coverage of the ASCII-vs-Unicode
+  split and every named class stayed green with no test-count drop, which is what would have caught
+  a materialization/complement/off-by-one regression here).
+- Full suite green: 1484 tests, 0 failing -- same count as the prior session (pure internal
+  representation change, no behavior change intended or observed).
+- JMH afterward, run on the same JDK 25 as the committed baseline (this dev machine's Gradle
+  daemon needs JDK 17/21 -- see the toolchain note above -- but the `me.champeau.jmh` plugin's
+  `jvm` option can fork the *benchmark* process on a different JDK independently of Gradle's own):
+  `llkCompile` 7.05ms -> 9.65ms/op, `llkMatch` 0.044ms -> 0.067ms/op raw -- looks like a real
+  regression at first glance, but the *unrelated* `regexCompile`/`regexMatch` benchmarks (pure
+  `java.util.regex`, untouched by this change) moved by almost the identical percentage in the same
+  run (0.096ms -> 0.140ms, 0.047ms -> 0.070ms) -- so this was the machine running ~45% slower
+  across the board that particular time, not a code regression. Normalizing against that run's own
+  regex numbers as an in-run control: `llkCompile/regexCompile` 73.3x -> 69.1x (slightly better) and
+  `llkMatch/regexMatch` 0.938x -> 0.953x (flat, within noise) -- confirms the predicted outcome:
+  since this migration only touches one-time static init and parse-time construction, not the
+  match-time hot path the `ComplexCharacter`/`dispatchMap` migrations touched, it has no real effect
+  on `llkMatch`, and if anything a slightly positive one on `llkCompile`. Committed
+  `corpus_benchmark_results.json` reflects this run; a future `git diff` against it should likewise
+  sanity-check `regexCompile`/`regexMatch`'s movement before reading `llkCompile`/`llkMatch`'s at
+  face value, if the machine's load might have changed between runs.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

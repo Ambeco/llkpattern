@@ -14,3 +14,21 @@ dependencies {
     implementation "org.checkerframework:checker-qual:${checkerFrameworkVersion}"
     //annotationProcessor "org.checkerframework:checker:${checkerFrameworkVersion}"
 }
+// Regenerates llkpattern's UnicodePredicates.java from the running JDK's own Character tables.
+// Run manually, as needed (e.g. after a JDK upgrade changes Unicode data) -- not part of the
+// normal build. See UnicodePredicates.java's own "DO NOT EDIT" javadoc.
+//   ./gradlew :unicodeanalyzer:generateUnicodePredicates
+task generateUnicodePredicates(type: JavaExec) {
+    group = 'codegen'
+    description = 'Regenerates llkpattern/UnicodePredicates.java from the running JDK.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.tbohne.llkpattern.unicodeanalyzer.UnicodeAnalyzer'
+    // Opening (and thus truncating) the output file must be deferred to task-execution time via
+    // doFirst -- assigning "new FileOutputStream(...)" directly above would instead run at
+    // *project-configuration* time, i.e. on every single Gradle invocation in this multi-project
+    // build (even ":llkpattern:compileJava"), silently truncating UnicodePredicates.java each time.
+    doFirst {
+        standardOutput = new FileOutputStream(
+            "${rootDir}/llkpattern/src/main/java/com/tbohne/llkpattern/UnicodePredicates.java")
+    }
+}

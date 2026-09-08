@@ -1,12 +1,8 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableRangeSet;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Range;
-import com.google.common.collect.RangeSet;
-import com.google.common.collect.TreeRangeSet;
+import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 
 import java.util.regex.Pattern;
 
@@ -148,19 +144,20 @@ enum NamedCharClass {
   // below -- this is the same literal-duplication tradeoff Space's own ASCII set already makes.
   White_Space(
       Source.UProperty,
-      new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.closed(+'\t', +'\r')) // U+0009-000D
-          .add(Range.singleton(+' '))
-          .add(Range.singleton(0x0085))
-          .add(Range.singleton(0x00A0))
-          .add(Range.singleton(0x1680))
-          .add(Range.closed(0x2000, 0x200A))
-          .add(Range.singleton(0x2028))
-          .add(Range.singleton(0x2029))
-          .add(Range.singleton(0x202F))
-          .add(Range.singleton(0x205F))
-          .add(Range.singleton(0x3000))
-          .build()),
+      build(
+          m -> {
+            m.put(+'\t', +'\r' + 1, Boolean.TRUE); // U+0009-000D
+            m.put(+' ', Boolean.TRUE);
+            m.put(0x0085, Boolean.TRUE);
+            m.put(0x00A0, Boolean.TRUE);
+            m.put(0x1680, Boolean.TRUE);
+            m.put(0x2000, 0x200B, Boolean.TRUE);
+            m.put(0x2028, Boolean.TRUE);
+            m.put(0x2029, Boolean.TRUE);
+            m.put(0x202F, Boolean.TRUE);
+            m.put(0x205F, Boolean.TRUE);
+            m.put(0x3000, Boolean.TRUE);
+          })),
   // Digit is reachable both as the bare POSIX class \p{Digit} (ASCII-default, widens to
   // full-Unicode only under UNICODE_CHARACTER_CLASS) and as the Unicode binary property
   // \p{IsDigit} (always full-Unicode, the flag never applies) -- the only one of the 13 POSIX
@@ -181,38 +178,43 @@ enum NamedCharClass {
   // remaining_work.md.
   Hex_Digit(
       Source.UProperty,
-      new ImmutableRangeSet.Builder<Integer>()
-                 .add(Range.closed(+'a', +'f')).add(Range.closed(+'A', +'F'))
-                .add(Range.closed(+'0', +'9')).add(Range.closed(0xFF41, 0xFF46))
-                .add(Range.closed(0xFF21, 0xFF26)).add(Range.closed(0xFF10, 0xFF19))
-                .build()),
+      build(
+          m -> {
+            m.put(+'a', +'f' + 1, Boolean.TRUE);
+            m.put(+'A', +'F' + 1, Boolean.TRUE);
+            m.put(+'0', +'9' + 1, Boolean.TRUE);
+            m.put(0xFF41, 0xFF47, Boolean.TRUE);
+            m.put(0xFF21, 0xFF27, Boolean.TRUE);
+            m.put(0xFF10, 0xFF1A, Boolean.TRUE);
+          })),
   Join_Control(
-      Source.UProperty, new ImmutableRangeSet.Builder<Integer>().add(Range.closed(0x200C, 0x200D)).build()),
+      Source.UProperty, build(m -> m.put(0x200C, 0x200E, Boolean.TRUE))),
   Noncharacter_Code_Point(
       Source.UProperty,
-      new ImmutableRangeSet.Builder<Integer>() // not public in Java :(
-          .add(Range.closed(0xFDD0, 0xFDEF))
-          .add(Range.closed(0xFFFE, 0xFFFF))
-          .add(Range.closed(0x1FFFE, 0x1FFFF))
-          .add(Range.closed(0x2FFFE, 0x2FFFF))
-          .add(Range.closed(0x3FFFE, 0x3FFFF))
-          .add(Range.closed(0x4FFFE, 0x4FFFF))
-          .add(Range.closed(0x5FFFE, 0x5FFFF))
-          .add(Range.closed(0x6FFFE, 0x6FFFF))
-          .add(Range.closed(0x7FFFE, 0x7FFFF))
-          .add(Range.closed(0x8FFFE, 0x8FFFF))
-          .add(Range.closed(0x9FFFE, 0x9FFFF))
-          .add(Range.closed(0xAFFFE, 0xAFFFF))
-          .add(Range.closed(0xBFFFE, 0xBFFFF))
-          .add(Range.closed(0xCFFFE, 0xCFFFF))
-          .add(Range.closed(0xDFFFE, 0xDFFFF))
-          .add(Range.closed(0xEFFFE, 0xEFFFF))
-          .add(Range.closed(0xFFFFE, 0xFFFFF))
-          .add(Range.closed(0x10FFFE, 0x10FFFF))
-          .build()),
+      build( // not public in Java :(
+          m -> {
+            m.put(0xFDD0, 0xFDF0, Boolean.TRUE);
+            m.put(0xFFFE, 0x10000, Boolean.TRUE);
+            m.put(0x1FFFE, 0x20000, Boolean.TRUE);
+            m.put(0x2FFFE, 0x30000, Boolean.TRUE);
+            m.put(0x3FFFE, 0x40000, Boolean.TRUE);
+            m.put(0x4FFFE, 0x50000, Boolean.TRUE);
+            m.put(0x5FFFE, 0x60000, Boolean.TRUE);
+            m.put(0x6FFFE, 0x70000, Boolean.TRUE);
+            m.put(0x7FFFE, 0x80000, Boolean.TRUE);
+            m.put(0x8FFFE, 0x90000, Boolean.TRUE);
+            m.put(0x9FFFE, 0xA0000, Boolean.TRUE);
+            m.put(0xAFFFE, 0xB0000, Boolean.TRUE);
+            m.put(0xBFFFE, 0xC0000, Boolean.TRUE);
+            m.put(0xCFFFE, 0xD0000, Boolean.TRUE);
+            m.put(0xDFFFE, 0xE0000, Boolean.TRUE);
+            m.put(0xEFFFE, 0xF0000, Boolean.TRUE);
+            m.put(0xFFFFE, 0x100000, Boolean.TRUE);
+            m.put(0x10FFFE, 0x110000, Boolean.TRUE);
+          })),
   Assigned(
       Source.UProperty,
-      UnicodePredicates.UNASSIGNED.complement()),
+      materializedComplement(UnicodePredicates.UNASSIGNED)),
 
   // POSIX character classes
   Lower(
@@ -239,53 +241,60 @@ enum NamedCharClass {
       unionOf(Alphabetic.unicode, Digit.unicode), /* slicedAscii=*/true),
   Punct(
       Source.POSIX,
-      new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.closedOpen(0x0021, 0x0030))
-          .add(Range.closedOpen(0x003a, 0x0041))
-          .add(Range.closedOpen(0x005B, 0x0061))
-          .add(Range.closedOpen(0x007B, 0x007F))
-          .build(),
+      build(
+          m -> {
+            m.put(0x0021, 0x0030, Boolean.TRUE);
+            m.put(0x003a, 0x0041, Boolean.TRUE);
+            m.put(0x005B, 0x0061, Boolean.TRUE);
+            m.put(0x007B, 0x007F, Boolean.TRUE);
+          }),
       Punctuation.unicode),
   Graph(
       Source.POSIX,
       unionOf(Alnum.ascii, Punct.ascii),
-      unionOf(UnicodePredicates.isWhitespace,
-              UnicodePredicates.CONTROL,
-              UnicodePredicates.SURROGATE,
-              UnicodePredicates.UNASSIGNED)
-          .complement()),
+      materializedComplement(
+          unionOf(UnicodePredicates.isWhitespace,
+                  UnicodePredicates.CONTROL,
+                  UnicodePredicates.SURROGATE,
+                  UnicodePredicates.UNASSIGNED))),
   Blank(
       Source.POSIX,
-      new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.singleton(+' '))
-          .add(Range.singleton(+'\t'))
-          .build(),
-      White_Space.unicode.difference(
-          union(
-              new ImmutableRangeSet.Builder<Integer>()
-            .add(Range.singleton(+'\n'))
-            .add(Range.singleton(+'\u000b'))
-            .add(Range.singleton(+'\u000c'))
-            .add(Range.singleton(+'\r'))
-            .add(Range.singleton(+'\u0085'))
-                .build(),
+      build(
+          m -> {
+            m.put(+' ', Boolean.TRUE);
+            m.put(+'\t', Boolean.TRUE);
+          }),
+      difference(
+          White_Space.unicode,
+          unionOf(
+              build(
+                  m -> {
+                    m.put(0x000a, Boolean.TRUE); // LF
+                    m.put(0x000b, Boolean.TRUE); // VT
+                    m.put(0x000c, Boolean.TRUE); // FF
+                    m.put(0x000d, Boolean.TRUE); // CR
+                    m.put(0x0085, Boolean.TRUE); // NEL
+                  }),
               UnicodePredicates.LINE_SEPARATOR,
               UnicodePredicates.PARAGRAPH_SEPARATOR))),
   Cntrl(
       Source.POSIX,
-      new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.closed(+'\u0000', +'\u001f'))
-          .add(Range.singleton(+'\u007F'))
-          .build(),
+      build(
+          m -> {
+            m.put(0x0000, 0x0020, Boolean.TRUE); // U+0000-001F
+            m.put(0x007F, Boolean.TRUE); // U+007F
+          }),
       UnicodePredicates.CONTROL),
   Print(
       Source.POSIX,
-      new ImmutableRangeSet.Builder<Integer>()
-          .addAll(Graph.ascii)
-          .add(Range.singleton(0x0020))
-          .build(),
-      union(Graph.unicode, Blank.unicode)
-          .difference(Cntrl.unicode)),
+      build(
+          m -> {
+            m.putAll(Graph.ascii);
+            m.put(0x0020, Boolean.TRUE);
+          }),
+      difference(
+          unionOf(Graph.unicode, Blank.unicode),
+          Cntrl.unicode)),
   // Bug fix (2026-09-07): this used to be a single-RangeSet constructor call using only
   // Hex_Digit.unicode (ASCII a-f/A-F/0-9 plus their fullwidth forms) -- both flag-insensitive
   // (ascii == unicode, so UNICODE_CHARACTER_CLASS was ignored) AND, independently, missing real
@@ -311,14 +320,15 @@ enum NamedCharClass {
   // RegexCharacterClass.s now reads Space.ascii/Space.unicode instead of duplicating this literal.
   Space(
       Source.POSIX,
-      new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.singleton(+' '))
-          .add(Range.singleton(+'\t'))
-          .add(Range.singleton(+'\n'))
-          .add(Range.singleton(0x000B))
-          .add(Range.singleton(+'\f'))
-          .add(Range.singleton(+'\r'))
-          .build(),
+      build(
+          m -> {
+            m.put(+' ', Boolean.TRUE);
+            m.put(+'\t', Boolean.TRUE);
+            m.put(+'\n', Boolean.TRUE);
+            m.put(0x000B, Boolean.TRUE);
+            m.put(+'\f', Boolean.TRUE);
+            m.put(+'\r', Boolean.TRUE);
+          }),
       White_Space.unicode),
   ;
 
@@ -339,25 +349,72 @@ enum NamedCharClass {
   }
 
   /**
-   * Unions any number of code-point range sets that may legitimately overlap each other (e.g.
-   * two different Unicode category predicates both claiming the same code point).
-   *
-   * <p>Unlike {@code ImmutableRangeSet.Builder}, whose {@code build()} throws {@code
-   * IllegalArgumentException} the moment two {@code add}/{@code addAll} calls contribute
-   * overlapping ranges (it's meant for building one range set from known-disjoint pieces, not for
-   * unioning several potentially-overlapping ones), this always succeeds: it merges everything
-   * into a mutable {@code TreeRangeSet} first (whose {@code addAll} coalesces overlaps instead of
-   * rejecting them), then freezes the result. Use this instead of {@code Builder} whenever
-   * combining more than one already-built range set -- did you mean to use this instead of a
-   * {@code Builder} chain, if you're seeing "Overlapping ranges not permitted"?
+   * Builds an immutable {@link CodePointMap}{@code <Boolean>} via a scratch {@link
+   * ArrayCodePointMap}, for a hand-written literal set too irregular to express as a single
+   * {@code put} call. Replaces the old {@code ImmutableRangeSet.Builder} chains -- {@code put}
+   * (unlike {@code appendSorted}, which the generated {@code UnicodePredicates} uses) tolerates
+   * entries added out of order, which several of the literals below are (e.g. {@code Hex_Digit}'s
+   * a-f/A-F/0-9/fullwidth-digits ordering).
+   */
+  private static CodePointMap<Boolean> build(java.util.function.Consumer<MutableCodePointMap<Boolean>> filler) {
+    ArrayCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+    filler.accept(result);
+    return result;
+  }
+
+  /**
+   * Unions any number of code-point sets that may legitimately overlap each other (e.g. two
+   * different Unicode category predicates both claiming the same code point). {@link
+   * CodePointMap#union} already tolerates overlap (last writer wins, and every set here agrees on
+   * {@code Boolean.TRUE} wherever they overlap), so this is just a repeated {@code union} --
+   * unlike the old {@code ImmutableRangeSet.Builder}, which threw on overlapping ranges and needed
+   * a separate {@code TreeRangeSet}-based {@code union} helper to work around that.
    */
   @SafeVarargs
-  private static ImmutableRangeSet<Integer> union(RangeSet<Integer>... sets) {
-    TreeRangeSet<Integer> merged = TreeRangeSet.create();
-    for (RangeSet<Integer> set : sets) {
-      merged.addAll(set);
+  private static CodePointMap<Boolean> unionOf(CodePointMap<Boolean>... sets) {
+    CodePointMap<Boolean> merged = sets[0];
+    for (int i = 1; i < sets.length; i++) {
+      merged = merged.union(sets[i]);
     }
-    return ImmutableRangeSet.copyOf(merged);
+    return merged;
+  }
+
+  /**
+   * {@code a} minus {@code b}: every code point {@code a} maps and {@code b} doesn't. Thin wrapper
+   * over {@link CodePointMap#difference} kept for symmetry with {@link #unionOf} above.
+   */
+  private static CodePointMap<Boolean> difference(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
+    return a.difference(b);
+  }
+
+  /**
+   * The complement of {@code set}, eagerly materialized as explicit entries covering {@code [0,
+   * MAX_CODE_POINT]} rather than kept as a {@link CodePointMap#complement} else-value fill.
+   *
+   * <p>Deliberately not just {@code set.complement(Boolean.TRUE)}: that map's {@code entrySet()}
+   * would be the empty holes in {@code set}, not the complement's members -- exactly the inversion
+   * bug class documented on {@link CodePointMap#getElseValue}. Every consumer of a {@code
+   * NamedCharClass} constant (unions, intersections, {@code entrySet()}-iterating consumers like
+   * {@code PatternParser}'s ambiguity check) expects ordinary "this set's members are its entries"
+   * semantics, so the complement is walked here, once, at class-init time, and turned into a
+   * normal map, same as {@link PatternParser}'s own {@code materializeComplement} (used for
+   * {@code \P{...}}, for the same reason).
+   */
+  private static CodePointMap<Boolean> materializedComplement(CodePointMap<Boolean> set) {
+    ArrayCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+    int codePoint = 0;
+    while (codePoint <= CodePointMap.MAX_CODE_POINT) {
+      if (set.containsKey(codePoint)) {
+        codePoint++;
+        continue;
+      }
+      int start = codePoint;
+      while (codePoint <= CodePointMap.MAX_CODE_POINT && !set.containsKey(codePoint)) {
+        codePoint++;
+      }
+      result.appendSorted(start, codePoint, Boolean.TRUE);
+    }
+    return result;
   }
 
   final Source source;
@@ -365,8 +422,8 @@ enum NamedCharClass {
   // but see the Digit constant above for the one case (a name shared between a POSIX class and a
   // Unicode binary property) that needs to override this to allow prefixes from both families.
   final ImmutableSet<CharacterClassPrefix> allowedPrefixes;
-  final ImmutableRangeSet<Integer> ascii;
-  final ImmutableRangeSet<Integer> unicode;
+  final CodePointMap<Boolean> ascii;
+  final CodePointMap<Boolean> unicode;
 
   NamedCharClass(Source source, NamedCharClass delegate) {
     this.source = source;
@@ -375,7 +432,7 @@ enum NamedCharClass {
     this.unicode = delegate.unicode;
   }
 
-  NamedCharClass(Source source, ImmutableRangeSet<Integer> unicode) {
+  NamedCharClass(Source source, CodePointMap<Boolean> unicode) {
     this.source = source;
     this.allowedPrefixes = source.allowedPrefixes;
     this.ascii = unicode;
@@ -384,7 +441,7 @@ enum NamedCharClass {
 
   static final boolean SLICED_ASCII = true;
   NamedCharClass(
-      Source source, ImmutableRangeSet<Integer> unicode, boolean slicedAscii) {
+      Source source, CodePointMap<Boolean> unicode, boolean slicedAscii) {
     this(source.allowedPrefixes, source, unicode, slicedAscii);
   }
 
@@ -392,22 +449,24 @@ enum NamedCharClass {
   // and Source.UProperty rather than just inheriting one Source's set.
   NamedCharClass(
       ImmutableSet<CharacterClassPrefix> allowedPrefixes,
-      Source source, ImmutableRangeSet<Integer> unicode, boolean slicedAscii) {
+      Source source, CodePointMap<Boolean> unicode, boolean slicedAscii) {
     this.source = source;
     this.allowedPrefixes = allowedPrefixes;
-    this.ascii = unicode.intersection(UnicodePredicates.ascii);
+    // UnicodePredicates.ascii is exactly one contiguous range ([0, 0x80)), so restricting to it
+    // via intersection(min, max) is equivalent to a real set intersection here.
+    this.ascii = unicode.intersection(0, 0x80);
     this.unicode = unicode;
   }
 
   NamedCharClass(
-      Source source, ImmutableRangeSet<Integer> ascii, ImmutableRangeSet<Integer> unicode) {
+      Source source, CodePointMap<Boolean> ascii, CodePointMap<Boolean> unicode) {
     this.source = source;
     this.allowedPrefixes = source.allowedPrefixes;
     this.ascii = ascii;
     this.unicode = unicode;
   }
 
-  ImmutableRangeSet<Integer> get(CharacterClassPrefix prefix, int flags) {
+  CodePointMap<Boolean> get(CharacterClassPrefix prefix, int flags) {
     Preconditions.checkArgument(allowedPrefixes.contains(prefix));
     // Any Unicode-property-style prefix (\p{IsXxx}, \p{script=Xxx}, \p{block=Xxx},
     // \p{general_category=Xxx}) always means "exactly this Unicode-defined set" -- the
@@ -432,7 +491,7 @@ enum NamedCharClass {
   }
 
   enum RegexCharacterClass {
-    DOT(ImmutableRangeSet.<Integer>of(Range.singleton(+'\n')).complement()),
+    DOT(materializedComplement(build(m -> m.put(+'\n', Boolean.TRUE)))),
     d(Digit),
     // Bug fix (2026-09-07): this used to be a single-RangeSet `D(Digit.unicode.complement())`,
     // which (like every other single-RangeSet constructor call here) is flag-insensitive -- so \D
@@ -440,42 +499,45 @@ enum NamedCharClass {
     // UNICODE_CHARACTER_CLASS entirely (unlike \S/\W below, which already complement `ascii`/
     // `unicode` separately). Found via PredefinedClassTest's \d/\D UNICODE_CHARACTER_CLASS
     // coverage, added alongside the NamedCharClass.Digit/PosixDigit merge (see its own doc).
-    D(Digit.ascii.complement(), Digit.unicode.complement()),
-    h(new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.singleton(+'\t'))
-          .add(Range.singleton(0x00A0))
-          .add(Range.singleton(0x1680))
-          .add(Range.singleton(0x180e))
-          .add(Range.singleton(0x202f))
-          .add(Range.singleton(0x205f))
-          .add(Range.singleton(0x3000))
-          .add(Range.closed(0x2000,0x200a))
-          .build()),
-    H(h.unicode.complement()),
+    D(materializedComplement(Digit.ascii), materializedComplement(Digit.unicode)),
+    h(build(
+          m -> {
+            m.put(+'\t', Boolean.TRUE);
+            m.put(0x00A0, Boolean.TRUE);
+            m.put(0x1680, Boolean.TRUE);
+            m.put(0x180e, Boolean.TRUE);
+            m.put(0x202f, Boolean.TRUE);
+            m.put(0x205f, Boolean.TRUE);
+            m.put(0x3000, Boolean.TRUE);
+            m.put(0x2000, 0x200b, Boolean.TRUE);
+          })),
+    H(materializedComplement(h.unicode)),
     // Bug fix (2026-09-06): now delegates to NamedCharClass.Space instead of duplicating its own
     // hardcoded ASCII whitespace literal + a separate White_Space.unicode reference -- see Space's
     // own comment for why that duplication exists (breaking a circular static-init dependency) and
     // why this direction (RegexCharacterClass -> NamedCharClass, not the reverse) is safe.
     s(Space.ascii, Space.unicode),
-    S(s.ascii.complement(), s.unicode.complement()),
-    v(new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.singleton(+'\n'))
-          .add(Range.singleton(0x000B))
-          .add(Range.singleton(+'\f'))
-          .add(Range.singleton(+'\r'))
-          .add(Range.singleton(0x0085))
-          .add(Range.singleton(0x2028))
-          .add(Range.singleton(0x2029))
-          .build()),
-    V(v.unicode.complement()),
+    S(materializedComplement(s.ascii), materializedComplement(s.unicode)),
+    v(build(
+          m -> {
+            m.put(+'\n', Boolean.TRUE);
+            m.put(0x000B, Boolean.TRUE);
+            m.put(+'\f', Boolean.TRUE);
+            m.put(+'\r', Boolean.TRUE);
+            m.put(0x0085, Boolean.TRUE);
+            m.put(0x2028, Boolean.TRUE);
+            m.put(0x2029, Boolean.TRUE);
+          })),
+    V(materializedComplement(v.unicode)),
     w(
-        new ImmutableRangeSet.Builder<Integer>()
-            .add(Range.closed(+'a', +'z'))
-            .add(Range.closed(+'A', +'Z'))
-            .add(Range.closed(+'0', +'9'))
-            .add(Range.singleton(+'_'))
-            .build(),
-        union(
+        build(
+            m -> {
+              m.put(+'a', +'z' + 1, Boolean.TRUE);
+              m.put(+'A', +'Z' + 1, Boolean.TRUE);
+              m.put(+'0', +'9' + 1, Boolean.TRUE);
+              m.put(+'_', Boolean.TRUE);
+            }),
+        unionOf(
             Alphabetic.unicode,
             Digit.unicode,
             UnicodePredicates.NON_SPACING_MARK,
@@ -483,27 +545,28 @@ enum NamedCharClass {
             UnicodePredicates.ENCLOSING_MARK,
             UnicodePredicates.CONNECTOR_PUNCTUATION,
             Join_Control.unicode)),
-    W(w.ascii.complement(), w.unicode.complement()),
-    R(new ImmutableRangeSet.Builder<Integer>()
-          .add(Range.singleton(+'\n'))
-          .add(Range.singleton(+'\r'))
-          .add(Range.singleton(0x000B))
-          .add(Range.singleton(0x000C))
-          .add(Range.singleton(0x0085))
-          .add(Range.singleton(0x2028))
-          .add(Range.singleton(0x2029))
-          .build());
+    W(materializedComplement(w.ascii), materializedComplement(w.unicode)),
+    R(build(
+          m -> {
+            m.put(+'\n', Boolean.TRUE);
+            m.put(+'\r', Boolean.TRUE);
+            m.put(0x000B, Boolean.TRUE);
+            m.put(0x000C, Boolean.TRUE);
+            m.put(0x0085, Boolean.TRUE);
+            m.put(0x2028, Boolean.TRUE);
+            m.put(0x2029, Boolean.TRUE);
+          }));
 
-    final ImmutableRangeSet<Integer> ascii;
-    final ImmutableRangeSet<Integer> unicode;
+    final CodePointMap<Boolean> ascii;
+    final CodePointMap<Boolean> unicode;
 
-    RegexCharacterClass(ImmutableRangeSet<Integer> unicode) {
-      this.ascii = unicode.intersection(UnicodePredicates.ascii);
+    RegexCharacterClass(CodePointMap<Boolean> unicode) {
+      this.ascii = unicode.intersection(0, 0x80);
       this.unicode = unicode;
     }
 
     RegexCharacterClass(
-        ImmutableRangeSet<Integer> ascii, ImmutableRangeSet<Integer> unicode) {
+        CodePointMap<Boolean> ascii, CodePointMap<Boolean> unicode) {
       this.ascii = ascii;
       this.unicode = unicode;
     }
@@ -513,17 +576,8 @@ enum NamedCharClass {
       this.unicode = delegate.unicode;
     }
 
-    ImmutableRangeSet<Integer> get(int flags) {
+    CodePointMap<Boolean> get(int flags) {
       return ((flags & Pattern.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
     }
-  }
-
-  @SafeVarargs
-  private static ImmutableRangeSet<Integer> unionOf(ImmutableRangeSet<Integer>... rangeSets) {
-    ImmutableSet<Range<Integer>>[] setRanges = new ImmutableSet[rangeSets.length];
-    for (int i=0; i<rangeSets.length; i++) {
-      setRanges[i] = rangeSets[i].asRanges();
-    }
-    return ImmutableRangeSet.unionOf(Iterables.concat(setRanges));
   }
 }

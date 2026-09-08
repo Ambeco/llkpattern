@@ -501,6 +501,41 @@ Notes to self about how to work on this project, and other context that doesn't 
   (-48.1%), `llkMatch` 0.092ms -> **0.066ms/op** (-27.7%). Full suite (1477 tests, 0 failing, 561
   skipped) passed on the first try after this change, as it had after every other step in this arc.
 
+### `CodePointMap.complement`/else-value implementation (2026-09-08, same day)
+
+- After eliminating every Guava `RangeMap`, the project owner asked to eliminate `RangeSet` too,
+  flagging the `unicodeanalyzer`-generated `UnicodePredicates.java` as the hard part. Scoping (via
+  grep across `PatternParser`/`NamedCharClass`/`PatternConstruct`/`MatcherConstruct`) found the
+  real blocker was elsewhere: `PatternParser` builds `ComplexCharacter.ranges` using `RangeSet`'s
+  `complement()` for DOT-under-`DOTALL`, `[^...]` negation, and `\P{...}`, plus `&&` intersection
+  implemented *as* `a.removeAll(b.complement())` -- none of which `CodePointMap` supported yet
+  (`complement()`'s old default, `ComplementCodePointMap`, had `entrySet()`/`intersection()`
+  throwing `UnsupportedOperationException` -- it was never finished because nothing needed it
+  while only `RangeMap` was being migrated).
+- The project owner then proposed the fix directly: give every map an `elseValue` -- the value
+  implicit for any code point without an explicit entry -- rather than a separate complement
+  wrapper type. Implemented as described in design.md's "Code point range representation" section:
+  since the code point domain is bounded, `complement()` is always finite (a normal map, else-value
+  = the complement's value, one internal "punched hole" -- a `null`-valued entry, never exposed
+  externally -- per entry of the source's own `entrySet()`). This is why it works where Guava's
+  `RangeSet#complement()` (over all of `Integer`) can't be enumerated: bounding the domain turns an
+  unbounded operation into a finite one for free.
+- `intersection(min, max)`/`intersectionRejectingConflicts` needed a small adjustment: their
+  existing raw-array/`RangeMap`-window scans only see real entries, not an else-value's implicit
+  fill, so both implementations now fall back to iterating the (else-value-aware) `entrySet()`
+  clipped to the window when the receiver actually has an else-value, keeping the existing fast
+  array-window path for the common (no else-value) case. Every other operation (`union`, `putAll`,
+  `difference`) needed *no* else-value-specific logic at all, since they're all built on `other
+  .entrySet()`, which already resolves the fill into concrete (finite) entries.
+- Added `CodePointMapDifferentialTest.complement_agreesWithTreeCodePointMap` covering complement,
+  double-complement (should round-trip), and union/intersection mixing a complement with an
+  ordinary map -- fewer trials (20, not 200) than the other differential tests, since the test's
+  `normalize()` re-splits every entry into individual code points and an else-value's gap-fill can
+  span nearly the whole domain. Full suite green afterward: 1478 tests, 0 failing.
+- This lands the `CodePointMap` infrastructure `complement` needs; migrating the actual `RangeSet`
+  call sites (`ComplexCharacter`, `containsFolded`, `NamedCharClass`/`UnicodePredicates`) onto it is
+  still open -- see remaining_work.md.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

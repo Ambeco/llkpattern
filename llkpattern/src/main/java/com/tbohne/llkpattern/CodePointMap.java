@@ -63,6 +63,21 @@ public interface CodePointMap<V> {
   @PolyNull
   V getOrDefault(int codePoint, @Nullable V defaultValue);
 
+  /**
+   * The value implicitly mapped to every code point this map has no explicit entry (or explicit
+   * exclusion -- see {@link #complement}) for, or {@code null} for an ordinary map (the common
+   * case) where an absent code point simply has no mapping.
+   *
+   * <p>This is what lets {@link #complement} be a genuinely finite, O(entry count) map rather
+   * than needing to enumerate an unbounded range: since the code point domain is itself bounded
+   * ({@code [0, MAX_CODE_POINT]}), "every code point not in this set" is always representable as
+   * a normal map with an else-value, never an actually-infinite structure the way Guava's {@code
+   * RangeSet#complement()} is over all of {@code Integer}.
+   */
+  default @Nullable V getElseValue() {
+    return null;
+  }
+
   default void forEach(BiConsumer<Range, ? super V> action) {
     entrySet().forEach(entry -> action.accept(entry.getKey(), entry.getValue()));
   }
@@ -90,9 +105,15 @@ public interface CodePointMap<V> {
    */
   CodePointMap<V> intersectionRejectingConflicts(CodePointMap<V> other);
 
-  /** Returns a view of the code points *not* present as keys in this map, mapped to {@code value}. */
+  /**
+   * Returns a map holding {@code value} for every code point this map has no entry for, and no
+   * mapping for every code point this map does -- the elsewhere-value trick described on {@link
+   * #getElseValue}. Default falls back to {@link TreeCodePointMap} the same way {@link #union}
+   * and {@link #difference} do; {@link ArrayCodePointMap} overrides this to stay in its own
+   * concrete type.
+   */
   default CodePointMap<V> complement(V value) {
-    return new ComplementCodePointMap<>(this, value);
+    return new TreeCodePointMap<>(this, value);
   }
 
   /** Returns a new map holding this map's entries overlaid with {@code other}'s (other wins on overlap). */
@@ -259,65 +280,6 @@ public interface CodePointMap<V> {
     @Override
     public int hashCode() {
       return key.hashCode() ^ value.hashCode();
-    }
-  }
-
-  final class ComplementCodePointMap<V> implements CodePointMap<V> {
-    private final CodePointMap<?> other;
-    private final V value;
-
-    ComplementCodePointMap(CodePointMap<?> other, V value) {
-      this.other = other;
-      this.value = value;
-    }
-
-    @Override
-    public boolean isEmpty() {
-      return !other.isEmpty() && other.containsKeys(0, MAX_CODE_POINT + 1);
-    }
-
-    @Override
-    public boolean containsKeys(int min, int max) {
-      for (int cp = min; cp < max; cp++) {
-        if (!other.containsKey(cp)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    @Override
-    public Set<Entry<Range, V>> entrySet() {
-      throw new UnsupportedOperationException("TODO: complement enumeration not yet implemented");
-    }
-
-    @Override
-    public @PolyNull V getOrDefault(int codePoint, @Nullable V defaultValue) {
-      return other.get(codePoint) == null ? value : defaultValue;
-    }
-
-    @Override
-    public CodePointMap<V> intersection(int min, int max) {
-      throw new UnsupportedOperationException("TODO: complement enumeration not yet implemented");
-    }
-
-    @Override
-    public CodePointMap<V> intersectionRejectingConflicts(CodePointMap<V> otherMap) {
-      throw new UnsupportedOperationException("TODO: complement enumeration not yet implemented");
-    }
-
-    @Override
-    public boolean equals(@Nullable Object o) {
-      if (!(o instanceof ComplementCodePointMap)) {
-        return false;
-      }
-      ComplementCodePointMap<?> rhs = (ComplementCodePointMap<?>) o;
-      return other.equals(rhs.other) && value.equals(rhs.value);
-    }
-
-    @Override
-    public int hashCode() {
-      return 31 * other.hashCode() + value.hashCode();
     }
   }
 

@@ -73,6 +73,62 @@ public class CodePointMapDifferentialTest {
     }
   }
 
+  @Test
+  public void complement_agreesWithTreeCodePointMap() {
+    // Covers the elseValue/"punched hole" machinery described on CodePointMap#getElseValue:
+    // complement() of a random map, complement-of-a-complement (double negation should recover
+    // the original, minus the else-value's own identity), and union/intersection mixing a
+    // complement map with an ordinary one -- the "tricky bit" the elseValue design exists for.
+    // Fewer trials than the other differential tests: normalize() below re-splits every entry
+    // into individual code points, and an elseValue-bearing map's gap-fill entries can span
+    // nearly the whole [0, MAX_CODE_POINT] domain, making each trial here far more expensive than
+    // the small hand-built maps the other tests compare.
+    Random random = new Random(99);
+    for (int trial = 0; trial < 20; trial++) {
+      TreeCodePointMap<String> expectedBase = randomMap(random, new TreeCodePointMap<>());
+      ArrayCodePointMap<String> actualBase = new ArrayCodePointMap<>();
+      actualBase.putAll(expectedBase);
+
+      TreeCodePointMap<String> expectedComplement = (TreeCodePointMap<String>) expectedBase.complement("ELSE");
+      ArrayCodePointMap<String> actualComplement = (ArrayCodePointMap<String>) actualBase.complement("ELSE");
+      assertAgree(trial, expectedComplement, actualComplement);
+
+      // Double complement: should land back on the original map (the outer else-value only
+      // matters where the inner complement had none, i.e. nowhere, since it's total).
+      TreeCodePointMap<String> expectedDouble =
+          (TreeCodePointMap<String>) expectedComplement.complement("UNUSED");
+      ArrayCodePointMap<String> actualDouble = (ArrayCodePointMap<String>) actualComplement.complement("UNUSED");
+      assertAgree(trial, expectedDouble, actualDouble);
+
+      // Union of a complement with an ordinary map.
+      TreeCodePointMap<String> expectedOther = randomMap(random, new TreeCodePointMap<>());
+      ArrayCodePointMap<String> actualOther = new ArrayCodePointMap<>();
+      actualOther.putAll(expectedOther);
+      TreeCodePointMap<String> expectedUnion = new TreeCodePointMap<>(expectedComplement);
+      expectedUnion.putAll(expectedOther);
+      ArrayCodePointMap<String> actualUnion = new ArrayCodePointMap<>(actualComplement);
+      actualUnion.putAll(actualOther);
+      assertAgree(trial, expectedUnion, actualUnion);
+
+      // Intersection restricted to a window, and intersectionRejectingConflicts against a
+      // non-conflicting slice of the same complement (itself, restricted) -- exercises
+      // entriesOverlapping's elseValue fallback path in both implementations.
+      int min = randomCodePoint(random);
+      int max = Math.min(CodePointMap.MAX_CODE_POINT + 1, min + 1 + random.nextInt(5000));
+      if (max > min) {
+        TreeCodePointMap<String> expectedIx = (TreeCodePointMap<String>) expectedComplement.intersection(min, max);
+        ArrayCodePointMap<String> actualIx = (ArrayCodePointMap<String>) actualComplement.intersection(min, max);
+        assertAgree(trial, expectedIx, actualIx);
+
+        TreeCodePointMap<String> expectedSelfIx =
+            (TreeCodePointMap<String>) expectedComplement.intersectionRejectingConflicts(expectedIx);
+        ArrayCodePointMap<String> actualSelfIx =
+            (ArrayCodePointMap<String>) actualComplement.intersectionRejectingConflicts(actualIx);
+        assertAgree(trial, expectedSelfIx, actualSelfIx);
+      }
+    }
+  }
+
   private static TreeCodePointMap<String> randomMap(Random random, TreeCodePointMap<String> map) {
     for (int op = 0; op < 20; op++) {
       int min = randomCodePoint(random);

@@ -2,8 +2,11 @@ package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -62,6 +65,14 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   private V[] values;
   private int size;
 
+  // The value for every code point *not* covered by an entry above, or null for an ordinary map
+  // (see CodePointMap#getElseValue). A `values[i] == null` entry is the complementary case: a
+  // "punched hole" explicitly excluding [min,max) from the else-value fill, built only by the
+  // complement constructor below -- never by put()/appendSorted(), which reject null values from
+  // ordinary callers (see put()'s null-check) since a null entry is meaningless without elseValue
+  // != null to punch a hole in.
+  private @Nullable V elseValue;
+
   public ArrayCodePointMap() {
     keys = new int[INITIAL_CAPACITY];
     values = newValuesArray(INITIAL_CAPACITY);
@@ -76,6 +87,30 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   public ArrayCodePointMap(CodePointMap<V> other) {
     this();
     putAll(other);
+  }
+
+  /**
+   * Builds the complement of {@code source}: {@code value} for every code point {@code source}
+   * has no mapping for, nothing for every code point it does. Package-private -- reached only via
+   * {@link CodePointMap#complement}, which is the type-safe public entry point.
+   *
+   * <p>This is always finite: {@code source.entrySet()} already resolves any else-value fill
+   * {@code source} itself has into concrete entries (see {@link #entrySet()} below), so punching
+   * a hole for each is exactly "not source" over the whole (bounded) code point domain -- no
+   * unbounded enumeration, unlike Guava {@code RangeSet#complement()}.
+   */
+  ArrayCodePointMap(CodePointMap<V> source, V value) {
+    this();
+    elseValue = value;
+    ensureCapacity(source.entrySet().size());
+    for (Entry<Range, V> e : source.entrySet()) {
+      appendSorted(e.getKey().min, e.getKey().max, null);
+    }
+  }
+
+  @Override
+  public @Nullable V getElseValue() {
+    return elseValue;
   }
 
   /** Grows the backing arrays (by 1.5x, or to {@code minCapacity} if that's bigger) if needed. */
@@ -165,72 +200,137 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     int cp = min;
     while (cp < max) {
       int idx = floorIndex(cp);
-      if (idx < 0 || keyMax(keys[idx]) <= cp) {
+      if (idx >= 0 && cp < keyMax(keys[idx])) {
+        if (values[idx] == null) {
+          return false; // an explicitly-punched hole -- no mapping here regardless of elseValue
+        }
+        cp = keyMax(keys[idx]);
+      } else if (elseValue != null) {
+        int nextIdx = idx + 1;
+        cp = (nextIdx < size) ? Math.min(max, keyMin(keys[nextIdx])) : max;
+      } else {
         return false;
       }
-      cp = keyMax(keys[idx]);
     }
     return true;
   }
 
   @Override
   public Set<Entry<Range, V>> entrySet() {
-    // A lazy view, not an eager copy: entrySet() itself is O(1), and iterating/short-circuiting
-    // (e.g. PatternConstruct.findFirstOverlap's early return) costs only what it actually visits.
-    // AbstractSet supplies Set-contract equals()/hashCode() (size + per-element comparison) from
-    // just size()/iterator(), which is what this class's own equals()/hashCode() rely on.
-    return new AbstractSet<Entry<Range, V>>() {
-      @Override
-      public Iterator<Entry<Range, V>> iterator() {
-        return new Iterator<Entry<Range, V>>() {
-          private int i = 0;
+    if (elseValue == null) {
+      // A lazy view, not an eager copy: entrySet() itself is O(1), and iterating/short-circuiting
+      // (e.g. PatternConstruct.findFirstOverlap's early return) costs only what it actually
+      // visits. AbstractSet supplies Set-contract equals()/hashCode() (size + per-element
+      // comparison) from just size()/iterator(), which is what this class's own equals()/
+      // hashCode() rely on.
+      return new AbstractSet<Entry<Range, V>>() {
+        @Override
+        public Iterator<Entry<Range, V>> iterator() {
+          return new Iterator<Entry<Range, V>>() {
+            private int i = 0;
 
-          @Override
-          public boolean hasNext() {
-            return i < size;
-          }
-
-          @Override
-          public Entry<Range, V> next() {
-            if (i >= size) {
-              throw new NoSuchElementException();
+            @Override
+            public boolean hasNext() {
+              return i < size;
             }
-            Entry<Range, V> entry = new ImmutableEntry<>(new Range(keyMin(keys[i]), keyMax(keys[i])), values[i]);
-            i++;
-            return entry;
-          }
-        };
-      }
 
-      @Override
-      public int size() {
-        return size;
+            @Override
+            public Entry<Range, V> next() {
+              if (i >= size) {
+                throw new NoSuchElementException();
+              }
+              Entry<Range, V> entry = new ImmutableEntry<>(new Range(keyMin(keys[i]), keyMax(keys[i])), values[i]);
+              i++;
+              return entry;
+            }
+          };
+        }
+
+        @Override
+        public int size() {
+          return size;
+        }
+      };
+    }
+    // elseValue != null: gaps between (and around) the explicit entries are real mappings too, so
+    // this must be materialized rather than a lazy view over the raw array -- see the class doc
+    // on ComplementCodePointMap-style maps in CodePointMap#getElseValue. Bounded by the code point
+    // domain, so still always finite: at most `size + 1` gap entries.
+    return new LinkedHashSet<>(materializeWithGaps());
+  }
+
+  private List<Entry<Range, V>> materializeWithGaps() {
+    List<Entry<Range, V>> result = new ArrayList<>();
+    int cursor = 0;
+    for (int i = 0; i < size; i++) {
+      int entryMin = keyMin(keys[i]);
+      int entryMax = keyMax(keys[i]);
+      if (cursor < entryMin) {
+        result.add(new ImmutableEntry<>(new Range(cursor, entryMin), elseValue));
       }
-    };
+      if (values[i] != null) {
+        result.add(new ImmutableEntry<>(new Range(entryMin, entryMax), values[i]));
+      }
+      cursor = entryMax;
+    }
+    if (cursor <= MAX_CODE_POINT) {
+      result.add(new ImmutableEntry<>(new Range(cursor, MAX_CODE_POINT + 1), elseValue));
+    }
+    return result;
   }
 
   @Override
   public @PolyNull V getOrDefault(int codePoint, @Nullable V defaultValue) {
     int idx = floorIndex(codePoint);
     if (idx >= 0 && codePoint < keyMax(keys[idx])) {
-      return values[idx];
+      V raw = values[idx];
+      return raw != null ? raw : defaultValue; // a punched hole is "no mapping", not elseValue
     }
-    return defaultValue;
+    return elseValue != null ? elseValue : defaultValue;
+  }
+
+  /**
+   * This map's entries overlapping {@code [min, max)}, clipped to that window. When {@code
+   * elseValue == null} this is the fast raw-array window scan every other mutator uses; when it's
+   * set, the raw array alone doesn't include the gap-fill (see {@link #entrySet()}), so this falls
+   * back to {@link #materializeWithGaps()} instead -- correct either way, just not O(window size)
+   * in the complement case, which is fine since {@code intersection}/{@code
+   * intersectionRejectingConflicts} aren't on the hot match-time path.
+   */
+  private List<Entry<Range, V>> entriesOverlapping(int min, int max) {
+    List<Entry<Range, V>> result = new ArrayList<>();
+    if (elseValue == null) {
+      int start = windowStart(min);
+      int end = windowEnd(start, max);
+      for (int i = start; i < end; i++) {
+        int lo = Math.max(min, keyMin(keys[i]));
+        int hi = Math.min(max, keyMax(keys[i]));
+        if (lo < hi) {
+          result.add(new ImmutableEntry<>(new Range(lo, hi), values[i]));
+        }
+      }
+    } else {
+      for (Entry<Range, V> e : materializeWithGaps()) {
+        if (e.getKey().min >= max) {
+          break; // ascending order -- nothing further can overlap
+        }
+        int lo = Math.max(min, e.getKey().min);
+        int hi = Math.min(max, e.getKey().max);
+        if (lo < hi) {
+          result.add(new ImmutableEntry<>(new Range(lo, hi), e.getValue()));
+        }
+      }
+    }
+    return result;
   }
 
   @Override
   public CodePointMap<V> intersection(int min, int max) {
     ArrayCodePointMap<V> result = new ArrayCodePointMap<>();
-    int start = windowStart(min);
-    int end = windowEnd(start, max);
-    result.ensureCapacity(end - start);
-    for (int i = start; i < end; i++) {
-      int key = keys[i];
-      int lo = Math.max(min, keyMin(key));
-      int hi = Math.min(max, keyMax(key));
-      if (lo < hi) {
-        result.appendSorted(lo, hi, values[i]);
-      }
+    List<Entry<Range, V>> overlapping = entriesOverlapping(min, max);
+    result.ensureCapacity(overlapping.size());
+    for (Entry<Range, V> e : overlapping) {
+      result.appendSorted(e.getKey().min, e.getKey().max, e.getValue());
     }
     return result;
   }
@@ -239,36 +339,43 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   public CodePointMap<V> intersectionRejectingConflicts(CodePointMap<V> other) {
     ArrayCodePointMap<V> result = new ArrayCodePointMap<>();
     for (Entry<Range, V> otherEntry : other.entrySet()) {
-      int min = otherEntry.getKey().min;
-      int max = otherEntry.getKey().max;
-      int start = windowStart(min);
-      int end = windowEnd(start, max);
-      for (int i = start; i < end; i++) {
-        int key = keys[i];
-        int lo = Math.max(min, keyMin(key));
-        int hi = Math.min(max, keyMax(key));
-        if (lo < hi) {
-          V mine = values[i];
-          if (!mine.equals(otherEntry.getValue())) {
-            throw new CodePointMap.ConflictingMappingException(
-                "this map has value "
-                    + mine
-                    + " for code points "
-                    + new Range(lo, hi)
-                    + ", but other map has value "
-                    + otherEntry.getValue()
-                    + " for code points "
-                    + otherEntry.getKey());
-          }
-          result.put(lo, hi, mine);
+      for (Entry<Range, V> mineEntry : entriesOverlapping(otherEntry.getKey().min, otherEntry.getKey().max)) {
+        V mine = mineEntry.getValue();
+        if (!mine.equals(otherEntry.getValue())) {
+          throw new CodePointMap.ConflictingMappingException(
+              "this map has value "
+                  + mine
+                  + " for code points "
+                  + mineEntry.getKey()
+                  + ", but other map has value "
+                  + otherEntry.getValue()
+                  + " for code points "
+                  + otherEntry.getKey());
         }
+        result.put(mineEntry.getKey().min, mineEntry.getKey().max, mine);
       }
     }
     return result;
   }
 
   @Override
+  public CodePointMap<V> complement(V value) {
+    // Overrides CodePointMap.complement's default (new TreeCodePointMap<>(this, value)) for the
+    // same reason union/difference do -- stay in this concrete type rather than silently handing
+    // back a TreeCodePointMap.
+    return new ArrayCodePointMap<>(this, value);
+  }
+
+  @Override
   public void put(int min, int max, V value) {
+    if (value == null) {
+      // null is reserved internally for the "punched hole" complement() builds -- see the
+      // elseValue field doc -- and is meaningless from an ordinary caller, which never has an
+      // elseValue to punch a hole in. Reject it loudly rather than silently misbehaving.
+      throw new NullPointerException(
+          "ArrayCodePointMap does not support null values; did you mean complement(value) to "
+              + "build the set of code points this map doesn't contain?");
+    }
     int start = windowStart(min);
     int end = windowEnd(start, max);
     boolean keepLeft = start < end && keyMin(keys[start]) < min;

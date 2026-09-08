@@ -110,6 +110,62 @@ as JSON to `documents/benchmarks/corpus_benchmark_results.json` (only once the *
 completes -- an interrupted run leaves that file empty), meant to be committed as a baseline and
 diffed against on later runs to catch regressions.
 
+## On-device (Android) corpus benchmark
+
+Done (2026-09-08, verified on a real device -- a Pixel 3a, API 32): `AndroidCorpusBenchmark`
+(`app/src/androidTest/java/.../corpus/AndroidCorpusBenchmark.java`) mirrors `CorpusBenchmark` above
+but runs as an `androidx.test` instrumented test on a phone (JMH itself doesn't run on Android), so
+it can be compared against the desktop numbers under a slower CPU, a much smaller heap, and
+Android's own `java.util.regex`/ART. It reuses the same golden TSVs (copied into androidTest assets
+at build time by `app/build.gradle`'s `copyGoldenAssetsForAndroidTest` task, so the checked-in
+copies under `llkpattern/src/test/resources/golden/` stay the only source of truth) via a
+standalone `AndroidGoldenRow`/`AndroidGoldenTsv` reader (kept separate from `GoldenRow`/`GoldenTsv`
+since those live in `llkpattern`'s `test` source set and use `java.nio.file`, which needs API 26+ /
+desugaring this app module doesn't otherwise pull in). `FRACTION_OF_TEST_ROWS` subsamples the
+corpus for slower devices; results are written as JSON named after the actual device
+(`Build.MANUFACTURER`/`MODEL`/`DEVICE`) to the app's external files dir, since the point is
+comparing several phones with different hardware. GC counts during each measured benchmark are
+recorded via `Debug.getGlobalGcInvocationCount()`. A separate opt-in test
+(`testZZSamplingProfile`, run with `-e profile true`) captures an Android *sampling* profiler trace
+(`Debug.startMethodTracingSampling`, not full per-call tracing) for pulling into Android Studio's
+CPU Profiler.
+- [x] ~~Run `./gradlew :app:connectedAndroidTest` against real hardware~~ -- done 2026-09-08 against
+      a Pixel 3a (API 32): all 5 tests pass. Required two unrelated fixes to `app/build.gradle`,
+      both pre-existing issues not caused by this test itself: `compileSdk` bumped 33 -> 36
+      (`appcompat`/`material`'s transitive `androidx.activity:1.8.0` requires 34+; 36 chosen over
+      34 since it was already installed locally, avoiding an SDK download) and a
+      `configurations.all { exclude group: 'com.google.guava', module: 'listenablefuture' }` added
+      (Guava's `-jre` flavor, pulled in transitively via the new `androidTestImplementation
+      project(':llkpattern')` dependency, conflicts with the empty `listenablefuture` stub artifact
+      several androidx libraries depend on -- Guava's own documented workaround, see
+      https://github.com/google/guava/issues/2960).
+      A first small-fraction run (0.25, 103 rows, default 3 warmup/5 measured iterations) showed
+      the whole run finishing in ~4 seconds -- wildly underusing a 5-minute test budget -- so
+      `FRACTION_OF_TEST_ROWS` was set to `1.0f` (full 406-row corpus) and `WARMUP_ITERATIONS`/
+      `MEASURED_ITERATIONS` bumped to 50/1000, landing at ~124s wall-clock (`am instrument`'s own
+      "Time:" figure), comfortably under 5 minutes with margin for slower devices. Current
+      committed baseline (`documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json`,
+      full corpus, 1000 measured iterations): `llkCompile` ~15.2x slower than `regexCompile`
+      (101.7ms vs 6.7ms/pass); `llkMatch` is actually *faster* than `regexMatch` at this row count
+      and iteration depth (1.54ms vs 3.77ms/pass) -- notably different from the small-fraction
+      run's `llkMatch` being slower, and from the desktop JMH ratio (see
+      `corpus_benchmark_results.json`) where `llkMatch` is slower than `regexMatch` -- not yet
+      investigated further (different row mix at full fraction, ART vs HotSpot JIT behavior,
+      and/or genuine device-specific dispatch performance are all plausible; worth another look if
+      it matters for a real decision, but out of scope for just standing up this harness).
+      Also captured a CPU sampling profile of `llkMatch` (`testZZSamplingProfile`, `-e profile
+      true`, `PROFILE_ITERATIONS = 200` full-corpus passes): a hand-rolled sampler (a background
+      thread periodically snapshotting the benchmark thread via `Thread.getAllStackTraces()`,
+      truncated to `STACK_SAMPLE_DEPTH = 8` frames) rather than `Debug.startMethodTracingSampling`
+      (tried first, but its sampling API has no way to cap stack depth -- see notes.md), aggregated
+      into a plain-text table of hottest 8-frame call chains at
+      `documents/benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt`. Worth re-running both on
+      the other phones once convenient.
+- [ ] If a device's `java.util.regex` disagrees with the golden files' recorded `regexMatchResult`
+      (scraped on desktop), decide whether that's rare enough to ignore (the benchmark only times
+      *speed*, not correctness, on-device) or common enough to need Android-specific golden columns
+      or forked golden files -- not yet checked against a real device.
+
 ## Core implementation
 
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable**
@@ -162,7 +218,6 @@ diffed against on later runs to catch regressions.
 ## Housekeeping / cleanup
 
 - [ ] Clarify the relationship between `llkpattern/` (current), `oldllkpattern/` (prior version, kept for reference) — is `oldllkpattern` still needed, or can it be removed/archived once the new implementation catches up?
-- [ ] Clarify what the `app/` Gradle module (looks like default Android app boilerplate) is for in this project — is it a demo/harness, or leftover scaffolding from `File > New Project` that can be deleted?
 - [ ] Fill in section 2 (High-Level Design) and section 3 (Current Progress) of [README.md](../README.md) in more depth as the design solidifies (still not a full design writeup in the README itself, which continues to point at design.md).
 
 ## Open Questions

@@ -681,7 +681,79 @@ Notes to self about how to work on this project, and other context that doesn't 
   sanity-check `regexCompile`/`regexMatch`'s movement before reading `llkCompile`/`llkMatch`'s at
   face value, if the machine's load might have changed between runs.
 
+## On-device corpus benchmark added (2026-09-08)
+
+- Built `AndroidCorpusBenchmark` (`app/src/androidTest/java/.../corpus/`) to mirror
+  `CorpusBenchmark` on real phones -- replaces the boilerplate `ExampleInstrumentedTest.java` that
+  was `app/`'s only prior content, answering the "what is `app/` for" question below: it's now the
+  on-device benchmark harness, not leftover `File > New Project` scaffolding.
+- Written in a separate session running in the background while another session ("llkpattern
+  eliminating last RangeSet") was actively modifying main code and running desktop JMH -- so this
+  work touched only `app/` plus doc files, deliberately avoided touching anything under
+  `llkpattern/src/main` or `llkpattern/build.gradle`'s `jmh {}` block, and was not built/run (no
+  Android SDK/device available in that session) to avoid competing for machine resources during the
+  other session's perf runs. See remaining_work.md's on-device-benchmark entry for the
+  not-yet-verified checklist this leaves behind -- in particular, actually running
+  `./gradlew :app:connectedAndroidTest` against hardware once both this and the main-code session
+  have settled.
+- JMH doesn't run on Android, so timing is hand-rolled (`System.nanoTime`, fixed warmup/measured
+  iteration counts) rather than reusing JMH's harness -- cruder (no fork isolation, no statistical
+  rigor) but sufficient for coarse cross-device comparison.
+- Considered reusing `GoldenRow`/`GoldenTsv` directly from `llkpattern`'s `test` source set instead
+  of writing `AndroidGoldenRow`/`AndroidGoldenTsv`: rejected because (a) Gradle doesn't expose one
+  project's `test` source set output to another project without extra plumbing, and (b)
+  `GoldenTsv.read(Path)` goes through `java.nio.file`, which needs API 26+ or core library
+  desugaring that `app/` (`minSdk 19`) doesn't otherwise need. Instead the two golden TSVs are
+  copied into `app`'s androidTest assets at build time (`copyGoldenAssetsForAndroidTest` in
+  `app/build.gradle`, into a `build/` output dir, not checked in) so `llkpattern`'s copies stay the
+  single source of truth, and read on-device with a small standalone parser.
+- `minSdk 19` is stale per the API-floor note above (project floor is actually 26) but left alone
+  here as out of scope for this task -- worth revisiting together with that note.
+- Confirmed clean-tree via git status before building, and the other session confirmed idle
+  (`isRunning: false`) before I ran any Gradle build, per its coordination request.
+- First real build attempt (`./gradlew :app:assembleDebugAndroidTest`) failed on two issues, both
+  pre-existing in `app/build.gradle` and unrelated to this test's own code:
+  1. `compileSdk 33` was too old for `appcompat:1.6.1`/`material:1.11.0`'s transitive
+     `androidx.activity:1.8.0`, which requires `compileSdk` 34+. Bumped to 36 rather than 34
+     because platform 36 (and 37.1) were already installed locally and 34 wasn't -- avoided a
+     network fetch inside this sandboxed session. AGP 8.5.1 warns it's only tested through
+     compileSdk 34, but the build succeeds regardless.
+  2. Adding `androidTestImplementation project(':llkpattern')` then failed dependency resolution
+     with a Guava `listenablefuture` capability conflict: `llkpattern` depends on Guava's `-jre`
+     flavor (a real `listenablefuture:1.0` jar), while `androidx.test:core`/
+     `androidx.concurrent:concurrent-futures` depend on Guava's `-android` flavor's empty stub of
+     the same coordinates -- Gradle can't pick one artifact for both capability claims. Fixed with
+     Guava's own documented workaround, `configurations.all { exclude group: 'com.google.guava',
+     module: 'listenablefuture' }` (https://github.com/google/guava/issues/2960).
+  With both fixes, `:app:assembleDebugAndroidTest` and `:app:connectedDebugAndroidTest` (via
+  Gradle, which auto-installs/uninstalls) both succeeded against the attached Pixel 3a (API 32,
+  device id 93EAY0A967): all 5 real `@Test` methods passed, `testZZSamplingProfile` skipped as
+  designed (no `-e profile true`). To actually inspect the results JSON rather than have it
+  vanish with Gradle's post-test uninstall, ran a second pass manually (`adb install` both APKs,
+  `adb shell am instrument -w ...`, `adb pull`, then `adb uninstall` both packages to leave the
+  device clean) -- see remaining_work.md's on-device-benchmark entry for the resulting numbers.
+  `documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json` is committed as a
+  first real-device baseline, alongside the desktop JMH one.
+- The first run used the defaults copied from the desktop `CorpusBenchmark` (0.25 fraction, 3
+  warmup/5 measured iterations) and finished in ~4 seconds -- nowhere near using a device's spare
+  compute budget. Reset to the full corpus (`FRACTION_OF_TEST_ROWS = 1.0f`, 406 rows) with
+  `WARMUP_ITERATIONS`/`MEASURED_ITERATIONS` bumped to 50/1000; that run took ~124s wall-clock on
+  the Pixel 3a (`am instrument`'s own "Time:" line), comfortably under a 5-minute target with
+  margin for slower devices, while getting far more measured iterations than the crude
+  hand-rolled timing loop would otherwise get.
+- Tried `Debug.startMethodTracingSampling` first for the CPU-sampling test, but it has no
+  parameter to cap stack depth (only buffer size and sample interval) -- when the project owner
+  asked for ~8-frame-deep samples specifically, replaced it with a small hand-rolled sampler
+  instead: a daemon thread wakes every `SAMPLE_INTERVAL_MILLIS` (2ms), snapshots the benchmark
+  thread via `Thread.getAllStackTraces().get(targetThread)`, truncates to `STACK_SAMPLE_DEPTH`
+  (8) frames, and tallies occurrences of that exact 8-frame chain in a `HashMap`. Output is a
+  plain-text table (count, %, chain) sorted by frequency rather than a binary trace file -- no
+  Android Studio Profiler import needed, and the depth cap keeps chains readable directly.
+  Committed at `documents/benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt` (275 samples,
+  133 distinct 8-frame chains over `PROFILE_ITERATIONS = 200` full-corpus passes); replaces an
+  earlier `.trace`-file version of this test that was captured, then deleted once the hand-rolled
+  version replaced it (see remaining_work.md).
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.
-- `app/` looks like unmodified Android Studio "New Project" boilerplate (example activity/tests, launcher icons, etc.) — unclear yet if it's actually used for anything; asked about in remaining_work.md.

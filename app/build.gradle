@@ -4,7 +4,10 @@ plugins {
 
 android {
     namespace 'com.tbohne.llkpattern'
-    compileSdk 33
+    // Bumped from 33 (2026-09-08): appcompat 1.6.1's transitive androidx.activity:1.8.0 requires
+    // compileSdk 34+; 36 is used instead of 34 because it's the lowest already-installed SDK
+    // platform on this machine (avoids a network fetch) -- see documents/notes.md.
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.tbohne.llkpattern"
@@ -26,6 +29,23 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    sourceSets {
+        // AndroidCorpusBenchmark reads its golden TSVs from here -- populated at build time by
+        // copyGoldenAssetsForAndroidTest below, not checked in, so llkpattern's copies stay the
+        // single source of truth (see documents/notes.md's on-device-benchmark entry).
+        androidTest.assets.srcDirs += "$buildDir/generated/androidTestGoldenAssets"
+    }
+}
+
+configurations.all {
+    // llkpattern depends on Guava's -jre flavor (via androidTestImplementation project(':llkpattern')
+    // below), which bundles a real `com.google.guava:listenablefuture:1.0`. Several androidx
+    // libraries (androidx.test:core, androidx.concurrent:concurrent-futures) instead depend on the
+    // empty stub artifact of the same coordinates that Guava's -android flavor uses to avoid a
+    // real dependency -- the two can't coexist on one classpath since they claim the same Gradle
+    // "capability". This is Guava's own documented workaround (see
+    // https://github.com/google/guava/issues/2960) rather than anything specific to this project.
+    exclude group: 'com.google.guava', module: 'listenablefuture'
 }
 
 dependencies {
@@ -35,4 +55,20 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    // For AndroidCorpusBenchmark (app/src/androidTest/.../corpus/), which mirrors
+    // llkpattern/src/jmh/.../corpus/CorpusBenchmark.java on-device -- see documents/notes.md.
+    androidTestImplementation project(':llkpattern')
 }
+
+// AndroidCorpusBenchmark reads the same scraped-corpus golden TSV files CorpusBenchmark does
+// (see documents/notes.md's on-device-benchmark entry for why they're shared rather than
+// duplicated) by copying them into this module's androidTest assets at build time, so the
+// checked-in copies in llkpattern/src/test/resources/golden/ stay the single source of truth.
+task copyGoldenAssetsForAndroidTest(type: Copy) {
+    from(project(':llkpattern').file('src/test/resources/golden'))
+    into("$buildDir/generated/androidTestGoldenAssets/golden")
+    include '*.tsv'
+}
+// AGP's androidTest asset-merge tasks all depend on preBuild, so hooking in there guarantees the
+// files exist before packaging without needing to name AGP's variant-specific task explicitly.
+preBuild.dependsOn copyGoldenAssetsForAndroidTest

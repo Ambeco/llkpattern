@@ -1,10 +1,10 @@
-# llpattern
+# llkpattern
 
 A regex-like pattern matching library designed to be faster and lower-memory than traditional regex, by compiling patterns using LL(1) parsing techniques instead of backtracking.
 
 ## 1. Overview
 
-Traditional regex engines typically rely on backtracking (or build large NFA/DFA structures) to resolve ambiguity between alternative branches, which can cost significant time and memory. llpattern takes a different approach: at every branch point in a pattern (`+`, `?`, `*`, `|`), it requires that the next input character unambiguously determine which branch to take — the same constraint an LL(1) grammar places on its productions. This lets patterns be compiled directly into an efficient matcher without backtracking, similar in spirit to how an LL(1) parser generator compiles a grammar.
+Traditional regex engines typically rely on backtracking (or build large NFA/DFA structures) to resolve ambiguity between alternative branches, which can cost significant time and memory. llkpattern takes a different approach: at every branch point in a pattern (`+`, `?`, `*`, `|`), it requires that the next input character unambiguously determine which branch to take — the same constraint an LL(1) grammar places on its productions. This lets patterns be compiled directly into an efficient matcher without backtracking, similar in spirit to how an LL(1) parser generator compiles a grammar.
 
 The tradeoff is expressiveness: not every pattern a traditional regex engine accepts can be expressed this way. In exchange, matching can be done in a single deterministic pass, with predictable performance and memory use.
 
@@ -14,7 +14,19 @@ The public API is intended to be a near drop-in replacement for `java.util.regex
 
 ## 2. High-Level Design
 
-_(TBD — see [documents/design.md](documents/design.md))_
+_(Summary — see [documents/design.md](documents/design.md) for the full design)_
+
+**Pipeline:** a pattern string is parsed (`PatternParser`, recursive descent, grammar documented as regex-flavored BNF) into a `PatternConstruct` AST (unions, sequences, literals, character classes, quantifiers, boundaries, backreferences, groups), then compiled into a `MatcherConstruct` graph that a `Matcher` walks one code point at a time, with no backtracking.
+
+**Compile-time ambiguity checking:** each construct computes its own "entry point" — the set of code points that could start it — independently of building its matcher. Merging two candidate branches (a union's `|` arms, or a loop's body-vs-exit routing) checks their entry points for overlap and rejects the pattern at compile time if two branches could both match the same next character; this is the actual LL(1) constraint being enforced. Entry-point maps are aliased between constructs wherever one construct's entry point is exactly another's, rather than copied, to keep compilation allocation-light.
+
+**Opcode-style matcher graph:** the compiled graph is a small set of node "opcodes" — single-successor nodes (character/literal match, capture begin/end, boundaries) called via a plain virtual `match()`, and multi-way dispatch nodes (union branches, loop entry/re-entry) that route on the next code point via a `CodePointMap`-backed dispatch table. A loop compiles to the same dispatch-node shape as a union, just wired to loop back to itself.
+
+**Unicode code point ranges (`CodePointMap`):** a `RangeMap`-style interface over the Unicode code point domain (`[0, 0x10FFFF]`), backed by `ArrayCodePointMap` — two flat, sorted parallel arrays instead of a tree of range objects, chosen for cache-friendliness and low per-entry overhead on the sets this library builds most (`TreeCodePointMap`, a Guava `TreeRangeMap` adapter, exists only as its differential-test oracle). Named classes (`\p{Alpha}`, Unicode categories, POSIX classes, `\d`/`\w`/`\s`, etc., in `NamedCharClass`/`UnicodePredicates`) and the parser's own character-class handling both build on this.
+
+**Boundary matching** (`^`/`$`/`\A`/`\Z`/`\z`/`\b`/`\B`) is resolved per-construct against `MULTILINE`/`UNIX_LINES`, with a compile-time optimization that classifies the character immediately before/after a `\b`/`\B` as statically word/non-word when possible, skipping a runtime check.
+
+The public API mirrors `java.util.regex.Pattern`/`Matcher` closely enough to be a near drop-in replacement for existing regex-based code, modulo the LL(1) expressiveness tradeoff described above.
 
 ## 3. Current Progress
 

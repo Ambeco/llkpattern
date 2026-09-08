@@ -35,6 +35,13 @@ abstract class PatternConstruct {
 	// thread the continuation through again.
 	@MonotonicNonNull PatternConstruct next;
 
+	// A shared, never-mutated empty map -- the default for any construct (BoundaryConstruct,
+	// WordBoundaryConstruct) whose buildEntryMap() only ever sets entryElse, never entryMap itself.
+	// One shared instance rather than `new ArrayCodePointMap<>()` per construct instance, now that
+	// entryMap is a plain (immutable-from-here) CodePointMap reference, not something built up via
+	// per-construct mutation -- see entryMap's own doc below.
+	private static final CodePointMap<Boolean> EMPTY_ENTRY_MAP = new ArrayCodePointMap<>();
+
 	// The set of code points this construct claims as its own entry point, once it (and anything
 	// it can trivially skip, e.g. an optional quantifier) has matched. Populated by buildEntryMap()
 	// (lazily, via ensureEntryPointBuilt() -- see getEntryPointMap()/getEntryElse() below);
@@ -43,13 +50,23 @@ abstract class PatternConstruct {
 	// buildEntryMap() -- every other reader goes through the getters.
 	//
 	// The value type is Boolean (always TRUE) rather than PatternConstruct, even though this looks
-	// exactly like a "code point -> owning construct" map: every entryMap.put() call in every
-	// buildEntryMap() override below inserts `this`, never anything else, so the value carries zero
-	// information -- it's always inferable from *which* construct's entryMap you're looking at, and
-	// every consumer already knows that (see e.g. Sequence.buildEntryMap's own re-keying-onto-`this`
-	// comment). A genuinely multi-valued map DOES exist -- QuantifiedUnion.rawEntryMap, where an
-	// entry's value is which distinct branch owns it -- but that's a different field entirely.
-	MutableCodePointMap<Boolean> entryMap = new ArrayCodePointMap<>();
+	// exactly like a "code point -> owning construct" map: every entryMap-populating call in every
+	// buildEntryMap() override below either aliases another Boolean-valued entryMap directly (a
+	// construct whose own entry point is exactly some other construct's -- Sequence's first
+	// element, CaptureEndMarker's realNext, a bare-flags-only union's next, a ComplexCharacter's
+	// own validRanges(), a BackReference's referenced group's firstCharSet -- see each override's
+	// own comment) or inserts `true`, never a PatternConstruct identity -- so the value always
+	// carries zero information; it's inferable from *which* construct's entryMap you're looking at,
+	// and every consumer already knows that. This is a plain (not Mutable) CodePointMap
+	// specifically so aliasing is safe: nothing can mutate an aliased map out from under whichever
+	// other construct also holds it. A genuinely multi-valued map DOES exist --
+	// QuantifiedUnion.rawEntryMap, where an entry's value is which distinct branch owns it -- but
+	// that's a different field entirely, and deliberately never aliased as entryMap (see
+	// QuantifiedUnion.buildEntryMap's and QuantifiableConstruct.buildLoopEntryMap's own comments
+	// for why: entryMap's Boolean-only value type is a type-level guard against a real 2026-09-06
+	// bug class where a PatternConstruct-valued map got exposed as an ancestor's entry map,
+	// breaking downstream `==` identity checks like a loop's continue-vs-exit classification).
+	CodePointMap<Boolean> entryMap = EMPTY_ENTRY_MAP;
 	@MonotonicNonNull PatternConstruct entryElse;
 
 	private static final int ENTRY_POINT_NOT_STARTED = 0;
@@ -309,12 +326,16 @@ abstract class PatternConstruct {
 				candidates.add(next);
 			}
 			MergedEntries result = mergeEntryPoints(pattern, candidates, "loop part");
-			// entryMap starts empty and result.ranges.entrySet() is already ascending (CodePointMap's
-			// ordering contract), so appendSorted's O(1)-amortized bulk path applies directly -- no
-			// need for put()'s general splice-and-shift.
+			// Projected to plain Boolean values via a local mutable variable, same reasoning as
+			// QuantifiedUnion.buildEntryMap's main branch -- result.ranges is genuinely
+			// PatternConstruct-valued, and entryMap's Boolean-only type is a deliberate guard against
+			// exposing that identity to ancestors. result.ranges.entrySet() is already ascending
+			// (CodePointMap's ordering contract), so appendSorted's O(1)-amortized bulk path applies.
+			MutableCodePointMap<Boolean> map = new ArrayCodePointMap<>();
 			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
+				map.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
+			entryMap = map;
 			entryElse = result.entryElse() != null ? this : null;
 		}
 
@@ -391,11 +412,11 @@ abstract class PatternConstruct {
 				// zero-width and always succeeds -- its only job was toggling `flags` for
 				// PatternParser, already done by the caller -- so just pass through to `next` exactly
 				// as an empty Sequence element would, instead of compiling as its own dispatch node.
-				// Re-keyed onto `this` rather than aliased -- same reasoning as the main branch below.
-				// entryMap starts empty and the source is already ascending, so appendSorted applies.
-				for (Entry<CodePointMap.Range, Boolean> e : next.getEntryPointMap().entrySet()) {
-					entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
-				}
+				// Aliased directly -- entryMap's values are always Boolean `true` regardless of which
+				// construct built it (see entryMap's own doc), so there's no PatternConstruct identity
+				// to lose by sharing next's own map instead of copying its entries. Unlike rawEntryMap
+				// below (genuinely PatternConstruct-valued, and deliberately never aliased as entryMap).
+				entryMap = next.getEntryPointMap();
 				entryElse = next.getEntryElse() != null ? this : null;
 				// matcher isn't assigned here (unlike the pre-split design) -- next.matcher may not be
 				// built yet at this point (see design.md's "Entry-point computation vs. matcher
@@ -427,11 +448,20 @@ abstract class PatternConstruct {
 			// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
 			// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
 			entryElse = rawEntryElse != null ? this : null;
-			// entryMap starts empty and rawEntryMap.entrySet() is already ascending, so appendSorted
-			// applies.
+			// Deliberately NOT aliasing rawEntryMap itself as entryMap -- rawEntryMap is genuinely
+			// PatternConstruct-valued (which branch owns each range), and entryMap's Boolean-only
+			// value type is a type-level guard against a real 2026-09-06 bug class (see
+			// CaptureEndMarker's doc) where a PatternConstruct-valued map got exposed as an ancestor's
+			// entry map, corrupting downstream `==` identity checks like a loop's continue-vs-exit
+			// classification. So this projection to plain `true` values is real, needed work, not
+			// wasted copying -- built via a local mutable variable since entryMap itself is a plain
+			// (non-Mutable) CodePointMap reference now. rawEntryMap.entrySet() is already ascending,
+			// so appendSorted's O(1)-amortized bulk path still applies.
+			MutableCodePointMap<Boolean> map = new ArrayCodePointMap<>();
 			for (Entry<CodePointMap.Range, PatternConstruct> e : rawEntryMap.entrySet()) {
-				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
+				map.appendSorted(e.getKey().min, e.getKey().max, true);
 			}
+			entryMap = map;
 		}
 
 		@Override
@@ -494,21 +524,26 @@ abstract class PatternConstruct {
 			// itself, tail-to-front.
 			//
 			// Bug fix (2026-09-06): this used to just alias `entryMap = realNext.entryMap` directly
-			// -- but that leaves every entry's VALUE as realNext itself (whatever realNext.buildEntryMap
-			// put there), not this marker. That silently broke identity checks like
-			// DispatchMatcherConstruct's loop-flavored constructor's `e.getValue() == next` (used to tell "the loop is
-			// exiting toward `next`" from "the loop is continuing") whenever THIS marker was passed
-			// in as that `next` -- i.e. any non-quantified capturing group whose content contains its
-			// own internal loop, e.g. "([a-z]+)!": the exit character got misclassified as "continue
-			// the loop, dispatch straight to realNext.matcher", bypassing this marker's own
-			// EndCaptureMatcherConstruct entirely, so the capture's `result` was set on entry but
-			// never finalized (group(n) returned null even though the whole pattern matched). Found
-			// via GroupSyntaxTest. Fixed by re-keying every range onto `this` instead of realNext,
-			// same as any other PatternConstruct's own buildEntryMap does for itself. entryMap starts
-			// empty and the source is already ascending, so appendSorted applies.
-			for (Entry<CodePointMap.Range, Boolean> e : realNext.getEntryPointMap().entrySet()) {
-				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
-			}
+			// -- but that leaked every entry's VALUE as realNext itself (whatever realNext.buildEntryMap
+			// put there -- entryMap was PatternConstruct-valued at the time), not this marker. That
+			// silently broke identity checks like DispatchMatcherConstruct's loop-flavored
+			// constructor's `e.getValue() == next` (used to tell "the loop is exiting toward `next`"
+			// from "the loop is continuing") whenever THIS marker was passed in as that `next` -- i.e.
+			// any non-quantified capturing group whose content contains its own internal loop, e.g.
+			// "([a-z]+)!": the exit character got misclassified as "continue the loop, dispatch
+			// straight to realNext.matcher", bypassing this marker's own EndCaptureMatcherConstruct
+			// entirely, so the capture's `result` was set on entry but never finalized (group(n)
+			// returned null even though the whole pattern matched). Found via GroupSyntaxTest.
+			//
+			// entryMap has since been migrated to Boolean-only values (see its own doc) specifically
+			// because that value "carries zero information" -- so aliasing is safe again now, and
+			// re-keying (copying) is back to being pure wasted work: every consumer of THIS marker's
+			// entryMap only ever asks "which code points are in it", never anything realNext-specific,
+			// so sharing realNext's own (also always-Boolean-`true`) map changes nothing observable.
+			// The `e.getValue() == next` identity check this bug was about reads rawEntryMap/
+			// result.ranges (genuinely PatternConstruct-valued), never this plain entryMap -- see
+			// QuantifiedUnion.rawEntryMap's doc, which is where that guard actually lives now.
+			entryMap = realNext.getEntryPointMap();
 			entryElse = realNext.getEntryElse() != null ? this : null;
 		}
 
@@ -543,17 +578,14 @@ abstract class PatternConstruct {
 				patterns.get(i).next = tail;
 				tail = patterns.get(i);
 			}
-			// Re-key every range onto `this` instead of aliasing patterns.get(0).entryMap directly --
-			// same fix as CaptureEndMarker (2026-09-06, see its own doc): aliasing leaves every entry's
-			// VALUE as whatever nested leaf construct originally built the range, not this Sequence,
-			// which silently breaks identity checks like a containing loop's "is this range the exit
-			// path, i.e. does it lead to `next`" test whenever `next` is a Sequence. See
-			// remaining_work.md's dated bug entry (a quantified loop immediately followed by a
-			// composite construct, e.g. "(a)(b)*(z)", crashed at match time because of exactly this).
-			// entryMap starts empty and the source is already ascending, so appendSorted applies.
-			for (Entry<CodePointMap.Range, Boolean> e : patterns.get(0).getEntryPointMap().entrySet()) {
-				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
-			}
+			// Aliased directly, not re-keyed -- unlike QuantifiedUnion.rawEntryMap (a genuinely
+			// PatternConstruct-valued map, where re-keying onto `this` is load-bearing -- see its own
+			// doc for the 2026-09-06 bug that motivated it), entryMap's values are always Boolean
+			// `true` regardless of which construct built it (see entryMap's own doc), so this
+			// Sequence's own entry point and its first element's are the exact same map, both in
+			// content AND in every consumer's eyes -- there's no identity to lose by sharing the
+			// object instead of copying its entries.
+			entryMap = patterns.get(0).getEntryPointMap();
 			entryElse = patterns.get(0).getEntryElse() != null ? this : null;
 		}
 
@@ -586,7 +618,12 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			entryMap.put(value.codePointAt(0), true);
+			// A true leaf -- nothing to alias from -- so this is still a genuinely new (if tiny,
+			// single-entry) map, built via a local mutable variable since entryMap itself is a plain
+			// (non-Mutable) CodePointMap reference now -- see its own doc.
+			MutableCodePointMap<Boolean> map = new ArrayCodePointMap<>();
+			map.put(value.codePointAt(0), true);
+			entryMap = map;
 		}
 
 		@Override
@@ -622,11 +659,11 @@ abstract class PatternConstruct {
 				entryElse = this;
 				return;
 			}
-			// entryMap starts empty and firstChars.entrySet() is already ascending, so appendSorted
-			// applies.
-			for (Entry<CodePointMap.Range, Boolean> e : firstChars.entrySet()) {
-				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
-			}
+			// Aliased directly -- firstCharSet() already returns a Boolean-valued CodePointMap (often
+			// itself an alias, e.g. straight through to a ComplexCharacter's own validRanges()), and
+			// entryMap's values always being `true` regardless of source (see its own doc) means
+			// there's no identity to lose by sharing it instead of copying its entries.
+			entryMap = firstChars;
 		}
 
 		@Override
@@ -677,11 +714,10 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			// entryMap starts empty and validRanges().entrySet() is already ascending, so appendSorted
-			// applies.
-			for (Entry<CodePointMap.Range, Boolean> e : validRanges().entrySet()) {
-				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
-			}
+			// Aliased directly: a character class's own entry point IS exactly its own valid ranges,
+			// not a separate copy of them -- entryMap and ranges/validRanges() were always meant to
+			// hold identical content, so there's nothing to gain from keeping them as two objects.
+			entryMap = validRanges();
 			entryElse = dotElse;
 		}
 
@@ -707,11 +743,9 @@ abstract class PatternConstruct {
 			}
 			// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
 			// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
-			// that happens in buildMatcher(), below.
-			// entryMap starts empty and the source is already ascending, so appendSorted applies.
-			for (Entry<CodePointMap.Range, Boolean> e : delegate.validRanges().entrySet()) {
-				entryMap.appendSorted(e.getKey().min, e.getKey().max, true);
-			}
+			// that happens in buildMatcher(), below. Aliased directly, same reasoning as
+			// ComplexCharacter.buildEntryMap.
+			entryMap = delegate.validRanges();
 		}
 
 		@Override

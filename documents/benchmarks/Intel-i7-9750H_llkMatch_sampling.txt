@@ -1,0 +1,115 @@
+Desktop CPU-sampling profile of CorpusBenchmark.llkMatch
+Device: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz (this dev machine)
+Captured: 2026-09-08, via JMH's built-in `stack` profiler at 8-frame depth -- same run as
+  Intel-i7-9750H_llkCompile_sampling.txt; see that file's header for exact repro steps and the
+  same "unusually high variance this run" caveat (background CPU contention during capture).
+Code state: after the put()->appendSorted() and ArrayCodePointMap complement-constructor fixes
+  (commits 12db986, fd573b6). llkMatch is match-time only, so the entryMap-aliasing pass this
+  profile helped motivate (a compile-time-only change) isn't expected to move these numbers.
+
+# JMH version: 1.36
+# VM version: JDK 25.0.3, Java HotSpot(TM) 64-Bit Server VM, 25.0.3+9-LTS-195
+# Warmup: 3 iterations, 10 s each; Measurement: 5 iterations, 10 s each
+
+Result "com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch":
+  0.068 +-(99.9%) 0.019 ms/op [Average]
+  (min, avg, max) = (0.064, 0.068, 0.075), stdev = 0.005
+
+Stack profiler ([RUNNABLE] samples, 8-frame call chains, aggregated by leaf method):
+
+....[Thread state distributions]....................................................................
+ 66.7%         RUNNABLE
+ 33.3%         TIMED_WAITING
+
+....[Thread state: RUNNABLE]........................................................................
+ 33.3%  50.0% <stack is empty, everything is filtered?>
+  4.8%   7.2% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:195
+              com.tbohne.llkpattern.ArrayCodePointMap.getExplicit:154
+              com.tbohne.llkpattern.MatcherConstruct$MultiDispatchingMatcherConstruct.getNext:201
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:443
+              com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:171
+              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:252
+              com.tbohne.llkpattern.MatcherConstruct$LoopMatcherConstruct.match:746
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:444
+
+  3.9%   5.9% java.util.Arrays.fill:3178
+              com.tbohne.llkpattern.Matcher.resetPerAttemptState:239
+              com.tbohne.llkpattern.Matcher.attemptMatch:314
+              com.tbohne.llkpattern.Matcher.find:130
+              com.tbohne.llkpattern.Matcher.find:102
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.runLlkMatch:144
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch:118
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_avgt_jmhStub:232
+
+  2.1%   3.2% com.tbohne.llkpattern.Matcher.attemptMatch:315
+              com.tbohne.llkpattern.Matcher.find:130
+              com.tbohne.llkpattern.Matcher.find:102
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.runLlkMatch:144
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch:118
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_avgt_jmhStub:232
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_AverageTime:173
+              java.lang.invoke.DirectMethodHandle$Holder.invokeSpecial:-1
+
+  1.5%   2.3% com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:171
+              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:252
+              com.tbohne.llkpattern.Matcher.attemptMatch:315
+              com.tbohne.llkpattern.Matcher.find:130
+              com.tbohne.llkpattern.Matcher.find:102
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.runLlkMatch:144
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch:118
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_avgt_jmhStub:232
+
+  1.4%   2.1% com.tbohne.llkpattern.MatcherConstruct$LiteralMatcherConstruct.match:276
+              com.tbohne.llkpattern.Matcher.attemptMatch:315
+              com.tbohne.llkpattern.Matcher.find:130
+              com.tbohne.llkpattern.Matcher.find:102
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.runLlkMatch:144
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch:118
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_avgt_jmhStub:232
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_AverageTime:173
+
+  1.3%   2.0% com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:444
+              com.tbohne.llkpattern.Matcher.attemptMatch:315
+              com.tbohne.llkpattern.Matcher.find:130
+              com.tbohne.llkpattern.Matcher.find:102
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.runLlkMatch:144
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch:118
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_avgt_jmhStub:232
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkMatch_jmhTest.llkMatch_AverageTime:173
+
+  1.3%   1.9% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:195
+              com.tbohne.llkpattern.ArrayCodePointMap.getOrDefault:329
+              com.tbohne.llkpattern.CodePointMap.get:60
+              com.tbohne.llkpattern.MatcherConstruct.containsFolded:122
+              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:249
+              com.tbohne.llkpattern.Matcher.attemptMatch:315
+              com.tbohne.llkpattern.Matcher.find:130
+              com.tbohne.llkpattern.Matcher.find:102
+
+  1.0%   1.6% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:195
+              com.tbohne.llkpattern.ArrayCodePointMap.getExplicit:154
+              com.tbohne.llkpattern.MatcherConstruct$MultiDispatchingMatcherConstruct.getNext:201
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:443
+              com.tbohne.llkpattern.Matcher.attemptMatch:315
+              com.tbohne.llkpattern.Matcher.find:130
+              com.tbohne.llkpattern.Matcher.find:102
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.runLlkMatch:144
+
+  0.8%   1.3% com.tbohne.llkpattern.MatcherConstruct$LiteralMatcherConstruct.match:276
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:444
+              com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:171
+              com.tbohne.llkpattern.MatcherConstruct$BeginCaptureMatcherConstruct.match:801
+              com.tbohne.llkpattern.MatcherConstruct$LoopMatcherConstruct.match:746
+              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:444
+              com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:171
+              com.tbohne.llkpattern.MatcherConstruct$EndCaptureMatcherConstruct.match:817
+
+ 15.1%  22.7% <other>
+
+....[Thread state: TIMED_WAITING]...................................................................
+ 33.3% 100.0% java.lang.Object.wait0 (JVM housekeeping thread -- not benchmark code)
+
+Read: much more diffuse than llkCompile's profile -- no single call site above ~7%. The top entries
+(ArrayCodePointMap.floorIndex via getNext()/containsFolded, Arrays.fill in resetPerAttemptState,
+the various MatcherConstruct.match() dispatch chain) read as the actual matching algorithm's
+steady-state cost, not an obvious fixable inefficiency the way llkCompile's copy-heavy profile was.

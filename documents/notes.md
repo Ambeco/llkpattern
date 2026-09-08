@@ -806,6 +806,60 @@ Notes to self about how to work on this project, and other context that doesn't 
   `CodePointMap`-level construction code still calling the general-purpose `put()` everywhere,
   never actually switched over to the bulk-append path it was designed to enable.
 
+### Aliasing `entryMap` instead of copying it (2026-09-08, same day)
+
+- The project owner's next optimization idea after the `appendSorted` fix: "if the crux is all the
+  copies, then let's not make copies." Before committing to their fuller `CodePointMapBuilder`/
+  push-visitor proposal, re-profiled with an 8-frame stack sample (checked in as
+  `documents/benchmarks/Intel-i7-9750H_llkCompile_sampling.txt`/`..._llkMatch_sampling.txt`) to
+  confirm `CodePointMap` construction was still the dominant cost post-`appendSorted` -- it was
+  (every top `llkCompile` entry traced to an `appendSorted`/`putAll` call, ~9 sites at 2-4.5% each,
+  no longer one dominant offender) -- and to correct an overstated claim made mid-investigation
+  ("almost entirely `appendSorted`" understated the real signal, which was `llkCompile`'s
+  `gc.alloc.rate.norm` at 20x `regexCompile`'s, not the ms/op breakdown).
+- Landed a smaller, lower-risk slice of the full push-visitor idea: `PatternConstruct.entryMap`'s
+  field type changed from `MutableCodePointMap<Boolean>` to plain `CodePointMap<Boolean>`, and
+  every `buildEntryMap()` override whose own entry point is defined to be exactly some other
+  construct's (`Sequence`, `CaptureEndMarker`, a bare-flags `QuantifiedUnion`, `BackReference`,
+  `ComplexCharacter`, `ComplexQuantifiedCharacter`) now aliases that other map directly instead of
+  copying its entries -- 6 of the 9 profiled copy sites eliminated outright. Deliberately did NOT
+  widen this to `QuantifiedUnion.rawEntryMap`/`QuantifiableConstruct.buildLoopEntryMap`'s merge
+  result (genuinely `PatternConstruct`-valued) -- that's exactly the shape of a real 2026-09-06 bug
+  (`CaptureEndMarker` aliasing a `PatternConstruct`-valued map, breaking a loop's continue-vs-exit
+  `==` check) that `entryMap`'s Boolean-only value type now guards against; those two sites keep
+  projecting to a genuinely new Boolean-valued map. See design.md's new "`entryMap` aliasing"
+  section for the full per-construct breakdown. Changing the field's declared type first (rather
+  than auditing call sites by hand) is what made every remaining illegal mutation site a compile
+  error instead of a hoped-for invariant -- the compiler enumerated all of them.
+- Also, while reviewing this: `ArrayCodePointMap`'s private complement constructor and
+  `appendSorted` got three more fixes on top of the previous commit's fast path (project owner's
+  own review): the else-valued-source branch allocates its arrays at `source.size` directly instead
+  of `INITIAL_CAPACITY`-then-`ensureCapacity`; `appendSorted`'s per-chunk `ensureCapacity` calls
+  (up to ~537 for one huge range) collapsed into a single upfront one; and confirmed (rather than
+  defensively re-checked at runtime) that a null-valued entry can't coexist with `elseValue == null`
+  in this codebase, since nothing calls `setElseValue(null)` on an already-else-valued map.
+- `PatternParser#parseComplexCharacter`'s two `toMutable(...)` calls were also both unnecessary
+  (per the project owner) -- `intersect()`'s and `complement()`'s return types are provably already
+  mutable at each call site (a `MutableCodePointMap<Boolean>` ternary, and `ArrayCodePointMap`'s own
+  `complement()` override always building another `ArrayCodePointMap`) -- replaced with a direct
+  assignment and an explicit cast (with a comment explaining why it's always safe) respectively;
+  `toMutable()` itself deleted as dead code.
+- Full suite green throughout: 1484 tests, 0 failing -- no behavior change, confirmed in particular
+  by `GroupSyntaxTest` (the test that caught the original `CaptureEndMarker` aliasing bug this
+  change's safety argument rests on) and the two historical identity-check regression tests
+  (`186d74a`'s nested-quantifier case, `b50a6b1`'s quantified-loop-then-composite case).
+- JMH (JDK 25, matching the committed baseline): `llkCompile` 2.85ms -> **1.872ms/op (-34.3%
+  further)**, `gc.alloc.rate.norm` 8.44MB/op -> **4.96MB/op (-41.3%)**; `llkMatch` 0.048ms ->
+  0.049ms/op, flat as expected (this is a compile-time-only change). Running total for this
+  session's `CodePointMap` construction work: `llkCompile` 7.05ms -> 1.872ms/op, **-73.4%**, on top
+  of the RangeSet-elimination arc's own prior gains.
+- One JMH run mid-session had unusually wide error bars (stdev ~18% of the mean, vs. the usual
+  5-6%) -- traced to the project owner having a video playing in the background during capture, not
+  a code issue. Worth remembering as a source of noise distinct from the earlier `compileJava`-
+  contamination issue (see the `appendSorted` entry above): both look the same in the numbers (high
+  variance, no crash), so when a run looks unusually noisy, ask what else was running rather than
+  assuming the change itself is the cause.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

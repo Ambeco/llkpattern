@@ -584,17 +584,24 @@ final class PatternParser {
           if (index > complex.startIndex + 1) {
             int closeBracketIndex = index;
             advance(1); // consume the ']' -- callers expect peek to be past this construct
-            CodePointMap<Boolean> finalRanges =
+            // Already-mutable either way (complex.ranges' own declared field type, or intersect()'s
+            // own declared return type) -- no toMutable() wrapping needed for either ternary branch.
+            MutableCodePointMap<Boolean> finalRanges =
                 intersectionSoFar == null
                     ? complex.ranges
                     : intersect(intersectionSoFar, complex.ranges);
             if (negate) {
+              // Cast, not toMutable(): ArrayCodePointMap#complement always returns another
+              // ArrayCodePointMap (see its own override), so this is never actually a runtime type
+              // mismatch -- CodePointMap#complement's interface-level signature is just not declared
+              // to say so statically.
               ComplexCharacter negated = new ComplexCharacter(
-                  complex.startIndex, closeBracketIndex + 1, toMutable(finalRanges.complement(true)));
+                  complex.startIndex, closeBracketIndex + 1,
+                  (MutableCodePointMap<Boolean>) finalRanges.complement(true));
               negated.flags = flags;
               return negated;
             }
-            complex.ranges = toMutable(finalRanges);
+            complex.ranges = finalRanges;
             complex.endIndex = closeBracketIndex + 1;
             return complex;
           } else {
@@ -670,14 +677,6 @@ final class PatternParser {
       }
     }
     return result;
-  }
-
-  /** {@code ranges} itself if already mutable, else a mutable copy -- see {@code intersect}'s and
-   *  {@code complement}'s return types, both of which may hand back either. */
-  private static MutableCodePointMap<Boolean> toMutable(CodePointMap<Boolean> ranges) {
-    return (ranges instanceof MutableCodePointMap)
-        ? (MutableCodePointMap<Boolean>) ranges
-        : new ArrayCodePointMap<>(ranges);
   }
 
   /**

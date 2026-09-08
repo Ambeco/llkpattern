@@ -78,6 +78,16 @@ public interface CodePointMap<V> {
     return null;
   }
 
+  /**
+   * Like {@link #get}, but ignores {@link #getElseValue}: returns non-null only for a code point
+   * with a real, explicit entry, {@code null} for both "no mapping" and "covered only by the
+   * else-value fill." Useful for callers doing their own layered fallback lookup (see {@link
+   * MatcherConstruct.MultiDispatchingMatcherConstruct#getNext}'s case-folding) that needs to tell
+   * those two apart before falling back to {@link #getElseValue} itself.
+   */
+  @Nullable
+  V getExplicit(int codePoint);
+
   default void forEach(BiConsumer<Range, ? super V> action) {
     entrySet().forEach(entry -> action.accept(entry.getKey(), entry.getValue()));
   }
@@ -170,6 +180,14 @@ public interface CodePointMap<V> {
      * incremental array growth when the eventual size is known ahead of time. No-op by default.
      */
     default void ensureCapacity(int minEntries) {}
+
+    /**
+     * Sets the value {@link #getElseValue} returns -- the fill for any code point without an
+     * explicit entry. Unlike {@link #complement}, this doesn't touch this map's existing entries
+     * at all (no punched holes are added or removed); it just changes what "otherwise unmapped"
+     * means going forward. Pass {@code null} to go back to an ordinary (no else-value) map.
+     */
+    void setElseValue(@Nullable V value);
 
     @Nullable
     V compute(int codePoint, CodePointRemapFunction<V> remappingFunction);

@@ -536,6 +536,30 @@ Notes to self about how to work on this project, and other context that doesn't 
   call sites (`ComplexCharacter`, `containsFolded`, `NamedCharClass`/`UnicodePredicates`) onto it is
   still open -- see remaining_work.md.
 
+### `getElseValue`/`setElseValue`/`getExplicit`, and simplifying `MultiDispatchingMatcherConstruct` (2026-09-08, same day)
+
+- The project owner asked for public `getElseValue`/`setElseValue` accessors specifically to let
+  `MultiDispatchingMatcherConstruct` store its "else" successor as `dispatchMap`'s own else-value
+  instead of a separate `elseDispatch` field -- the field had been hand-rolling exactly what an
+  else-value is. Adding the setter (the getter already existed, from the `complement` work above)
+  made that replacement mechanical everywhere `elseDispatch` was *written*.
+- The read side (`getNext()`) needed one more piece first: its case-insensitive fallback checks
+  `dispatchMap.get(peeked)`, and if not found, the input character's other-case forms, only falling
+  back to the "else" successor once none of those match. Folding the else-value straight into
+  `dispatchMap.get()` breaks that ordering -- `get(peeked)` would return the else-value the moment
+  `peeked` itself isn't an explicit key, short-circuiting before the upper/lower-case checks ever
+  run (e.g. an explicit branch for lowercase `'b'` would never be tried for uppercase input `'B'`
+  under `CASE_INSENSITIVE`, since `get('B')` returns the else-value first). Added
+  `CodePointMap#getExplicit(codePoint)` -- like `get`, but ignoring the else-value fill entirely --
+  for `getNext()`'s intermediate lookups, reserving `getElseValue()` for the final fallback only.
+  Caught this by tracing through the interaction before writing the change, not by a test failure --
+  worth flagging since it's the kind of thing a differential test wouldn't have caught either (both
+  `ArrayCodePointMap`/`TreeCodePointMap` would have been *consistently* wrong the same way).
+- Also found (not fixed; noted here in case a future editing pass reaches it) that
+  `MultiDispatchingMatcherConstruct.getElse()` has zero callers anywhere in the codebase --
+  apparently dead even before this change, unrelated to it.
+- Full suite green: 1478 tests, 0 failing, no count change (pure refactor).
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

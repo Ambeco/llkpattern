@@ -32,7 +32,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * reference since there's no risk of a node needing to see its own not-yet-built successor. The
  * handful of nodes that genuinely branch on the next code point -- a union's {@code |}, and a
  * loop's "keep looping vs. exit" choice -- extend
- * {@link MultiDispatchingMatcherConstruct} instead, whose dispatch map/{@code elseDispatch} are
+ * {@link MultiDispatchingMatcherConstruct} instead, whose dispatch map/else-value are
  * intentionally not {@code final}: a `final` field can only be safely published to other threads
  * if it's set before the constructor completes, but a self-referential dispatch entry (a loop
  * dispatching back to its own entry node) is unavoidably written by a *different* (nested)
@@ -173,8 +173,12 @@ abstract class MatcherConstruct {
 	 * these fields, unlike {@link SingleDispatchingMatcherConstruct#next}, are not {@code final}.
 	 */
 	abstract static class MultiDispatchingMatcherConstruct extends MatcherConstruct {
+		// The "else" destination lives as dispatchMap's own else-value (CodePointMap#getElseValue)
+		// rather than a separate field, since that's exactly what it is: wherever the next code
+		// point isn't explicitly claimed. getNext() below has to use getExplicit(), not get(), for
+		// its own intermediate lookups -- get() would fold the else-value in too early and short-
+		// circuit the case-insensitive fallback (see its comment).
 		MutableCodePointMap<MatcherConstruct> dispatchMap = new ArrayCodePointMap<>();
-		@Nullable MatcherConstruct elseDispatch;
 
 		MultiDispatchingMatcherConstruct(PatternConstruct owner) {
 			super(owner);
@@ -185,7 +189,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Nullable MatcherConstruct getNext(Matcher matcher, int peeked) {
-			MatcherConstruct mapped = dispatchMap.get(peeked);
+			MatcherConstruct mapped = dispatchMap.getExplicit(peeked);
 			if (mapped == null && peeked != -1) {
 				// CASE_INSENSITIVE/UNICODE_CASE (2026-09-06): dispatchMap's keys are exactly the code
 				// points the pattern was written with (e.g. "[a-z]" only ever puts 'a'-'z' in the map),
@@ -201,21 +205,21 @@ abstract class MatcherConstruct {
 					int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
 					int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
 					if (upper != peeked) {
-						mapped = dispatchMap.get(upper);
+						mapped = dispatchMap.getExplicit(upper);
 					}
 					if (mapped == null && lower != peeked) {
-						mapped = dispatchMap.get(lower);
+						mapped = dispatchMap.getExplicit(lower);
 					}
 				}
 			}
-			return (mapped != null) ? mapped : elseDispatch;
+			return (mapped != null) ? mapped : dispatchMap.getElseValue();
 		}
 
 		@VisibleForTesting
 		CodePointMap<MatcherConstruct> getDispatchMap() { return dispatchMap; }
 
 		@VisibleForTesting
-		@Nullable MatcherConstruct getElse() { return elseDispatch; }
+		@Nullable MatcherConstruct getElse() { return dispatchMap.getElseValue(); }
 	}
 
 	/**
@@ -373,7 +377,7 @@ abstract class MatcherConstruct {
 						new DispatchMatcherConstruct(bodyEntries, bodyOnlyResult.elseCandidate, owner.flags);
 				BeginCaptureMatcherConstruct beginCaptureNode =
 						new BeginCaptureMatcherConstruct(captureConstructIndex, owner.flags, bodyDispatch);
-				loopNode.elseDispatch = beginCaptureNode; // unconditional: every continue attempt begins capturing.
+				loopNode.dispatchMap.setElseValue(beginCaptureNode); // unconditional: every continue attempt begins capturing.
 			} else {
 				for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 					if (e.getValue() != next) {
@@ -381,7 +385,7 @@ abstract class MatcherConstruct {
 					}
 				}
 				if (bodyOnlyResult.elseCandidate != null) {
-					loopNode.elseDispatch = bodyOnlyResult.elseCandidate.matcher;
+					loopNode.dispatchMap.setElseValue(bodyOnlyResult.elseCandidate.matcher);
 				}
 			}
 
@@ -394,9 +398,9 @@ abstract class MatcherConstruct {
 				// an explicit catchall. `next`'s own dispatch (reached via endLoopNode) will correctly
 				// accept or reject it on its own terms (e.g. an ancestor loop's own continue-vs-exit
 				// check) -- this node doesn't need to pre-verify that itself.
-				elseDispatch = endLoopNode;
+				dispatchMap.setElseValue(endLoopNode);
 			} else if (result.elseCandidate != null) {
-				elseDispatch = (result.elseCandidate == next) ? endLoopNode : loopNode;
+				dispatchMap.setElseValue((result.elseCandidate == next) ? endLoopNode : loopNode);
 			}
 
 			// owner's own entry set (as seen by whatever ambiguity check an ancestor runs on it) is
@@ -412,7 +416,7 @@ abstract class MatcherConstruct {
 			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : entryMap.entrySet()) {
 				dispatchMap.put(e.getKey().min, e.getKey().max, e.getValue().matcher);
 			}
-			this.elseDispatch = entryElse != null ? entryElse.matcher : null;
+			dispatchMap.setElseValue(entryElse != null ? entryElse.matcher : null);
 		}
 
 		@Override

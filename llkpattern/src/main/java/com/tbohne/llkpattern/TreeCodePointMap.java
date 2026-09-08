@@ -57,6 +57,16 @@ public final class TreeCodePointMap<V> implements MutableCodePointMap<V> {
   }
 
   @Override
+  public void setElseValue(@Nullable V value) {
+    elseValue = value;
+  }
+
+  @Override
+  public @Nullable V getExplicit(int codePoint) {
+    return rangeMap.get(codePoint);
+  }
+
+  @Override
   public boolean isEmpty() {
     return elseValue == null && rangeMap.asMapOfRanges().isEmpty();
   }

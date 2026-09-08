@@ -113,6 +113,20 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     return elseValue;
   }
 
+  @Override
+  public void setElseValue(@Nullable V value) {
+    elseValue = value;
+  }
+
+  @Override
+  public @Nullable V getExplicit(int codePoint) {
+    int idx = floorIndex(codePoint);
+    if (idx >= 0 && codePoint < keyMax(keys[idx])) {
+      return values[idx]; // null here means a punched hole -- correctly "not explicit" either way
+    }
+    return null;
+  }
+
   /** Grows the backing arrays (by 1.5x, or to {@code minCapacity} if that's bigger) if needed. */
   @Override
   public void ensureCapacity(int minCapacity) {

@@ -1,9 +1,9 @@
 package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.PolyNull;
@@ -36,16 +36,21 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   private static final int COUNT_BITS = 11;
   private static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
 
+  private static final int INITIAL_CAPACITY = 16;
+
   // Parallel arrays, kept sorted by min (equivalently, by key, since min occupies the high bits
   // and comparisons here always extract min rather than comparing keys as raw ints -- see the
   // class doc's note on avoiding signed-int comparison pitfalls on the packed key itself).
+  // `size` is the logical entry count; `keys.length`/`values.length` (always equal) are capacity,
+  // which can run ahead of `size` -- see ensureCapacity -- so every access below is bounded by
+  // `size`, never by the arrays' own length.
   private long[] keys;
   private V[] values;
   private int size;
 
   public ArrayCodePointMap() {
-    keys = new long[0];
-    values = newValuesArray(0);
+    keys = new long[INITIAL_CAPACITY];
+    values = newValuesArray(INITIAL_CAPACITY);
     size = 0;
   }
 
@@ -57,6 +62,15 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   public ArrayCodePointMap(CodePointMap<V> other) {
     this();
     putAll(other);
+  }
+
+  /** Grows the backing arrays (by 1.5x, or to {@code minCapacity} if that's bigger) if needed. */
+  private void ensureCapacity(int minCapacity) {
+    if (keys.length < minCapacity) {
+      int newCapacity = Math.max(minCapacity, keys.length + (keys.length >> 1));
+      keys = Arrays.copyOf(keys, newCapacity);
+      values = Arrays.copyOf(values, newCapacity);
+    }
   }
 
   private static long packKey(int min, int count) {
@@ -192,45 +206,43 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   /** Inserts a single new entry {@code [min, max)}; caller guarantees no overlap with existing entries. */
   private void insert(int min, int max, V value) {
     int idx = floorIndex(min) + 1; // insertion point: first entry with min > `min`
-    long key = packKey(min, max - min - 1);
-    long[] newKeys = new long[size + 1];
-    V[] newValues = newValuesArray(size + 1);
-    System.arraycopy(keys, 0, newKeys, 0, idx);
-    System.arraycopy(values, 0, newValues, 0, idx);
-    newKeys[idx] = key;
-    newValues[idx] = value;
-    System.arraycopy(keys, idx, newKeys, idx + 1, size - idx);
-    System.arraycopy(values, idx, newValues, idx + 1, size - idx);
-    keys = newKeys;
-    values = newValues;
+    ensureCapacity(size + 1);
+    System.arraycopy(keys, idx, keys, idx + 1, size - idx);
+    System.arraycopy(values, idx, values, idx + 1, size - idx);
+    keys[idx] = packKey(min, max - min - 1);
+    values[idx] = value;
     size++;
   }
 
-  /** Merges adjacent entries with equal values, restricted to entries touching {@code [min, max)}'s neighborhood. */
+  /**
+   * Merges adjacent entries with equal values. Coalescing only ever removes entries (never adds
+   * any), so this always compacts safely in place: the write cursor never overtakes the read
+   * cursor.
+   */
   private void coalesceAround(int min, int max) {
-    List<Long> newKeys = new ArrayList<>(size);
-    List<V> newValues = new ArrayList<>(size);
+    int writeIdx = 0;
     for (int i = 0; i < size; i++) {
-      if (!newKeys.isEmpty()) {
-        long prevKey = newKeys.get(newKeys.size() - 1);
-        V prevValue = newValues.get(newValues.size() - 1);
-        if (keyMax(prevKey) == keyMin(keys[i])
-            && java.util.Objects.equals(prevValue, values[i])
-            && keyCount(prevKey) + 1 + keyCount(keys[i]) + 1 - 1 <= MAX_COUNT) {
-          int newCount = keyCount(prevKey) + 1 + keyCount(keys[i]) + 1 - 1;
-          newKeys.set(newKeys.size() - 1, packKey(keyMin(prevKey), newCount));
-          continue;
+      long key = keys[i];
+      V value = values[i];
+      if (writeIdx > 0) {
+        long prevKey = keys[writeIdx - 1];
+        V prevValue = values[writeIdx - 1];
+        if (keyMax(prevKey) == keyMin(key) && Objects.equals(prevValue, value)) {
+          int mergedCount = keyCount(prevKey) + keyCount(key) + 1;
+          if (mergedCount <= MAX_COUNT) {
+            keys[writeIdx - 1] = packKey(keyMin(prevKey), mergedCount);
+            continue;
+          }
         }
       }
-      newKeys.add(keys[i]);
-      newValues.add(values[i]);
+      keys[writeIdx] = key;
+      values[writeIdx] = value;
+      writeIdx++;
     }
-    keys = new long[newKeys.size()];
-    for (int i = 0; i < keys.length; i++) {
-      keys[i] = newKeys.get(i);
+    for (int i = writeIdx; i < size; i++) {
+      values[i] = null; // don't keep coalesced-away values reachable
     }
-    values = newValues.toArray(newValuesArray(newValues.size()));
-    size = keys.length;
+    size = writeIdx;
   }
 
   @Override
@@ -255,32 +267,54 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     if (size == 0 || min >= max) {
       return;
     }
-    List<Long> newKeys = new ArrayList<>(size);
-    List<V> newValues = new ArrayList<>(size);
+    // Entries are sorted and disjoint, so at most one entry can strictly contain [min, max) on
+    // both sides -- the one case that turns 1 entry into 2 and so needs an extra slot. Every other
+    // touched entry maps to 0 or 1 output entries, so the general loop below always has room to
+    // compact in place (write cursor <= read cursor). Handling the growth case separately, up
+    // front, keeps that loop simple and safe.
+    int splitIdx = floorIndex(min);
+    if (splitIdx >= 0) {
+      long splitKey = keys[splitIdx];
+      int entryMin = keyMin(splitKey);
+      int entryMax = keyMax(splitKey);
+      if (entryMin < min && entryMax > max) {
+        V value = values[splitIdx];
+        ensureCapacity(size + 1);
+        System.arraycopy(keys, splitIdx + 1, keys, splitIdx + 2, size - splitIdx - 1);
+        System.arraycopy(values, splitIdx + 1, values, splitIdx + 2, size - splitIdx - 1);
+        keys[splitIdx] = packKey(entryMin, min - entryMin - 1);
+        values[splitIdx] = value;
+        keys[splitIdx + 1] = packKey(max, entryMax - max - 1);
+        values[splitIdx + 1] = value;
+        size++;
+        return;
+      }
+    }
+    int writeIdx = 0;
     for (int i = 0; i < size; i++) {
       long key = keys[i];
+      V value = values[i];
       int entryMin = keyMin(key);
       int entryMax = keyMax(key);
       if (entryMax <= min || entryMin >= max) {
-        newKeys.add(key);
-        newValues.add(values[i]);
-        continue;
+        keys[writeIdx] = key;
+        values[writeIdx] = value;
+        writeIdx++;
+      } else if (entryMin < min) {
+        keys[writeIdx] = packKey(entryMin, min - entryMin - 1);
+        values[writeIdx] = value;
+        writeIdx++;
+      } else if (entryMax > max) {
+        keys[writeIdx] = packKey(max, entryMax - max - 1);
+        values[writeIdx] = value;
+        writeIdx++;
       }
-      if (entryMin < min) {
-        newKeys.add(packKey(entryMin, min - entryMin - 1));
-        newValues.add(values[i]);
-      }
-      if (entryMax > max) {
-        newKeys.add(packKey(max, entryMax - max - 1));
-        newValues.add(values[i]);
-      }
+      // else: entry lies entirely within [min, max) -- fully removed, contributes nothing.
     }
-    keys = new long[newKeys.size()];
-    for (int i = 0; i < keys.length; i++) {
-      keys[i] = newKeys.get(i);
+    for (int i = writeIdx; i < size; i++) {
+      values[i] = null; // don't keep removed values reachable
     }
-    values = newValues.toArray(newValuesArray(newValues.size()));
-    size = keys.length;
+    size = writeIdx;
   }
 
   @Override

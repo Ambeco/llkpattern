@@ -250,6 +250,39 @@ public class QuantifierAndCaptureTest {
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".+z"));
   }
 
+  // --- Three specific ambiguity shapes the project owner asked to confirm are covered: a plain
+  // prefix union, an optional single-character literal against what follows it, and an optional
+  // character class against what follows it -- each exercises entry-point overlap detection at a
+  // different level (a union's own branch merge; a quantifier's min==0 "skip me, fall through to
+  // next" merge over a single code point; the same merge but over a real multi-entry CodePointMap).
+
+  @Test
+  public void union_branchIsPrefixOfAnotherBranch_rejectedAtCompileTime() {
+    // "a" and "ab" both start with 'a' -- same overlap as "ab|ac" (see
+    // PatternParserTest#compile_ambiguousAlternation_throwsPatternSyntaxException), but here one
+    // branch is a strict prefix of the other rather than just sharing a first character.
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a|ab"));
+  }
+
+  @Test
+  public void optionalLiteral_ambiguousWithFollowingSameLiteral_rejectedAtCompileTime() {
+    // "a?" can match zero characters, in which case what follows must determine the next branch on
+    // its own -- but "a?"'s own entry set (just 'a', a single-codepoint LiteralString) and the
+    // following "a"'s entry set both claim 'a', so skipping "a?" is indistinguishable from matching
+    // it. This is QuantifiableConstruct.buildLoopEntryMap's min==0 body-vs-next merge, not a union's
+    // branch-vs-branch merge (see the two tests above/below for those).
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a?a"));
+  }
+
+  @Test
+  public void optionalCharacterClass_ambiguousWithFollowingMemberLiteral_rejectedAtCompileTime() {
+    // Same min==0 body-vs-next merge as "a?a" above, but "[ab]" is a real multi-entry CodePointMap
+    // (not a single code point or an else-value "everything" map like "."/".*z" above) -- this is
+    // the one that actually needs a genuine CodePointMap range intersection, not just a single
+    // code point or else-value comparison, to detect that 'a' is claimed by both sides.
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("[ab]?a"));
+  }
+
   // --- Nested quantified/loop constructs -- see remaining_work.md's former "Core implementation"
   // entry and design.md's "Entry-point computation vs. matcher compilation" section for the bug
   // this used to hit: a loop whose body itself contains another loop, where the inner loop's

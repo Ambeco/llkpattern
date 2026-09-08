@@ -860,6 +860,19 @@ Notes to self about how to work on this project, and other context that doesn't 
   variance, no crash), so when a run looks unusually noisy, ask what else was running rather than
   assuming the change itself is the cause.
 
+### Confirming three specific ambiguity shapes have test coverage (2026-09-08, same day)
+
+- The project owner asked directly whether `(a|ab)`, `a?a`, and `[ab]?a` -- the three cases they'd
+  identified as needing genuine compile-time `CodePointMap` work for ambiguity detection -- were
+  actually tested. Checked by grep before answering rather than assuming: none of the three exact
+  patterns existed anywhere in the suite, though structurally similar shapes did (`"ab|ac"` for a
+  shared-first-character union, `".*z"`/`".+z"` for a quantified class vs. a following literal) --
+  none of those cover a strict-prefix union, a `min == 0` quantifier's own body-vs-next merge over
+  a single code point, or that same merge over a real multi-entry class.
+- Added the three as `QuantifierAndCaptureTest` cases, each just asserting
+  `PatternSyntaxException`. Confirmed by running (not just written speculatively) before reporting
+  back: all three throw as expected. Full suite: 1487 tests (1484 + 3), 0 failing.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

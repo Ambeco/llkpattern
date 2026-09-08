@@ -478,6 +478,29 @@ Notes to self about how to work on this project, and other context that doesn't 
   tracked as its own remaining_work.md item, partly *because* it's on the real match-time hot path
   (unlike `entryMap`/`rawEntryMap`, which are compile-time-only), so migrating it needs more care.
 
+### `dispatchMap` migration -- the last Guava RangeMap, and the `llkMatch` mystery resolved (2026-09-08, same day)
+
+- Migrated `MultiDispatchingMatcherConstruct.dispatchMap` from Guava `RangeMap<Integer,
+  MatcherConstruct>` to `ArrayCodePointMap<MatcherConstruct>` -- the last Guava `RangeMap` anywhere
+  in the compiled-graph/entry-point/runtime-dispatch family (confirmed by grep: the only remaining
+  `RangeMap`/`TreeRangeMap` reference in `llkpattern/src/main/java` afterward is `TreeCodePointMap`
+  itself, the deliberate differential-test oracle). `CodePointMap`'s existing `get(int)` method
+  matched `RangeMap.get(int)`'s call shape exactly, so `getNext()` and the one test reading
+  `getDispatchMap().get(...)` (`PatternParserTest`) needed no changes at all -- only the `.put()`
+  call sites (all `Range.closedOpen(min, max)` -> plain `min, max` ints) and `getDispatchMap()`'s
+  return type.
+- This was the one migration of the day that touches the *actual match-time hot path*, not just
+  compile time -- and it resolved the `llkMatch` mystery from the `entryMap`/`rawEntryMap`
+  migrations decisively: that "benchmark methodology artifact" theory was wrong. `dispatchMap`'s
+  Guava backing was a real, standing cost on every single `find()`/`matches()` call, present since
+  before this whole investigation started (not something the earlier `ArrayCodePointMap` swap or
+  its regression introduced) -- migrating it didn't just undo the earlier bump, it took `llkMatch`
+  well *below* where it started the whole day.
+- Final numbers, this session's whole `ArrayCodePointMap`/`CodePointMap` migration arc, measured
+  against the very first pre-`ArrayCodePointMap` baseline: `llkCompile` 21.5ms -> **11.2ms/op**
+  (-48.1%), `llkMatch` 0.092ms -> **0.066ms/op** (-27.7%). Full suite (1477 tests, 0 failing, 561
+  skipped) passed on the first try after this change, as it had after every other step in this arc.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

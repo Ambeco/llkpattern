@@ -1,10 +1,7 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Range;
-import com.google.common.collect.RangeMap;
 import com.google.common.collect.RangeSet;
-import com.google.common.collect.TreeRangeMap;
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.Matcher.Group;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
@@ -176,7 +173,7 @@ abstract class MatcherConstruct {
 	 * these fields, unlike {@link SingleDispatchingMatcherConstruct#next}, are not {@code final}.
 	 */
 	abstract static class MultiDispatchingMatcherConstruct extends MatcherConstruct {
-		RangeMap<Integer, MatcherConstruct> dispatchMap = TreeRangeMap.create();
+		MutableCodePointMap<MatcherConstruct> dispatchMap = new ArrayCodePointMap<>();
 		@Nullable MatcherConstruct elseDispatch;
 
 		MultiDispatchingMatcherConstruct(PatternConstruct owner) {
@@ -215,7 +212,7 @@ abstract class MatcherConstruct {
 		}
 
 		@VisibleForTesting
-		RangeMap<Integer, MatcherConstruct> getDispatchMap() { return dispatchMap; }
+		CodePointMap<MatcherConstruct> getDispatchMap() { return dispatchMap; }
 
 		@VisibleForTesting
 		@Nullable MatcherConstruct getElse() { return elseDispatch; }
@@ -380,7 +377,7 @@ abstract class MatcherConstruct {
 			} else {
 				for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 					if (e.getValue() != next) {
-						loopNode.dispatchMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue().matcher);
+						loopNode.dispatchMap.put(e.getKey().min, e.getKey().max, e.getValue().matcher);
 					}
 				}
 				if (bodyOnlyResult.elseCandidate != null) {
@@ -389,8 +386,7 @@ abstract class MatcherConstruct {
 			}
 
 			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				Range<Integer> range = Range.closedOpen(e.getKey().min, e.getKey().max);
-				dispatchMap.put(range, (e.getValue() == next) ? endLoopNode : loopNode);
+				dispatchMap.put(e.getKey().min, e.getKey().max, (e.getValue() == next) ? endLoopNode : loopNode);
 			}
 			if (bodyOnlyResult.elseCandidate == null) {
 				// Body claims no catchall of its own, so any character it doesn't explicitly claim
@@ -414,7 +410,7 @@ abstract class MatcherConstruct {
 
 		private void populate(CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
 			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : entryMap.entrySet()) {
-				dispatchMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue().matcher);
+				dispatchMap.put(e.getKey().min, e.getKey().max, e.getValue().matcher);
 			}
 			this.elseDispatch = entryElse != null ? entryElse.matcher : null;
 		}

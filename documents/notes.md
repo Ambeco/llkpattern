@@ -441,6 +441,43 @@ Notes to self about how to work on this project, and other context that doesn't 
     match-time behavior. Flagged in remaining_work.md as unexplained, pending a repeat run before
     spending real investigation time on it.
 
+### `QuantifiedUnion.rawEntryMap` migration (2026-09-08, same day)
+
+- Followed up on the `entryMap` migration above by also moving `QuantifiedUnion.rawEntryMap` (the
+  one other entry-point-shaped field still on Guava `RangeMap`) onto `CodePointMap<PatternConstruct>`
+  -- unlike `entryMap`, this one is genuinely multi-valued (real per-branch identities), so it kept
+  its value type, just changed its backing. Since `rawEntryMap` was populated in one shot from
+  `mergeEntryPoints`'s own result (already exactly the right `CodePointMap<PatternConstruct>`), the
+  migration let the per-entry copy loop disappear entirely -- `rawEntryMap = result.ranges;`, a
+  direct reference assignment, replaces what used to be a full re-`.put()` loop.
+- This meant `DispatchMatcherConstruct`'s two `RangeMap`-taking constructors and its `populate()`
+  helper (all in `MatcherConstruct.java`, a second file) also needed to switch to
+  `CodePointMap<PatternConstruct>` -- `populate()` still builds the actual runtime `dispatchMap`
+  (see below) as a Guava `RangeMap<Integer, MatcherConstruct>`, converting each `CodePointMap.Range`
+  into a Guava `Range.closedOpen(...)` at that one boundary, since `dispatchMap` itself wasn't
+  touched in this pass.
+- Result: `llkCompile` 16.4ms -> **16.0ms/op**, a further small improvement (removing the copy loop)
+  on top of the entryMap migration's much larger one -- combined, -52.7% from the pre-fix 33.8ms,
+  and still comfortably below the original 21.5ms pre-`ArrayCodePointMap` baseline. Full suite
+  (1477 tests, 0 failing, 561 skipped) passed on the first try.
+- The `llkMatch` anomaly from the `entryMap` migration **persisted at a similar magnitude** (+13.9%
+  this run vs. +12.3% before) even though this migration didn't touch anything on the actual
+  match-time dispatch path (`MultiDispatchingMatcherConstruct.dispatchMap` -- see below -- is still
+  the same Guava `RangeMap<Integer, MatcherConstruct>` both before and after). Two migrations in a
+  row moving that same needle by roughly the same amount, with neither one plausibly touching
+  match-time code, points more toward a *benchmark methodology* artifact than a real regression:
+  `CorpusBenchmark`'s `jmh {}` config runs with `fork = 1`, so `llkCompile` (now much more
+  compile-work-per-iteration than the original Guava-backed version) and `llkMatch` run sequentially
+  in the *same* JVM process/fork -- JIT/code-cache state left over from the compile-heavy phase could
+  plausibly leak into the match phase's numbers without any real `Matcher` regression existing.
+  Not confirmed yet; see remaining_work.md's dispatchMap item for the actual next step (an isolated
+  single-benchmark run) before assuming there's a real bug.
+- `MultiDispatchingMatcherConstruct.dispatchMap` (`RangeMap<Integer, MatcherConstruct>`, the actual
+  structure `Matcher` consults via `getNext()` on every `find()`/`matches()` call) is now the last
+  Guava map left in this family -- deliberately not touched in either of today's two migrations, and
+  tracked as its own remaining_work.md item, partly *because* it's on the real match-time hot path
+  (unlike `entryMap`/`rawEntryMap`, which are compile-time-only), so migrating it needs more care.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

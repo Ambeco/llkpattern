@@ -5,6 +5,7 @@ import com.google.common.collect.Range;
 import com.google.common.collect.RangeMap;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeMap;
+import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.Matcher.Group;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
@@ -289,7 +290,7 @@ abstract class MatcherConstruct {
 		 * have made it read the wrong thing anyway: entryMap's values are always {@code true}, not a
 		 * dispatch target -- see PatternConstruct.entryMap's doc.)
 		 */
-		DispatchMatcherConstruct(PatternConstruct owner, RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
+		DispatchMatcherConstruct(PatternConstruct owner, CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
 			super(owner);
 			populate(entryMap, entryElse);
 		}
@@ -298,7 +299,7 @@ abstract class MatcherConstruct {
 		 * Internal (non-self-registering) variant, used when a capturing union's actual entry point
 		 * is a {@link BeginCaptureMatcherConstruct} that wraps this node instead.
 		 */
-		DispatchMatcherConstruct(RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse, int flags) {
+		DispatchMatcherConstruct(CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse, int flags) {
 			super(flags);
 			populate(entryMap, entryElse);
 		}
@@ -365,10 +366,10 @@ abstract class MatcherConstruct {
 			// plain (internal) DispatchMatcherConstruct doing that same per-branch routing -- needed
 			// because BeginCapture itself is a pure single-successor opcode now.
 			if (capturing) {
-				RangeMap<Integer, PatternConstruct> bodyEntries = TreeRangeMap.create();
+				MutableCodePointMap<PatternConstruct> bodyEntries = new ArrayCodePointMap<>();
 				for (Map.Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
 					if (e.getValue() != next) {
-						bodyEntries.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
+						bodyEntries.put(e.getKey().min, e.getKey().max, e.getValue());
 					}
 				}
 				DispatchMatcherConstruct bodyDispatch =
@@ -411,9 +412,9 @@ abstract class MatcherConstruct {
 			// finish first.
 		}
 
-		private void populate(RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
-			for (Map.Entry<Range<Integer>, PatternConstruct> e : entryMap.asMapOfRanges().entrySet()) {
-				dispatchMap.put(e.getKey(), e.getValue().matcher);
+		private void populate(CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
+			for (Map.Entry<CodePointMap.Range, PatternConstruct> e : entryMap.entrySet()) {
+				dispatchMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue().matcher);
 			}
 			this.elseDispatch = entryElse != null ? entryElse.matcher : null;
 		}

@@ -2,9 +2,7 @@ package com.tbohne.llkpattern;
 
 import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.Range;
-import com.google.common.collect.RangeMap;
 import com.google.common.collect.RangeSet;
-import com.google.common.collect.TreeRangeMap;
 import com.google.common.collect.TreeRangeSet;
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.MatcherConstruct.*;
@@ -16,7 +14,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 abstract class PatternConstruct {
@@ -352,7 +349,10 @@ abstract class PatternConstruct {
 		// BeginCaptureMatcherConstruct is constructed afterward), so reading `this.entryMap`'s
 		// rekeyed-to-`this` values there would resolve `.matcher` to null. rawEntryMap/rawEntryElse
 		// keep the original, immediately-resolvable candidate identities for that one internal use.
-		RangeMap<Integer, PatternConstruct> rawEntryMap = TreeRangeMap.create();
+		// Genuinely multi-valued (unlike entryMap -- see its doc), so this is a real
+		// CodePointMap<PatternConstruct>, not <Boolean>; assigned wholesale from mergeEntryPoints's
+		// own result (already exactly the map wanted here) rather than copied entry-by-entry.
+		CodePointMap<PatternConstruct> rawEntryMap = new ArrayCodePointMap<>();
 		@Nullable PatternConstruct rawEntryElse;
 
 		// The unquantified-and-non-empty case's actual compile target (`next` itself, or a
@@ -421,16 +421,14 @@ abstract class PatternConstruct {
 			}
 			MergedEntries result = mergeEntryPoints(pattern, constructs, "union subpattern");
 			rawEntryElse = result.entryElse();
-			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				rawEntryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
-			}
+			rawEntryMap = result.ranges; // exactly the map wanted here already -- no copy needed.
 			// Re-keyed onto `this` rather than kept as whatever nested candidate built each range --
 			// see Sequence.buildEntryMap's doc for why (same fix, same reason: a containing loop's
 			// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
 			// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
 			entryElse = rawEntryElse != null ? this : null;
-			for (Entry<Range<Integer>, PatternConstruct> e : rawEntryMap.asMapOfRanges().entrySet()) {
-				entryMap.put(e.getKey().lowerEndpoint(), e.getKey().upperEndpoint(), true);
+			for (Entry<CodePointMap.Range, PatternConstruct> e : rawEntryMap.entrySet()) {
+				entryMap.put(e.getKey().min, e.getKey().max, true);
 			}
 		}
 

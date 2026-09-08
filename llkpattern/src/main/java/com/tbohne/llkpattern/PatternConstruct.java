@@ -6,6 +6,7 @@ import com.google.common.collect.RangeMap;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeMap;
 import com.google.common.collect.TreeRangeSet;
+import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.MatcherConstruct.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 
@@ -147,8 +148,8 @@ abstract class PatternConstruct {
 	abstract void buildMatcher();
 
 	/** Converts a Guava RangeMap (arbitrary bound types) into a CodePointMap ({@code [min,max)}). */
-	static TreeCodePointMap<PatternConstruct> toCodePointMap(RangeMap<Integer, PatternConstruct> rangeMap) {
-		TreeCodePointMap<PatternConstruct> result = new TreeCodePointMap<>();
+	static MutableCodePointMap<PatternConstruct> toCodePointMap(RangeMap<Integer, PatternConstruct> rangeMap) {
+		MutableCodePointMap<PatternConstruct> result = new ArrayCodePointMap<>();
 		for (Entry<Range<Integer>, PatternConstruct> e : rangeMap.asMapOfRanges().entrySet()) {
 			Range<Integer> canon = e.getKey().canonical(DiscreteDomain.integers());
 			result.put(canon.lowerEndpoint(), canon.upperEndpoint(), e.getValue());
@@ -176,9 +177,9 @@ abstract class PatternConstruct {
 		return null;
 	}
 
-	static TreeCodePointMap<PatternConstruct> mergeEntryMapRejectingAmbiguity(
-			String pattern, TreeCodePointMap<PatternConstruct> merged, PatternConstruct branch, String branchDescription) {
-		TreeCodePointMap<PatternConstruct> branchMap = toCodePointMap(branch.getEntryPointMap());
+	static MutableCodePointMap<PatternConstruct> mergeEntryMapRejectingAmbiguity(
+			String pattern, MutableCodePointMap<PatternConstruct> merged, PatternConstruct branch, String branchDescription) {
+		MutableCodePointMap<PatternConstruct> branchMap = toCodePointMap(branch.getEntryPointMap());
 		Entry<CodePointMap.Range, PatternConstruct> conflict = findFirstOverlap(merged, branchMap);
 		if (conflict != null) {
 			throw PatternSyntaxException.throwWithReferences(
@@ -191,16 +192,17 @@ abstract class PatternConstruct {
 					new PatternSyntaxException.CodePoint(conflict.getKey().max - 1),
 					", but a prior part of the same construct already claims those, which is not allowed");
 		}
-		return (TreeCodePointMap<PatternConstruct>) merged.union(branchMap);
+		merged.putAll(branchMap);
+		return merged;
 	}
 
 	/** Result of {@link #compileAndMergeCandidates}. */
 	static final class MergedEntries {
-		final TreeCodePointMap<PatternConstruct> ranges;
+		final MutableCodePointMap<PatternConstruct> ranges;
 		// Whichever candidate claimed "matches any other character" (at most one is allowed to).
 		final @Nullable PatternConstruct elseCandidate;
 
-		MergedEntries(TreeCodePointMap<PatternConstruct> ranges, @Nullable PatternConstruct elseCandidate) {
+		MergedEntries(MutableCodePointMap<PatternConstruct> ranges, @Nullable PatternConstruct elseCandidate) {
 			this.ranges = ranges;
 			this.elseCandidate = elseCandidate;
 		}
@@ -221,7 +223,7 @@ abstract class PatternConstruct {
 	 * QuantifiableConstruct.buildLoopEntryMap} respectively.
 	 */
 	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
-		TreeCodePointMap<PatternConstruct> merged = new TreeCodePointMap<>();
+		MutableCodePointMap<PatternConstruct> merged = new ArrayCodePointMap<>();
 		PatternConstruct elseCandidate = null;
 		for (int i = 0; i < candidates.size(); i++) {
 			PatternConstruct candidate = candidates.get(i);

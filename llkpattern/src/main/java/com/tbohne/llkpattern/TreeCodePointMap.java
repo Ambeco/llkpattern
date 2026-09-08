@@ -136,11 +136,14 @@ public final class TreeCodePointMap<V> implements MutableCodePointMap<V> {
 
   @Override
   public boolean equals(@Nullable Object other) {
-    return (other instanceof TreeCodePointMap) && rangeMap.equals(((TreeCodePointMap<?>) other).rangeMap);
+    // Compares logical entrySet() content, not raw rangeMap shape, so this agrees with
+    // ArrayCodePointMap's coalesced notion of equality (see its class doc) rather than being
+    // sensitive to how many separate put() calls built up an equivalent set of mappings.
+    return (other instanceof CodePointMap) && entrySet().equals(((CodePointMap<?>) other).entrySet());
   }
 
   @Override
   public int hashCode() {
-    return rangeMap.hashCode();
+    return entrySet().hashCode();
   }
 }

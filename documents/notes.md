@@ -307,6 +307,42 @@ Notes to self about how to work on this project, and other context that doesn't 
   worth keeping in mind when profiling tomorrow (the time gap may be more about work-per-allocation
   than allocation volume).
 
+## ArrayCodePointMap (2026-09-08)
+
+- Replaced `TreeCodePointMap`'s Guava `TreeRangeMap` delegation as `PatternConstruct`'s actual
+  ambiguity-detection/entry-map backing with `ArrayCodePointMap` (two flat arrays; see design.md's
+  "Code point range representation" section for the shape). `TreeCodePointMap` was kept, not
+  deleted, specifically to serve as the differential-test oracle (`CodePointMapDifferentialTest`)
+  -- Guava's implementation is well-exercised and a useful independent check on the new one.
+- `PatternConstruct` referenced the concrete `TreeCodePointMap` type directly in several places
+  (not just through the `CodePointMap` interface, contrary to the "swap doesn't require touching
+  callers" claim design.md/remaining_work.md made at the time) -- retyped those to
+  `MutableCodePointMap` first, as its own verified-green step, before introducing the new
+  implementation. That included dropping an unchecked `(TreeCodePointMap<PatternConstruct>)` cast
+  on `merged.union(branchMap)`'s result in `mergeEntryMapRejectingAmbiguity`, which only worked
+  because `CodePointMap.union`'s default hard-codes `new TreeCodePointMap<>(this)` -- replaced with
+  a direct `merged.putAll(branchMap)`.
+- Found and fixed two latent bugs while building this out, both in already-existing code, not new:
+  - `CodePointMap.ImmutableEntry` didn't override `equals`/`hashCode`, so `entrySet().equals(...)`
+    (which both `TreeCodePointMap` and `ArrayCodePointMap`'s `equals()` now rely on) silently
+    compared entries by object identity. Was previously masked because `TreeCodePointMap.equals`
+    compared the underlying `rangeMap` directly rather than going through `entrySet()`.
+  - Confirmed empirically (not just assumed) that Guava's `TreeRangeMap.put` does *not*
+    auto-coalesce adjacent equal-value ranges into one entry -- two separate `put` calls for
+    touching ranges produce two entries, not one. `ArrayCodePointMap` deliberately does coalesce
+    (capacity permitting), so `TreeCodePointMap.equals`/`hashCode` were changed from raw
+    `rangeMap.equals` to `entrySet()`-based comparison, so the two implementations agree on
+    equality for logically-identical maps regardless of how each was built up.
+- `CodePointMapTestBase` now holds the ~24 shared behavioral cases, run against both
+  implementations via `TreeCodePointMapTest`/`ArrayCodePointMapTest` (each just supplies a
+  factory). `ArrayCodePointMapTest` adds its own coalescing-specific cases.
+  `CodePointMapDifferentialTest` runs randomized `put`/`remove` sequences (200 trials of 50 ops
+  each, biased toward code points near `0x100000` -- the plane-16 boundary where a signed-int
+  packing bug would show up first) through both implementations and asserts they agree, both at
+  sampled code points and on a coalescing-normalized `entrySet()`.
+- Full suite after the swap: 1476 tests, 0 failing, 561 skipped (up from the prior 1443/561
+  baseline — the new coverage above accounts for the difference).
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

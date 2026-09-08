@@ -216,6 +216,23 @@ public interface CodePointMap<V> {
     public V setValue(V v) {
       throw new UnsupportedOperationException("ImmutableEntry doesn't support setValue");
     }
+
+    // Map.Entry's contract defines equals/hashCode in terms of getKey()/getValue(), which the
+    // default Object identity behavior doesn't satisfy -- needed so that entrySet().equals()
+    // (used by CodePointMap implementations' own equals()) does real content comparison.
+    @Override
+    public boolean equals(@Nullable Object other) {
+      if (!(other instanceof Map.Entry)) {
+        return false;
+      }
+      Map.Entry<?, ?> rhs = (Map.Entry<?, ?>) other;
+      return key.equals(rhs.getKey()) && value.equals(rhs.getValue());
+    }
+
+    @Override
+    public int hashCode() {
+      return key.hashCode() ^ value.hashCode();
+    }
   }
 
   final class ComplementCodePointMap<V> implements CodePointMap<V> {

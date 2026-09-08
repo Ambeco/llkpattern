@@ -2,9 +2,7 @@ package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -42,13 +40,18 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   // and comparisons here always extract min rather than comparing keys as raw ints -- see the
   // class doc's note on avoiding signed-int comparison pitfalls on the packed key itself).
   private long[] keys;
-  private Object[] values; // really V[], see get(int)
+  private V[] values;
   private int size;
 
   public ArrayCodePointMap() {
     keys = new long[0];
-    values = new Object[0];
+    values = newValuesArray(0);
     size = 0;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <V> V[] newValuesArray(int length) {
+    return (V[]) new Object[length];
   }
 
   public ArrayCodePointMap(CodePointMap<V> other) {
@@ -89,11 +92,6 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     return result;
   }
 
-  @SuppressWarnings("unchecked")
-  private V valueAt(int index) {
-    return (V) values[index];
-  }
-
   @Override
   public boolean isEmpty() {
     return size == 0;
@@ -116,7 +114,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   public Set<Entry<Range, V>> entrySet() {
     Set<Entry<Range, V>> result = new java.util.LinkedHashSet<>();
     for (int i = 0; i < size; i++) {
-      result.add(new ImmutableEntry<>(new Range(keyMin(keys[i]), keyMax(keys[i])), valueAt(i)));
+      result.add(new ImmutableEntry<>(new Range(keyMin(keys[i]), keyMax(keys[i])), values[i]));
     }
     return result;
   }
@@ -125,7 +123,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   public @PolyNull V getOrDefault(int codePoint, @Nullable V defaultValue) {
     int idx = floorIndex(codePoint);
     if (idx >= 0 && codePoint < keyMax(keys[idx])) {
-      return valueAt(idx);
+      return values[idx];
     }
     return defaultValue;
   }
@@ -139,7 +137,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
       int lo = Math.max(min, keyMin(key));
       int hi = Math.min(max, keyMax(key));
       if (lo < hi) {
-        result.put(lo, hi, valueAt(i));
+        result.put(lo, hi, values[i]);
       }
       if (keyMin(key) >= max) {
         break;
@@ -160,7 +158,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
         int lo = Math.max(min, keyMin(key));
         int hi = Math.min(max, keyMax(key));
         if (lo < hi) {
-          V mine = valueAt(i);
+          V mine = values[i];
           if (!mine.equals(otherEntry.getValue())) {
             throw new CodePointMap.ConflictingMappingException(
                 "this map has value "
@@ -196,7 +194,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     int idx = floorIndex(min) + 1; // insertion point: first entry with min > `min`
     long key = packKey(min, max - min - 1);
     long[] newKeys = new long[size + 1];
-    Object[] newValues = new Object[size + 1];
+    V[] newValues = newValuesArray(size + 1);
     System.arraycopy(keys, 0, newKeys, 0, idx);
     System.arraycopy(values, 0, newValues, 0, idx);
     newKeys[idx] = key;
@@ -211,11 +209,11 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   /** Merges adjacent entries with equal values, restricted to entries touching {@code [min, max)}'s neighborhood. */
   private void coalesceAround(int min, int max) {
     List<Long> newKeys = new ArrayList<>(size);
-    List<Object> newValues = new ArrayList<>(size);
+    List<V> newValues = new ArrayList<>(size);
     for (int i = 0; i < size; i++) {
       if (!newKeys.isEmpty()) {
         long prevKey = newKeys.get(newKeys.size() - 1);
-        Object prevValue = newValues.get(newValues.size() - 1);
+        V prevValue = newValues.get(newValues.size() - 1);
         if (keyMax(prevKey) == keyMin(keys[i])
             && java.util.Objects.equals(prevValue, values[i])
             && keyCount(prevKey) + 1 + keyCount(keys[i]) + 1 - 1 <= MAX_COUNT) {
@@ -231,7 +229,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     for (int i = 0; i < keys.length; i++) {
       keys[i] = newKeys.get(i);
     }
-    values = newValues.toArray();
+    values = newValues.toArray(newValuesArray(newValues.size()));
     size = keys.length;
   }
 
@@ -258,7 +256,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
       return;
     }
     List<Long> newKeys = new ArrayList<>(size);
-    List<Object> newValues = new ArrayList<>(size);
+    List<V> newValues = new ArrayList<>(size);
     for (int i = 0; i < size; i++) {
       long key = keys[i];
       int entryMin = keyMin(key);
@@ -281,7 +279,7 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     for (int i = 0; i < keys.length; i++) {
       keys[i] = newKeys.get(i);
     }
-    values = newValues.toArray();
+    values = newValues.toArray(newValuesArray(newValues.size()));
     size = keys.length;
   }
 

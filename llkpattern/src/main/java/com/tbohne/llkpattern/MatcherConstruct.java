@@ -275,12 +275,6 @@ abstract class MatcherConstruct {
 	 * character, the chosen path's own matcher does.
 	 */
 	static final class DispatchMatcherConstruct extends MultiDispatchingMatcherConstruct {
-		/** Self-registering: this becomes {@code owner.matcher}, auto-populated from its entry set. */
-		DispatchMatcherConstruct(PatternConstruct owner) {
-			super(owner);
-			populate(owner.getEntryPointMap(), owner.getEntryElse());
-		}
-
 		/**
 		 * Self-registering variant that populates from an explicit entry map/else instead of {@code
 		 * owner}'s own {@code entryMap}/{@code entryElse} fields -- needed by {@code
@@ -289,7 +283,11 @@ abstract class MatcherConstruct {
 		 * would make {@code populate()} resolve every entry to {@code owner.matcher} -- i.e. to this
 		 * very node, once self-registration sets it -- an infinite self-dispatch loop. {@code
 		 * rawEntryMap}/{@code rawEntryElse} keep the original, immediately-resolvable candidate
-		 * identities this constructor actually needs.
+		 * identities this constructor actually needs. (A simpler self-registering constructor that
+		 * just read {@code owner.getEntryPointMap()} directly used to exist here too, but had no
+		 * callers -- removed 2026-09-08 alongside entryMap's Boolean-value migration, which would
+		 * have made it read the wrong thing anyway: entryMap's values are always {@code true}, not a
+		 * dispatch target -- see PatternConstruct.entryMap's doc.)
 		 */
 		DispatchMatcherConstruct(PatternConstruct owner, RangeMap<Integer, PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
 			super(owner);

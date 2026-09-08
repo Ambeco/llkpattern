@@ -20,8 +20,6 @@ import java.util.Map;
 import java.util.Set;
 
 abstract class PatternConstruct {
-	static final RangeMap<Integer, PatternConstruct> EMPTY_MAP = TreeRangeMap.create();
-
 	final int startIndex;
 	int endIndex = -1;
 
@@ -44,13 +42,21 @@ abstract class PatternConstruct {
 	// thread the continuation through again.
 	@MonotonicNonNull PatternConstruct next;
 
-	// Which PatternConstruct handles each possible next code point, once this construct (and
-	// anything it can trivially skip, e.g. an optional quantifier) has matched. Populated by
-	// buildEntryMap() (lazily, via ensureEntryPointBuilt() -- see getEntryPointMap()/getEntryElse()
-	// below); consumed while compiling a containing QuantifiedUnion/Sequence to detect ambiguous
-	// branches, and to build the MatcherConstruct graph. Never read directly outside this
-	// construct's own buildEntryMap() -- every other reader goes through the getters.
-	RangeMap<Integer, PatternConstruct> entryMap = TreeRangeMap.create();
+	// The set of code points this construct claims as its own entry point, once it (and anything
+	// it can trivially skip, e.g. an optional quantifier) has matched. Populated by buildEntryMap()
+	// (lazily, via ensureEntryPointBuilt() -- see getEntryPointMap()/getEntryElse() below);
+	// consumed while compiling a containing QuantifiedUnion/Sequence to detect ambiguous branches,
+	// and to build the MatcherConstruct graph. Never read directly outside this construct's own
+	// buildEntryMap() -- every other reader goes through the getters.
+	//
+	// The value type is Boolean (always TRUE) rather than PatternConstruct, even though this looks
+	// exactly like a "code point -> owning construct" map: every entryMap.put() call in every
+	// buildEntryMap() override below inserts `this`, never anything else, so the value carries zero
+	// information -- it's always inferable from *which* construct's entryMap you're looking at, and
+	// every consumer already knows that (see e.g. Sequence.buildEntryMap's own re-keying-onto-`this`
+	// comment). A genuinely multi-valued map DOES exist -- QuantifiedUnion.rawEntryMap, where an
+	// entry's value is which distinct branch owns it -- but that's a different field entirely.
+	MutableCodePointMap<Boolean> entryMap = new ArrayCodePointMap<>();
 	@MonotonicNonNull PatternConstruct entryElse;
 
 	private static final int ENTRY_POINT_NOT_STARTED = 0;
@@ -88,7 +94,7 @@ abstract class PatternConstruct {
 	 * compilation" section. Lazily triggers {@link #buildEntryMap} on first call, independent of
 	 * whether this construct has been (or is being) {@link #compile}d.
 	 */
-	final RangeMap<Integer, PatternConstruct> getEntryPointMap() {
+	final CodePointMap<Boolean> getEntryPointMap() {
 		ensureEntryPointBuilt();
 		return entryMap;
 	}
@@ -148,16 +154,19 @@ abstract class PatternConstruct {
 
 	abstract void buildMatcher();
 
-	/** Converts a Guava RangeMap (arbitrary bound types) into a CodePointMap ({@code [min,max)}). */
-	static MutableCodePointMap<PatternConstruct> toCodePointMap(RangeMap<Integer, PatternConstruct> rangeMap) {
-		Map<Range<Integer>, PatternConstruct> asMap = rangeMap.asMapOfRanges();
+	/**
+	 * Converts {@code branch}'s own entry-point ranges (a {@code CodePointMap<Boolean>} -- see
+	 * {@link #entryMap}'s doc for why the value there carries no information) into a {@code
+	 * CodePointMap<PatternConstruct>} whose every entry maps to {@code branch} itself -- the actual
+	 * identity {@link #entryMap} never bothered to store.
+	 */
+	static MutableCodePointMap<PatternConstruct> toValueMap(CodePointMap<Boolean> ranges, PatternConstruct branch) {
 		MutableCodePointMap<PatternConstruct> result = new ArrayCodePointMap<>();
-		result.ensureCapacity(asMap.size());
-		// asMap's iteration order is ascending by range (a RangeMap's own invariant), so this can
-		// use appendSorted's O(1)-amortized bulk path instead of put()'s general one.
-		for (Entry<Range<Integer>, PatternConstruct> e : asMap.entrySet()) {
-			Range<Integer> canon = e.getKey().canonical(DiscreteDomain.integers());
-			result.appendSorted(canon.lowerEndpoint(), canon.upperEndpoint(), e.getValue());
+		result.ensureCapacity(ranges.entrySet().size());
+		// ranges.entrySet()'s iteration order is ascending (CodePointMap's own ordering contract),
+		// so this can use appendSorted's O(1)-amortized bulk path instead of put()'s general one.
+		for (Entry<CodePointMap.Range, Boolean> e : ranges.entrySet()) {
+			result.appendSorted(e.getKey().min, e.getKey().max, branch);
 		}
 		return result;
 	}
@@ -187,7 +196,7 @@ abstract class PatternConstruct {
 
 	static MutableCodePointMap<PatternConstruct> mergeEntryMapRejectingAmbiguity(
 			String pattern, MutableCodePointMap<PatternConstruct> merged, PatternConstruct branch, String branchDescription) {
-		MutableCodePointMap<PatternConstruct> branchMap = toCodePointMap(branch.getEntryPointMap());
+		MutableCodePointMap<PatternConstruct> branchMap = toValueMap(branch.getEntryPointMap(), branch);
 		Entry<CodePointMap.Range, PatternConstruct> conflict = findFirstOverlap(merged, branchMap);
 		if (conflict != null) {
 			throw PatternSyntaxException.throwWithReferences(
@@ -308,7 +317,7 @@ abstract class PatternConstruct {
 			}
 			MergedEntries result = mergeEntryPoints(pattern, candidates, "loop part");
 			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				entryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), this);
+				entryMap.put(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = result.entryElse() != null ? this : null;
 		}
@@ -384,8 +393,8 @@ abstract class PatternConstruct {
 				// PatternParser, already done by the caller -- so just pass through to `next` exactly
 				// as an empty Sequence element would, instead of compiling as its own dispatch node.
 				// Re-keyed onto `this` rather than aliased -- same reasoning as the main branch below.
-				for (Entry<Range<Integer>, PatternConstruct> e : next.getEntryPointMap().asMapOfRanges().entrySet()) {
-					entryMap.put(e.getKey(), this);
+				for (Entry<CodePointMap.Range, Boolean> e : next.getEntryPointMap().entrySet()) {
+					entryMap.put(e.getKey().min, e.getKey().max, true);
 				}
 				entryElse = next.getEntryElse() != null ? this : null;
 				// matcher isn't assigned here (unlike the pre-split design) -- next.matcher may not be
@@ -421,7 +430,7 @@ abstract class PatternConstruct {
 			// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
 			entryElse = rawEntryElse != null ? this : null;
 			for (Entry<Range<Integer>, PatternConstruct> e : rawEntryMap.asMapOfRanges().entrySet()) {
-				entryMap.put(e.getKey(), this);
+				entryMap.put(e.getKey().lowerEndpoint(), e.getKey().upperEndpoint(), true);
 			}
 		}
 
@@ -496,9 +505,8 @@ abstract class PatternConstruct {
 			// never finalized (group(n) returned null even though the whole pattern matched). Found
 			// via GroupSyntaxTest. Fixed by re-keying every range onto `this` instead of realNext,
 			// same as any other PatternConstruct's own buildEntryMap does for itself.
-			for (java.util.Map.Entry<Range<Integer>, PatternConstruct> e :
-					realNext.getEntryPointMap().asMapOfRanges().entrySet()) {
-				entryMap.put(e.getKey(), this);
+			for (Entry<CodePointMap.Range, Boolean> e : realNext.getEntryPointMap().entrySet()) {
+				entryMap.put(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = realNext.getEntryElse() != null ? this : null;
 		}
@@ -541,8 +549,8 @@ abstract class PatternConstruct {
 			// path, i.e. does it lead to `next`" test whenever `next` is a Sequence. See
 			// remaining_work.md's dated bug entry (a quantified loop immediately followed by a
 			// composite construct, e.g. "(a)(b)*(z)", crashed at match time because of exactly this).
-			for (Entry<Range<Integer>, PatternConstruct> e : patterns.get(0).getEntryPointMap().asMapOfRanges().entrySet()) {
-				entryMap.put(e.getKey(), this);
+			for (Entry<CodePointMap.Range, Boolean> e : patterns.get(0).getEntryPointMap().entrySet()) {
+				entryMap.put(e.getKey().min, e.getKey().max, true);
 			}
 			entryElse = patterns.get(0).getEntryElse() != null ? this : null;
 		}
@@ -576,7 +584,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			entryMap.put(Range.singleton(value.codePointAt(0)), this);
+			entryMap.put(value.codePointAt(0), true);
 		}
 
 		@Override
@@ -613,7 +621,8 @@ abstract class PatternConstruct {
 				return;
 			}
 			for (Range<Integer> range : firstChars.asRanges()) {
-				entryMap.put(range, this);
+				Range<Integer> canon = range.canonical(DiscreteDomain.integers());
+				entryMap.put(canon.lowerEndpoint(), canon.upperEndpoint(), true);
 			}
 		}
 
@@ -671,7 +680,8 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			for (Range<Integer> range : validRanges().asRanges()) {
-				entryMap.put(range, this);
+				Range<Integer> canon = range.canonical(DiscreteDomain.integers());
+				entryMap.put(canon.lowerEndpoint(), canon.upperEndpoint(), true);
 			}
 			entryElse = dotElse;
 		}
@@ -700,7 +710,8 @@ abstract class PatternConstruct {
 			// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
 			// that happens in buildMatcher(), below.
 			for (Range<Integer> range : delegate.validRanges().asRanges()) {
-				entryMap.put(range, this);
+				Range<Integer> canon = range.canonical(DiscreteDomain.integers());
+				entryMap.put(canon.lowerEndpoint(), canon.upperEndpoint(), true);
 			}
 		}
 
@@ -828,8 +839,8 @@ abstract class PatternConstruct {
 			RangeSet<Integer> peekRanges = null;
 			if (next.getEntryElse() == null) {
 				peekRanges = TreeRangeSet.create();
-				for (Range<Integer> range : next.getEntryPointMap().asMapOfRanges().keySet()) {
-					peekRanges.add(range);
+				for (Entry<CodePointMap.Range, Boolean> e : next.getEntryPointMap().entrySet()) {
+					peekRanges.add(Range.closedOpen(e.getKey().min, e.getKey().max));
 				}
 			}
 			Wordness peek = classify(peekRanges, wordSet);

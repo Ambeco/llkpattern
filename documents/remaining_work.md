@@ -134,20 +134,26 @@ diffed against on later runs to catch regressions.
 - [ ] `PatternConstruct.compile()` is typed `@Nullable MatcherConstruct` but, now that every construct type actually builds a matcher, likely always returns non-null in practice — worth dropping the `@Nullable` (and fixing `Ll1Pattern.compile()`'s unchecked-nullable assignment).
 - [ ] `PatternSyntaxException.Reference` is constructed in a couple of places (e.g. the old, since-rewritten ambiguity-detection attempt) but was never actually handled in `PatternSyntaxException.throwWithReferences` — it silently falls through to `Object.toString()` (`Reference@<hashcode>`). Either implement it (render the referenced snippet, as `CodePoint`/`CodePointReference` do) or remove it if `CodePoint`-based messages turn out to be sufficient. Current loop/union ambiguity messages avoid it, using plain indices/`CodePoint` instead.
 - [ ] Migrate `ComplexCharacter`'s direct Guava `RangeSet<Integer>` usage onto `CodePointMap`, or decide it should stay separate (`ComplexCharacter` represents a single character class's ranges, which is a slightly different job than `CodePointMap`'s "ranges to values"; worth a deliberate decision rather than reflexive migration).
+- [ ] **`QuantifiedUnion.rawEntryMap` is still a Guava `RangeMap`**, unlike every other
+      entry-point-shaped field (`PatternConstruct.entryMap`, migrated to `CodePointMap<Boolean>`
+      2026-09-08 -- see notes.md). Unlike `entryMap`, `rawEntryMap` is genuinely multi-valued (real
+      per-branch `PatternConstruct` identities, consumed by `DispatchMatcherConstruct` to build the
+      runtime dispatch graph), so it would migrate to `ArrayCodePointMap<PatternConstruct>` rather
+      than `<Boolean>` -- but that also means `DispatchMatcherConstruct`'s `populate()` method and
+      constructors (in `MatcherConstruct.java`) would need to accept a `CodePointMap<PatternConstruct>`
+      instead of `RangeMap<Integer, PatternConstruct>`, touching a second file. Smaller in scope than
+      the `entryMap` migration (one field, one construct type) but not yet attempted.
 - [ ] **`ArrayCodePointMap`/`TreeCodePointMap` immutable+builder split**: floated in the original
       design sketch for the array-backed map, but neither implementation actually has this split
       today (both are mutable-only) -- worth doing for both together if immutability is ever
       wanted, rather than giving only the newer class a shape the older one lacks.
-- [ ] **Profile `ArrayCodePointMap`'s remaining `llkCompile` regression**: after fixing an O(n^2)
-      blowup found via `CorpusBenchmark` post-swap (see notes.md's 2026-09-08 entry for the full
-      story), `llkCompile` is still ~+50% slower than the pre-`ArrayCodePointMap` baseline (real
-      signal, not noise -- confirmed against `regexCompile`'s same-run noise floor). Project owner
-      plans to profile and find where the remaining time goes; candidates raised in discussion:
-      `floorIndex`'s binary search over the very small maps that dominate `PatternConstruct`'s
-      usage (worth comparing against a linear scan below some size threshold, maybe ~64 entries --
-      not yet tried, deliberately deferred pending profiling data rather than guessed at), or
-      `entrySet()`'s remaining per-call allocation (e.g. `putAll`'s `other.entrySet().size()`
-      capacity-hint call still walks/builds a full view just to count it).
+- [ ] **`llkMatch` +12% after the `entryMap` migration below, unexplained**: `CorpusBenchmark`'s
+      `llkCompile` regression is fully resolved (see notes.md's 2026-09-08 entries), but the same
+      run showed `llkMatch` (compiled-matcher runtime, not compile time) up ~+12% against a same-run
+      noise floor of ~+-3-5% -- outside that floor, but nothing in the `entryMap`/`CodePointMap`
+      changes should touch match-time behavior at all. Worth a follow-up benchmark run to see if it
+      persists before spending real investigation time on it (could just be a noisier run than the
+      simple regexCompile/regexMatch noise-floor comparison caught).
 - [ ] **Followup experiment** for `ArrayCodePointMap`: shrink the range field to 10 bits and use the
     freed 11th bit as a mask-vs-range flag. When set, the 10 "range" bits are instead a bitmask of
     which of the 10 code points *after* `min` also map to this value (not required to be

@@ -399,6 +399,47 @@ Notes to self about how to work on this project, and other context that doesn't 
   array capacity from 16 down to 1 (most instances here are small -- one per union/loop-dispatch
   node in `PatternConstruct`, and many have a single entry) -- both raised by the project owner
   during this same investigation, not separately discovered.
+- Tried the project owner's linear-scan-under-65-entries idea for `floorIndex` (kept, harmless, but
+  flat: -1.0% on `llkCompile`, within that run's own noise floor). A follow-up JMH run with `-prof
+  stack` (JMH's built-in sampling profiler -- crude and safepoint-biased, ~50% of samples came back
+  as `<stack is empty>`, but still useful as a first look) pointed somewhere unexpected: the named
+  hot spots weren't `ArrayCodePointMap` at all -- they were `java.util.TreeMap.compare`/
+  `getCeilingEntry`/`put`/`fixAfterInsertion`/`getLowerEndpoint`/`successor` and
+  `com.google.common.collect.Range.compareOrThrow`, ~31% of attributed RUNNABLE samples.
+- That led to the actual fix: `PatternConstruct.entryMap` (every AST node's own "what comes next"
+  field) was **never migrated off Guava's `RangeMap`/`TreeRangeMap` at all** -- the original
+  `ArrayCodePointMap` swap only touched the later ambiguity-check conversion step
+  (`toCodePointMap`/`mergeEntryMapRejectingAmbiguity`), not `entryMap` itself, which every single
+  `buildEntryMap()` override across every construct type populated directly via Guava calls. Since
+  every one of `entryMap`'s ~9 `.put()` call sites inserted `this` as the value (verified by reading
+  all of them, not assumed), and every caller reading another construct's `entryMap` already re-keys
+  onto a construct it has in hand rather than trusting the stored value (confirmed by an existing
+  comment: "re-key every range onto `this` instead of aliasing ... directly"), the project owner
+  correctly guessed the value carried zero information and could become `CodePointMap<Boolean>`
+  (values always `true`) instead of `RangeMap<Integer, PatternConstruct>` -- migrated 2026-09-08:
+  - `entryMap`'s field type, `getEntryPointMap()`'s return type, and every `.put()` call site
+    changed accordingly; using `CodePointMap`'s native `[min, max)` int convention directly also
+    eliminated the Guava `Range.canonical(DiscreteDomain.integers())` dance every call site used to
+    need. `toCodePointMap` (which converted a source `RangeMap`'s existing values) became
+    `toValueMap` (which stamps a given `PatternConstruct` onto ranges from a `CodePointMap<Boolean>`
+    that never had real values to begin with).
+  - `QuantifiedUnion.rawEntryMap` is a *different*, genuinely multi-valued field (it retains real
+    distinct branch identities, needed by `DispatchMatcherConstruct` to build the actual runtime
+    dispatch graph) -- deliberately left as Guava `RangeMap` in this pass, not touched.
+  - Found and removed one piece of dead code while updating call sites: `DispatchMatcherConstruct`
+    had a self-registering constructor (`DispatchMatcherConstruct(PatternConstruct owner)`) that
+    read `owner.getEntryPointMap()` directly -- it had zero callers anywhere in the codebase, and
+    would have needed `entryMap`'s old (fictional) multi-valued semantics to make sense.
+  - Also found and removed: the unused `PatternConstruct.EMPTY_MAP` constant (a `RangeMap`,
+    referenced nowhere).
+  - Result: `llkCompile` 33.8ms -> **16.4ms/op**, a -51.5% drop -- and, notably, -23.7% *below* the
+    very first pre-`ArrayCodePointMap` baseline (21.5ms), not just a recovery. The full suite
+    (1477 tests, 0 failing, 561 skipped) passed on the first try after this change, both at compile
+    and at test-run time.
+  - One loose end: the same run showed `llkMatch` (runtime, not compile time) up ~+12% against a
+    ~+-3-5% same-run noise floor -- outside that floor, but nothing about this change should affect
+    match-time behavior. Flagged in remaining_work.md as unexplained, pending a repeat run before
+    spending real investigation time on it.
 
 ## Misc
 

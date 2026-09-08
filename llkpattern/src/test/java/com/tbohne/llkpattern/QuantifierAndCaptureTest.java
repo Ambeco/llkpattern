@@ -164,4 +164,41 @@ public class QuantifierAndCaptureTest {
     assertThat(matches("(a)*b", "aaab"), is(true));
     assertThat(matches("(a)*b", "b"), is(true));
   }
+
+  // --- A quantified/loop construct immediately followed by a COMPOSITE (non-leaf) construct --
+  // a capturing group, a non-capturing group, or a multi-literal sequence, rather than a bare
+  // literal/character class -- see remaining_work.md's dated bug entry: the loop's own "keep
+  // looping vs. exit" dispatch used to misroute the exit path back into the loop body whenever
+  // `next` was one of these, since only leaf constructs re-keyed their entryMap's values onto
+  // themselves for the loop's exit-identity check to see.
+
+  @Test
+  public void quantifiedGroup_followedByCapturingGroup_zeroIterations_choosesCorrectExit() {
+    Matcher m = Ll1Pattern.compile("(a)(b)*(z)").matcher("az");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("a"));
+    assertThat(m.group(2), nullValue());
+    assertThat(m.group(3), is("z"));
+  }
+
+  @Test
+  public void quantifiedGroup_followedByCapturingGroup_someIterations_choosesCorrectExit() {
+    Matcher m = Ll1Pattern.compile("(a)(b)*(z)").matcher("abbbz");
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is("a"));
+    assertThat(m.group(2), is("b"));
+    assertThat(m.group(3), is("z"));
+  }
+
+  @Test
+  public void quantifiedGroup_followedByNonCapturingGroup_choosesCorrectExit() {
+    assertThat(matches("(b)*(?:zz)", "zz"), is(true));
+    assertThat(matches("(b)*(?:zz)", "bbbzz"), is(true));
+  }
+
+  @Test
+  public void quantifiedGroup_followedByMultiLiteralSequence_choosesCorrectExit() {
+    assertThat(matches("(b)*cd", "cd"), is(true));
+    assertThat(matches("(b)*cd", "bbcd"), is(true));
+  }
 }

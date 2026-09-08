@@ -232,6 +232,18 @@ abstract class PatternConstruct {
 		final List<PatternConstruct> constructs = new ArrayList<>();
 		boolean tempFlags = false;
 
+		// The real (non-identity-rewritten) merged entry map/else this union's OWN dispatch is built
+		// from, for the capturing-and-unquantified case -- see buildMatcher() below. Needed because
+		// the inherited entryMap/entryElse fields are deliberately re-keyed onto `this` (like
+		// Sequence's own fix, see its doc), for ancestors' identity checks -- but buildMatcher()'s
+		// capturing branch builds its internal (non-self-registering) DispatchMatcherConstruct
+		// *before* `this.matcher` gets set (that only happens once the wrapping
+		// BeginCaptureMatcherConstruct is constructed afterward), so reading `this.entryMap`'s
+		// rekeyed-to-`this` values there would resolve `.matcher` to null. rawEntryMap/rawEntryElse
+		// keep the original, immediately-resolvable candidate identities for that one internal use.
+		RangeMap<Integer, PatternConstruct> rawEntryMap = TreeRangeMap.create();
+		@Nullable PatternConstruct rawEntryElse;
+
 		QuantifiedUnion(String pattern, int startIndex, int parentFlags) {
 			super(pattern, startIndex);
 			this.parentFlags = parentFlags;
@@ -259,8 +271,11 @@ abstract class PatternConstruct {
 				// zero-width and always succeeds -- its only job was toggling `flags` for
 				// PatternParser, already done by the caller -- so just pass through to `next` exactly
 				// as an empty Sequence element would, instead of compiling as its own dispatch node.
-				entryMap = next.entryMap;
-				entryElse = next.entryElse;
+				// Re-keyed onto `this` rather than aliased -- same reasoning as the main branch below.
+				for (Entry<Range<Integer>, PatternConstruct> e : next.entryMap.asMapOfRanges().entrySet()) {
+					entryMap.put(e.getKey(), this);
+				}
+				entryElse = next.entryElse != null ? this : null;
 				matcher = next.matcher;
 				return;
 			}
@@ -280,9 +295,17 @@ abstract class PatternConstruct {
 				compileTarget.compile(next);
 			}
 			MergedEntries result = compileAndMergeCandidates(pattern, constructs, compileTarget, "union subpattern");
-			entryElse = result.entryElse();
+			rawEntryElse = result.entryElse();
 			for (Entry<CodePointMap.Range, PatternConstruct> e : result.ranges.entrySet()) {
-				entryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
+				rawEntryMap.put(Range.closedOpen(e.getKey().min, e.getKey().max), e.getValue());
+			}
+			// Re-keyed onto `this` rather than kept as whatever nested candidate built each range --
+			// see Sequence.buildEntryMap's doc for why (same fix, same reason: a containing loop's
+			// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
+			// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
+			entryElse = rawEntryElse != null ? this : null;
+			for (Entry<Range<Integer>, PatternConstruct> e : rawEntryMap.asMapOfRanges().entrySet()) {
+				entryMap.put(e.getKey(), this);
 			}
 		}
 
@@ -292,10 +315,16 @@ abstract class PatternConstruct {
 				return; // matcher was already built by buildLoopEntryMapAndMatcher, above.
 			}
 			if (isCapturing()) {
-				MatcherConstruct dispatch = new DispatchMatcherConstruct(entryMap, entryElse, flags);
+				// Uses rawEntryMap/rawEntryElse, not the (rekeyed-to-`this`) entryMap/entryElse fields --
+				// see rawEntryMap's doc: `this.matcher` isn't set yet at this point.
+				MatcherConstruct dispatch = new DispatchMatcherConstruct(rawEntryMap, rawEntryElse, flags);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
 			} else {
-				new DispatchMatcherConstruct(this);
+				// Also uses rawEntryMap/rawEntryElse, not entryMap/entryElse -- see rawEntryMap's doc:
+				// this node itself becomes `this.matcher`, so populating from the rekeyed-to-`this`
+				// entryMap would resolve every entry back to this very node (an infinite self-dispatch
+				// loop) instead of to the actual branch matchers.
+				new DispatchMatcherConstruct(this, rawEntryMap, rawEntryElse);
 			}
 		}
 	}
@@ -370,8 +399,17 @@ abstract class PatternConstruct {
 				part.compile(tail);
 				tail = part;
 			}
-			entryMap = patterns.get(0).entryMap;
-			entryElse = patterns.get(0).entryElse;
+			// Re-key every range onto `this` instead of aliasing patterns.get(0).entryMap directly --
+			// same fix as CaptureEndMarker (2026-09-06, see its own doc): aliasing leaves every entry's
+			// VALUE as whatever nested leaf construct originally built the range, not this Sequence,
+			// which silently breaks identity checks like a containing loop's "is this range the exit
+			// path, i.e. does it lead to `next`" test whenever `next` is a Sequence. See
+			// remaining_work.md's dated bug entry (a quantified loop immediately followed by a
+			// composite construct, e.g. "(a)(b)*(z)", crashed at match time because of exactly this).
+			for (Entry<Range<Integer>, PatternConstruct> e : patterns.get(0).entryMap.asMapOfRanges().entrySet()) {
+				entryMap.put(e.getKey(), this);
+			}
+			entryElse = patterns.get(0).entryElse != null ? this : null;
 		}
 
 		@Override

@@ -98,6 +98,47 @@ Notes to self about how to work on this project, and other context that doesn't 
   - Numbered backreferences only support a single digit (`\1`-`\9`), unlike `java.util.regex`'s
     greedy multi-digit parsing -- a deliberate scope-limiting decision for this session, not a
     bug; see remaining_work.md.
+- 2026-09-07 (same day, later): fixed the quantified-loop-followed-by-composite-construct
+  NullPointerException noted above, rather than leaving it for the flagged background task (short
+  session, bug fresh in context). Root cause confirmed as diagnosed: `Sequence.buildEntryMap` and
+  `QuantifiedUnion.buildEntryMap` were aliasing their `entryMap` to whatever nested leaf actually
+  built each range, instead of re-keying onto `this` the way leaf constructs and `CaptureEndMarker`
+  already did -- fixed both to re-key, plus the analogous `owner.entryMap`/`owner.entryElse`
+  population at the end of `DispatchMatcherConstruct`'s loop-flavored constructor (same aliasing
+  bug, for when a loop construct itself later serves as some ancestor's `next`).
+  - This straightforward-sounding fix broke two more things on the first attempt, both found by
+    just running the full suite immediately after -- worth recording since each was a real,
+    non-obvious consequence of the same rekeying idea:
+    1. Rekeying `QuantifiedUnion`'s entryMap onto `this` broke its OWN capturing-branch matcher
+       construction: `buildMatcher()`'s capturing case builds an internal (non-self-registering)
+       `DispatchMatcherConstruct(entryMap, entryElse, flags)` *before* `this.matcher` gets set
+       (only the wrapping `BeginCaptureMatcherConstruct`, built afterward, sets it) -- so reading
+       the now-rekeyed-to-`this` `entryMap` there resolved every `.matcher` lookup to `null`.
+       Fixed by adding a second, non-rekeyed `rawEntryMap`/`rawEntryElse` pair on `QuantifiedUnion`,
+       populated alongside the public (rekeyed) `entryMap`/`entryElse` in `buildEntryMap`, and used
+       only by `buildMatcher()`'s own internal dispatch construction.
+    2. The *non-capturing* case has the identical hazard, missed on the first pass: `new
+       DispatchMatcherConstruct(this)` self-registers (`owner.matcher = this`) and THEN calls
+       `populate(owner.entryMap, owner.entryElse)` -- since `owner.entryMap` was rekeyed onto
+       `owner`, `populate()` resolved every entry to `owner.matcher`, which IS this very node --
+       an infinite self-dispatch loop, caught immediately as a `StackOverflowError` in
+       `GroupSyntaxTest`'s alternation tests. Fixed by adding a new self-registering
+       `DispatchMatcherConstruct(PatternConstruct owner, RangeMap, PatternConstruct)` constructor
+       overload that populates from explicit (`rawEntryMap`/`rawEntryElse`) arguments instead of
+       `owner`'s own fields, and using it for the non-capturing case too.
+  - Net rule that emerged: rekeying a construct's `entryMap` onto `this` is only safe when that
+    construct's own `buildMatcher()` never itself needs to resolve `.matcher` through that same
+    (now-self-referential) map -- true for `Sequence` (whose `matcher` is a direct alias to its
+    first element's real matcher) and `CaptureEndMarker` (whose `matcher` is built from
+    `realNext.matcher` directly), but NOT for `QuantifiedUnion` (whose own dispatch node is BUILT
+    FROM `entryMap`), which needed the raw/public split instead.
+  - Retagged the scraped-corpus golden files again after this fix (same `RetagGolden` one-off
+    pattern, written and deleted again): BMP 2 rows retagged (the previously-`UNEXPECTED`
+    `(あ+ぃ)+` row now `AGREES`, and the previously-`UNIMPLEMENTED: NullPointerException`
+    backreference row now `AGREES`), supplementary 3 rows retagged (the equivalent
+    non-BMP-codepoint versions of both). Full suite green afterward (including the new
+    `QuantifierAndCaptureTest` regression coverage added for this fix): 1423 tests, 0 failing,
+    561 skipped.
 
 ## Tooling gotchas (this dev machine, Windows + git-bash)
 

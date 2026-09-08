@@ -98,21 +98,6 @@ dated AGREES-count snapshot rather than tracking that number here.
 
 ## Core implementation
 
-- [ ] **A quantified/loop construct immediately followed by a composite (non-leaf) construct
-      crashes at match time with a NullPointerException** -- found 2026-09-07 while implementing
-      backreferences (reproduces on a plain pattern with no backreference at all, e.g.
-      `(a)(b)*(z)` against `"az"`). Root cause: `DispatchMatcherConstruct`'s loop-flavored
-      constructor and `QuantifiedUnion.buildEntryMap`'s own loop-exit detection use `e.getValue()
-      != next` identity checks to distinguish "the loop is exiting toward `next`" from "keep
-      looping", but only leaf constructs (`ComplexCharacter`/`LiteralString`/`BackReference`/
-      `CaptureEndMarker`) re-key their `entryMap` values onto `this` -- `Sequence`/`QuantifiedUnion`
-      alias their `entryMap` to whatever nested leaf actually built the range, so the identity
-      check silently never matches when `next` is itself a `Sequence`/`QuantifiedUnion` (a
-      capturing group, a non-capturing group, a multi-literal sequence, ...), misrouting the
-      loop's exit path back into the loop body. Likely fix: re-key `Sequence.buildEntryMap`/
-      `QuantifiedUnion.buildEntryMap`'s entryMap values onto `this`, the way `CaptureEndMarker`
-      already was fixed to (2026-09-06, see notes.md) for the identical reason. Flagged as a
-      background task (`task_9f5ec17e`); see notes.md for the corpus rows this affected.
 - [ ] Numbered backreferences only support a single digit (`\1`-`\9`) -- unlike `java.util.regex`,
       which greedily consumes further digits when enough groups exist to make them part of the
       group number (`\12` can mean group 12, not group 1 followed by literal "2"). A pattern

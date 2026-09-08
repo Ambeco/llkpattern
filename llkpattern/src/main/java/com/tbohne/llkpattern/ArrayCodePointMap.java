@@ -105,7 +105,20 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   }
 
   /** Index of the last entry whose min is {@code <= codePoint}, or {@code -1} if none. */
+  // EXPERIMENT (2026-09-08): linear-scan small maps instead of binary-searching them, to see
+  // whether avoiding binary search's branch/indirection overhead helps given most maps here are
+  // tiny -- see remaining_work.md's profiling item. Not yet decided as a keeper.
+  private static final int LINEAR_SEARCH_THRESHOLD = 65;
+
   private int floorIndex(int codePoint) {
+    if (size < LINEAR_SEARCH_THRESHOLD) {
+      for (int i = size - 1; i >= 0; i--) {
+        if (keyMin(keys[i]) <= codePoint) {
+          return i;
+        }
+      }
+      return -1;
+    }
     int lo = 0;
     int hi = size - 1;
     int result = -1;

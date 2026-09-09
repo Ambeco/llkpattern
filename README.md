@@ -80,13 +80,13 @@ In brief:
 
 Both tables are milliseconds per pass over the full OpenJDK-derived test corpus (lower is better), measured via JMH on desktop (`CorpusBenchmark`, [documents/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json](documents/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json)) and an instrumented on-device benchmark on Android (`AndroidCorpusBenchmark`, [documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json](documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json)). The two harnesses don't use identical corpus subsets, so treat cross-device comparisons as approximate — see remaining_work.md's benchmark sections for the full caveats.
 
-**Corpus compile time (ms/pass):**
+**Corpus compile time (ms/pass) (each pass compiles 406 patterns):**
 
 | | Intel-i7-9750H<br>regex | Intel-i7-9750H<br>llkpattern | Pixel 3a<br>regex | Pixel 3a<br>llkpattern |
 |---|-------------------------|---|---|---|
 | Compile | 0.115                   | 0.794 | 7.23 | 18.01 |
 
-**Corpus match time (ms/pass):**
+**Corpus match time (ms/pass) (each pass matches/finds/look_ats 406 patterns):**
 
 | | Intel-i7-9750H<br>regex | Intel-i7-9750H<br>llkpattern | Pixel 3a<br>regex | Pixel 3a<br>llkpattern |
 |---|-------------------------|---|---|---|

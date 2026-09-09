@@ -254,6 +254,20 @@ actually needed again.
         because `ComplexCharacter.ranges` is mutable and further `&&`/negation parsing may write
         into it -- so a proper fix likely needs either a copy-on-write scheme, or an elseValue-
         preserving fast copy path distinct from `putAll`'s general one.
+- [ ] **Make `ComplexCharacter.ranges` immutable after construction** -- this is the actual
+      prerequisite the DOT item above needs (and would remove several other defensive copies too,
+      not just DOT's): `parseComplexCharacter` currently allocates a mutable map, hands it around to
+      `tryParseSingleCharEscape`/`parseComplexEscape` for further in-place mutation (`&&`,
+      negation, individual members) as it parses a bracket expression, and only once parsing that
+      one expression is complete does it become `ComplexCharacter.ranges`. If `ComplexCharacter`
+      instead took a genuinely-finished, immutable `CodePointMap` at construction time (parsing
+      builds into its own scratch/builder-style map first, per bracket expression, then hands over
+      the finished result), every OTHER site that currently copies a `NamedCharClass`/
+      `RegexCharacterClass` constant defensively -- because handing it to `ComplexCharacter` would
+      otherwise let later parsing mutate a shared static instance -- could alias it directly
+      instead. `PatternParser`'s DOT handling is the one with a measured cost (see above), but this
+      isn't DOT-specific: any bracket expression built entirely from named classes/builtins (e.g.
+      `[\d\s]`) likely has the same avoidable-copy shape worth checking once this lands.
 - [ ] **`ArrayCodePointMap`/`TreeCodePointMap` immutable+builder split**: floated in the original
       design sketch for the array-backed map, but neither implementation actually has this split
       today (both are mutable-only) -- worth doing for both together if immutability is ever

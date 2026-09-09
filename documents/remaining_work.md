@@ -224,6 +224,36 @@ actually needed again.
 - [ ] `region()`'s interaction with `hasAnchoringBounds`/`useAnchoringBounds`/`useTransparentBounds` (whether `^`/`$`/boundaries see past the region) isn't implemented at all yet -- `^`/`$`/`\A`/`\Z`/`\z`/`\b`/`\B` all currently hard-code the "opaque bounds" behavior (never look past `regionStart`/`regionEnd`), which is `useAnchoringBounds(true)`/`useTransparentBounds(false)`'s combination (the default) but not configurable to the other three.
 - [ ] `PatternConstruct.compile()` is typed `@Nullable MatcherConstruct` but, now that every construct type actually builds a matcher, likely always returns non-null in practice — worth dropping the `@Nullable` (and fixing `Ll1Pattern.compile()`'s unchecked-nullable assignment).
 - [ ] `PatternSyntaxException.Reference` is constructed in a couple of places (e.g. the old, since-rewritten ambiguity-detection attempt) but was never actually handled in `PatternSyntaxException.throwWithReferences` — it silently falls through to `Object.toString()` (`Reference@<hashcode>`). Either implement it (render the referenced snippet, as `CodePoint`/`CodePointReference` do) or remove it if `CodePoint`-based messages turn out to be sufficient. Current loop/union ambiguity messages avoid it, using plain indices/`CodePoint` instead.
+- [ ] **`RegexCharacterClass.DOT`'s `materializedComplement` is a real, measured `llkCompile` hot
+      spot (~4.5% of sampled time, per `documents/benchmarks/Intel-i7-9750H_llkCompile_sampling.txt`),
+      but the fix is NOT simply "use `.complement()` instead" -- investigated 2026-09-08, not fixed
+      this session (deliberately deferred, see notes.md for the full trace):
+      - `materializedComplement(set)` (`NamedCharClass.java`) eagerly walks the entire code point
+        domain once, at class-init time, to build DOT.unicode as ~541 *physical* entries -- forced
+        by `ArrayCodePointMap`'s packed-key format capping each entry at 2048 code points, so the
+        one logical "everything except `\n`" range can't be represented as fewer than ~541 chunks
+        once actually appended via `appendSorted`/`put`.
+      - `PatternParser`'s `.` handling (non-`DOTALL` case) then does `new
+        ArrayCodePointMap<>(RegexCharacterClass.DOT.unicode)` for every `.` in the pattern being
+        parsed -- copying all ~541 chunks each time, via `putAll`'s `entrySet()`-driven sorted merge.
+        This copy (not the one-time class-init walk) is the actual `llkCompile`-time cost.
+      - The `materializedComplement` doc's justification ("`set.complement(Boolean.TRUE)`'s
+        `entrySet()` would be the empty holes in `set`, not the complement's members -- the
+        inversion bug") does NOT reproduce against the current `ArrayCodePointMap`: verified
+        directly (`{'\n'}.complement(true).entrySet()` correctly yields `[0,10)->true,
+        [11,1114112)->true`, 2 entries, not the hole) -- `materializeWithGaps()` already handles
+        this correctly. So switching `DOT.unicode` itself to `nlSet.complement(true)` (via
+        `ArrayCodePointMap`'s private complement constructor's O(1) fast path -- a straight array
+        copy of `nlSet`'s 1 entry, no domain walk at all) would fix the one-time class-init cost.
+      - But it would NOT by itself fix `PatternParser`'s per-`.` copy: `new
+        ArrayCodePointMap<>(complementMap)` still goes through `putAll`/`entrySet()`, and
+        `entrySet()` on an else-valued map calls `materializeWithGaps()`, which returns the same
+        ~2 giant logical ranges that `appendSorted` will then re-chunk into ~541 physical entries in
+        the *destination* map anyway. The real fix needs the copy itself avoided or made
+        elseValue-aware -- `PatternParser` copies (rather than aliases) `DOT.unicode` specifically
+        because `ComplexCharacter.ranges` is mutable and further `&&`/negation parsing may write
+        into it -- so a proper fix likely needs either a copy-on-write scheme, or an elseValue-
+        preserving fast copy path distinct from `putAll`'s general one.
 - [ ] **`ArrayCodePointMap`/`TreeCodePointMap` immutable+builder split**: floated in the original
       design sketch for the array-backed map, but neither implementation actually has this split
       today (both are mutable-only) -- worth doing for both together if immutability is ever

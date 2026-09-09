@@ -945,6 +945,37 @@ Notes to self about how to work on this project, and other context that doesn't 
   yet measured), and a proposed `BackReference` alias to its referenced group's own entry point
   (needs verifying against a nullable referenced group's cycle behavior first, not yet done).
 
+### Investigating `DOT`'s `materializedComplement` cost, deferred (2026-09-08)
+
+- The project owner noticed `llkCompile_sampling`'s ~4.5% time in `PatternParser`'s `new
+  ArrayCodePointMap<>(RegexCharacterClass.DOT.unicode)` (the `.` handling) and suspected
+  `materializedComplement`'s doc comment (claiming `set.complement(Boolean.TRUE)`'s `entrySet()`
+  would incorrectly yield `set`'s holes, not its complement's members) pointed at a real bug worth
+  fixing so `DOT` could just be `\n`'s complement directly.
+- Checked the claim directly against the current `ArrayCodePointMap`: `{'\n'}.complement(true)
+  .entrySet()` correctly returns 2 entries (`[0,10)->true`, `[11,1114112)->true`), not `\n`'s hole
+  -- `materializeWithGaps()` already handles this correctly (skips null-valued punched-hole entries,
+  fills every gap with the else-value). So the doc's stated justification doesn't reproduce; either
+  it was accurate against an earlier version of this class and went stale, or it was describing a
+  more general risk for a hypothetical consumer this doesn't happen to hit. Not chased further.
+- Root cause of the actual measured cost is different from what the doc implies: `DOT.unicode` is
+  built once at class-init via `materializedComplement`, which walks the full code point domain and
+  produces ~541 real, physical entries (`ArrayCodePointMap`'s packed-key format caps each entry at
+  2048 code points, so "everything except `\n`" can't be fewer chunks than that once actually
+  appended). `PatternParser` then copies all ~541 of them, via `new ArrayCodePointMap<>(...)`, for
+  *every* `.` in the pattern being compiled -- that per-`.` copy, not the one-time class-init walk,
+  is what the profiler is actually seeing.
+- Switching `DOT.unicode` to a real `.complement()` (the private complement constructor's O(1)
+  array-copy fast path, since the source is just `{'\n'}`) would fix the one-time class-init cost,
+  but NOT the per-`.` copy: `new ArrayCodePointMap<>(complementMap)` still routes through
+  `putAll`/`entrySet()`, and an else-valued map's `entrySet()` (`materializeWithGaps()`) hands back
+  the same ~2 giant logical ranges, which `appendSorted` then re-splits into ~541 physical chunks in
+  the destination regardless. Fixing the real hot spot needs the copy itself addressed -- and
+  `PatternParser` copies (rather than aliases) specifically because `ComplexCharacter.ranges` is
+  mutable and further `&&`/negation parsing may write into it, so this isn't a one-line fix.
+- Explicitly deferred at the project owner's direction ("we shouldn't tackle that in this session")
+  -- see remaining_work.md's new item for where to pick this back up.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

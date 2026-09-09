@@ -84,7 +84,7 @@ Both tables are milliseconds per pass over the full OpenJDK-derived test corpus 
 
 | | Intel-i7-9750H<br>regex | Intel-i7-9750H<br>llkpattern | Pixel 3a<br>regex | Pixel 3a<br>llkpattern |
 |---|-------------------------|---|---|---|
-| Compile | 0.113                   | 0.853 | 6.82 | 19.07 |
+| Compile | 0.113                   | 0.853 | 7.23 | 18.01 |
 
 **Corpus match time (ms/pass):**
 

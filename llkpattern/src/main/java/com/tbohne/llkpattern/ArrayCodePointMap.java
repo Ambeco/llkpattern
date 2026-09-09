@@ -1,6 +1,7 @@
 package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
+import com.tbohne.llkpattern.CodePointMap.RangeConsumer;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,6 +12,7 @@ import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.PolyNull;
 
@@ -103,11 +105,11 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
    */
   private ArrayCodePointMap(ArrayCodePointMap<V> source, V elseValue) {
     if (source.elseValue == null) {
-      // Common case (and, as of 2026-09-08, the only one actually reached by any real caller --
-      // materializedComplement-style helpers exist specifically to avoid ever complementing an
-      // already else-valued map): source has no punched holes of its own, so every source entry
-      // becomes a punched hole here, and this map's own else-value fill covers every code point
-      // between them. A straight array copy, no per-entry work at all.
+      // Common case: source has no punched holes of its own, so every source entry becomes a
+      // punched hole here, and this map's own else-value fill covers every code point between
+      // them. A straight array copy, no per-entry work at all -- this is what keeps
+      // NamedCharClass's complement-based constants (RegexCharacterClass.DOT/D/H/S/V/W etc.) cheap
+      // to declare: none of their sources are themselves else-valued.
       //
       // Every source.values[i] is guaranteed non-null here (never just assumed): a null-valued
       // entry is only ever produced by this very constructor, always together with setting
@@ -185,33 +187,37 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   }
 
   /** Index of the last entry whose min is {@code <= codePoint}, or {@code -1} if none. */
-  // EXPERIMENT (2026-09-08): linear-scan small maps instead of binary-searching them, to see
-  // whether avoiding binary search's branch/indirection overhead helps given most maps here are
-  // tiny -- see remaining_work.md's profiling item. Not yet decided as a keeper.
+  // Hybrid search (2026-09-08): binary search narrows [lo, hi] down to a window of at most
+  // LINEAR_SEARCH_THRESHOLD entries (most maps here are tiny, so this window is often the whole
+  // map -- see the class doc), then a final linear scan of that window avoids binary search's
+  // per-step branch/indirection overhead over the remainder.
+  //
+  // The invariant "the answer, if any, lies within [lo, hi]" holds throughout: keys is sorted by
+  // min, so keyMin(keys[mid]) <= codePoint means every j <= mid also qualifies (the rightmost
+  // qualifying index is >= mid, so mid itself is still a viable answer -- lo is set to mid, not
+  // mid + 1, to keep it in the window), while keyMin(keys[mid]) > codePoint means every j >= mid
+  // doesn't (mid is never the answer, so hi = mid - 1 safely excludes it). mid is rounded up
+  // (`(lo + hi + 1) >>> 1`, not the usual floor) so the true branch (lo = mid) still makes
+  // progress even when hi == lo + 1 -- a floor mid would get stuck re-picking lo forever.
   private static final int LINEAR_SEARCH_THRESHOLD = 65;
 
   private int floorIndex(int codePoint) {
-    if (size < LINEAR_SEARCH_THRESHOLD) {
-      for (int i = size - 1; i >= 0; i--) {
-        if (keyMin(keys[i]) <= codePoint) {
-          return i;
-        }
-      }
-      return -1;
-    }
     int lo = 0;
     int hi = size - 1;
-    int result = -1;
-    while (lo <= hi) {
-      int mid = (lo + hi) >>> 1;
+    while (lo + LINEAR_SEARCH_THRESHOLD <= hi) {
+      int mid = (lo + hi + 1) >>> 1;
       if (keyMin(keys[mid]) <= codePoint) {
-        result = mid;
-        lo = mid + 1;
+        lo = mid;
       } else {
         hi = mid - 1;
       }
     }
-    return result;
+    for (int i = hi; i >= lo; i--) {
+      if (keyMin(keys[i]) <= codePoint) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   /**
@@ -304,6 +310,40 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     return new LinkedHashSet<>(materializeWithGaps());
   }
 
+  /**
+   * {@link CodePointMap#forEachRange}, overridden to skip {@link #entrySet()} entirely: the
+   * {@code elseValue == null} case (the common one -- see the class doc) reads {@code keys}/
+   * {@code values} directly, with no {@code Range}, {@code Entry}, or {@code Iterator} allocated
+   * per visited range, unlike {@code entrySet()}'s lazy view (which still allocates one {@code
+   * Entry}/{@code Range} pair per {@code next()}). The {@code elseValue != null} case still has to
+   * compute the same gap-fill {@link #materializeWithGaps()} does, but calls straight through to
+   * {@code action} instead of collecting into a throwaway {@code List<Entry<Range, V>>} first.
+   */
+  @Override
+  public void forEachRange(RangeConsumer<? super V> action) {
+    if (elseValue == null) {
+      for (int i = 0; i < size; i++) {
+        action.accept(keyMin(keys[i]), keyMax(keys[i]), values[i]);
+      }
+      return;
+    }
+    int cursor = 0;
+    for (int i = 0; i < size; i++) {
+      int entryMin = keyMin(keys[i]);
+      int entryMax = keyMax(keys[i]);
+      if (cursor < entryMin) {
+        action.accept(cursor, entryMin, elseValue);
+      }
+      if (values[i] != null) {
+        action.accept(entryMin, entryMax, values[i]);
+      }
+      cursor = entryMax;
+    }
+    if (cursor <= MAX_CODE_POINT) {
+      action.accept(cursor, MAX_CODE_POINT + 1, elseValue);
+    }
+  }
+
   private List<Entry<Range, V>> materializeWithGaps() {
     List<Entry<Range, V>> result = new ArrayList<>();
     int cursor = 0;
@@ -334,71 +374,51 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     return elseValue != null ? elseValue : defaultValue;
   }
 
-  /**
-   * This map's entries overlapping {@code [min, max)}, clipped to that window. When {@code
-   * elseValue == null} this is the fast raw-array window scan every other mutator uses; when it's
-   * set, the raw array alone doesn't include the gap-fill (see {@link #entrySet()}), so this falls
-   * back to {@link #materializeWithGaps()} instead -- correct either way, just not O(window size)
-   * in the complement case, which is fine since {@code intersection}/{@code
-   * intersectionRejectingConflicts} aren't on the hot match-time path.
-   */
-  private List<Entry<Range, V>> entriesOverlapping(int min, int max) {
-    List<Entry<Range, V>> result = new ArrayList<>();
+  @Override
+  public CodePointMap<V> intersection(int min, int max) {
+    ArrayCodePointMap<V> result = new ArrayCodePointMap<>();
     if (elseValue == null) {
+      // Fast raw-array window scan, same one every other mutator uses -- no intermediate
+      // Range/Entry/List at all.
       int start = windowStart(min);
       int end = windowEnd(start, max);
+      result.ensureCapacity(end - start);
       for (int i = start; i < end; i++) {
         int lo = Math.max(min, keyMin(keys[i]));
         int hi = Math.min(max, keyMax(keys[i]));
         if (lo < hi) {
-          result.add(new ImmutableEntry<>(new Range(lo, hi), values[i]));
+          result.appendSorted(lo, hi, values[i]);
         }
       }
-    } else {
-      for (Entry<Range, V> e : materializeWithGaps()) {
-        if (e.getKey().min >= max) {
-          break; // ascending order -- nothing further can overlap
-        }
-        int lo = Math.max(min, e.getKey().min);
-        int hi = Math.min(max, e.getKey().max);
+      return result;
+    }
+    // elseValue != null: the gaps between entries are real mappings too (see entrySet()'s own
+    // doc), so this walks entries starting from windowStart(min), filling each gap with elseValue
+    // as it goes -- windowed the same way the elseValue == null case above is (windowStart/
+    // windowEnd don't care about null-valued punched-hole entries either way), rather than
+    // scanning from index 0 via materializeWithGaps()/entrySet() and throwing away everything
+    // outside [min, max).
+    int cursor = min;
+    for (int i = windowStart(min); i < size && cursor < max; i++) {
+      int entryMin = keyMin(keys[i]);
+      if (entryMin >= max) {
+        break; // ascending order -- nothing further can overlap
+      }
+      int entryMax = keyMax(keys[i]);
+      if (cursor < entryMin) {
+        result.appendSorted(cursor, Math.min(entryMin, max), elseValue);
+      }
+      if (values[i] != null) {
+        int lo = Math.max(min, entryMin);
+        int hi = Math.min(max, entryMax);
         if (lo < hi) {
-          result.add(new ImmutableEntry<>(new Range(lo, hi), e.getValue()));
+          result.appendSorted(lo, hi, values[i]);
         }
       }
+      cursor = entryMax;
     }
-    return result;
-  }
-
-  @Override
-  public CodePointMap<V> intersection(int min, int max) {
-    ArrayCodePointMap<V> result = new ArrayCodePointMap<>();
-    List<Entry<Range, V>> overlapping = entriesOverlapping(min, max);
-    result.ensureCapacity(overlapping.size());
-    for (Entry<Range, V> e : overlapping) {
-      result.appendSorted(e.getKey().min, e.getKey().max, e.getValue());
-    }
-    return result;
-  }
-
-  @Override
-  public CodePointMap<V> intersectionRejectingConflicts(CodePointMap<V> other) {
-    ArrayCodePointMap<V> result = new ArrayCodePointMap<>();
-    for (Entry<Range, V> otherEntry : other.entrySet()) {
-      for (Entry<Range, V> mineEntry : entriesOverlapping(otherEntry.getKey().min, otherEntry.getKey().max)) {
-        V mine = mineEntry.getValue();
-        if (!mine.equals(otherEntry.getValue())) {
-          throw new CodePointMap.ConflictingMappingException(
-              "this map has value "
-                  + mine
-                  + " for code points "
-                  + mineEntry.getKey()
-                  + ", but other map has value "
-                  + otherEntry.getValue()
-                  + " for code points "
-                  + otherEntry.getKey());
-        }
-        result.put(mineEntry.getKey().min, mineEntry.getKey().max, mine);
-      }
+    if (cursor < max) {
+      result.appendSorted(cursor, max, elseValue);
     }
     return result;
   }
@@ -541,93 +561,153 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
 
   /**
    * Merges {@code other}'s entries into this map, {@code other} winning on overlap -- see {@link
-   * MutableCodePointMap#putAll}. Implemented as a single sorted sweep over this map's own entries
-   * (already sorted) and {@code other.entrySet()} (sorted per {@link CodePointMap}'s ordering
-   * contract) rather than one {@link #put} call per source entry: each {@code other} entry is
-   * appended as-is, and whatever of this map's own entries falls outside every {@code other}
-   * entry -- the parts {@code other} doesn't overwrite -- is appended around it. This is O(this
-   * map's size + other's size); when this map starts empty, the sweep degenerates to appending
-   * every {@code other} entry directly; no separate fast path is needed for that case.
+   * MutableCodePointMap#putAll}. Delegates to the {@link #putAll(ArrayCodePointMap)} overload
+   * below when {@code other} is one (the common case -- every real caller in this codebase merges
+   * one {@code ArrayCodePointMap} into another), which has its own empty-target fast path and
+   * avoids the {@code other.entrySet().size()} capacity probe below (expensive for an else-valued
+   * source, which would force a full materializing walk just to count). Otherwise falls back to
+   * the same sorted-sweep merge, just driven by {@link #forEachRange} instead of {@code
+   * entrySet()} -- see {@link #sweepMerge} for the shared algorithm.
    */
   @Override
   public void putAll(CodePointMap<V> other) {
+    if (other instanceof ArrayCodePointMap) {
+      putAll((ArrayCodePointMap<V>) other);
+      return;
+    }
     if (other.isEmpty()) {
       return;
     }
+    // No cheap upper bound available for an arbitrary CodePointMap source (entrySet().size() would
+    // force a full materialize on an else-valued one) -- ensureCapacity's own incremental growth
+    // absorbs it instead. Rare in practice: every CodePointMap implementation besides this one
+    // (TreeCodePointMap) exists only as this class's differential-test oracle, never a production
+    // putAll source.
+    sweepMerge(other::forEachRange);
+  }
+
+  /**
+   * {@link #putAll(CodePointMap)}, specialized to an {@code ArrayCodePointMap} source: the shape
+   * of every real merge in this codebase (e.g. {@code PatternParser} building up a bracket
+   * expression's ranges one member at a time).
+   */
+  public void putAll(ArrayCodePointMap<V> other) {
+    if (other.size == 0 && other.elseValue == null) {
+      return;
+    }
+    if (size == 0 && elseValue == null) {
+      // Fast path: this map has nothing of its own yet, so putAll degenerates to becoming a copy
+      // of `other` -- a straight array copy (the same trick the copy constructor and complement()
+      // use), not the general sorted-merge sweep below, which would do the same work through a
+      // slower path for no reason when there's nothing of this map's own data to merge around.
+      // This is the common shape for "build a fresh accumulator/result map from one source" --
+      // e.g. ComplexCharacter parsing's very first member, or union()'s own copy constructor call.
+      keys = Arrays.copyOf(other.keys, other.size);
+      values = Arrays.copyOf(other.values, other.size);
+      size = other.size;
+      elseValue = other.elseValue;
+      return;
+    }
+    sweepMerge(other::forEachRange, other.size + 1); // +1: elseValue can add one gap-fill range
+  }
+
+  private void sweepMerge(Consumer<RangeConsumer<V>> otherRanges) {
+    sweepMerge(otherRanges, -1);
+  }
+
+  /**
+   * The sorted-sweep merge both {@code putAll} overloads share: a single pass over this map's own
+   * entries (already sorted) and {@code otherRanges} (sorted per {@link CodePointMap}'s ordering
+   * contract, invoked via {@link #forEachRange} rather than {@code entrySet()} -- no {@code Range}/
+   * {@code Entry}/{@code Iterator} allocated per range for an {@code ArrayCodePointMap} source)
+   * instead of one {@link #put} call per source range: each {@code other} range is appended as-is,
+   * and whatever of this map's own entries falls outside every {@code other} range -- the parts
+   * {@code other} doesn't overwrite -- is appended around it. This is O(this map's size + other's
+   * size); when this map starts empty, the sweep degenerates to appending every {@code other}
+   * range directly.
+   *
+   * <p>The sweep's cross-range state (which of this map's original entries is still pending, and
+   * how much of it) has to live in a field of a small holder object, not local variables, since
+   * {@code otherRanges}'s callback -- effectively a nested loop body -- can't reassign locals of
+   * the enclosing method the way a plain {@code for} loop's body could.
+   */
+  private void sweepMerge(Consumer<RangeConsumer<V>> otherRanges, int otherSizeHint) {
     int[] oldKeys = keys;
     V[] oldValues = values;
     int oldSize = size;
     keys = new int[INITIAL_CAPACITY];
     values = newValuesArray(INITIAL_CAPACITY);
     size = 0;
-    ensureCapacity(oldSize + other.entrySet().size()); // upper bound on the merged result's size
+    if (otherSizeHint >= 0) {
+      ensureCapacity(oldSize + otherSizeHint); // upper bound on the merged result's size
+    }
 
-    // `i` is the next not-yet-fully-emitted entry of this map's original data; a "pending"
-    // in-progress one (possibly a partial leftover after being trimmed by an `other` entry) is
-    // tracked in pendingMin/pendingMax/pendingValue rather than mutating oldKeys/oldValues.
-    int i = 0;
-    boolean pending = false;
-    int pendingMin = 0;
-    int pendingMax = 0;
-    V pendingValue = null;
-    for (Entry<Range, V> otherEntry : other.entrySet()) {
-      int oMin = otherEntry.getKey().min;
-      int oMax = otherEntry.getKey().max;
+    SweepState<V> s = new SweepState<>();
+    otherRanges.accept((oMin, oMax, oValue) -> {
       // Emit whatever of this map's original data lies entirely before oMin.
       while (true) {
-        if (!pending) {
-          if (i >= oldSize) {
+        if (!s.pending) {
+          if (s.i >= oldSize) {
             break;
           }
-          pendingMin = keyMin(oldKeys[i]);
-          pendingMax = keyMax(oldKeys[i]);
-          pendingValue = oldValues[i];
-          pending = true;
-          i++;
+          s.pendingMin = keyMin(oldKeys[s.i]);
+          s.pendingMax = keyMax(oldKeys[s.i]);
+          s.pendingValue = oldValues[s.i];
+          s.pending = true;
+          s.i++;
         }
-        if (pendingMin >= oMin) {
+        if (s.pendingMin >= oMin) {
           break; // this pending entry starts at/after oMin -- nothing left to emit before it
         }
-        int emitMax = Math.min(pendingMax, oMin);
-        appendSorted(pendingMin, emitMax, pendingValue);
-        if (emitMax >= pendingMax) {
-          pending = false;
+        int emitMax = Math.min(s.pendingMax, oMin);
+        appendSorted(s.pendingMin, emitMax, s.pendingValue);
+        if (emitMax >= s.pendingMax) {
+          s.pending = false;
         } else {
-          pendingMin = emitMax; // the rest overlaps `other`; handled by the loop below
+          s.pendingMin = emitMax; // the rest overlaps `other`; handled by the loop below
         }
       }
-      appendSorted(oMin, oMax, otherEntry.getValue());
-      // Discard whatever of this map's original data `other`'s entry just overwrote.
+      appendSorted(oMin, oMax, oValue);
+      // Discard whatever of this map's original data `other`'s range just overwrote.
       while (true) {
-        if (!pending) {
-          if (i >= oldSize) {
+        if (!s.pending) {
+          if (s.i >= oldSize) {
             break;
           }
-          pendingMin = keyMin(oldKeys[i]);
-          pendingMax = keyMax(oldKeys[i]);
-          pendingValue = oldValues[i];
-          pending = true;
-          i++;
+          s.pendingMin = keyMin(oldKeys[s.i]);
+          s.pendingMax = keyMax(oldKeys[s.i]);
+          s.pendingValue = oldValues[s.i];
+          s.pending = true;
+          s.i++;
         }
-        if (pendingMin >= oMax) {
-          break; // doesn't overlap this `other` entry -- leave it for a later one, or the tail
+        if (s.pendingMin >= oMax) {
+          break; // doesn't overlap this `other` range -- leave it for a later one, or the tail
         }
-        if (pendingMax <= oMax) {
-          pending = false; // fully overwritten
+        if (s.pendingMax <= oMax) {
+          s.pending = false; // fully overwritten
         } else {
-          pendingMin = oMax; // partially overwritten; the remainder starts right after `other`
+          s.pendingMin = oMax; // partially overwritten; the remainder starts right after `other`
           break;
         }
       }
+    });
+    // Emit whatever of this map's original data is left after the last `other` range.
+    if (s.pending) {
+      appendSorted(s.pendingMin, s.pendingMax, s.pendingValue);
     }
-    // Emit whatever of this map's original data is left after the last `other` entry.
-    if (pending) {
-      appendSorted(pendingMin, pendingMax, pendingValue);
+    while (s.i < oldSize) {
+      appendSorted(keyMin(oldKeys[s.i]), keyMax(oldKeys[s.i]), oldValues[s.i]);
+      s.i++;
     }
-    while (i < oldSize) {
-      appendSorted(keyMin(oldKeys[i]), keyMax(oldKeys[i]), oldValues[i]);
-      i++;
-    }
+  }
+
+  /** Mutable cross-callback state for {@link #sweepMerge} -- see its own doc for why this exists. */
+  private static final class SweepState<V> {
+    int i;
+    boolean pending;
+    int pendingMin;
+    int pendingMax;
+    @Nullable V pendingValue;
   }
 
   @Override
@@ -732,6 +812,21 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
 
   @Override
   public boolean equals(@Nullable Object other) {
+    if (other instanceof ArrayCodePointMap) {
+      // Direct raw-array comparison, no entrySet() (and so no Range/Entry/Iterator) at all: every
+      // mutator here keeps `keys`/`values` in canonical coalesced form (see the class doc), so two
+      // equal maps' arrays match position-for-position up to `size`, regardless of elseValue.
+      ArrayCodePointMap<?> o = (ArrayCodePointMap<?>) other;
+      if (size != o.size || !Objects.equals(elseValue, o.elseValue)) {
+        return false;
+      }
+      for (int i = 0; i < size; i++) {
+        if (keys[i] != o.keys[i] || !Objects.equals(values[i], o.values[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
     if (!(other instanceof CodePointMap)) {
       return false;
     }

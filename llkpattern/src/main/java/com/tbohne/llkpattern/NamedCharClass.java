@@ -214,7 +214,7 @@ enum NamedCharClass {
           })),
   Assigned(
       Source.UProperty,
-      materializedComplement(UnicodePredicates.UNASSIGNED)),
+      UnicodePredicates.UNASSIGNED.complement(Boolean.TRUE)),
 
   // POSIX character classes
   Lower(
@@ -252,11 +252,11 @@ enum NamedCharClass {
   Graph(
       Source.POSIX,
       unionOf(Alnum.ascii, Punct.ascii),
-      materializedComplement(
-          unionOf(UnicodePredicates.isWhitespace,
-                  UnicodePredicates.CONTROL,
-                  UnicodePredicates.SURROGATE,
-                  UnicodePredicates.UNASSIGNED))),
+      unionOf(UnicodePredicates.isWhitespace,
+              UnicodePredicates.CONTROL,
+              UnicodePredicates.SURROGATE,
+              UnicodePredicates.UNASSIGNED)
+          .complement(Boolean.TRUE)),
   Blank(
       Source.POSIX,
       build(
@@ -387,36 +387,6 @@ enum NamedCharClass {
     return a.difference(b);
   }
 
-  /**
-   * The complement of {@code set}, eagerly materialized as explicit entries covering {@code [0,
-   * MAX_CODE_POINT]} rather than kept as a {@link CodePointMap#complement} else-value fill.
-   *
-   * <p>Deliberately not just {@code set.complement(Boolean.TRUE)}: that map's {@code entrySet()}
-   * would be the empty holes in {@code set}, not the complement's members -- exactly the inversion
-   * bug class documented on {@link CodePointMap#getElseValue}. Every consumer of a {@code
-   * NamedCharClass} constant (unions, intersections, {@code entrySet()}-iterating consumers like
-   * {@code PatternParser}'s ambiguity check) expects ordinary "this set's members are its entries"
-   * semantics, so the complement is walked here, once, at class-init time, and turned into a
-   * normal map, same as {@link PatternParser}'s own {@code materializeComplement} (used for
-   * {@code \P{...}}, for the same reason).
-   */
-  private static CodePointMap<Boolean> materializedComplement(CodePointMap<Boolean> set) {
-    ArrayCodePointMap<Boolean> result = new ArrayCodePointMap<>();
-    int codePoint = 0;
-    while (codePoint <= CodePointMap.MAX_CODE_POINT) {
-      if (set.containsKey(codePoint)) {
-        codePoint++;
-        continue;
-      }
-      int start = codePoint;
-      while (codePoint <= CodePointMap.MAX_CODE_POINT && !set.containsKey(codePoint)) {
-        codePoint++;
-      }
-      result.appendSorted(start, codePoint, Boolean.TRUE);
-    }
-    return result;
-  }
-
   final Source source;
   // Which prefixes this constant may legally be looked up under -- defaults to source's own set,
   // but see the Digit constant above for the one case (a name shared between a POSIX class and a
@@ -491,7 +461,7 @@ enum NamedCharClass {
   }
 
   enum RegexCharacterClass {
-    DOT(materializedComplement(build(m -> m.put(+'\n', Boolean.TRUE)))),
+    DOT(build(m -> m.put(+'\n', Boolean.TRUE)).complement(Boolean.TRUE)),
     d(Digit),
     // Bug fix (2026-09-07): this used to be a single-RangeSet `D(Digit.unicode.complement())`,
     // which (like every other single-RangeSet constructor call here) is flag-insensitive -- so \D
@@ -499,7 +469,7 @@ enum NamedCharClass {
     // UNICODE_CHARACTER_CLASS entirely (unlike \S/\W below, which already complement `ascii`/
     // `unicode` separately). Found via PredefinedClassTest's \d/\D UNICODE_CHARACTER_CLASS
     // coverage, added alongside the NamedCharClass.Digit/PosixDigit merge (see its own doc).
-    D(materializedComplement(Digit.ascii), materializedComplement(Digit.unicode)),
+    D(Digit.ascii.complement(Boolean.TRUE), Digit.unicode.complement(Boolean.TRUE)),
     h(build(
           m -> {
             m.put(+'\t', Boolean.TRUE);
@@ -511,13 +481,13 @@ enum NamedCharClass {
             m.put(0x3000, Boolean.TRUE);
             m.put(0x2000, 0x200b, Boolean.TRUE);
           })),
-    H(materializedComplement(h.unicode)),
+    H(h.unicode.complement(Boolean.TRUE)),
     // Bug fix (2026-09-06): now delegates to NamedCharClass.Space instead of duplicating its own
     // hardcoded ASCII whitespace literal + a separate White_Space.unicode reference -- see Space's
     // own comment for why that duplication exists (breaking a circular static-init dependency) and
     // why this direction (RegexCharacterClass -> NamedCharClass, not the reverse) is safe.
     s(Space.ascii, Space.unicode),
-    S(materializedComplement(s.ascii), materializedComplement(s.unicode)),
+    S(s.ascii.complement(Boolean.TRUE), s.unicode.complement(Boolean.TRUE)),
     v(build(
           m -> {
             m.put(+'\n', Boolean.TRUE);
@@ -528,7 +498,7 @@ enum NamedCharClass {
             m.put(0x2028, Boolean.TRUE);
             m.put(0x2029, Boolean.TRUE);
           })),
-    V(materializedComplement(v.unicode)),
+    V(v.unicode.complement(Boolean.TRUE)),
     w(
         build(
             m -> {
@@ -545,7 +515,7 @@ enum NamedCharClass {
             UnicodePredicates.ENCLOSING_MARK,
             UnicodePredicates.CONNECTOR_PUNCTUATION,
             Join_Control.unicode)),
-    W(materializedComplement(w.ascii), materializedComplement(w.unicode)),
+    W(w.ascii.complement(Boolean.TRUE), w.unicode.complement(Boolean.TRUE)),
     R(build(
           m -> {
             m.put(+'\n', Boolean.TRUE);

@@ -815,26 +815,30 @@ abstract class PatternConstruct {
 
 	static final class ComplexCharacter
 			extends PatternConstruct {
-		MutableCodePointMap<Boolean> ranges = new ArrayCodePointMap<>();
+		// Effectively immutable once a ComplexCharacter exists: every constructor below sets this
+		// exactly once, from a map PatternParser finished building beforehand (see
+		// PatternParser#parseComplexCharacter's own local `ranges` accumulator) -- so it's typed as
+		// the plain (non-Mutable) CodePointMap here, and can be assigned directly from a
+		// NamedCharClass/RegexCharacterClass static constant with no defensive copy, since nothing
+		// past construction ever mutates it.
+		final CodePointMap<Boolean> ranges;
 		@Nullable PatternConstruct dotElse;
 
-		ComplexCharacter(int startIndex, MutableCodePointMap<Boolean> ranges) {
+		ComplexCharacter(int startIndex, CodePointMap<Boolean> ranges) {
 			super(startIndex);
 			this.ranges = ranges;
 		}
 
-		ComplexCharacter(int startIndex, int endIndex, MutableCodePointMap<Boolean> ranges) {
+		ComplexCharacter(int startIndex, int endIndex, CodePointMap<Boolean> ranges) {
 			super(startIndex, endIndex);
 			this.ranges = ranges;
 		}
 
 		ComplexCharacter(int startIndex, int character) {
 			super(startIndex);
-			ranges.put(character, character + 1, true);
-		}
-
-		ComplexCharacter(int startIndex) {
-			super(startIndex);
+			MutableCodePointMap<Boolean> single = new ArrayCodePointMap<>();
+			single.put(character, character + 1, true);
+			this.ranges = single;
 		}
 
 		/**

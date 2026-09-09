@@ -92,6 +92,28 @@ public interface CodePointMap<V> {
     entrySet().forEach(entry -> action.accept(entry.getKey(), entry.getValue()));
   }
 
+  /** A callback for {@link #forEachRange}: {@code [min, max)} plus the value mapped there. */
+  @FunctionalInterface
+  interface RangeConsumer<V> {
+    void accept(int min, int max, V value);
+  }
+
+  /**
+   * Like {@link #forEach}, but takes {@code min}/{@code max} as primitive {@code int}s instead of
+   * a boxed {@link Range}, and (for {@link ArrayCodePointMap}, the implementation real callers use)
+   * visits this map's raw backing arrays directly rather than going through {@link #entrySet()} --
+   * no {@code Range}, {@code Entry}, or {@code Iterator} allocated per entry. Worth using over
+   * {@code entrySet()}/{@code forEach} on any hot path that just wants to visit ranges (a merge
+   * into another map, a bulk copy) and has no actual use for a {@code Range}/{@code Entry} object.
+   * Default implementation just falls back to {@link #entrySet()}, for implementations (like {@link
+   * TreeCodePointMap}) that don't have a cheaper representation to expose.
+   */
+  default void forEachRange(RangeConsumer<? super V> action) {
+    for (Entry<Range, V> e : entrySet()) {
+      action.accept(e.getKey().min, e.getKey().max, e.getValue());
+    }
+  }
+
   default Map<Range, V> asMapOfRanges() {
     return entrySet().stream().collect(Collectors.toMap(Entry::getKey, Entry::getValue));
   }
@@ -106,14 +128,6 @@ public interface CodePointMap<V> {
 
   /** Returns the portion of this map restricted to {@code [min, max)}. */
   CodePointMap<V> intersection(int min, int max);
-
-  /**
-   * Returns a map holding only the entries whose ranges overlap between this map and {@code
-   * other}, keeping this map's values. Where the two maps overlap but disagree on the value,
-   * throws {@link ConflictingMappingException} — this is intended for the LL(1) "these two
-   * branches must not both claim the same code point" check, not general-purpose intersection.
-   */
-  CodePointMap<V> intersectionRejectingConflicts(CodePointMap<V> other);
 
   /**
    * Returns a map holding {@code value} for every code point this map has no entry for, and no

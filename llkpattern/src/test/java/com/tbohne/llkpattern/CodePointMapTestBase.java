@@ -4,9 +4,7 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertThrows;
 
-import com.tbohne.llkpattern.CodePointMap.ConflictingMappingException;
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import java.util.function.Supplier;
 import org.junit.Test;
@@ -159,30 +157,6 @@ public abstract class CodePointMapTestBase {
     assertThat(result.get('a'), nullValue());
     assertThat(result.get('x'), equalTo("letter"));
     assertThat(result.get('y'), equalTo("letter"));
-  }
-
-  @Test
-  public void intersectionRejectingConflicts_agreeingMaps_keepsOverlap() {
-    MutableCodePointMap<String> a = create();
-    a.put('a', 'z' + 1, "letter");
-    MutableCodePointMap<String> b = create();
-    b.put('m', "letter");
-
-    CodePointMap<String> result = a.intersectionRejectingConflicts(b);
-
-    assertThat(result.get('m'), equalTo("letter"));
-    assertThat(result.get('a'), nullValue());
-  }
-
-  @Test
-  public void intersectionRejectingConflicts_disagreeingMaps_throws() {
-    MutableCodePointMap<String> branch1 = create();
-    branch1.put('a', "branch1");
-    MutableCodePointMap<String> branch2 = create();
-    branch2.put('a', "branch2");
-
-    assertThrows(
-        ConflictingMappingException.class, () -> branch1.intersectionRejectingConflicts(branch2));
   }
 
   @Test

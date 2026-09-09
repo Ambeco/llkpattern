@@ -10,7 +10,6 @@ import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -236,34 +235,28 @@ final class PatternParser {
             // Bug fix (2026-09-06): this unconditionally built "everything" (complement of the
             // empty set), i.e. always behaved as if DOTALL were on -- the DOTALL flag constant
             // existed (Ll1Pattern.DOTALL) but nothing anywhere ever actually consulted it. Without
-            // DOTALL, "." must exclude the line terminator '\n' -- see
-            // NamedCharClass.RegexCharacterClass.DOT, which already defines exactly this set (a
-            // fuller line-terminator set -- \r, U+0085, U+2028, U+2029 -- and UNIX_LINES
-            // interaction are tracked separately in remaining_work.md, not done here). This used to
-            // build the same set inline instead of reusing that constant, to dodge a circular
-            // static-initialization dependency between NamedCharClass and RegexCharacterClass --
-            // now fixed (see remaining_work.md), so reusing it here is safe again. Deliberately
-            // .unicode, not .get(flags): DOT's single-arg constructor auto-derives .ascii as
-            // .unicode intersected with the ASCII range (right, for a POSIX/Unicode-property class
-            // like \s or \w, where that's exactly the ASCII-vs-Unicode distinction
-            // UNICODE_CHARACTER_CLASS controls) -- but "." matching only ASCII characters by
-            // default would be wrong; "." always means "any character" (modulo the newline
-            // exclusion here), regardless of UNICODE_CHARACTER_CLASS.
-            MutableCodePointMap<Boolean> dotRanges;
+            // DOTALL, "." must exclude the line terminator '\n' (a fuller line-terminator set --
+            // \r, U+0085, U+2028, U+2029 -- and UNIX_LINES interaction are tracked separately in
+            // remaining_work.md, not done here) -- see NamedCharClass.RegexCharacterClass.DOT,
+            // reused directly below, always as "any character" regardless of
+            // UNICODE_CHARACTER_CLASS -- "." matching only ASCII by default would be wrong, unlike
+            // a POSIX/Unicode-property class like \s or \w where that split is exactly the point.
+            ComplexCharacter dot;
             if ((flags & Pattern.DOTALL) != 0) {
               // "Everything" is exactly an else-value with no explicit entries -- see
               // CodePointMap#getElseValue's doc for why that's always a finite, valid map here
               // rather than the mathematically-unbounded RangeSet Guava's complement() used to
               // produce.
-              dotRanges = new ArrayCodePointMap<>();
-              dotRanges.setElseValue(true);
+              MutableCodePointMap<Boolean> everything = new ArrayCodePointMap<>();
+              everything.setElseValue(true);
+              dot = new ComplexCharacter(index, everything);
             } else {
-              // Copied rather than aliased: RegexCharacterClass.DOT.unicode is a shared static
-              // instance, and ComplexCharacter.ranges is mutable (further && / negation processing
-              // may still write into it elsewhere in this parser).
-              dotRanges = new ArrayCodePointMap<>(RegexCharacterClass.DOT.unicode);
+              // Aliased directly, not copied: ComplexCharacter.ranges is effectively immutable
+              // once constructed (see its own doc) -- nothing past this point ever mutates it, so
+              // there's no risk of corrupting the shared RegexCharacterClass.DOT.unicode instance,
+              // and no allocation is needed at all (unlike rebuilding "\n"'s complement fresh).
+              dot = new ComplexCharacter(index, RegexCharacterClass.DOT.unicode);
             }
-            ComplexCharacter dot = new ComplexCharacter(index, dotRanges);
             dot.flags = flags;
             // Bug fix (2026-09-07): parseQuantifiable(dot) used to be called BEFORE this advance(1),
             // so it checked for a quantifier suffix (?/*/+/{n,m}) while `peek` was still '.' itself --
@@ -343,9 +336,15 @@ final class PatternParser {
           if (boundaryConstruct != null) {
             sequence.patterns.add(boundaryConstruct);
           } else {
-            ComplexCharacter escapeChar = new ComplexCharacter(index);
+            // parseComplexEscape()'s result is assigned straight into ComplexCharacter.ranges (now
+            // effectively immutable -- see its own doc), no defensive copy needed: unlike the
+            // bracket-expression '\\' case above (which merges into an already-accumulating
+            // ranges local via putAll), this escape is the construct's entire content.
+            int escapeStartIndex = index;
+            CodePointMap<Boolean> escapeRanges = parseComplexEscape(); // advances past the escape
+            ComplexCharacter escapeChar = new ComplexCharacter(escapeStartIndex, index, escapeRanges);
             escapeChar.flags = flags;
-            sequence.patterns.add(parseQuantifiable(parseComplexEscape(escapeChar)));
+            sequence.patterns.add(parseQuantifiable(escapeChar));
           }
         }
       } else {
@@ -561,76 +560,81 @@ final class PatternParser {
     if (peek != '[') {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
     }
-    ComplexCharacter complex = new ComplexCharacter(index);
+    int startIndex = index;
+    CodePointMap<Boolean> finalRanges = parseComplexCharacterRanges(startIndex);
+    ComplexCharacter complex = new ComplexCharacter(startIndex, index, finalRanges);
     complex.flags = flags;
+    return complex;
+  }
+
+  /**
+   * The core of {@link #parseComplexCharacter}: parses one {@code "[" IntersectionCharacter "]"}
+   * (already-negated if {@code ^} was present) and returns its finished ranges, advancing {@code
+   * index} past the closing {@code "]"}. Split out from {@link #parseComplexCharacter} so a nested
+   * class (the {@code '['} case below, e.g. {@code "[a-c[p-z]]"}) can recurse straight into this
+   * -- merging the result directly into the enclosing accumulator via {@link #mergeInto} -- rather
+   * than building a whole separate {@code ComplexCharacter} object just to immediately discard
+   * everything but its {@code ranges}.
+   */
+  private CodePointMap<Boolean> parseComplexCharacterRanges(int startIndex) {
     boolean negate = false;
     advance(1);
     if (peek == '^') {
       negate = true;
       advance(1);
     }
+    MutableCodePointMap<Boolean> ranges = new ArrayCodePointMap<>();
     // IntersectionCharacter -> UnionCharacter (&& IntersectionCharacter)?  -- "&&" is a real
     // operator token, not tied to a bracket: [a-z&&aeiou] intersects the *whole run* of members
     // up to the next "&&" or the closing "]" against everything accumulated so far, whether or
-    // not that run happens to be wrapped in its own "[...]". So `complex.ranges` below always
-    // accumulates only the *current* union-operand run; `intersectionSoFar` (null until the first
-    // "&&" is seen) holds the running intersection of every completed operand run before it.
+    // not that run happens to be wrapped in its own "[...]". So `ranges` below always accumulates
+    // only the *current* union-operand run; `intersectionSoFar` (null until the first "&&" is
+    // seen) holds the running intersection of every completed operand run before it.
     @Nullable CodePointMap<Boolean> intersectionSoFar = null;
     for (; ; ) {
       switch (peek) {
         case '\0':
-          throw throwUnexpectedChar("expected \"]\" to match ", new CodePointReference(complex.startIndex));
+          throw throwUnexpectedChar("expected \"]\" to match ", new CodePointReference(startIndex));
         case ']':
-          if (index > complex.startIndex + 1) {
-            int closeBracketIndex = index;
+          if (index > startIndex + 1) {
             advance(1); // consume the ']' -- callers expect peek to be past this construct
-            // Already-mutable either way (complex.ranges' own declared field type, or intersect()'s
-            // own declared return type) -- no toMutable() wrapping needed for either ternary branch.
+            // Already-mutable either way (ranges' own declared type, or intersect()'s own declared
+            // return type) -- no toMutable() wrapping needed for either ternary branch.
             MutableCodePointMap<Boolean> finalRanges =
                 intersectionSoFar == null
-                    ? complex.ranges
-                    : intersect(intersectionSoFar, complex.ranges);
-            if (negate) {
-              // Cast, not toMutable(): ArrayCodePointMap#complement always returns another
-              // ArrayCodePointMap (see its own override), so this is never actually a runtime type
-              // mismatch -- CodePointMap#complement's interface-level signature is just not declared
-              // to say so statically.
-              ComplexCharacter negated = new ComplexCharacter(
-                  complex.startIndex, closeBracketIndex + 1,
-                  (MutableCodePointMap<Boolean>) finalRanges.complement(true));
-              negated.flags = flags;
-              return negated;
-            }
-            complex.ranges = finalRanges;
-            complex.endIndex = closeBracketIndex + 1;
-            return complex;
+                    ? ranges
+                    : intersect(intersectionSoFar, ranges);
+            return negate ? finalRanges.complement(true) : finalRanges;
           } else {
-            complex.ranges.put(+']', +']' + 1, true);
+            ranges.put(+']', +']' + 1, true);
             advance(1);
             break;
           }
         case '-':
-          complex.ranges.put(+'-', +'-' + 1, true);
+          ranges.put(+'-', +'-' + 1, true);
           advance(1);
           break;
         case '\\':
           int eCodePoint = tryParseSingleCharEscape();
           if (eCodePoint != -1) {
             if (peek == '-') {
-              parseMaybeRangePredicate(complex, eCodePoint);
+              parseMaybeRangePredicate(ranges, eCodePoint);
             } else {
-              complex.ranges.put(eCodePoint, eCodePoint + 1, true);
+              ranges.put(eCodePoint, eCodePoint + 1, true);
             }
           } else {
-            parseComplexEscape(complex);
+            ranges.putAll(parseComplexEscape());
           }
           break;
         case '[':
           // RangeCharacter -> "[" IntersectionCharacter "]" -- a nested class is itself a member
           // of the enclosing union, e.g. "[a-c[p-z]]" or an operand of "&&" in "[[a-b]&&[c-d]]".
           // Union its ranges into the current operand run; "&&" (below) intersects whole runs,
-          // not individual members, so this is exactly like unioning in any other member.
-          complex.ranges.putAll(parseComplexCharacter().ranges);
+          // not individual members, so this is exactly like unioning in any other member. putAll,
+          // not a per-entry merge: see ArrayCodePointMap#putAll(ArrayCodePointMap)'s own doc for
+          // why that's the cheap direction now (an optimized fast path for exactly this "merge one
+          // ArrayCodePointMap into another" shape), not individual put() calls.
+          ranges.putAll(parseComplexCharacterRanges(index));
           break;
         case '&':
           if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
@@ -642,9 +646,9 @@ final class PatternParser {
             advance(2);
             intersectionSoFar =
                 intersectionSoFar == null
-                    ? complex.ranges
-                    : intersect(intersectionSoFar, complex.ranges);
-            complex.ranges = new ArrayCodePointMap<>();
+                    ? ranges
+                    : intersect(intersectionSoFar, ranges);
+            ranges = new ArrayCodePointMap<>();
             break;
           }
           // fallthrough
@@ -652,9 +656,9 @@ final class PatternParser {
           int codePoint = pattern.codePointAt(index);
           advanceCodePoint();
           if (peek == '-') {
-            parseMaybeRangePredicate(complex, codePoint);
+            parseMaybeRangePredicate(ranges, codePoint);
           } else {
-            complex.ranges.put(codePoint, codePoint + 1, true);
+            ranges.put(codePoint, codePoint + 1, true);
           }
       }
     }
@@ -670,38 +674,8 @@ final class PatternParser {
    */
   private static MutableCodePointMap<Boolean> intersect(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
     MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
-    for (Entry<CodePointMap.Range, Boolean> aEntry : a.entrySet()) {
-      for (Entry<CodePointMap.Range, Boolean> bEntry :
-          b.intersection(aEntry.getKey().min, aEntry.getKey().max).entrySet()) {
-        result.put(bEntry.getKey().min, bEntry.getKey().max, true);
-      }
-    }
-    return result;
-  }
-
-  /**
-   * The complement of {@code set}, eagerly enumerated as real entries rather than kept as a
-   * {@link CodePointMap#complement} else-value fill. Unlike the {@code [^...]}/DOTALL negation
-   * above (which hands its {@code complement()} result straight to a new {@code ComplexCharacter}
-   * as that construct's entire {@code ranges}, so the else-value is preserved and later consulted
-   * via {@code get()}), this one feeds {@code complex.ranges.putAll(...)} -- merging into an
-   * already-populated map -- and {@code putAll} only copies explicit entries, silently dropping an
-   * else-value fill. Used for {@code \P{...}}, whose negated set must actually be enumerable.
-   */
-  private static CodePointMap<Boolean> materializeComplement(CodePointMap<Boolean> set) {
-    MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
-    int codePoint = 0;
-    while (codePoint <= CodePointMap.MAX_CODE_POINT) {
-      if (set.containsKey(codePoint)) {
-        codePoint++;
-        continue;
-      }
-      int start = codePoint;
-      while (codePoint <= CodePointMap.MAX_CODE_POINT && !set.containsKey(codePoint)) {
-        codePoint++;
-      }
-      result.appendSorted(start, codePoint, Boolean.TRUE);
-    }
+    a.forEachRange((aMin, aMax, aValue) ->
+        b.intersection(aMin, aMax).forEachRange((bMin, bMax, bValue) -> result.put(bMin, bMax, true)));
     return result;
   }
 
@@ -943,23 +917,35 @@ final class PatternParser {
     return null;
   }
 
-  private ComplexCharacter parseComplexEscape(ComplexCharacter complex) {
+  /**
+   * Parses the escape at {@code peek} ({@code \d}, {@code \p{...}}, etc. -- not a single-char
+   * escape like {@code \n}, which {@link #tryParseSingleCharEscape} already handles before a
+   * caller ever reaches here), advancing past it, and returns the {@link CodePointMap} it denotes.
+   *
+   * <p>A pure function rather than one that mutates a {@code ComplexCharacter}/{@code ranges}
+   * parameter in place: every result here is either a {@code NamedCharClass}/{@code
+   * RegexCharacterClass} static constant or a freshly built complement of one, both safe to hand
+   * back directly. A caller building a standalone {@code ComplexCharacter} for just this escape
+   * (the common case -- a bare {@code \d} in running pattern text) can then assign the result
+   * straight into that construct's (effectively immutable) {@code ranges} with no defensive copy;
+   * a caller merging this into an already-accumulating bracket-expression {@code ranges} (e.g.
+   * {@code [a\d]}) still goes through {@code putAll} itself, same as merging any other member.
+   */
+  private CodePointMap<Boolean> parseComplexEscape() {
     if (peek != '\\') {
       throw new IllegalStateException("entered parseComplexEscape at illegal start point");
     }
     advance(1);
     if (peek == 'R') {
-      complex.ranges.putAll(RegexCharacterClass.R.get(flags));
+      CodePointMap<Boolean> result = RegexCharacterClass.R.get(flags);
       advance(1);
-      complex.endIndex = index;
-      return complex;
+      return result;
     }
     if (peek != 'p' && peek != 'P') {
       try {
-        complex.ranges.putAll(RegexCharacterClass.valueOf(Character.toString(peek)).get(flags));
+        CodePointMap<Boolean> result = RegexCharacterClass.valueOf(Character.toString(peek)).get(flags);
         advance(1);
-        complex.endIndex = index;
-        return complex;
+        return result;
       } catch (IllegalArgumentException e) {
         throw throwUnexpectedChar(
             "escape \"" + peek + "\" not in [dDhHsSvVwWR]. Is it a non-standard regex escape?");
@@ -1052,30 +1038,27 @@ final class PatternParser {
     }
 
     try {
-      complex.endIndex = index;
       NamedCharClass namedClass = NamedCharClass.valueOf(charClassName);
       CodePointMap<Boolean> namedRanges = namedClass.get(prefix, flags);
       // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but
       // never actually used -- "\P{...}" silently behaved exactly like "\p{...}" (always positive).
-      // materializeComplement (not CodePointMap#complement) since complex.ranges' entrySet() gets
-      // walked directly by later processing (&&, ambiguity checks) -- an else-value-based
-      // complement's entrySet() would be the empty holes, not the actual negated membership. See
-      // NamedCharClass#materializedComplement's doc for the same trap.
-      complex.ranges.putAll(positive ? namedRanges : materializeComplement(namedRanges));
-      return complex;
+      // complement(), not a materialized walk: see NamedCharClass's own complement-based constants
+      // for why this is O(namedRanges' entry count), not O(the domain) -- an else-value fill, not
+      // an eager enumeration.
+      return positive ? namedRanges : namedRanges.complement(Boolean.TRUE);
     } catch (IllegalArgumentException e) {
       throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
     }
   }
 
-  private void parseMaybeRangePredicate(ComplexCharacter complex, int startCodePoint) {
+  private void parseMaybeRangePredicate(MutableCodePointMap<Boolean> ranges, int startCodePoint) {
     if (peek != '-') {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
     }
     advance(1);
     if (peek == ']') {
-      complex.ranges.put(startCodePoint, startCodePoint + 1, true);
-      complex.ranges.put(+'-', +'-' + 1, true);
+      ranges.put(startCodePoint, startCodePoint + 1, true);
+      ranges.put(+'-', +'-' + 1, true);
     } else if (peek == '\\') {
       int endCodePoint = tryParseSingleCharEscape();
       if (endCodePoint == -1) {
@@ -1084,7 +1067,7 @@ final class PatternParser {
                 + "then move "
                 + "'-' to be the first character in the []");
       }
-      complex.ranges.put(startCodePoint, endCodePoint + 1, true);
+      ranges.put(startCodePoint, endCodePoint + 1, true);
     } else {
       int endCodePoint = pattern.codePointAt(index);
       if (endCodePoint <= startCodePoint) {
@@ -1094,7 +1077,7 @@ final class PatternParser {
                 + "'-' to be the first character in the []");
       }
       advanceCodePoint();
-      complex.ranges.put(startCodePoint, endCodePoint + 1, true);
+      ranges.put(startCodePoint, endCodePoint + 1, true);
     }
   }
 

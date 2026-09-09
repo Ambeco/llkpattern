@@ -106,9 +106,10 @@ where both engines agree by both throwing the same compile exception -- not a sp
 times `java.util.regex` vs `Ll1Pattern` compile and match separately (`regexCompile`/`llkCompile`,
 `regexMatch`/`llkMatch` -- matches are pre-compiled once in `@Setup` so match timing never includes
 compile cost). Run via `./gradlew :llkpattern:jmh`; results print to console and are also written
-as JSON to `documents/benchmarks/corpus_benchmark_results.json` (only once the *entire* run
-completes -- an interrupted run leaves that file empty), meant to be committed as a baseline and
-diffed against on later runs to catch regressions.
+as JSON to `documents/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json` (named after the
+desktop it was run on, mirroring the Pixel 3a's own results file below -- rename if run on a
+different machine) (only once the *entire* run completes -- an interrupted run leaves that file
+empty), meant to be committed as a baseline and diffed against on later runs to catch regressions.
 
 ## On-device (Android) corpus benchmark
 
@@ -152,7 +153,7 @@ actually needed again.
       consistent with the desktop-side improvement); `llkMatch` is actually *faster* than
       `regexMatch` at this row count and iteration depth (1.26ms vs 3.77ms/pass) -- notably
       different from the small-fraction run's `llkMatch` being slower, and from the desktop JMH
-      ratio (see `corpus_benchmark_results.json`) where `llkMatch` is slower than `regexMatch` --
+      ratio (see `Intel-i7-9750H_corpus_benchmark_results.json`) where `llkMatch` is slower than `regexMatch` --
       not yet investigated further (different row mix at full fraction, ART vs HotSpot JIT
       behavior, and/or genuine device-specific dispatch performance are all plausible; worth
       another look if it matters for a real decision, but out of scope for just standing up this
@@ -224,50 +225,30 @@ actually needed again.
 - [ ] `region()`'s interaction with `hasAnchoringBounds`/`useAnchoringBounds`/`useTransparentBounds` (whether `^`/`$`/boundaries see past the region) isn't implemented at all yet -- `^`/`$`/`\A`/`\Z`/`\z`/`\b`/`\B` all currently hard-code the "opaque bounds" behavior (never look past `regionStart`/`regionEnd`), which is `useAnchoringBounds(true)`/`useTransparentBounds(false)`'s combination (the default) but not configurable to the other three.
 - [ ] `PatternConstruct.compile()` is typed `@Nullable MatcherConstruct` but, now that every construct type actually builds a matcher, likely always returns non-null in practice — worth dropping the `@Nullable` (and fixing `Ll1Pattern.compile()`'s unchecked-nullable assignment).
 - [ ] `PatternSyntaxException.Reference` is constructed in a couple of places (e.g. the old, since-rewritten ambiguity-detection attempt) but was never actually handled in `PatternSyntaxException.throwWithReferences` — it silently falls through to `Object.toString()` (`Reference@<hashcode>`). Either implement it (render the referenced snippet, as `CodePoint`/`CodePointReference` do) or remove it if `CodePoint`-based messages turn out to be sufficient. Current loop/union ambiguity messages avoid it, using plain indices/`CodePoint` instead.
-- [ ] **`RegexCharacterClass.DOT`'s `materializedComplement` is a real, measured `llkCompile` hot
-      spot (~4.5% of sampled time, per `documents/benchmarks/Intel-i7-9750H_llkCompile_sampling.txt`),
-      but the fix is NOT simply "use `.complement()` instead" -- investigated 2026-09-08, not fixed
-      this session (deliberately deferred, see notes.md for the full trace):
-      - `materializedComplement(set)` (`NamedCharClass.java`) eagerly walks the entire code point
-        domain once, at class-init time, to build DOT.unicode as ~541 *physical* entries -- forced
-        by `ArrayCodePointMap`'s packed-key format capping each entry at 2048 code points, so the
-        one logical "everything except `\n`" range can't be represented as fewer than ~541 chunks
-        once actually appended via `appendSorted`/`put`.
-      - `PatternParser`'s `.` handling (non-`DOTALL` case) then does `new
-        ArrayCodePointMap<>(RegexCharacterClass.DOT.unicode)` for every `.` in the pattern being
-        parsed -- copying all ~541 chunks each time, via `putAll`'s `entrySet()`-driven sorted merge.
-        This copy (not the one-time class-init walk) is the actual `llkCompile`-time cost.
-      - The `materializedComplement` doc's justification ("`set.complement(Boolean.TRUE)`'s
-        `entrySet()` would be the empty holes in `set`, not the complement's members -- the
-        inversion bug") does NOT reproduce against the current `ArrayCodePointMap`: verified
-        directly (`{'\n'}.complement(true).entrySet()` correctly yields `[0,10)->true,
-        [11,1114112)->true`, 2 entries, not the hole) -- `materializeWithGaps()` already handles
-        this correctly. So switching `DOT.unicode` itself to `nlSet.complement(true)` (via
-        `ArrayCodePointMap`'s private complement constructor's O(1) fast path -- a straight array
-        copy of `nlSet`'s 1 entry, no domain walk at all) would fix the one-time class-init cost.
-      - But it would NOT by itself fix `PatternParser`'s per-`.` copy: `new
-        ArrayCodePointMap<>(complementMap)` still goes through `putAll`/`entrySet()`, and
-        `entrySet()` on an else-valued map calls `materializeWithGaps()`, which returns the same
-        ~2 giant logical ranges that `appendSorted` will then re-chunk into ~541 physical entries in
-        the *destination* map anyway. The real fix needs the copy itself avoided or made
-        elseValue-aware -- `PatternParser` copies (rather than aliases) `DOT.unicode` specifically
-        because `ComplexCharacter.ranges` is mutable and further `&&`/negation parsing may write
-        into it -- so a proper fix likely needs either a copy-on-write scheme, or an elseValue-
-        preserving fast copy path distinct from `putAll`'s general one.
-- [ ] **Make `ComplexCharacter.ranges` immutable after construction** -- this is the actual
-      prerequisite the DOT item above needs (and would remove several other defensive copies too,
-      not just DOT's): `parseComplexCharacter` currently allocates a mutable map, hands it around to
-      `tryParseSingleCharEscape`/`parseComplexEscape` for further in-place mutation (`&&`,
-      negation, individual members) as it parses a bracket expression, and only once parsing that
-      one expression is complete does it become `ComplexCharacter.ranges`. If `ComplexCharacter`
-      instead took a genuinely-finished, immutable `CodePointMap` at construction time (parsing
-      builds into its own scratch/builder-style map first, per bracket expression, then hands over
-      the finished result), every OTHER site that currently copies a `NamedCharClass`/
-      `RegexCharacterClass` constant defensively -- because handing it to `ComplexCharacter` would
-      otherwise let later parsing mutate a shared static instance -- could alias it directly
-      instead. `PatternParser`'s DOT handling is the one with a measured cost (see above), but this
-      isn't DOT-specific: any bracket expression built entirely from named classes/builtins (e.g.
-      `[\d\s]`) likely has the same avoidable-copy shape worth checking once this lands.
+- [ ] **Bracket-embedded named classes still merge, unlike a standalone escape.** Now that
+      `ComplexCharacter.ranges` is immutable and `PatternParser#parseComplexEscape` is a pure
+      function, a standalone escape atom (a bare `\D`/`\p{...}` in running pattern text) assigns
+      the resulting `CodePointMap` straight into `ComplexCharacter.ranges` with no copy at all. A
+      named class used *inside* a bracket expression (e.g. `[\d\s]`, `[a\D]`) still goes through
+      `ranges.putAll(...)` (now `ArrayCodePointMap#putAll(ArrayCodePointMap)`'s optimized overload,
+      not a per-entry merge -- see that method's own doc), which is a real sorted-sweep merge, not
+      an alias. Worth revisiting if profiling shows it matters: e.g. special-casing "the bracket's
+      `ranges` local is still empty" to alias instead of merge, same trick the standalone-escape
+      site already uses.
+- [ ] **`CodePointMap#forEachRange` isn't used everywhere `entrySet()` still is.** It visits ranges
+      as primitive `int`/`value` triples with no `Range`/`Entry`/`Iterator` allocated per range (for
+      `ArrayCodePointMap`'s common `elseValue == null` case -- see its own doc). `PatternParser`'s
+      `intersect` helper and `ArrayCodePointMap#putAll`'s internal sweep (`sweepMerge`) already use
+      it, and `#intersection`/`#equals` were rewritten to skip `entrySet()`/`forEachRange` entirely
+      (direct raw-array reads, since both operands are known to be `ArrayCodePointMap` there). Still
+      unconverted: `TreeCodePointMap`'s own methods (low priority -- differential-test oracle only,
+      not a production path), and every `PatternConstruct`/`MatcherConstruct` loop that walks an
+      entry map while building the matcher/dispatch graph (`addCodePointsTo`, `buildEntryMap`, the
+      `MultiDispatchingMatcherConstruct` builders, etc. -- `grep -n '\.entrySet()'
+      llkpattern/src/main/java` finds them all). Most of those are on the `llkCompile` hot path per
+      this session's own profiling history, so likely worth a dedicated pass rather than
+      opportunistic conversion -- large enough in surface area to be its own session rather than
+      folded into whatever prompted this item.
 - [ ] **`ArrayCodePointMap`/`TreeCodePointMap` immutable+builder split**: floated in the original
       design sketch for the array-backed map, but neither implementation actually has this split
       today (both are mutable-only) -- worth doing for both together if immutability is ever

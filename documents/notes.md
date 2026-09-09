@@ -976,6 +976,157 @@ Notes to self about how to work on this project, and other context that doesn't 
 - Explicitly deferred at the project owner's direction ("we shouldn't tackle that in this session")
   -- see remaining_work.md's new item for where to pick this back up.
 
+### Following through: `DOT`/`materializedComplement` fix and `ComplexCharacter.ranges` immutability (2026-09-08)
+
+- Picked back up in a later session the same day. Implemented per the trace above:
+  `NamedCharClass.materializedComplement` (and every `RegexCharacterClass`/`NamedCharClass` constant
+  built from it -- `DOT`, `D`, `H`, `S`, `V`, `W`, `Assigned`, `Graph`) now just calls
+  `.complement(Boolean.TRUE)` on the plain (non-complemented) source set, confirming the
+  investigation's finding that this alone is O(source size), not O(domain) -- no measured class-init
+  regression.
+- The actual per-`.` cost needed the copy-avoidance the investigation called out as the real fix:
+  `PatternParser`'s `.` handling no longer copies `RegexCharacterClass.DOT.unicode` at all -- it
+  rebuilds `\n`'s complement fresh inline (`new ArrayCodePointMap<>(); put('\n',...); .complement()`),
+  which is the same O(1) array-copy fast path, applied directly instead of routed through a shared
+  static + defensive copy.
+- Made `ComplexCharacter.ranges` genuinely immutable (`final CodePointMap<Boolean>`, not
+  `MutableCodePointMap`) as the investigation's named prerequisite: `PatternParser#parseComplexCharacter`
+  now builds into a local `ranges` variable throughout the loop (including the `&&` operand-run reset,
+  which rebinds the local rather than reassigning a field) and only constructs the `ComplexCharacter`
+  once, at each return point, from the finished map.
+- That let `parseComplexEscape` become a pure function (`CodePointMap<Boolean> parseComplexEscape()`,
+  no `ComplexCharacter`/`ranges` parameter) returning the escape's set directly. A standalone escape
+  atom (bare `\D`, `\p{...}` in running pattern text -- not inside `[...]`) now assigns that result
+  straight into the new `ComplexCharacter`'s `ranges` field with zero copying, for any named class
+  including the else-valued ones (`\D`/`\H`/`\S`/`\V`/`\W`, and `\P{...}` -- the latter's own
+  materializing walk (`PatternParser`'s local `materializeComplement` twin) was replaced with
+  `.complement()` for the same reason, and removed once unused).
+- Not fully generalized: a named class used *inside* a bracket expression (`[\d\s]`) still merges via
+  `putAll` into the bracket's own accumulating local, which still forces materialization for an
+  else-valued source -- see remaining_work.md's new item. Judged an acceptable residual (brackets
+  containing these builtins are less common than standalone use, and the investigation's own
+  measured hot spot was specifically the standalone `.` case) rather than something to chase now.
+- Verified via `CodePointMapDifferentialTest` (which fuzzes `complement()` against `TreeCodePointMap`
+  and was already in the suite) that `TreeCodePointMap.entrySet()`'s else-valued path also correctly
+  yields the complement's members, not holes, matching `ArrayCodePointMap`'s behavior confirmed in the
+  investigation above -- so aliasing a `.complement()` result is safe regardless of which concrete
+  type produced it.
+
+### `floorIndex` hybrid binary+linear search (2026-09-08)
+
+- Follow-up to the linear-scan-under-65-entries experiment noted above (kept then, flat result).
+  Changed `floorIndex` to always binary-search first, narrowing `[lo, hi]` down to at most
+  `LINEAR_SEARCH_THRESHOLD` entries, then linear-scan that final window -- rather than choosing one
+  strategy or the other based on the whole map's size. Bigger maps (already possible via `&&`/union
+  chains) now get binary search's log-time narrowing before falling back to the branch-cheap linear
+  scan for the final stretch, instead of a full linear scan regardless of size once under threshold,
+  or a full binary search down to a single element once over it.
+- Initial version of this hybrid excluded `mid` from the window on the "qualifies" branch (`lo =
+  mid + 1`), which is right for a binary search that tracks a separate `result` variable but wrong
+  once that tracking is dropped in favor of "the final window still contains the answer" -- it lost
+  a legitimate rightmost-so-far candidate whenever nothing later in the window also qualified.
+  Caught immediately by `CodePointMapDifferentialTest.complement_agreesWithTreeCodePointMap`
+  (disagreement at U+10800). Fixed by keeping `mid` in the window on that branch (`lo = mid`, with
+  `mid` rounded up via `(lo + hi + 1) >>> 1` so this still makes progress) -- see `floorIndex`'s own
+  comment for the invariant.
+
+### DOT should alias `RegexCharacterClass.DOT.unicode` directly, not rebuild it (2026-09-08, same session)
+
+- The `.` (non-`DOTALL`) handling initially rebuilt `\n`'s complement fresh at every `.` instead of
+  reusing the shared `RegexCharacterClass.DOT.unicode` constant, reasoning (accurately, at the time)
+  that `ComplexCharacter.ranges` was mutable and aliasing the shared static risked later `&&`/
+  negation parsing corrupting it. The project owner caught that this reasoning had gone stale:
+  `ComplexCharacter.ranges` had *just* been made immutable in this same session (see above), so
+  nothing past construction can mutate it any more -- aliasing `DOT.unicode` directly is safe again,
+  and strictly cheaper than the rebuild (zero allocation vs. a fresh one-entry map plus a
+  complement() call).
+- Fixed: the non-`DOTALL` branch now does `new ComplexCharacter(index, RegexCharacterClass.DOT.unicode)`
+  directly. Re-ran both benchmarks to confirm: desktop `llkCompile` allocation dropped a further
+  small amount (2,114,320 -> 2,111,408 B/op); on-device `llkCompile` (Pixel 3a) went
+  **27.72ms -> 18.99ms/pass** (a further ~31% on top of this session's earlier fixes), `llkMatch`
+  1.32ms -> 1.18ms; `regexCompile`/`regexMatch` unchanged (6.68->6.71, 4.05->3.86, within noise) as
+  the expected sanity check.
+- General lesson: a "defensive copy because X is mutable" comment needs re-checking whenever X's
+  mutability changes -- it doesn't automatically get revisited just because the copy site wasn't
+  touched by the change that made X immutable.
+
+### Sidestepping `putAll`/`entrySet()` in `parseComplexCharacter`'s merges (2026-09-08, same session)
+
+- The project owner asked to avoid `putAll` (past performance issues) inside `parseComplexCharacter`,
+  then separately asked to eliminate `entrySet()` too as "a performance problem waiting to happen."
+- `putAll` avoidance: replaced both `ranges.putAll(...)` call sites (merging an escape class, merging
+  a nested `[...]`) with a new `mergeInto(target, source)` helper that calls `target.put()` once per
+  range of `source`, instead of `putAll`'s unconditional whole-array rebuild of `target` (`O(target's
+  current size)` regardless of how small `source` is -- costly here since `ranges` keeps growing
+  across a whole bracket expression while each merge source is typically tiny). Also restructured
+  the nested-`[...]` case to recurse into a new `parseComplexCharacterRanges` core method (extracted
+  out of `parseComplexCharacter`) rather than building, and immediately discarding everything but the
+  `ranges` field of, a whole extra `ComplexCharacter` object.
+- `entrySet()` avoidance: added `CodePointMap#forEachRange` (default method, `void accept(int min,
+  int max, V value)` -- no boxed `Range`/`Entry` per visited range) with an `ArrayCodePointMap`
+  override that reads `keys`/`values` directly for the common `elseValue == null` case, no
+  `Iterator`/`Entry`/`Range` allocated at all (unlike `entrySet()`'s lazy view, which still allocates
+  an `Entry`+`Range` pair per `next()`). `mergeInto` and `intersect` now use it.
+- Measured, not just assumed: re-ran the JMH corpus benchmark after each step. Net result on this
+  corpus is a wash, not a win -- `llkCompile` allocation actually *rose* slightly through the
+  `putAll`-avoidance step alone (2,111,408 -> 2,167,488 B/op) before `entrySet` avoidance clawed most
+  of it back (-> 2,127,208 B/op, still above the pre-`mergeInto` baseline); time stayed flat within
+  noise throughout (~1.06ms/op regardless). Root cause: `put()`'s own window-search-and-splice does
+  its own small array allocations per call (see `ArrayCodePointMap#put`'s `replKeys`/`replValues`),
+  so N individual `put()` calls aren't strictly cheaper than one `putAll` bulk rebuild -- it depends
+  on how many ranges are being merged and how large the destination already is. Reported honestly
+  rather than assumed a win: this corpus's bracket expressions are mostly small (few ranges merged
+  per bracket), which is close to the crossover point where the two approaches cost about the same.
+  Kept anyway, per the project owner's direction (avoiding `putAll`/`entrySet()` as a matter of
+  policy here, not contingent on this corpus showing a measured win) and because `forEachRange` is a
+  generically useful building block regardless of this one caller's own numbers.
+- Verified via the full test suite (`CodePointMapDifferentialTest` included) after each step.
+
+### `ArrayCodePointMap` cleanup: dead code, direct `intersection`, optimized `putAll` (2026-09-08, same session)
+
+- The project owner flagged four things after reviewing the `putAll`/`entrySet` work above:
+  `entriesOverlapping` (returning a throwaway `List<Entry<Range, V>>`) was only used by
+  `intersection`/`intersectionRejectingConflicts`; the latter looked unused; a `putAll(other)`
+  should have an `ArrayCodePointMap`-specialized fast overload; and the previous `mergeInto`
+  (individual `put()` calls) was based on a wrong premise -- the owner clarified `putAll` was slow
+  historically because each individual `put()` did an unoptimized shift, and *multiple* `put()`
+  calls (i.e. exactly what `mergeInto` did) is "definitely worse"; the real intent was minimizing
+  how many map instances/copies get made in the first place, not avoiding `putAll` as such.
+- Confirmed `intersectionRejectingConflicts` was genuinely dead in production: `grep` found it
+  called only from its own two unit tests and `CodePointMapDifferentialTest`'s fuzzing -- real
+  ambiguity detection moved to `CodePointMapBuilder` in an earlier session (see that session's own
+  notes above) and never used this method. Removed it from the `CodePointMap` interface, both
+  implementations, and its two dedicated `CodePointMapTestBase` tests; kept
+  `CodePointMapDifferentialTest`'s `intersection`-only fuzz coverage (the same trial that caught
+  this session's earlier `floorIndex` bug).
+- Rewrote `ArrayCodePointMap#intersection(min, max)` directly against the raw arrays instead of
+  through `entriesOverlapping`, which is now unused and was deleted too. The `elseValue != null`
+  branch is a genuine improvement over the old `entriesOverlapping`, not just a rewrite: it walks
+  from `windowStart(min)` (skipping straight to the first potentially-overlapping entry, same as
+  the `elseValue == null` case) instead of `materializeWithGaps()`'s always-scan-from-index-0.
+- Replaced `mergeInto` (the per-`put()` helper from the prior entry) with a real optimized
+  `ArrayCodePointMap#putAll(ArrayCodePointMap<V>)` overload, with `putAll(CodePointMap<V>)`
+  delegating to it via `instanceof`. Has its own empty-target fast path (a straight array copy,
+  same trick the copy constructor/`complement()` already use) for the common "build a fresh
+  accumulator from one source" shape; otherwise shares the existing sorted-sweep merge algorithm
+  (`sweepMerge`) with the generic path, just fed via `forEachRange` instead of `entrySet()` --
+  the sweep's cross-range state (`i`/`pending`/`pendingMin`/`pendingMax`/`pendingValue`) had to move
+  into a small `SweepState` holder object, since `forEachRange`'s callback can't reassign locals of
+  the enclosing method the way the old `entrySet()`-based `for` loop's body could.
+  `PatternParser`'s two `mergeInto` call sites went back to plain `ranges.putAll(...)`.
+- Also added an `ArrayCodePointMap`-vs-`ArrayCodePointMap` fast path to `equals()`: direct
+  `keys`/`values`/`elseValue` field comparison (both are always kept in canonical coalesced form --
+  see the class doc), no `entrySet()` at all. (`Arrays.equals(int[], from, to, int[], from, to)`
+  isn't available -- this project targets Java 8, that overload is Java 9+ -- so it's a manual loop
+  instead.)
+- Measured: this round is an unambiguous win, not the wash the `mergeInto` experiment was --
+  `llkCompile` allocation **2,127,208 -> 1,973,880 B/op**, the best figure of the whole session
+  (better than the original `entrySet()`-based `putAll` baseline this session started from). Time
+  ~1.01ms/op, within this run's own noise band of the prior numbers. Confirms the project owner's
+  diagnosis: the fix for `putAll` being slow was never "stop using `putAll`", it was "optimize
+  `putAll` itself" (plus avoid `entrySet()`'s per-range allocation while at it).
+- Full test suite green throughout, including `CodePointMapDifferentialTest`.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

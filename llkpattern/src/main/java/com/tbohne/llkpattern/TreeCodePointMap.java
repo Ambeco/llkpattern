@@ -147,30 +147,6 @@ public final class TreeCodePointMap<V> implements MutableCodePointMap<V> {
   }
 
   @Override
-  public CodePointMap<V> intersectionRejectingConflicts(CodePointMap<V> other) {
-    TreeCodePointMap<V> result = new TreeCodePointMap<>();
-    for (Entry<Range, V> otherEntry : other.entrySet()) {
-      for (Entry<Range, V> mineEntry :
-          entriesOverlapping(otherEntry.getKey().min, otherEntry.getKey().max)) {
-        V mine = mineEntry.getValue();
-        if (!mine.equals(otherEntry.getValue())) {
-          throw new CodePointMap.ConflictingMappingException(
-              "this map has value "
-                  + mine
-                  + " for code points "
-                  + mineEntry.getKey()
-                  + ", but other map has value "
-                  + otherEntry.getValue()
-                  + " for code points "
-                  + otherEntry.getKey());
-        }
-        result.put(mineEntry.getKey().min, mineEntry.getKey().max, mine);
-      }
-    }
-    return result;
-  }
-
-  @Override
   public CodePointMap<V> complement(V value) {
     return new TreeCodePointMap<>(this, value);
   }

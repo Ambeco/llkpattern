@@ -110,21 +110,14 @@ public class CodePointMapDifferentialTest {
       actualUnion.putAll(actualOther);
       assertAgree(trial, expectedUnion, actualUnion);
 
-      // Intersection restricted to a window, and intersectionRejectingConflicts against a
-      // non-conflicting slice of the same complement (itself, restricted) -- exercises
-      // entriesOverlapping's elseValue fallback path in both implementations.
+      // Intersection restricted to a window -- exercises the elseValue-aware windowed walk in
+      // both implementations.
       int min = randomCodePoint(random);
       int max = Math.min(CodePointMap.MAX_CODE_POINT + 1, min + 1 + random.nextInt(5000));
       if (max > min) {
         TreeCodePointMap<String> expectedIx = (TreeCodePointMap<String>) expectedComplement.intersection(min, max);
         ArrayCodePointMap<String> actualIx = (ArrayCodePointMap<String>) actualComplement.intersection(min, max);
         assertAgree(trial, expectedIx, actualIx);
-
-        TreeCodePointMap<String> expectedSelfIx =
-            (TreeCodePointMap<String>) expectedComplement.intersectionRejectingConflicts(expectedIx);
-        ArrayCodePointMap<String> actualSelfIx =
-            (ArrayCodePointMap<String>) actualComplement.intersectionRejectingConflicts(actualIx);
-        assertAgree(trial, expectedSelfIx, actualSelfIx);
       }
     }
   }

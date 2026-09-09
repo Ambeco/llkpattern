@@ -583,13 +583,18 @@ final class PatternParser {
       negate = true;
       advance(1);
     }
-    MutableCodePointMap<Boolean> ranges = new ArrayCodePointMap<>();
+    CodePointMapBuilder<Boolean> ranges = new CodePointMapBuilder<>();
     // IntersectionCharacter -> UnionCharacter (&& IntersectionCharacter)?  -- "&&" is a real
     // operator token, not tied to a bracket: [a-z&&aeiou] intersects the *whole run* of members
     // up to the next "&&" or the closing "]" against everything accumulated so far, whether or
     // not that run happens to be wrapped in its own "[...]". So `ranges` below always accumulates
     // only the *current* union-operand run; `intersectionSoFar` (null until the first "&&" is
-    // seen) holds the running intersection of every completed operand run before it.
+    // seen) holds the running intersection of every completed operand run before it. A
+    // CodePointMapBuilder, not a MutableCodePointMap, since members of a single operand run arrive
+    // in whatever order the bracket expression wrote them (e.g. "[cba]" adds 'c', 'b', 'a') --
+    // CodePointMapBuilder#add is a plain O(1)-amortized append regardless of order, deferring the
+    // sort/coalesce ArrayCodePointMap#put would otherwise do on every single-character member to
+    // one #build() call when this operand run is actually finished (at "&&" or the closing "]").
     @Nullable CodePointMap<Boolean> intersectionSoFar = null;
     for (; ; ) {
       switch (peek) {
@@ -598,20 +603,18 @@ final class PatternParser {
         case ']':
           if (index > startIndex + 1) {
             advance(1); // consume the ']' -- callers expect peek to be past this construct
-            // Already-mutable either way (ranges' own declared type, or intersect()'s own declared
-            // return type) -- no toMutable() wrapping needed for either ternary branch.
-            MutableCodePointMap<Boolean> finalRanges =
+            CodePointMap<Boolean> finalRanges =
                 intersectionSoFar == null
-                    ? ranges
-                    : intersect(intersectionSoFar, ranges);
+                    ? ranges.build()
+                    : intersect(intersectionSoFar, ranges.build());
             return negate ? finalRanges.complement(true) : finalRanges;
           } else {
-            ranges.put(+']', +']' + 1, true);
+            ranges.add(+']', +']' + 1, true);
             advance(1);
             break;
           }
         case '-':
-          ranges.put(+'-', +'-' + 1, true);
+          ranges.add(+'-', +'-' + 1, true);
           advance(1);
           break;
         case '\\':
@@ -620,21 +623,18 @@ final class PatternParser {
             if (peek == '-') {
               parseMaybeRangePredicate(ranges, eCodePoint);
             } else {
-              ranges.put(eCodePoint, eCodePoint + 1, true);
+              ranges.add(eCodePoint, eCodePoint + 1, true);
             }
           } else {
-            ranges.putAll(parseComplexEscape());
+            ranges.addAll(parseComplexEscape());
           }
           break;
         case '[':
           // RangeCharacter -> "[" IntersectionCharacter "]" -- a nested class is itself a member
           // of the enclosing union, e.g. "[a-c[p-z]]" or an operand of "&&" in "[[a-b]&&[c-d]]".
           // Union its ranges into the current operand run; "&&" (below) intersects whole runs,
-          // not individual members, so this is exactly like unioning in any other member. putAll,
-          // not a per-entry merge: see ArrayCodePointMap#putAll(ArrayCodePointMap)'s own doc for
-          // why that's the cheap direction now (an optimized fast path for exactly this "merge one
-          // ArrayCodePointMap into another" shape), not individual put() calls.
-          ranges.putAll(parseComplexCharacterRanges(index));
+          // not individual members, so this is exactly like unioning in any other member.
+          ranges.addAll(parseComplexCharacterRanges(index));
           break;
         case '&':
           if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
@@ -644,11 +644,12 @@ final class PatternParser {
             // valid Java regex syntax, intersecting against the literal run "aeiou", not just
             // [a-z&&[aeiou]].
             advance(2);
+            CodePointMap<Boolean> completedRun = ranges.build();
             intersectionSoFar =
                 intersectionSoFar == null
-                    ? ranges
-                    : intersect(intersectionSoFar, ranges);
-            ranges = new ArrayCodePointMap<>();
+                    ? completedRun
+                    : intersect(intersectionSoFar, completedRun);
+            ranges = new CodePointMapBuilder<>();
             break;
           }
           // fallthrough
@@ -658,7 +659,7 @@ final class PatternParser {
           if (peek == '-') {
             parseMaybeRangePredicate(ranges, codePoint);
           } else {
-            ranges.put(codePoint, codePoint + 1, true);
+            ranges.add(codePoint, codePoint + 1, true);
           }
       }
     }
@@ -1051,14 +1052,14 @@ final class PatternParser {
     }
   }
 
-  private void parseMaybeRangePredicate(MutableCodePointMap<Boolean> ranges, int startCodePoint) {
+  private void parseMaybeRangePredicate(CodePointMapBuilder<Boolean> ranges, int startCodePoint) {
     if (peek != '-') {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
     }
     advance(1);
     if (peek == ']') {
-      ranges.put(startCodePoint, startCodePoint + 1, true);
-      ranges.put(+'-', +'-' + 1, true);
+      ranges.add(startCodePoint, startCodePoint + 1, true);
+      ranges.add(+'-', +'-' + 1, true);
     } else if (peek == '\\') {
       int endCodePoint = tryParseSingleCharEscape();
       if (endCodePoint == -1) {
@@ -1067,7 +1068,7 @@ final class PatternParser {
                 + "then move "
                 + "'-' to be the first character in the []");
       }
-      ranges.put(startCodePoint, endCodePoint + 1, true);
+      ranges.add(startCodePoint, endCodePoint + 1, true);
     } else {
       int endCodePoint = pattern.codePointAt(index);
       if (endCodePoint <= startCodePoint) {
@@ -1077,7 +1078,7 @@ final class PatternParser {
                 + "'-' to be the first character in the []");
       }
       advanceCodePoint();
-      ranges.put(startCodePoint, endCodePoint + 1, true);
+      ranges.add(startCodePoint, endCodePoint + 1, true);
     }
   }
 

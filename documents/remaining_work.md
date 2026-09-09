@@ -291,3 +291,12 @@ actually needed again.
 - [ ] **`lastCharSet`/`WordBoundaryConstruct.priorCharSet` should NOT be removed** -- raised and rejected this session. `lastCharSet` isn't dead now that sequences link `next` pointers directly; it's the compile-time `\b`/`\B` static-wordness optimization (`WordBoundaryConstruct.classify`'s subset/disjoint checks need an actual queryable `CodePointMap`, which a push-only API can't give it). Removing it wouldn't fail any test, just silently push every `\b` onto the runtime-check path -- noted here so it isn't attempted again without realizing that.
 - [ ] `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`) and the `QuantifiedUnion`-branch-union temporary maps inside those two methods are still real, un-eliminated `CodePointMap` allocations beyond the "4 real consumers" -- left alone this session per the item above (converting `lastCharSet`'s callers to a push model isn't viable; `firstCharSet`'s one call site might be, see above, but wasn't converted).
 - [ ] `MatcherConstruct`'s `bodyEntries` filtering map (`DispatchMatcherConstruct`'s capturing loop-dispatch constructor, ~line 379) is still a real intermediate allocation, unconverted -- a candidate for whenever the quantified-loop case above is revisited.
+- [ ] **`CodePointMapBuilder.build()`'s own allocation overhead** (3 scratch arrays plus two boxed
+      `Integer[]` sort-order arrays, on top of the builder's own 3 raw arrays) is worth trimming --
+      converting `PatternParser.parseComplexCharacterRanges` to use it (2026-09-09) improved
+      `llkCompile` time (-7.6%) but *increased* `gc.alloc.rate.norm` (+5.8%), because that fixed
+      per-call overhead outweighs the `put()`-search avoidance for the common case (a handful of
+      members in a small bracket expression). Candidates: a primitive index sort instead of boxed
+      `Integer[]` (avoiding the boxing allocation entirely), and/or a small-N-optimized `build()`
+      path that skips the scratch-array machinery below some threshold. Kept the conversion anyway
+      (time was judged the more important metric), but this is real, identified headroom.

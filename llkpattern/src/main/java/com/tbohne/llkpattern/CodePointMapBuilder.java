@@ -51,6 +51,15 @@ final class CodePointMapBuilder<V> {
     add(codePoint, codePoint + 1, value);
   }
 
+  /**
+   * Adds every one of {@code source}'s entries -- via {@link CodePointMap#forEachRange}, so no
+   * {@code Entry}/{@code Range} is allocated per source entry, same reasoning as {@link
+   * ArrayCodePointMap#putAll} preferring a raw sweep over {@code entrySet()} where it can.
+   */
+  void addAll(CodePointMap<V> source) {
+    source.forEachRange(this::add);
+  }
+
   /** As {@link CodePointMap.MutableCodePointMap#setElseValue}, applied to the map {@link #build} returns. */
   void setElseValue(@Nullable V value) {
     elseValue = value;

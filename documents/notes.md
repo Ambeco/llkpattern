@@ -1127,6 +1127,41 @@ Notes to self about how to work on this project, and other context that doesn't 
   `putAll` itself" (plus avoid `entrySet()`'s per-range allocation while at it).
 - Full test suite green throughout, including `CodePointMapDifferentialTest`.
 
+### `appendSorted` single-block fast path + `parseComplexCharacterRanges` → `CodePointMapBuilder` (2026-09-09)
+
+- The project owner spotted two things in a fresh `llkCompile` CPU sample: `ArrayCodePointMap
+  .appendSorted` itself showing up as a bottleneck (even though it's only called from real-consumer
+  sites), and `PatternParser.parseComplexCharacterRanges`'s `ranges.put(codePoint, codePoint + 1,
+  true)` -- a genuinely new hot spot, since bracket-expression character members were still going
+  through `ArrayCodePointMap.put()`'s general splice-and-shift path one at a time, never converted
+  to `CodePointMapBuilder`.
+- `appendSorted` fix: added a fast path for the common case (a single range, or the leftover after
+  merging with the previous entry, that fits in one packed entry -- i.e. doesn't need the
+  2048-code-point chunking loop) that skips the chunk-count division and loop setup entirely. Pure
+  win, no tradeoff -- kept as-is.
+- `parseComplexCharacterRanges`/`parseMaybeRangePredicate` converted from a mutable
+  `ArrayCodePointMap` (built via `put()`/`putAll()`) to a `CodePointMapBuilder<Boolean>` (via the
+  new `add()`/`addAll()`), since bracket-expression members arrive in arbitrary order (e.g. `[cba]`
+  adds 'c', 'b', 'a') -- exactly what `CodePointMapBuilder` is for. Added `CodePointMapBuilder
+  #addAll(CodePointMap)` (via `forEachRange`, no `Entry`/`Range` allocated) to support this.
+- Measured a genuine tradeoff, not a clean win: `llkCompile` time improved (0.923 -> 0.853 ms/op,
+  -7.6%) but `gc.alloc.rate.norm` got WORSE (1,956,720 -> 2,070,568 B/op, +5.8%). Root cause:
+  `CodePointMapBuilder` itself allocates 3 raw arrays, and `build()` allocates 3 more scratch
+  arrays plus two boxed `Integer[]` sort-order arrays -- for the common case (a handful of members
+  in a small bracket expression), that fixed per-call overhead outweighs the `put()`-search
+  avoidance on the allocation axis, even though it nets out faster on wall-clock.
+- Presented the tradeoff to the project owner explicitly before committing (time better, allocation
+  worse) rather than only reporting the flattering half. Decision: keep both changes as committed
+  -- time is the metric that matters here, and the allocation regression is small relative to the
+  time win. Cheaper alternatives (a primitive-index sort instead of boxed `Integer[]`, or a
+  small-N-optimized `build()` path) were identified as a possible follow-up but not pursued this
+  round -- worth revisiting if this specific spot regresses further or comes up again.
+- Verified via a fresh stack-profiler sample (not just trusting the JMH number): the old
+  single-line `ranges.put()` hot spot is gone, replaced by two small, diffuse entries
+  (`parseComplexCharacterRanges` ~1.3%, `CodePointMapBuilder.build`/`appendSorted` ~1.2%) -- the
+  cost moved to `build()` time as expected, not eliminated, consistent with the allocation number
+  above. Full suite green throughout (same 1487+9 tests as before this round).
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

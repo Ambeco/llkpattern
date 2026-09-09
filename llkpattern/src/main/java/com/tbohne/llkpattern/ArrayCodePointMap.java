@@ -492,10 +492,25 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
         }
       }
     }
-    if (min < max) {
-      int chunkCount = (max - min + MAX_COUNT) / (MAX_COUNT + 1); // ceil((max - min) / 2048)
-      ensureCapacity(size + chunkCount); // one allocation for the whole call, not one per chunk.
+    if (min >= max) {
+      return; // fully absorbed into the previous entry above.
     }
+    int count = max - min - 1;
+    if (count <= MAX_COUNT) {
+      // Common case (a single code point, or any run short enough to fit one packed entry): skip
+      // the chunk-count division and loop setup below entirely -- this is the overwhelming
+      // majority of real calls (one character, or one small range, at a time), so a plain O(1)
+      // insert here matters more than the general form's generality.
+      ensureCapacity(size + 1);
+      keys[size] = packKey(min, count);
+      values[size] = value;
+      size++;
+      return;
+    }
+    // Rare: a range spanning more than MAX_COUNT+1 code points must still be split across
+    // multiple physical entries (the packed key format's 2048-code-point-per-entry cap).
+    int chunkCount = (max - min + MAX_COUNT) / (MAX_COUNT + 1); // ceil((max - min) / 2048)
+    ensureCapacity(size + chunkCount); // one allocation for the whole call, not one per chunk.
     for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
       int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
       keys[size] = packKey(chunkMin, chunkMax - chunkMin - 1);

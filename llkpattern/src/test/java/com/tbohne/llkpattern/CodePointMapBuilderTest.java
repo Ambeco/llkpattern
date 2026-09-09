@@ -103,4 +103,22 @@ public class CodePointMapBuilderTest {
     CodePointMap<String> map = builder.build();
     assertThat(map.entrySet().size(), is(20));
   }
+
+  @Test
+  public void build_adjacentLongRangesSameValue_mergedAndChunkedCorrectly() {
+    // A single logical range spanning more than one 2048-code-point packed-entry chunk (see
+    // ArrayCodePointMap's class doc), built from two adjacent add() calls that must merge before
+    // the chunking pass (now done by ArrayCodePointMap's package-private
+    // sorted-arrays constructor, not appendSorted) ever runs.
+    CodePointMapBuilder<String> builder = new CodePointMapBuilder<>();
+    builder.add(0, 3000, "x");
+    builder.add(3000, 5000, "x");
+    CodePointMap<String> map = builder.build();
+    assertThat(map.containsKeys(0, 5000), is(true));
+    // ceil(5000 / 2048) = 3 physical chunks, all logically the same value.
+    assertThat(map.entrySet().size(), is(3));
+    for (java.util.Map.Entry<CodePointMap.Range, String> e : map.entrySet()) {
+      assertThat(e.getValue(), is("x"));
+    }
+  }
 }

@@ -4,7 +4,6 @@ import com.tbohne.llkpattern.CodePointMap.ConflictingMappingException;
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.CodePointMap.Range;
 import java.util.Arrays;
-import java.util.Comparator;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
@@ -78,89 +77,85 @@ final class CodePointMapBuilder<V> {
    * own {@code put} semantics.
    */
   MutableCodePointMap<V> build(ConflictHandler<V> onConflict) {
-    // Sort by min; ties broken by original add() order (Integer::compareTo composed with index is
-    // overkill for the typically-tiny inputs here, so a plain stable sort on boxed indices is
-    // used instead of hand-rolling one).
-    Integer[] order = new Integer[size];
-    for (int i = 0; i < size; i++) {
-      order[i] = i;
-    }
-    Arrays.sort(order, Comparator.comparingInt(i -> mins[i]));
+    sortInPlaceByMin();
 
-    // Accepted, already-coalesced-where-possible output ranges, built up in ascending order.
-    int[] outMin = new int[size];
-    int[] outMax = new int[size];
-    @SuppressWarnings("unchecked")
-    V[] outValue = (V[]) new Object[size];
+    // Merge/conflict-check pass, compacting forward over the SAME mins/maxs/values arrays --
+    // `outSize` is both "how many accepted entries so far" and the index the next accepted entry
+    // (if any) gets written to, so this never needs a separate output array. Correct to compare
+    // only against the immediately-preceding accepted entry (index outSize - 1), not every prior
+    // one: after sorting, mins[i] is non-decreasing, and an accepted entry's own min never
+    // decreases past the min of whichever sorted entry first started it -- so entry i can only
+    // possibly overlap the LATEST accepted entry, never an earlier one (that one's max is already
+    // behind the latest accepted entry's min by construction, since they were disjoint when
+    // accepted). This also fixes the old code's O(n^2) worst case, not just its extra allocations.
     int outSize = 0;
-
-    for (int idx : order) {
-      int min = mins[idx];
-      int max = maxs[idx];
+    for (int i = 0; i < size; i++) {
+      int min = mins[i];
+      int max = maxs[i];
       @SuppressWarnings("unchecked")
-      V value = (V) values[idx];
-      // Same O(output size) nested scan PatternConstruct.findFirstOverlap already did per branch
-      // -- output is small in practice (a handful of union branches/loop candidates), and this
-      // replaces that plus a per-branch ArrayCodePointMap allocation with none.
-      boolean absorbed = false;
-      for (int i = 0; i < outSize; i++) {
-        int loMax = Math.min(max, outMax[i]);
-        int hiMin = Math.max(min, outMin[i]);
+      V value = (V) values[i];
+      if (outSize > 0) {
+        int lastIdx = outSize - 1;
+        @SuppressWarnings("unchecked")
+        V lastValue = (V) values[lastIdx];
+        int loMax = Math.min(max, maxs[lastIdx]);
+        int hiMin = Math.max(min, mins[lastIdx]);
         if (hiMin < loMax) {
           // Genuine overlap (not just adjacency) -- a real conflict only when the values disagree.
-          if (!outValue[i].equals(value)) {
-            onConflict.onConflict(new Range(hiMin, loMax), outValue[i], new Range(min, max), value);
+          if (!lastValue.equals(value)) {
+            onConflict.onConflict(new Range(hiMin, loMax), lastValue, new Range(min, max), value);
             // onConflict is expected to throw; if a caller's handler doesn't, skip this range
             // rather than silently letting it clobber the earlier one.
-            absorbed = true;
-            break;
+            continue;
           }
-          // Same value: merge into the existing accepted entry rather than pushing a second,
-          // possibly-overlapping one -- appendSorted below requires disjoint, ascending entries.
-          outMin[i] = Math.min(outMin[i], min);
-          outMax[i] = Math.max(outMax[i], max);
-          absorbed = true;
-          break;
+          maxs[lastIdx] = Math.max(maxs[lastIdx], max); // mins[lastIdx] is already <= min (sorted).
+          continue;
         }
-        if (hiMin == loMax && outValue[i].equals(value)) {
+        if (hiMin == loMax && lastValue.equals(value)) {
           // Merely adjacent (touching, no overlap) with the same value: also coalesce, same as
           // ArrayCodePointMap.put's own adjacent-equal-value merging.
-          outMin[i] = Math.min(outMin[i], min);
-          outMax[i] = Math.max(outMax[i], max);
-          absorbed = true;
-          break;
+          maxs[lastIdx] = Math.max(maxs[lastIdx], max);
+          continue;
         }
       }
-      if (!absorbed) {
-        outMin[outSize] = min;
-        outMax[outSize] = max;
-        outValue[outSize] = value;
-        outSize++;
-      }
+      mins[outSize] = min;
+      maxs[outSize] = max;
+      values[outSize] = value;
+      outSize++;
     }
 
-    MutableCodePointMap<V> result = new ArrayCodePointMap<>();
-    result.ensureCapacity(outSize);
-    // outMin/outMax/outValue aren't necessarily disjoint yet where two accepted ranges partially
-    // overlap with equal values (allowed above) -- re-sort once more by min so appendSorted's
-    // ascending-order contract holds, then let its own merge-adjacent-equal-values logic collapse
-    // any resulting overlap or adjacency.
-    Integer[] finalOrder = new Integer[outSize];
-    for (int i = 0; i < outSize; i++) {
-      finalOrder[i] = i;
-    }
-    Arrays.sort(finalOrder, Comparator.comparingInt(i -> outMin[i]));
-    for (int i : finalOrder) {
-      int min = outMin[i];
-      if (min < 0) {
-        continue; // skipped above
-      }
-      result.appendSorted(min, outMax[i], outValue[i]);
-    }
+    // Hand the merged, sorted, disjoint arrays directly to the map -- one allocation (correctly
+    // sized up front), not the old code's separate output-array-then-appendSorted-copy.
+    MutableCodePointMap<V> result = new ArrayCodePointMap<>(mins, maxs, values, outSize);
     if (elseValue != null) {
       result.setElseValue(elseValue);
     }
     return result;
+  }
+
+  /**
+   * Insertion sort of {@code mins[0..size)}, {@code maxs}, and {@code values} in lockstep. Plain
+   * insertion sort (not {@code Arrays.sort} on boxed indices) because {@code size} is small at
+   * every real call site (a bracket expression's members, a union's branches, a loop's
+   * candidates) and its inputs tend to already be close to sorted -- and this avoids boxing
+   * {@code size} `Integer`s just to sort by a derived key.
+   */
+  private void sortInPlaceByMin() {
+    for (int i = 1; i < size; i++) {
+      int min = mins[i];
+      int max = maxs[i];
+      Object value = values[i];
+      int j = i - 1;
+      while (j >= 0 && mins[j] > min) {
+        mins[j + 1] = mins[j];
+        maxs[j + 1] = maxs[j];
+        values[j + 1] = values[j];
+        j--;
+      }
+      mins[j + 1] = min;
+      maxs[j + 1] = max;
+      values[j + 1] = value;
+    }
   }
 
   MutableCodePointMap<V> build() {

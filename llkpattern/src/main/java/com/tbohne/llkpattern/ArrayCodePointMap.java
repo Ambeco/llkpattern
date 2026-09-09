@@ -92,6 +92,42 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
   }
 
   /**
+   * Builds a map directly from {@code count} already-sorted-by-min, pairwise-disjoint,
+   * coalesced-where-possible ranges -- the one packing/chunking pass any {@code appendSorted}
+   * loop would do, but into a single correctly-sized {@code keys}/{@code values} array computed
+   * up front, instead of growing via {@link #ensureCapacity} as it goes. Package-private -- reached
+   * only via {@link CodePointMapBuilder#build}, which has already done the sort/merge/conflict-
+   * check work this constructor's preconditions assume; nothing else should call this directly.
+   *
+   * <p>Only {@code sortedMins}/{@code sortedMaxs}[0, count)} are read -- {@code sortedValues} is
+   * {@code Object[]}, not {@code V[]}, purely because {@link CodePointMapBuilder} (a different
+   * generic class) can't materialize a real {@code V[]} either (see its own {@code newValuesArray}-
+   * style comment) -- the unchecked cast here is the same one every other {@code Object[]}-backed
+   * value array in this file already needs.
+   */
+  ArrayCodePointMap(int[] sortedMins, int[] sortedMaxs, Object[] sortedValues, int count) {
+    int chunkTotal = 0;
+    for (int i = 0; i < count; i++) {
+      chunkTotal += (sortedMaxs[i] - sortedMins[i] + MAX_COUNT) / (MAX_COUNT + 1); // ceil(/2048)
+    }
+    keys = new int[chunkTotal];
+    values = newValuesArray(chunkTotal);
+    size = 0;
+    for (int i = 0; i < count; i++) {
+      int min = sortedMins[i];
+      int max = sortedMaxs[i];
+      @SuppressWarnings("unchecked")
+      V value = (V) sortedValues[i];
+      for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
+        int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
+        keys[size] = packKey(chunkMin, chunkMax - chunkMin - 1);
+        values[size] = value;
+        size++;
+      }
+    }
+  }
+
+  /**
    * Builds the complement of {@code source}: {@code elseValue} for every code point {@code
    * source} has no mapping for, nothing for every code point it does. Private -- reached only via
    * {@link #complement}, which always passes {@code this} (so {@code source} is always an

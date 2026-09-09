@@ -35,8 +35,9 @@ import org.openjdk.jmh.infra.Blackhole;
  * full corpus pass" instead of introducing thousands of separate trivial benchmark methods.
  *
  * <p>Run via {@code ./gradlew :llkpattern:jmh}. Results print to the console and are also written
- * as JSON to {@code documents/benchmarks/corpus_benchmark_results.json} (see llkpattern/build.gradle's
- * {@code jmh {}} block) -- that file is checked in as a baseline, so a deliberate benchmark run's
+ * as JSON to {@code documents/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json} (named
+ * after the desktop it's run on -- see llkpattern/build.gradle's {@code jmh {}} block) -- that file
+ * is checked in as a baseline, so a deliberate benchmark run's
  * output should be committed and future runs diffed against it to spot regressions.
  */
 @State(Scope.Benchmark)

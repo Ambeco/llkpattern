@@ -1162,6 +1162,29 @@ Notes to self about how to work on this project, and other context that doesn't 
   cost moved to `build()` time as expected, not eliminated, consistent with the allocation number
   above. Full suite green throughout (same 1487+9 tests as before this round).
 
+### Trimming `CodePointMapBuilder.build()`'s allocation overhead (2026-09-09, same day)
+
+- Follow-up to the tradeoff above, addressing the identified headroom rather than leaving it open.
+- `sortInPlaceByMin()`: replaced the boxed `Integer[]` index sort with a plain insertion sort over
+  the builder's own `mins`/`maxs`/`values` arrays in lockstep -- no boxing at all. Appropriate
+  since `size` is small at every real call site (a bracket expression's members, a union's
+  branches, a loop's candidates) and inputs tend to already be close to sorted.
+- The merge/conflict-check pass now compacts forward over those same three arrays in place,
+  instead of writing into three separate `outMin`/`outMax`/`outValue` scratch arrays -- comparing
+  each candidate only against the immediately-preceding *accepted* entry, not every prior one.
+  Correct once sorted: an accepted entry's own range can never again overlap anything before the
+  latest accepted one (disjoint by construction when accepted). This also fixes the old code's
+  O(n^2) worst case as a side effect, not just its extra allocations.
+- Added `ArrayCodePointMap`'s package-private `(int[], int[], Object[], int)` constructor, reached
+  only from `build()`: builds directly from the now-sorted, disjoint, coalesced-where-possible
+  arrays in one correctly-sized pass (computes the total packed-chunk count up front), instead of
+  the old code's second sort pass plus a loop of `appendSorted` calls into a growing map.
+  `CodePointMapBuilderTest` gained a case for a merged range spanning more than one 2048-code-point
+  chunk, to exercise this constructor's own chunking logic specifically.
+- Net result: `llkCompile` 0.853 -> 0.794 ms/op, a further real win on top of the previous round's
+  tradeoff (not measured for its allocation-axis effect specifically, but the scratch-array/boxing
+  removal should help there too by construction). Full suite green.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

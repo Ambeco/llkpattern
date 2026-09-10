@@ -23,11 +23,34 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 final class CodePointMapBuilder<V> {
   private static final int INITIAL_CAPACITY = 4;
 
-  private int[] mins = new int[INITIAL_CAPACITY];
-  private int[] maxs = new int[INITIAL_CAPACITY];
-  private Object[] values = new Object[INITIAL_CAPACITY];
+  private int[] mins;
+  private int[] maxs;
+  private Object[] values;
   private int size = 0;
   private @Nullable V elseValue;
+
+  CodePointMapBuilder() {
+    this(INITIAL_CAPACITY);
+  }
+
+  /**
+   * As the no-arg constructor, but starting from {@code initialCapacity} instead of the default --
+   * for a caller that can cheaply/accurately estimate how many ranges it's about to {@link #add},
+   * to skip {@link #add}'s {@code Arrays.copyOf} growth entirely rather than paying for it on the
+   * way to that size. Currently unused (a same-idea two-pass estimate for {@code
+   * mergeEntryPoints}'s candidates was tried and reverted -- see notes.md's 2026-09-10 entry: the
+   * estimation walk itself cost more than the growth it avoided) -- kept as reusable infrastructure
+   * for a future caller with a genuinely cheap size hint in hand, e.g. one that already knows an
+   * exact or near-exact count without a dedicated second pass. {@code initialCapacity <= 0} is
+   * clamped to 1 (an estimate can legitimately come out 0 for a degenerate/empty input; this class
+   * still needs a real backing array either way).
+   */
+  CodePointMapBuilder(int initialCapacity) {
+    int capacity = Math.max(initialCapacity, 1);
+    mins = new int[capacity];
+    maxs = new int[capacity];
+    values = new Object[capacity];
+  }
 
   /** Records that {@code [min, max)} maps to {@code value}. Order doesn't matter -- see class doc. */
   void add(int min, int max, V value) {

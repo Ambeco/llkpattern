@@ -1223,6 +1223,24 @@ Notes to self about how to work on this project, and other context that doesn't 
   many small classes, no help on the few big ones. Confirms the project owner's own skepticism going
   in -- a text-length heuristic isn't a substitute for actually knowing (or accurately estimating)
   the range count.
+- 2026-09-10: `Matcher.attemptMatch` now skips `resetPerAttemptState()` (the `Arrays.fill` over
+  `quantifiableCounts`/`captureGroups` -- ~7.2% of sampled CPU time per
+  `Intel-i7-9750H_llkMatch_sampling.txt`) on the very first attempt after construction/`reset()`/
+  `reset(String)`/`usePattern()`: those arrays are already known zero/null then (either freshly
+  `new`-allocated, or explicitly zeroed by `resetMatchState()` itself), so there's nothing yet for a
+  prior attempt to have dirtied. A new `perAttemptStateIsFresh` field tracks this -- set `true` by
+  `resetMatchState()`, consulted (then cleared) by `attemptMatch()`. Proposed by the project owner;
+  full test suite green (including the scraped-corpus differential tests that specifically exist to
+  catch stale per-attempt-state bugs, e.g. the 2026-09-07 leaked-loop-counter bug this same state
+  was originally introduced to fix -- this change doesn't touch when a bug like that would be
+  caught, only when a genuinely-already-fresh reset gets skipped). `CorpusBenchmark.llkMatch`
+  itself didn't move (0.039 -> 0.039 ms/op): `runLlkMatch` builds a fresh `Matcher` per row and
+  does exactly one top-level call, so `MATCHES`/`LOOKING_AT` rows are 100% "first attempt" and
+  should see the full per-op saving, but `FIND` rows only save one skip out of however many
+  internal `attemptMatch` calls `find()`'s scan makes -- diluted below this benchmark's noise floor
+  in the aggregate. Kept anyway: correct, tested, and should measurably help the common
+  single-`matches()`/`lookingAt()`-call case even though this particular mixed-mode aggregate
+  benchmark can't see it.
 - 2026-09-10: tried the project owner's follow-up idea instead -- estimate `mergeEntryPoints`'s
   `CodePointMapBuilder` capacity by walking the actual candidates, not the source text. Added a
   `PatternConstruct estimateEntryCount()` structurally mirroring `addCodePointsTo` exactly (same

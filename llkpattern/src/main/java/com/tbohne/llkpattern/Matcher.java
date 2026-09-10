@@ -45,6 +45,16 @@ public class Matcher implements MatchResult {
 	// and a slot a loop never entered stays null (unset), also matching regex semantics.
 	@Nullable Group[] captureGroups;
 
+	// True exactly when quantifiableCounts/captureGroups are already known zero/null -- right after
+	// construction (both arrays are `new`-allocated, so already zero-filled by the JVM without an
+	// explicit resetPerAttemptState() call) or an explicit reset()/reset(String)/usePattern() (which
+	// still calls resetPerAttemptState() itself, then sets this true). attemptMatch() consults this
+	// to skip a redundant resetPerAttemptState() on the very first attempt after any of those --
+	// state can only have been dirtied by a PRIOR attempt, and there isn't one yet. Set false again
+	// by attemptMatch() itself before running, since that attempt (success or failure) may leave
+	// either array non-fresh for whatever attempt comes next.
+	private boolean perAttemptStateIsFresh = true;
+
 	// Set by attemptMatch() before each match attempt, read by MatcherConstruct.EndMatcherConstruct:
 	// true for matches() (the whole region must be consumed), false for lookingAt()/find() (a
 	// prefix match starting at `pos` is enough). This is the one place the "same compiled graph"
@@ -230,6 +240,7 @@ public class Matcher implements MatchResult {
 		matchStart = -1;
 		matchEnd = -1;
 		resetPerAttemptState();
+		perAttemptStateIsFresh = true;
 	}
 
 	/** The per-attempt state a fresh match attempt must never see left over from an earlier one --
@@ -311,7 +322,15 @@ public class Matcher implements MatchResult {
 		// rows -- this single bug explains most of them: bounded quantifiers, optional ("?")
 		// constructs, and quantified capturing groups all showed wrong matches/no-matches whenever a
 		// find() scan or repeated match attempt was involved, not just a single matches() call.
-		resetPerAttemptState();
+		//
+		// Skipped on the very first attempt after construction/reset()/reset(String)/usePattern()
+		// (see perAttemptStateIsFresh's own doc): quantifiableCounts/captureGroups are already known
+		// zero/null then, so there's nothing to reset yet -- only a PRIOR attempt (this one, about to
+		// run) can dirty them, which is exactly what clearing the flag right after guards against.
+		if (!perAttemptStateIsFresh) {
+			resetPerAttemptState();
+		}
+		perAttemptStateIsFresh = false;
 		boolean success = pattern.compiled.match(this, peek());
 		if (success) {
 			hasMatch = true;

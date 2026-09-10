@@ -1223,6 +1223,29 @@ Notes to self about how to work on this project, and other context that doesn't 
   many small classes, no help on the few big ones. Confirms the project owner's own skepticism going
   in -- a text-length heuristic isn't a substitute for actually knowing (or accurately estimating)
   the range count.
+- 2026-09-10: tried the project owner's follow-up idea instead -- estimate `mergeEntryPoints`'s
+  `CodePointMapBuilder` capacity by walking the actual candidates, not the source text. Added a
+  `PatternConstruct estimateEntryCount()` structurally mirroring `addCodePointsTo` exactly (same
+  overrides: leaves answer directly from their own ranges, aliases delegate, the default pulls
+  `getEntryPointMap().rangeCountUpperBound()` -- a new `CodePointMap` method, O(1) on
+  `ArrayCodePointMap` via its own backing-array size), summed over `mergeEntryPoints`'s candidates
+  before building the real `CodePointMapBuilder`. Expected to fare much better than the text-span
+  idea above, since it estimates from other maps' real sizes instead of guessing from source-string
+  length. Measured a clear, reproducible REGRESSION instead, on time this time (not allocation):
+  `llkCompile` 0.646 -> ~0.677 ms/op (+4.8%, consistent across 3 repeated runs, each landing on
+  essentially the same value) for only a ~1% allocation improvement (1,797,856 ->
+  ~1,780,000-1,793,000 B/op, noisier). Root cause: walking every candidate's entry structure TWICE
+  (once to estimate, once to actually push via `addCodePointsTo`) costs more than the
+  `Arrays.copyOf` growth it avoids -- unlike the `buildLoopMatcher`/`bodyOnlyResult` win earlier
+  this session (which eliminated a whole redundant merge for the single-element case, not just
+  resized one), this doesn't remove any work, it duplicates a walk to skip a resize that's already
+  fairly cheap in practice. Reverted entirely (`CodePointMap#rangeCountUpperBound`,
+  `ArrayCodePointMap`'s override, `CodePointMapBuilder`'s capacity constructor,
+  `PatternConstruct#estimateEntryCount` and its 6 mirrored overrides, and `mergeEntryPoints`'s
+  two-pass wiring) -- no leftover infrastructure kept. This makes the planned follow-up (a
+  same-idea two-pass for `parseComplexCharacterRanges`) worth reconsidering before attempting: that
+  candidate set is usually even smaller (a bracket expression's own members) than a union's, so the
+  same double-walk cost is likely to dominate there too, for less to gain.
 - 2026-09-09: swept `ArrayCodePointMap.LINEAR_SEARCH_THRESHOLD` (1, 4, 8, 16, 32, the checked-in 65,
   128, 256) against `CorpusBenchmark.llkMatch` alone (temporary `includes = ['llkMatch']` +
   shortened warmup/iterations in `llkpattern/build.gradle`, reverted after) to see whether a

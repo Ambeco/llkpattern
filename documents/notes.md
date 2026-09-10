@@ -1185,6 +1185,16 @@ Notes to self about how to work on this project, and other context that doesn't 
   tradeoff (not measured for its allocation-axis effect specifically, but the scratch-array/boxing
   removal should help there too by construction). Full suite green.
 
+- 2026-09-09: swept `ArrayCodePointMap.LINEAR_SEARCH_THRESHOLD` (1, 4, 8, 16, 32, the checked-in 65,
+  128, 256) against `CorpusBenchmark.llkMatch` alone (temporary `includes = ['llkMatch']` +
+  shortened warmup/iterations in `llkpattern/build.gradle`, reverted after) to see whether a
+  different value -- specifically a power of 2 -- helps. A quick low-iteration pass suggested
+  smaller values might be faster, but a longer, tighter-error-bar re-run of the top candidates
+  showed 16/32/65 are statistically indistinguishable (0.037-0.038 ms/op, overlapping error bars);
+  128 and 256 are measurably worse (0.041, 0.043 ms/op) -- a real effect, not noise, presumably from
+  linear-scanning a needlessly large window on this corpus's few bigger maps (Unicode script/
+  property ranges). Left `LINEAR_SEARCH_THRESHOLD` at 65: no measured win from changing it, and no
+  reason to prefer an untested value over the one the 2026-09-08 sweep already picked.
 - 2026-09-09: re-ran the desktop JMH corpus benchmark after the `CodePointMap#first`/`entrySet()`
   cleanup round below (`['gc']` only, no stack sampling this time -- the shape of the compiled
   matcher graph didn't change, only cold-path `equals`/`hashCode`/`toString`/dead-code removal).

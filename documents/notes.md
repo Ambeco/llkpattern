@@ -1185,6 +1185,17 @@ Notes to self about how to work on this project, and other context that doesn't 
   tradeoff (not measured for its allocation-axis effect specifically, but the scratch-array/boxing
   removal should help there too by construction). Full suite green.
 
+- 2026-09-09: `QuantifiableConstruct.buildLoopMatcher`'s `bodyOnlyResult` (used only for its
+  `.elseCandidate` -- `.ranges` is never read) now skips `mergeEntryPoints`'s whole
+  `CodePointMapBuilder`-sort-coalesce-conflict-check pipeline for a single-element `body` (any
+  `x+`/`x*`/`x{n,m}` on one character/class -- the overwhelmingly common case in this corpus),
+  computing the answer directly as `body.get(0).claimsEntryElse() ? body.get(0) : null` instead.
+  Proposed by the project owner after profiling showed `buildLoopMatcher`/
+  `parseComplexCharacterRanges` as (mildly, diffusely) hot; measured real: `llkCompile` 0.689 ->
+  0.646 ms/op (-6.2%), allocation 1,886,560 -> 1,797,856 B/op (-4.7%). `llkMatch`/`regexCompile`/
+  `regexMatch` unchanged, as expected for a compile-time-only change. A same-idea optimization for
+  the (2-candidate, body+`next`) `result` merge a few lines below was considered but not yet
+  attempted -- see remaining_work.md.
 - 2026-09-09: swept `ArrayCodePointMap.LINEAR_SEARCH_THRESHOLD` (1, 4, 8, 16, 32, the checked-in 65,
   128, 256) against `CorpusBenchmark.llkMatch` alone (temporary `includes = ['llkMatch']` +
   shortened warmup/iterations in `llkpattern/build.gradle`, reverted after) to see whether a

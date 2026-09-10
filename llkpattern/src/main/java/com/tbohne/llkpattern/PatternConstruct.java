@@ -437,7 +437,16 @@ abstract class PatternConstruct {
 			// kept here since the reasoning is unchanged: `next`'s own *advertised* entry set is
 			// deliberately narrow, so whether this loop's own exit path should be reachable for a
 			// character neither side explicitly claims must be decided from `body` alone.
-			MergedEntries bodyOnlyResult = mergeEntryPoints(pattern, body, "loop part");
+			//
+			// Only `.elseCandidate` is ever read off this (see every use below) -- `.ranges` isn't --
+			// so a single-element body (the overwhelmingly common case: any `x+`/`x*`/`x{n,m}` on one
+			// character/class compiles with `body = List.of(delegate)`) skips `mergeEntryPoints`'s
+			// whole `CodePointMapBuilder`-sort-coalesce-conflict-check pipeline entirely: there's
+			// nothing to conflict with when there's only one candidate, so the answer is just whether
+			// that one candidate claims a catchall, computed directly.
+			MergedEntries bodyOnlyResult = body.size() == 1
+					? new MergedEntries(new ArrayCodePointMap<>(), body.get(0).claimsEntryElse() ? body.get(0) : null)
+					: mergeEntryPoints(pattern, body, "loop part");
 
 			// When capturing, every continuing attempt -- whichever body branch ends up matching --
 			// must begin the capture exactly once before that branch's own matcher runs. Shared by

@@ -1185,6 +1185,96 @@ Notes to self about how to work on this project, and other context that doesn't 
   tradeoff (not measured for its allocation-axis effect specifically, but the scratch-array/boxing
   removal should help there too by construction). Full suite green.
 
+- 2026-09-09: re-ran the desktop JMH corpus benchmark after the `CodePointMap#first`/`entrySet()`
+  cleanup round below (`['gc']` only, no stack sampling this time -- the shape of the compiled
+  matcher graph didn't change, only cold-path `equals`/`hashCode`/`toString`/dead-code removal).
+  No regression: llkCompile 0.686 -> 0.689 ms/op, llkMatch 0.044 -> 0.039 ms/op -- both within this
+  machine's normal run-to-run noise band established by the earlier re-runs this same day.
+- 2026-09-09: cleaned up `CodePointMap`'s `entrySet()`/`forEach` surface once `forEachRange`/`first`
+  had taken over every real hot-path caller (see the two entries above). Removed the now-dead
+  `forEach(BiConsumer<Range, V>)` (its last two real callers -- `MutableCodePointMap.removeAll` and
+  `TreeCodePointMap.putAll` -- converted to `forEachRange`) and the equally-dead `asMapOfRanges()`/
+  `iterator()`/`stream()` default methods (confirmed zero callers anywhere in the codebase before
+  deleting). Flipped `entrySet()` from an abstract method every implementation had to define to a
+  `CodePointMap`-interface default built from `forEachRange` (documented that every implementation
+  must still override at least one of the two, since their defaults reference each other and would
+  recurse forever otherwise). That let `ArrayCodePointMap` drop its own `entrySet()` (the lazy
+  `AbstractSet`-over-array view, now unused -- its "lazy view lets an early-return caller skip
+  work" justification cited a `PatternConstruct.findFirstOverlap` method that no longer exists) and
+  `materializeWithGaps()` (exact duplicate of `forEachRange`'s own `elseValue != null` branch)
+  entirely, and rewrite `toString()`/`equals()`/`hashCode()` to build off `forEachRange` directly
+  instead of calling `entrySet()` -- `hashCode()` in particular no longer materializes a `Range`/
+  `Entry` per range at all, just sums `Range(min,max).hashCode() ^ value.hashCode()` (exactly what
+  `Set<Entry>.hashCode()`'s own order-independent sum-of-entries definition already computes).
+- 2026-09-09: consolidated the loop opcode set again (previous round: 2026-09-07, see above), this
+  time proposed by the project owner directly (reading `DispatchMatcherConstruct`'s loop-flavored
+  constructor cold and pushing back on it) rather than a correction of a prior session's drift.
+  `EndLoopMatcherConstruct` is gone -- folded into
+  `LoopMatcherConstruct`, which is now compiled as a loop body's own continuation (reached only
+  after a body pass finishes, never as the loop's entry point) rather than self-registering as the
+  loop's combined entry/re-entry node. `DispatchMatcherConstruct`'s loop-flavored constructor (the
+  one that took a `QuantifiableConstruct owner, List<PatternConstruct> body, PatternConstruct next,
+  int captureConstructIndex`) is gone too -- that logic moved into
+  `QuantifiableConstruct.buildLoopMatcher` directly, which now builds the loop's real entry point as
+  a plain, ordinary self-registering `DispatchMatcherConstruct` (the exact same constructor a plain
+  union uses), separately from `LoopMatcherConstruct`. The two nodes need to be genuinely distinct
+  now (entry needs no bound check; the re-check does), which reintroduced the same
+  self-registration-first cycle-breaking requirement `MatcherConstruct`'s class doc describes -- just
+  landing on a new throwaway `LoopBackMarker` PatternConstruct instead of `owner` itself, since
+  `owner.matcher` needs to end up being the (separately-built, later) entry node instead.
+  `QuantifiableConstruct` gained `rawEntryMap`/`rawEntryElse` fields (mirroring
+  `QuantifiedUnion.rawEntryMap`) so the entry node can be built from `buildLoopEntryMap`'s
+  already-computed merge instead of recomputing one -- which resolves (by making moot, not by
+  implementing) the `needsEntryPointBeforeMatcher()` remaining_work.md item this touched: the loop
+  case now genuinely needs the pull, so there's nothing left to extend there.
+  Two real bugs found and fixed while implementing (both existing tests, no new ones needed):
+  (1) the fresh `LoopBackMarker` had no working `buildEntryMap()` at first (just threw), which broke
+  the moment a nullable construct nested in the loop body (e.g. the `(b)?` in `(a(b)?)+`) needed to
+  look past itself at "what comes next" during its own entry-point computation -- fixed by having the
+  marker delegate to `owner`'s own (by-then-already-cached) entry point, exactly mirroring what
+  `body.compile(owner)` used to make available for free before the entry/re-entry split.
+  (2) the new entry `DispatchMatcherConstruct`, unlike the old unified node, initially used a plain
+  `rawEntryElse`-driven else-value with no fallback -- which broke a `min == 0` construct (e.g. `b?`)
+  at end-of-input, since end-of-input is never actually present as an explicit `-1` entry in anyone's
+  entry map and nothing else naturally claims it as a catch-all; needed the same "body claims no
+  catchall of its own -> always default to trying exit" override the old unified node's `elseValue`
+  logic already had (applied there via `bodyOnlyResult`), just re-derived for the entry-only case
+  and gated on `min == 0` (only then is `next` even a legitimate entry candidate at all). Full test
+  suite green after both fixes; see design.md's "Quantifier/loop compilation" and "Opcode set"
+  sections for the resulting shape.
+- 2026-09-09: replaced every hot-path `for (Entry<...> e : someCodePointMap.entrySet())` loop (in
+  `PatternConstruct`/`MatcherConstruct`/`TreeCodePointMap`) with `forEachRange((min, max, value) ->
+  ...)` -- avoids a `Range`/`Entry`/`Iterator` allocation per visited range (see
+  `CodePointMap#forEachRange`'s own doc). Initially left `WordBoundaryConstruct`'s `isSubsetOf`/
+  `isDisjointFrom` on `entrySet()`, since both short-circuit (`return false` on the first violation)
+  and `forEachRange`'s `RangeConsumer` has no way to signal "stop early" -- see the next entry for
+  the follow-up that added exactly that. One capturing-loop lambda (`buildLoopMatcher`'s
+  continue-target construction) needed extracting into its own `private static` helper
+  (`buildContinueTarget`) rather than being inlined, since its `continueTarget` local wasn't
+  effectively final once wrapped in a lambda.
+- 2026-09-09: added `CodePointMap#first(RangePredicate<V>)` -- `forEachRange`'s short-circuiting
+  counterpart, same zero-allocation range visitation but stopping at (and returning `true` from)
+  the first range the predicate accepts. `ArrayCodePointMap` overrides it the same way it overrides
+  `forEachRange` (direct array reads, same `elseValue`-gap-fill handling); the default falls back
+  to `entrySet()`. Used it to convert `isSubsetOf`/`isDisjointFrom` (see the entry above) off
+  `entrySet()` too, closing out that conversion completely. Added `CodePointMapTestBase` coverage
+  (shared by both `ArrayCodePointMap` and `TreeCodePointMap`): match found, no match, actually stops
+  after the first match (counts visits), and sees `complement()`'s gap-filled else-value ranges too.
+- 2026-09-09: default CPU-sampling depth for this project changed from 8 frames to 4 (see
+  CLAUDE.md) -- an 8-frame capture taken this same session came out too flat/diffuse (no leaf much
+  above 1%) to point at anything actionable; re-capturing the same code state at 4 frames surfaced a
+  clear top leaf instead. Both `Intel-i7-9750H_*_sampling.txt` files now note the depth explicitly.
+- 2026-09-09: re-ran the desktop JMH corpus benchmark (no code change since the previous round --
+  requested as a standalone re-run with 4-frame stack traces, not tied to a specific commit) and
+  captured fresh CPU sampling at `stack:lines=4;detailLine=true` (narrower than the usual 8-frame
+  capture at the time). Numbers moved a bit from the last-committed baseline (llkCompile 0.794 ->
+  0.741 ms/op, llkMatch 0.056 -> 0.051 ms/op, regexCompile 0.115 -> 0.123, regexMatch 0.057 ->
+  0.059) -- normal run-to-run noise on this machine, not attributed to any change. The 4-frame
+  sampling shows the same hot spots as the last 8-frame capture (`ComplexQuantifiedCharacter`'s
+  quantified-loop path for llkCompile; `ArrayCodePointMap.floorIndex` for llkMatch), just with
+  shorter call chains -- this is what prompted making 4 frames the project default shortly after
+  (see the entry above), once the *next* round's 8-frame capture came out flat by comparison.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

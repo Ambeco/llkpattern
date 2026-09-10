@@ -1,17 +1,10 @@
 package com.tbohne.llkpattern;
 
-import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.Spliterator;
-import java.util.Spliterators;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.PolyNull;
 
@@ -31,9 +24,9 @@ import org.checkerframework.checker.nullness.qual.PolyNull;
  * TreeCodePointMap} (a Guava {@code TreeRangeMap} adapter) exists only as its differential-test
  * oracle -- see {@code CodePointMapDifferentialTest}.
  *
- * <p><b>Ordering contract:</b> {@link #entrySet()} (and everything built on it -- {@link
- * #forEach}, {@link #iterator()}, {@link #stream()}) always yields entries in ascending order by
- * {@link Range#min}. Every implementation maintains this already (it falls straight out of being
+ * <p><b>Ordering contract:</b> {@link #entrySet()} and {@link #forEachRange}/{@link #first} always
+ * yield entries in ascending order by {@link Range#min}. Every implementation maintains this
+ * already (it falls straight out of being
  * a map of disjoint ranges over an ordered domain), so this is a formal guarantee, not an
  * incidental detail: it's what lets {@link MutableCodePointMap#putAll} do a linear sorted-merge
  * instead of one insertion per source entry, and any future implementation must preserve it.
@@ -53,8 +46,20 @@ public interface CodePointMap<V> {
   /** Returns true if every code point in {@code [min, max)} has a mapping. */
   boolean containsKeys(int min, int max);
 
-  /** In ascending order by {@link Range#min} -- see the class doc's ordering contract. */
-  Set<Entry<Range, V>> entrySet();
+  /**
+   * In ascending order by {@link Range#min} -- see the class doc's ordering contract. Default
+   * implementation eagerly builds a {@link LinkedHashSet} via {@link #forEachRange}, for an
+   * implementation ({@link ArrayCodePointMap}) that has no cheaper representation of its own to
+   * expose worth the upkeep -- {@link TreeCodePointMap} still overrides this directly. Every
+   * implementation must override at least one of this method or {@link #forEachRange} with a real,
+   * non-default implementation: each one's own default falls back to the other, so leaving both at
+   * their defaults would recurse forever.
+   */
+  default Set<Entry<Range, V>> entrySet() {
+    Set<Entry<Range, V>> result = new LinkedHashSet<>();
+    forEachRange((min, max, value) -> result.add(new ImmutableEntry<>(new Range(min, max), value)));
+    return result;
+  }
 
   default @Nullable V get(int codePoint) {
     return getOrDefault(codePoint, null);
@@ -88,10 +93,6 @@ public interface CodePointMap<V> {
   @Nullable
   V getExplicit(int codePoint);
 
-  default void forEach(BiConsumer<Range, ? super V> action) {
-    entrySet().forEach(entry -> action.accept(entry.getKey(), entry.getValue()));
-  }
-
   /** A callback for {@link #forEachRange}: {@code [min, max)} plus the value mapped there. */
   @FunctionalInterface
   interface RangeConsumer<V> {
@@ -99,13 +100,13 @@ public interface CodePointMap<V> {
   }
 
   /**
-   * Like {@link #forEach}, but takes {@code min}/{@code max} as primitive {@code int}s instead of
-   * a boxed {@link Range}, and (for {@link ArrayCodePointMap}, the implementation real callers use)
-   * visits this map's raw backing arrays directly rather than going through {@link #entrySet()} --
+   * Visits every range as a plain {@code (int min, int max, V value)} callback, without a boxed
+   * {@link Range} and (for {@link ArrayCodePointMap}, the implementation real callers use) by
+   * reading this map's raw backing arrays directly rather than going through {@link #entrySet()} --
    * no {@code Range}, {@code Entry}, or {@code Iterator} allocated per entry. Worth using over
-   * {@code entrySet()}/{@code forEach} on any hot path that just wants to visit ranges (a merge
-   * into another map, a bulk copy) and has no actual use for a {@code Range}/{@code Entry} object.
-   * Default implementation just falls back to {@link #entrySet()}, for implementations (like {@link
+   * {@code entrySet()} on any hot path that just wants to visit ranges (a merge into another map, a
+   * bulk copy) and has no actual use for a {@code Range}/{@code Entry} object. Default
+   * implementation just falls back to {@link #entrySet()}, for implementations (like {@link
    * TreeCodePointMap}) that don't have a cheaper representation to expose.
    */
   default void forEachRange(RangeConsumer<? super V> action) {
@@ -114,16 +115,29 @@ public interface CodePointMap<V> {
     }
   }
 
-  default Map<Range, V> asMapOfRanges() {
-    return entrySet().stream().collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+  /** A callback for {@link #first}: {@code [min, max)} plus the value mapped there. */
+  @FunctionalInterface
+  interface RangePredicate<V> {
+    boolean test(int min, int max, V value);
   }
 
-  default Iterator<Entry<Range, V>> iterator() {
-    return entrySet().iterator();
-  }
-
-  default Stream<Entry<Range, V>> stream() {
-    return StreamSupport.stream(Spliterators.spliteratorUnknownSize(iterator(), Spliterator.ORDERED), false);
+  /**
+   * Like {@link #forEachRange}, but a short-circuiting search instead of an unconditional visit:
+   * stops at (and returns {@code true} from) the first range {@code predicate} accepts, or returns
+   * {@code false} having visited every range without a match. Worth using over {@code
+   * forEachRange}/{@code entrySet()} for a query that can stop early (e.g. "does any range fail
+   * this check") -- {@code forEachRange} would still visit every remaining range after the answer
+   * is already known. Default implementation falls back to {@link #entrySet()}, for
+   * implementations (like {@link TreeCodePointMap}) that don't have a cheaper representation to
+   * expose.
+   */
+  default boolean first(RangePredicate<? super V> predicate) {
+    for (Entry<Range, V> e : entrySet()) {
+      if (predicate.test(e.getKey().min, e.getKey().max, e.getValue())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Returns the portion of this map restricted to {@code [min, max)}. */
@@ -228,7 +242,7 @@ public interface CodePointMap<V> {
     void remove(int min, int max);
 
     default void removeAll(CodePointMap<V> other) {
-      other.forEach((range, value) -> remove(range.min, range.max));
+      other.forEachRange((min, max, value) -> remove(min, max));
     }
 
     default void clear() {

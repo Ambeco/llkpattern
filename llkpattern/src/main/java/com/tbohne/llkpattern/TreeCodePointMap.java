@@ -46,9 +46,7 @@ public final class TreeCodePointMap<V> implements MutableCodePointMap<V> {
   TreeCodePointMap(CodePointMap<V> source, V value) {
     this();
     elseValue = value;
-    for (Entry<Range, V> e : source.entrySet()) {
-      excludedRanges.add(toGuavaRange(e.getKey().min, e.getKey().max));
-    }
+    source.forEachRange((min, max, v) -> excludedRanges.add(toGuavaRange(min, max)));
   }
 
   @Override
@@ -178,7 +176,7 @@ public final class TreeCodePointMap<V> implements MutableCodePointMap<V> {
 
   @Override
   public void putAll(CodePointMap<V> other) {
-    other.forEach((range, value) -> put(range.min, range.max, value));
+    other.forEachRange(this::put);
   }
 
   @Override

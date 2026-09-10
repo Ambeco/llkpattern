@@ -237,4 +237,44 @@ public abstract class CodePointMapTestBase {
     assertThat(map.get(CodePointMap.MAX_CODE_POINT), equalTo("top"));
     assertThat(map.get(CodePointMap.MAX_CODE_POINT - 1), nullValue());
   }
+
+  @Test
+  public void first_matchingRangePresent_returnsTrue() {
+    MutableCodePointMap<String> map = create();
+    map.put('a', "letter");
+    assertThat(map.first((min, max, value) -> value.equals("letter")), is(true));
+  }
+
+  @Test
+  public void first_noMatchingRange_returnsFalse() {
+    MutableCodePointMap<String> map = create();
+    map.put('a', "letter");
+    assertThat(map.first((min, max, value) -> value.equals("digit")), is(false));
+  }
+
+  @Test
+  public void first_stopsAtFirstMatch_doesNotVisitLaterRanges() {
+    MutableCodePointMap<String> map = create();
+    map.put('a', "a-value"); // ascending order by min, so this range is visited first
+    map.put('b', "b-value");
+    int[] visitCount = {0};
+
+    boolean found = map.first((min, max, value) -> {
+      visitCount[0]++;
+      return true; // matches on the very first range visited
+    });
+
+    assertThat(found, is(true));
+    assertThat(visitCount[0], equalTo(1));
+  }
+
+  @Test
+  public void first_withElseValue_seesGapRangesToo() {
+    MutableCodePointMap<String> map = create();
+    map.put('a', "letter");
+    CodePointMap<String> complement = map.complement("other"); // else-valued: fills every gap
+
+    assertThat(complement.first((min, max, value) -> value.equals("other")), is(true));
+    assertThat(complement.first((min, max, value) -> value.equals("nonexistent")), is(false));
+  }
 }

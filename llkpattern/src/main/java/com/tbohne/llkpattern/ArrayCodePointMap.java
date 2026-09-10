@@ -2,14 +2,9 @@ package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.CodePointMap.RangeConsumer;
-import java.util.AbstractSet;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map.Entry;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -302,50 +297,6 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     return true;
   }
 
-  @Override
-  public Set<Entry<Range, V>> entrySet() {
-    if (elseValue == null) {
-      // A lazy view, not an eager copy: entrySet() itself is O(1), and iterating/short-circuiting
-      // (e.g. PatternConstruct.findFirstOverlap's early return) costs only what it actually
-      // visits. AbstractSet supplies Set-contract equals()/hashCode() (size + per-element
-      // comparison) from just size()/iterator(), which is what this class's own equals()/
-      // hashCode() rely on.
-      return new AbstractSet<Entry<Range, V>>() {
-        @Override
-        public Iterator<Entry<Range, V>> iterator() {
-          return new Iterator<Entry<Range, V>>() {
-            private int i = 0;
-
-            @Override
-            public boolean hasNext() {
-              return i < size;
-            }
-
-            @Override
-            public Entry<Range, V> next() {
-              if (i >= size) {
-                throw new NoSuchElementException();
-              }
-              Entry<Range, V> entry = new ImmutableEntry<>(new Range(keyMin(keys[i]), keyMax(keys[i])), values[i]);
-              i++;
-              return entry;
-            }
-          };
-        }
-
-        @Override
-        public int size() {
-          return size;
-        }
-      };
-    }
-    // elseValue != null: gaps between (and around) the explicit entries are real mappings too, so
-    // this must be materialized rather than a lazy view over the raw array -- see the class doc
-    // on ComplementCodePointMap-style maps in CodePointMap#getElseValue. Bounded by the code point
-    // domain, so still always finite: at most `size + 1` gap entries.
-    return new LinkedHashSet<>(materializeWithGaps());
-  }
-
   /**
    * {@link CodePointMap#forEachRange}, overridden to skip {@link #entrySet()} entirely: the
    * {@code elseValue == null} case (the common one -- see the class doc) reads {@code keys}/
@@ -380,24 +331,35 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     }
   }
 
-  private List<Entry<Range, V>> materializeWithGaps() {
-    List<Entry<Range, V>> result = new ArrayList<>();
+  /**
+   * {@link CodePointMap#first}, overridden for the same reason as {@link #forEachRange}: reads
+   * {@code keys}/{@code values} directly instead of allocating a {@code Range}/{@code Entry}/
+   * {@code Iterator} per candidate range, with the added benefit (over {@code forEachRange}) of
+   * actually stopping at the first match instead of visiting every remaining range regardless.
+   */
+  @Override
+  public boolean first(RangePredicate<? super V> predicate) {
+    if (elseValue == null) {
+      for (int i = 0; i < size; i++) {
+        if (predicate.test(keyMin(keys[i]), keyMax(keys[i]), values[i])) {
+          return true;
+        }
+      }
+      return false;
+    }
     int cursor = 0;
     for (int i = 0; i < size; i++) {
       int entryMin = keyMin(keys[i]);
       int entryMax = keyMax(keys[i]);
-      if (cursor < entryMin) {
-        result.add(new ImmutableEntry<>(new Range(cursor, entryMin), elseValue));
+      if (cursor < entryMin && predicate.test(cursor, entryMin, elseValue)) {
+        return true;
       }
-      if (values[i] != null) {
-        result.add(new ImmutableEntry<>(new Range(entryMin, entryMax), values[i]));
+      if (values[i] != null && predicate.test(entryMin, entryMax, values[i])) {
+        return true;
       }
       cursor = entryMax;
     }
-    if (cursor <= MAX_CODE_POINT) {
-      result.add(new ImmutableEntry<>(new Range(cursor, MAX_CODE_POINT + 1), elseValue));
-    }
-    return result;
+    return cursor <= MAX_CODE_POINT && predicate.test(cursor, MAX_CODE_POINT + 1, elseValue);
   }
 
   @Override
@@ -858,7 +820,18 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
 
   @Override
   public String toString() {
-    return entrySet().toString();
+    // Built directly via forEachRange, not entrySet() -- no Range/Entry/Iterator allocated per
+    // range just to immediately stringify it.
+    StringBuilder sb = new StringBuilder("[");
+    boolean[] needsComma = {false};
+    forEachRange((min, max, value) -> {
+      if (needsComma[0]) {
+        sb.append(", ");
+      }
+      needsComma[0] = true;
+      sb.append(new Range(min, max)).append('=').append(value);
+    });
+    return sb.append(']').toString();
   }
 
   @Override
@@ -881,11 +854,27 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     if (!(other instanceof CodePointMap)) {
       return false;
     }
-    return entrySet().equals(((CodePointMap<?>) other).entrySet());
+    // Cross-implementation fallback: a real Set comparison, not a lockstep range-by-range walk --
+    // this class coalesces adjacent equal-value ranges (see the class doc) but e.g. TreeCodePointMap
+    // never does, so an equal-content map on the other side can legitimately split the same logical
+    // mapping across more, differently-bounded ranges. Built directly via forEachRange on both
+    // sides rather than entrySet(), even though the result is the same set entrySet() would have
+    // built -- this rare (differential-test-only in practice) path is the only place this class
+    // still needs a real Entry/Range per range at all.
+    Set<Entry<Range, V>> mine = new LinkedHashSet<>();
+    forEachRange((min, max, value) -> mine.add(new ImmutableEntry<>(new Range(min, max), value)));
+    Set<Entry<Range, ?>> theirs = new LinkedHashSet<>();
+    ((CodePointMap<?>) other).forEachRange((min, max, value) -> theirs.add(new ImmutableEntry<>(new Range(min, max), value)));
+    return mine.equals(theirs);
   }
 
   @Override
   public int hashCode() {
-    return entrySet().hashCode();
+    // Set<Entry>.hashCode() is defined as the sum of each entry's own hashCode (key ^ value, per
+    // Map.Entry's contract) -- order-independent, so this matches what entrySet().hashCode() would
+    // produce exactly, without actually materializing a Range/Entry per range to get there.
+    int[] hash = {0};
+    forEachRange((min, max, value) -> hash[0] += new Range(min, max).hashCode() ^ (value == null ? 0 : value.hashCode()));
+    return hash[0];
   }
 }

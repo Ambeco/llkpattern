@@ -1,27 +1,28 @@
 Desktop CPU-sampling profile of CorpusBenchmark.llkCompile
 Device: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz (this dev machine)
-Captured: 2026-09-09, via JMH's built-in `stack` profiler at 8-frame depth
-  (`profilers = ['gc', 'stack:lines=8;detailLine=true']` in llkpattern/build.gradle, temporary --
+Captured: 2026-09-09, via JMH's built-in `stack` profiler at 4-frame depth (this project's default
+  sampling depth as of this capture -- 8-frame was tried first and came out too flat/diffuse to be
+  useful; see CLAUDE.md)
+  (`profilers = ['gc', 'stack:lines=4;detailLine=true']` in llkpattern/build.gradle, temporary --
   not the checked-in default, which is just ['gc']. Run with: `./gradlew :llkpattern:jmh` after
   adding that profiler string, JAVA_HOME pointed at JDK 17/21 for the Gradle daemon; the benchmark
   fork's own JVM is already pinned to JDK 25 in the committed jmh {} block.)
-Code state: after the ArrayCodePointMap.appendSorted single-block fast path and converting
-  PatternParser.parseComplexCharacterRanges/parseMaybeRangePredicate to CodePointMapBuilder --
-  this replaces the prior sampling in this file (captured right after the CodePointMapBuilder/
-  addCodePointsTo/needsEntryPointBeforeMatcher work, before this round).
+Code state: after consolidating the loop opcode set (EndLoopMatcherConstruct folded into
+  LoopMatcherConstruct, entry point split into its own plain DispatchMatcherConstruct built by
+  QuantifiableConstruct.buildLoopMatcher -- see design.md's "Quantifier/loop compilation" section)
+  and replacing every hot-path `entrySet()` iteration with `forEachRange()` -- this replaces the
+  prior sampling in this file (captured before either change, at 8-frame depth).
 
 # JMH version: 1.36
 # VM version: JDK 25.0.3, Java HotSpot(TM) 64-Bit Server VM, 25.0.3+9-LTS-195
 # Warmup: 3 iterations, 10 s each; Measurement: 5 iterations, 10 s each
 
 Result "com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile":
-  0.947 +-(99.9%) 0.062 ms/op [Average]
-  (min, avg, max) = (0.922, 0.947, 0.967), stdev = 0.016
-  gc.alloc.rate.norm: 2081744.039 B/op -- close to (not identical to; see notes.md for the
-  time-vs-allocation tradeoff this round's parser change made) the committed
-  Intel-i7-9750H_corpus_benchmark_results.json baseline's figure.
+  0.686 +-(99.9%) 0.010 ms/op [Average]
+  (min, avg, max) = (0.684, 0.686, 0.690), stdev = 0.003
+  gc.alloc.rate.norm: 1886560.029 B/op
 
-Stack profiler ([RUNNABLE] samples, 8-frame call chains, aggregated by leaf method):
+Stack profiler ([RUNNABLE] samples, 4-frame call chains, aggregated by leaf method):
 
 ....[Thread state distributions]....................................................................
  66.7%         RUNNABLE
@@ -29,97 +30,65 @@ Stack profiler ([RUNNABLE] samples, 8-frame call chains, aggregated by leaf meth
 
 ....[Thread state: RUNNABLE]........................................................................
  33.3%  50.0% <stack is empty, everything is filtered?>
-  3.2%   4.9% com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:397
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:383
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:943
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:722
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
+  3.8%   5.7% com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.lambda$buildLoopMatcher$1:453
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct$$Lambda/0x...accept:-1
+              com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:362
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:452
 
-  3.2%   4.8% com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:409
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:383
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:943
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:722
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
+  3.7%   5.6% com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.lambda$buildLoopEntryMap$0:377
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct$$Lambda/0x...accept:-1
+              com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:362
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:377
 
-  3.1%   4.6% com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:368
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildEntryMap:930
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:125
-              com.tbohne.llkpattern.PatternConstruct.compile:190
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:722
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
+  3.6%   5.5% com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.lambda$buildLoopMatcher$2:472
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct$$Lambda/0x...accept:-1
+              com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:362
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:471
 
-  0.9%   1.3% com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:662
-              com.tbohne.llkpattern.PatternParser.parseComplexCharacter:564
-              com.tbohne.llkpattern.PatternParser.parseUnion:215
-              com.tbohne.llkpattern.PatternParser.parse:188
-              com.tbohne.llkpattern.Ll1Pattern.compile:43
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
-              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
-              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_AverageTime:173
-
-  0.8%   1.2% com.tbohne.llkpattern.ArrayCodePointMap.appendSorted:514
-              com.tbohne.llkpattern.CodePointMapBuilder.build:158
-              com.tbohne.llkpattern.CodePointMapBuilder.build:167
+  1.4%   2.1% com.tbohne.llkpattern.ArrayCodePointMap.<init>:121
+              com.tbohne.llkpattern.CodePointMapBuilder.build:129
+              com.tbohne.llkpattern.CodePointMapBuilder.build:162
               com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:609
-              com.tbohne.llkpattern.PatternParser.parseComplexCharacter:564
-              com.tbohne.llkpattern.PatternParser.parseUnion:215
-              com.tbohne.llkpattern.PatternParser.parse:188
-              com.tbohne.llkpattern.Ll1Pattern.compile:43
 
-  0.8%   1.2% com.tbohne.llkpattern.PatternConstruct.compile:189
+  1.2%   1.8% com.tbohne.llkpattern.PatternParser.parse:182
+              com.tbohne.llkpattern.Ll1Pattern.compile:43
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
+
+  1.0%   1.5% com.tbohne.llkpattern.ArrayCodePointMap.<init>:121
+              com.tbohne.llkpattern.CodePointMapBuilder.build:129
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:281
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:367
+
+  1.0%   1.4% com.tbohne.llkpattern.ArrayCodePointMap.<init>:121
+              com.tbohne.llkpattern.CodePointMapBuilder.build:129
+              com.tbohne.llkpattern.CodePointMapBuilder.build:162
+              com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:608
+
+  0.9%   1.4% com.tbohne.llkpattern.ArrayCodePointMap.<init>:121
+              com.tbohne.llkpattern.CodePointMapBuilder.build:129
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:281
               com.tbohne.llkpattern.PatternConstruct.compileAndMergeCandidates:316
-              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:358
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:383
-              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:943
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:722
-              com.tbohne.llkpattern.PatternConstruct.compile:196
 
-  0.7%   1.0% com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion.buildEntryMap:521
-              com.tbohne.llkpattern.PatternConstruct.ensureEntryPointBuilt:125
-              com.tbohne.llkpattern.PatternConstruct.compile:190
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:722
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
-              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
+  0.8%   1.2% com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion.lambda$buildEntryMap$0:699
+              com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion$$Lambda/0x...accept:-1
+              com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:362
+              com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion.buildEntryMap:699
 
-  0.6%   1.0% java.lang.Character.offsetByCodePoints:10024
-              java.lang.String.offsetByCodePoints:1743
-              com.tbohne.llkpattern.PatternParser.advanceCodePoint:144
-              com.tbohne.llkpattern.PatternParser.parseUnion:356
-              com.tbohne.llkpattern.PatternParser.parse:188
-              com.tbohne.llkpattern.Ll1Pattern.compile:43
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
-              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
-
-  0.6%   0.9% com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.populate:436
-              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.<init>:314
-              com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion.buildMatcher:550
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.PatternConstruct$Sequence.buildMatcher:722
-              com.tbohne.llkpattern.PatternConstruct.compile:196
-              com.tbohne.llkpattern.Ll1Pattern.compile:46
-              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
-
- 19.3%  29.0% <other>
+ 15.9%  23.9% <other>
 
 ....[Thread state: TIMED_WAITING]...................................................................
- 33.3% 100.0% java.lang.Object.wait0 (JVM housekeeping thread -- not benchmark code)
+ 33.3% 100.0% java.lang.Object.wait0:-2
+              java.lang.Object.wait:389
+              java.lang.ref.ReferenceQueue.remove0:123
+              java.lang.ref.ReferenceQueue.remove:201
 
-Read: PatternParser.parseComplexCharacterRanges and its CodePointMapBuilder/appendSorted calls are
-now both small and diffuse (~1.3%/~1.2%), down from a previously-reported ~single-line hot spot at
-the old ranges.put() call -- confirming the CodePointMapBuilder conversion moved that specific
-CPU-time cost, as intended. The dominant costs have shifted entirely to ComplexQuantifiedCharacter's
-quantified-loop path (buildLoopEntryMap/buildLoopMatcher via DispatchMatcherConstruct's
-loop-flavored constructor), already flagged in remaining_work.md as the next unconverted area
-(needsEntryPointBeforeMatcher() doesn't cover the quantified-loop case yet, and its buildMatcher()
-independently recomputes the body/next merge rather than reusing anything cached).
+Read: the top three named leaves are all `buildLoopMatcher`/`buildLoopEntryMap`'s own `forEachRange`
+lambdas (each ~5.5-5.7%) -- expected, since every quantified construct's compilation now goes
+through this path exactly once, and this corpus is loop-heavy. No single hot spot dominates; cost
+is otherwise spread across `ArrayCodePointMap` construction (`CodePointMapBuilder.build`, called
+from both the parser's own character-range building and `mergeEntryPoints`) and the parser itself.
+Nothing here points at a specific further optimization the way the pre-CodePointMapBuilder sampling
+rounds did -- consistent with `llkCompile` having improved by real, already-measured amounts
+(0.741 -> 0.674 ms/op this round) from the opcode consolidation and `entrySet()` -> `forEachRange()`
+changes, rather than there being an obvious next single-line fix visible in the profile.

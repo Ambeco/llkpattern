@@ -1223,6 +1223,23 @@ Notes to self about how to work on this project, and other context that doesn't 
   many small classes, no help on the few big ones. Confirms the project owner's own skepticism going
   in -- a text-length heuristic isn't a substitute for actually knowing (or accurately estimating)
   the range count.
+- 2026-09-10: tried making `CodePointMapBuilder`'s backing arrays lazily-null (allocate on the
+  first real `add`, not eagerly at construction) plus sizing `addAll` directly from `source`'s
+  `rangeCountUpperBound()` (re-added, same as the reverted union-estimate attempt) when the builder
+  hadn't allocated yet. Measured a reproducible ~4.5% REGRESSION on `llkCompile` time (0.642 ->
+  ~0.671-0.674 ms/op, confirmed across 2 runs after ruling out a noisy-environment false read) for
+  NO allocation change at all (1,801,456 B/op both times, essentially flat vs. the 1,788,504
+  baseline). Root cause: the `addAll`-presizing path apparently almost never actually fires in
+  practice -- `PatternParser.parseComplexCharacterRanges`'s two `addAll` call sites are interleaved
+  with ordinary `add()` calls parsing the same bracket expression (a literal, then maybe an escape,
+  then maybe another literal...), so by the time `addAll` runs the builder usually already has
+  entries from an earlier `add()`, and the "hasn't allocated yet" precondition rarely holds. Paying
+  a `mins == null` branch on every single `add()` call (now needed unconditionally, not just once at
+  construction) is a real, permanent cost with no offsetting win to show for it. Reverted entirely
+  (`CodePointMap#rangeCountUpperBound`, `ArrayCodePointMap`'s override, and `CodePointMapBuilder`'s
+  lazy-null fields/constructors/`add`/`addAll`) -- no leftover infrastructure kept this time, since
+  the lazy-null structural change (unlike the standalone `CodePointMapBuilder(int)` constructor kept
+  after the earlier reverted attempt) isn't separable from the regression itself.
 - 2026-09-10: `Matcher.attemptMatch` now skips `resetPerAttemptState()` (the `Arrays.fill` over
   `quantifiableCounts`/`captureGroups` -- ~7.2% of sampled CPU time per
   `Intel-i7-9750H_llkMatch_sampling.txt`) on the very first attempt after construction/`reset()`/

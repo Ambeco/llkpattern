@@ -1196,6 +1196,33 @@ Notes to self about how to work on this project, and other context that doesn't 
   `regexMatch` unchanged, as expected for a compile-time-only change. A same-idea optimization for
   the (2-candidate, body+`next`) `result` merge a few lines below was considered but not yet
   attempted -- see remaining_work.md.
+- 2026-09-10: ran a short (3s, single-iteration, `llkCompile`-only) JFR allocation-sampling profile
+  (temporary `profilers = ['gc', 'jfr']` + `includes = ['llkCompile']` in `llkpattern/build.gradle`,
+  reverted after; extracted per-class/per-site weight from the resulting `.jfr` with `jfr print
+  --json` piped through a throwaway script) to get concrete numbers instead of continuing to guess
+  from the flat 4-frame stack sampling. Headline finding: `java.util.Arrays.copyOf` alone accounted
+  for ~60% of sampled allocation weight (312 of 916 samples) -- called from `ArrayCodePointMap`'s
+  and `CodePointMapBuilder`'s own array-growth (`ensureCapacity`/`add`), not from object allocation
+  or lambda closures as earlier suspected. `int[]` was the single largest allocated class (~66% of
+  weight) for the same reason. Caveat: JFR's allocation sampling assigns each sample a statistical
+  extrapolated weight, not a literal byte count, so low-sample-count entries can be noisy (e.g.
+  `EndMatcherConstruct` showed 334 MB from only 3 samples) -- the `Arrays.copyOf` finding is solid
+  (312 samples), individual small entries in the breakdown are not.
+- 2026-09-10: tried pre-sizing `parseComplexCharacterRanges`'s `CodePointMapBuilder` from a cheap
+  text-scan estimate (find the bracket expression's matching `]`, use the raw character span as the
+  capacity) to act on the `Arrays.copyOf` finding above. Measured a REGRESSION, not a win:
+  `llkCompile` allocation 1,797,856 -> 1,841,264 B/op (+2.4%), time flat within noise. Reverted
+  entirely -- both the `PatternParser` call site and the `CodePointMapBuilder(int initialCapacity)`
+  constructor it used; no leftover infrastructure kept, since nothing else calls it. Root cause: raw
+  source-text length
+  doesn't correlate with range count in either direction that matters -- it mildly over-provisions
+  the common simple case (`[a-z]` spans 5 characters but needs exactly 1 range, so now allocates
+  capacity 5 instead of the old flat default 4) while doing essentially nothing for the actually
+  expensive case (`\p{L}`-style escapes expand to potentially hundreds of ranges from a handful of
+  source characters, so `Arrays.copyOf` growth still happens just as before). Net: more waste on the
+  many small classes, no help on the few big ones. Confirms the project owner's own skepticism going
+  in -- a text-length heuristic isn't a substitute for actually knowing (or accurately estimating)
+  the range count.
 - 2026-09-09: swept `ArrayCodePointMap.LINEAR_SEARCH_THRESHOLD` (1, 4, 8, 16, 32, the checked-in 65,
   128, 256) against `CorpusBenchmark.llkMatch` alone (temporary `includes = ['llkMatch']` +
   shortened warmup/iterations in `llkpattern/build.gradle`, reverted after) to see whether a

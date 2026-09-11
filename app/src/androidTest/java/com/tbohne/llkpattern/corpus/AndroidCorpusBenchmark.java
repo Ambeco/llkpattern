@@ -7,6 +7,7 @@ import android.os.Environment;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.platform.io.PlatformTestStorageRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import com.tbohne.llkpattern.BuildConfig;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -150,9 +152,12 @@ public class AndroidCorpusBenchmark {
     }
 
     results.put("device", deviceName());
+    results.put("buildTime", Instant.ofEpochMilli(BuildConfig.BUILD_TIME).toString());
+    results.put("testTime", Instant.now().toString());
     results.put("androidRelease", Build.VERSION.RELEASE);
     results.put("androidSdkInt", Build.VERSION.SDK_INT);
     results.put("fractionOfTestRows", FRACTION_OF_TEST_ROWS);
+    results.put("measuredIterations", MEASURED_ITERATIONS);
     results.put("rowCount", agreesRows.size());
   }
 
@@ -228,7 +233,7 @@ public class AndroidCorpusBenchmark {
   //  *  small and readable. {@link Debug#startMethodTracingSampling} (the built-in Android sampling
   //  *  tracer, tried first) has no way to cap this -- see documents/notes.md's on-device-benchmark
   //  *  entry for why this hand-rolled sampler replaced it. */
-  // private static final int STACK_SAMPLE_DEPTH = 8;
+  // private static final int STACK_SAMPLE_DEPTH = 4;
   //
   // private static final long SAMPLE_INTERVAL_MILLIS = 2;
   //
@@ -378,7 +383,6 @@ public class AndroidCorpusBenchmark {
     double avgMillisPerPass = (elapsedNanos / 1_000_000.0) / MEASURED_ITERATIONS;
     Map<String, Object> entry = new LinkedHashMap<>();
     entry.put("avgMillisPerCorpusPass", avgMillisPerPass);
-    entry.put("measuredIterations", MEASURED_ITERATIONS);
     entry.put("gcCountDuringMeasuredIterations", gcCount);
     results.put(name, entry);
   }

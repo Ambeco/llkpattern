@@ -1,3 +1,5 @@
+import com.android.build.api.variant.BuildConfigField
+
 plugins {
     id 'com.android.application'
 }
@@ -15,6 +17,7 @@ android {
         targetSdk 33
         versionCode 1
         versionName "1.0"
+        buildConfigField "Long", "BUILD_TIME", "${System.currentTimeMillis()}L"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments clearPackageData: 'false'
@@ -27,6 +30,9 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+    buildFeatures {
+        buildConfig = true
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -82,3 +88,21 @@ task copyGoldenAssetsForAndroidTest(type: Copy) {
 // AGP's androidTest asset-merge tasks all depend on preBuild, so hooking in there guarantees the
 // files exist before packaging without needing to name AGP's variant-specific task explicitly.
 preBuild.dependsOn copyGoldenAssetsForAndroidTest
+
+// Copy Android benchmark results to benchmarks folder automatically
+tasks.register('copyBenchmarkResults') {
+    def from = project.file("${buildDir}/outputs/connected_android_test_additional_output/debugAndroidTest/connected/Pixel 3a - 12")
+    def into = project.file("${rootDir}/benchmarks")
+    inputs.dir(from)
+    outputs.dir(into)
+    doLast {
+        from.eachFile { sourceFile ->
+            if (!sourceFile.isFile()) { return }
+            def destFile = new File(into, sourceFile.name)
+            destFile.bytes = sourceFile.bytes
+        }
+    }
+}
+tasks.matching { it.name.startsWith('connectedDebugAndroidTest') }.all { testTask ->
+    testTask.finalizedBy copyBenchmarkResults
+}

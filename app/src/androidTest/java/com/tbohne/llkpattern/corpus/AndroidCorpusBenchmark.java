@@ -5,13 +5,15 @@ import android.os.Build;
 import android.os.Debug;
 import android.os.Environment;
 import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.platform.io.PlatformTestStorageRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UncheckedIOException;
-import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,7 +63,7 @@ import com.tbohne.llkpattern.Ll1Pattern;
  *       as commented-out {@code testZZSamplingProfileMatch}/{@code testZZSamplingProfileCompile}
  *       blocks near the bottom of this class, ready to uncomment (along with their imports,
  *       marked the same way at the top of the file) when profiling is actually needed again --
- *       see documents/benchmarks/ for the last captured samples and remaining_work.md for how
+ *       see benchmarks/ for the last captured samples and remaining_work.md for how
  *       they were run. Left commented rather than gated some other way so neither shows up as a
  *       normal runnable {@code @Test} at all in the common case, which is just the four
  *       benchmarks.
@@ -209,7 +211,7 @@ public class AndroidCorpusBenchmark {
   }
 
   // CPU sampling profiles of llkMatch/llkCompile, commented out -- see documents/notes.md's
-  // on-device-benchmark entry for how they were captured and documents/benchmarks/
+  // on-device-benchmark entry for how they were captured and benchmarks/
   // Google_Pixel_3a_sargo_llk{Match,Compile}_sampling.txt for the last real results. To
   // re-enable: uncomment this whole block plus the sampling-only imports marked at the top of the
   // file, then run just the one test needed with:
@@ -411,20 +413,19 @@ public class AndroidCorpusBenchmark {
 
   @AfterClass
   public static void writeResults() throws IOException {
-    File file = resultsFile();
-    try (Writer w = new FileWriter(file)) {
-      w.write(toJson(results));
+    try (OutputStream file = resultsFile()) {
+      file.write(toJson(results).getBytes(StandardCharsets.UTF_8));
+      // No JSON assertion library pulled in for this (androidTest keeps a small dependency set);
+      // this is a plain System.out so `adb logcat` / the test runner's own output shows the path
+      // even if the test host doesn't offer file access.
+      System.out.println("AndroidCorpusBenchmark results written to " + file);
     } catch (IOException e) {
-      throw new UncheckedIOException("Failed writing benchmark results to " + file, e);
+      throw new UncheckedIOException("Failed writing benchmark results to output", e);
     }
-    // No JSON assertion library pulled in for this (androidTest keeps a small dependency set);
-    // this is a plain System.out so `adb logcat` / the test runner's own output shows the path
-    // even if the test host doesn't offer file access.
-    System.out.println("AndroidCorpusBenchmark results written to " + file.getAbsolutePath());
   }
 
-  private static File resultsFile() {
-    return new File(externalFilesDir(), deviceName() + "_corpus_benchmark_results.json");
+  private static OutputStream resultsFile() throws FileNotFoundException {
+    return PlatformTestStorageRegistry.getInstance().openOutputFile(deviceName() + "_corpus_benchmark_results.json");
   }
 
   private static File externalFilesDir() {

@@ -57,7 +57,7 @@ jmh {
     fork = 1
     // The Gradle daemon itself has to run on JDK 17/21 (see documents/notes.md's toolchain note --
     // this wrapper's Groovy buildscript compiler crashes on JDK 25), but the benchmark fork should
-    // still run on the same JDK 25 every committed baseline in documents/benchmarks/ was measured
+    // still run on the same JDK 25 every committed baseline in benchmarks/ was measured
     // on -- pin it explicitly rather than silently forking on whatever JDK the daemon happens to be.
     jvm = "C:/Program Files/Java/jdk-25.0.3/bin/java.exe"
     // Console output (the plugin always prints a human-readable summary as the jmh task runs)
@@ -68,11 +68,11 @@ jmh {
     // Named for the machine it was run on (see the Pixel 3a's own equivalently-named results file)
     // -- this is a desktop-only benchmark, so whoever runs it should rename this if their machine
     // isn't an Intel i7-9750H.
-    resultsFile = project.file("${rootDir}/documents/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json")
+    resultsFile = project.file("${rootDir}/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json")
 }
 
 // Regenerates a scraped-corpus golden TSV file from a per-source "intermediate" TSV (see
-// documents/tools/scrape_*.py and CorpusGenerator's own javadoc). Usage:
+// ./tools/scrape_*.py and CorpusGenerator's own javadoc). Usage:
 //   ./gradlew :llkpattern:generateCorpus -Pinput=<intermediate.tsv> -Poutput=<golden.tsv> -Pmode=FIND
 task generateCorpus(type: JavaExec) {
     group = 'verification'

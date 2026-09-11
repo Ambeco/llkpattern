@@ -39,7 +39,7 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 ## Scraped-corpus differential test harness
 
-Design: `documents/tools/scrape_<source>.py` fetches a source project's own regex test data and
+Design: `./tools/scrape_<source>.py` fetches a source project's own regex test data and
 emits an "intermediate" TSV of `(pattern, flags, input[, mode])` tuples. `CorpusGenerator`
 (`llkpattern/src/test/java/.../corpus/CorpusGenerator.java`, run via
 `./gradlew :llkpattern:generateCorpus -Pinput=... -Poutput=... -Pmode=... -Punescape=...`) reads
@@ -106,7 +106,7 @@ where both engines agree by both throwing the same compile exception -- not a sp
 times `java.util.regex` vs `Ll1Pattern` compile and match separately (`regexCompile`/`llkCompile`,
 `regexMatch`/`llkMatch` -- matches are pre-compiled once in `@Setup` so match timing never includes
 compile cost). Run via `./gradlew :llkpattern:jmh`; results print to console and are also written
-as JSON to `documents/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json` (named after the
+as JSON to `benchmarks/Intel-i7-9750H_corpus_benchmark_results.json` (named after the
 desktop it was run on, mirroring the Pixel 3a's own results file below -- rename if run on a
 different machine) (only once the *entire* run completes -- an interrupted run leaves that file
 empty), meant to be committed as a baseline and diffed against on later runs to catch regressions.
@@ -146,7 +146,7 @@ actually needed again.
       `FRACTION_OF_TEST_ROWS` was set to `1.0f` (full 406-row corpus) and `WARMUP_ITERATIONS`/
       `MEASURED_ITERATIONS` bumped to 50/1000, landing at ~124s wall-clock (`am instrument`'s own
       "Time:" figure), comfortably under 5 minutes with margin for slower devices. Current
-      committed baseline (`documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json`,
+      committed baseline (`benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json`,
       full corpus, 1000 measured iterations, re-run 2026-09-08 after this session's `appendSorted`/
       `entryMap`-aliasing compile-time fixes): `llkCompile` ~6.3x slower than `regexCompile`
       (41.47ms vs 6.56ms/pass -- down from an earlier 101.7ms/6.7ms baseline before those fixes,
@@ -175,7 +175,7 @@ actually needed again.
       truncated to `STACK_SAMPLE_DEPTH = 8` frames) rather than `Debug.startMethodTracingSampling`
       (tried first, but its sampling API has no way to cap stack depth -- see notes.md), aggregated
       into a plain-text table of hottest 8-frame call chains at
-      `documents/benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt`. That test's own code is
+      `benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt`. That test's own code is
       now commented out in `AndroidCorpusBenchmark.java` (both the method and its imports, each
       marked with instructions on where its counterpart is) so a routine run only does the four
       timing benchmarks -- uncomment both blocks, rebuild, and run just that method with:

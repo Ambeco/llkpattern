@@ -18,7 +18,7 @@ import java.util.List;
  * backslash-t, backslash-r, backslash-n respectively (Java-string-literal style, but only those
  * four characters -- everything else, including raw Unicode code points, passes through
  * unescaped). This is deliberately independent of the JDK regex corpus's own escaping convention
- * (backslash-u-XXXX / backslash-n; see documents/tools/scrape_openjdk_regex.py): that convention
+ * (backslash-u-XXXX / backslash-n; see ./tools/scrape_openjdk_regex.py): that convention
  * is unescaped once, when scraping, into real Java strings, and GoldenTsv's escaping is applied
  * fresh on top when serializing those strings to a row.
  */

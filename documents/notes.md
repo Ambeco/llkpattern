@@ -732,7 +732,7 @@ Notes to self about how to work on this project, and other context that doesn't 
   vanish with Gradle's post-test uninstall, ran a second pass manually (`adb install` both APKs,
   `adb shell am instrument -w ...`, `adb pull`, then `adb uninstall` both packages to leave the
   device clean) -- see remaining_work.md's on-device-benchmark entry for the resulting numbers.
-  `documents/benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json` is committed as a
+  `benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json` is committed as a
   first real-device baseline, alongside the desktop JMH one.
 - The first run used the defaults copied from the desktop `CorpusBenchmark` (0.25 fraction, 3
   warmup/5 measured iterations) and finished in ~4 seconds -- nowhere near using a device's spare
@@ -749,7 +749,7 @@ Notes to self about how to work on this project, and other context that doesn't 
   (8) frames, and tallies occurrences of that exact 8-frame chain in a `HashMap`. Output is a
   plain-text table (count, %, chain) sorted by frequency rather than a binary trace file -- no
   Android Studio Profiler import needed, and the depth cap keeps chains readable directly.
-  Committed at `documents/benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt` (275 samples,
+  Committed at `benchmarks/Google_Pixel_3a_sargo_llkMatch_sampling.txt` (275 samples,
   133 distinct 8-frame chains over `PROFILE_ITERATIONS = 200` full-corpus passes); replaces an
   earlier `.trace`-file version of this test that was captured, then deleted once the hand-rolled
   version replaced it (see remaining_work.md).
@@ -811,7 +811,7 @@ Notes to self about how to work on this project, and other context that doesn't 
 - The project owner's next optimization idea after the `appendSorted` fix: "if the crux is all the
   copies, then let's not make copies." Before committing to their fuller `CodePointMapBuilder`/
   push-visitor proposal, re-profiled with an 8-frame stack sample (checked in as
-  `documents/benchmarks/Intel-i7-9750H_llkCompile_sampling.txt`/`..._llkMatch_sampling.txt`) to
+  `benchmarks/Intel-i7-9750H_llkCompile_sampling.txt`/`..._llkMatch_sampling.txt`) to
   confirm `CodePointMap` construction was still the dominant cost post-`appendSorted` -- it was
   (every top `llkCompile` entry traced to an `appendSorted`/`putAll` call, ~9 sites at 2-4.5% each,
   no longer one dominant offender) -- and to correct an overstated claim made mid-investigation

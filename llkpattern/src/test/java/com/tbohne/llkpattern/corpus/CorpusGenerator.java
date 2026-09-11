@@ -15,7 +15,7 @@ import java.util.Optional;
  * Generates (or regenerates) a golden TSV file from an "intermediate" TSV of scraped tuples.
  *
  * <p>Input format (one line per tuple, tab-separated, no header, produced by a per-source scraper
- * such as {@code documents/tools/scrape_openjdk_regex.py}): {@code pattern\tflags\tinput[\tmode]}.
+ * such as {@code ./tools/scrape_openjdk_regex.py}): {@code pattern\tflags\tinput[\tmode]}.
  * Unlike the golden file itself, intermediate fields are NOT GoldenTsv-escaped -- they're the raw
  * text a scraper pulled straight out of a source file's lines (which never contain real tabs or
  * newlines), optionally still carrying that source's own escaping convention (e.g. OpenJDK's

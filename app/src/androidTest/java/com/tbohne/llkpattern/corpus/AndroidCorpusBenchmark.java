@@ -9,7 +9,6 @@ import androidx.test.platform.io.PlatformTestStorageRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.tbohne.llkpattern.BuildConfig;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -21,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -28,13 +28,9 @@ import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.MethodSorters;
-// Sampling-profile-only imports (see the commented-out testZZSamplingProfileMatch/
-// testZZSamplingProfileCompile blocks below) -- uncomment alongside those to re-enable them:
-// import static org.junit.Assert.assertFalse;
-// import static org.junit.Assume.assumeTrue;
-// import android.os.Bundle;
-// import java.util.HashMap;
-// import java.util.concurrent.atomic.AtomicBoolean;
+ import static org.junit.Assert.assertFalse;
+ import android.os.Bundle;
+ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.tbohne.llkpattern.Ll1Pattern;
 
@@ -56,11 +52,11 @@ import com.tbohne.llkpattern.Ll1Pattern;
  *       much smaller heaps than the desktop JMH run -- see its own javadoc.
  *   <li>Results are written as JSON to this app's external files dir, named after the actual
  *       device ({@link Build#MODEL}/{@link Build#DEVICE}), since the point of running this on
- *       several phones is comparing wildly different hardware -- see {@link #resultsFile}.
+ *       several phones is comparing wildly different hardware.
  *   <li>GC counts (not GC time or allocation bytes -- {@link Debug} doesn't expose those cheaply)
  *       are recorded per benchmark via {@link Debug#getGlobalGcInvocationCount()}.
  *   <li>The checked-in code only runs the four timing benchmarks below -- CPU sampling profilers
- *       for both {@code llkMatch} and {@code llkCompile} (an 8-frame-deep hand-rolled stack
+ *       for both {@code MatchLlk} and {@code CompileLlk} (an 8-frame-deep hand-rolled stack
  *       sampler, not {@code Debug.startMethodTracingSampling}, which can't limit depth) are kept
  *       as commented-out {@code testZZSamplingProfileMatch}/{@code testZZSamplingProfileCompile}
  *       blocks near the bottom of this class, ready to uncomment (along with their imports,
@@ -97,22 +93,35 @@ public class AndroidCorpusBenchmark {
   // similar speed for better-averaged numbers, without risking an instrumentation timeout. A
   // much slower or faster device will land elsewhere -- lower both if a run is inconveniently
   // slow, since nothing else here depends on hitting any particular wall-clock target.
-  private static final int WARMUP_ITERATIONS = 50;
-  private static final int MEASURED_ITERATIONS = 1000;
+  private static final int WARMUP_ITERATIONS = 100;
+  private static final int COMPILE_PERFORMANCE_ITERATIONS = 1000;
+  private static final int MATCH_PERFORMANCE_ITERATIONS = 3500;
 
-  // Iterations for the commented-out testZZSamplingProfile's capture, below -- separate from
-  // MEASURED_ITERATIONS since a profile needs enough wall-clock time to collect a useful number
-  // of samples, not a small number of precisely-timed iterations. Uncomment alongside that block.
-  // private static final int PROFILE_ITERATIONS = 200;
+  // Iterations for sampling's capture, below -- separate from PERFORMANCE_ITERATIONS since a 
+  // profile needs enough wall-clock time to collect a useful number of samples, not a small
+  // number of precisely-timed iterations. Uncomment alongside that block.
+  private static final int COMPILE_PROFILE_ITERATIONS = 600;
+  private static final int MATCH_PROFILE_ITERATIONS = 10000;
 
   private static List<AndroidGoldenRow> agreesRows;
   private static List<Pattern> regexPatterns;
   private static List<Ll1Pattern> llkPatterns;
 
-  /** Accumulates one entry per {@code @Test} method; dumped to {@link #resultsFile} in {@link
-   *  #writeResults}. JUnit doesn't guarantee test method order across JVMs/runners in general,
-   *  but {@link FixMethodOrder} pins it here purely for readability of the resulting file --
-   *  nothing depends on the order. */
+  /** Frames kept per stack sample in {@link #sampleMatchLlk}/{@link
+   *  #sampleCompileLlk} -- deep enough to see past {@code Matcher.match}/{@code
+   *  MatcherConstruct} dispatch (or, for compile, {@code PatternParser}/{@code PatternConstruct})
+   *  into whichever concrete construct is hot, shallow enough to keep the aggregated-chain table
+   *  small and readable. {@link Debug#startMethodTracingSampling} (the built-in Android sampling
+   *  tracer, tried first) has no way to cap this -- see documents/notes.md's on-device-benchmark
+   *  entry for why this hand-rolled sampler replaced it. */
+  private static final int STACK_SAMPLE_DEPTH = 4;
+  private static final long SAMPLE_INTERVAL_MILLIS = 1;
+  /**
+   * Accumulates one entry per {@code @Test} method; dumped to _corpus_benchmark_results in {@link
+   * #writeResults}. JUnit doesn't guarantee test method order across JVMs/runners in general, but
+   * {@link FixMethodOrder} pins it here purely for readability of the resulting file -- nothing
+   * depends on the order.
+   */
   private static final Map<String, Object> results = new LinkedHashMap<>();
 
   @BeforeClass
@@ -157,7 +166,8 @@ public class AndroidCorpusBenchmark {
     results.put("androidRelease", Build.VERSION.RELEASE);
     results.put("androidSdkInt", Build.VERSION.SDK_INT);
     results.put("fractionOfTestRows", FRACTION_OF_TEST_ROWS);
-    results.put("measuredIterations", MEASURED_ITERATIONS);
+    results.put("compileIterations", COMPILE_PERFORMANCE_ITERATIONS);
+    results.put("matchIterations", MATCH_PERFORMANCE_ITERATIONS);
     results.put("rowCount", agreesRows.size());
   }
 
@@ -180,8 +190,8 @@ public class AndroidCorpusBenchmark {
   }
 
   @Test
-  public void test1RegexCompile() {
-    runBenchmark("regexCompile", () -> {
+  public void testCompileRegex() {
+    runBenchmark("compileRegex", COMPILE_PERFORMANCE_ITERATIONS, () -> {
       for (AndroidGoldenRow row : agreesRows) {
         Pattern.compile(row.pattern, row.flagBits());
       }
@@ -189,8 +199,8 @@ public class AndroidCorpusBenchmark {
   }
 
   @Test
-  public void test2LlkCompile() {
-    runBenchmark("llkCompile", () -> {
+  public void testCompileLlk() {
+    runBenchmark("compileLlk", COMPILE_PERFORMANCE_ITERATIONS, () -> {
       for (AndroidGoldenRow row : agreesRows) {
         Ll1Pattern.compile(row.pattern, row.flagBits());
       }
@@ -198,196 +208,171 @@ public class AndroidCorpusBenchmark {
   }
 
   @Test
-  public void test3RegexMatch() {
-    runBenchmark("regexMatch", () -> {
+  public void testMatchRegex() {
+    runBenchmark("matchRegex", MATCH_PERFORMANCE_ITERATIONS, () -> {
       for (int i = 0; i < agreesRows.size(); i++) {
-        runRegexMatch(regexPatterns.get(i), agreesRows.get(i));
+        runMatchRegex(regexPatterns.get(i), agreesRows.get(i));
       }
     });
   }
 
   @Test
-  public void test4LlkMatch() {
-    runBenchmark("llkMatch", () -> {
+  public void testMatchLlk() {
+    runBenchmark("matchLlk", MATCH_PERFORMANCE_ITERATIONS, ()-> {
       for (int i = 0; i < agreesRows.size(); i++) {
-        runLlkMatch(llkPatterns.get(i), agreesRows.get(i));
+        runMatchLlk(llkPatterns.get(i), agreesRows.get(i));
       }
     });
   }
 
-  // CPU sampling profiles of llkMatch/llkCompile, commented out -- see documents/notes.md's
-  // on-device-benchmark entry for how they were captured and benchmarks/
-  // Google_Pixel_3a_sargo_llk{Match,Compile}_sampling.txt for the last real results. To
-  // re-enable: uncomment this whole block plus the sampling-only imports marked at the top of the
-  // file, then run just the one test needed with:
-  //   adb shell am instrument -w -e profile true \
-  //       -e class com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark#testZZSamplingProfileMatch \
-  //       com.tbohne.llkpattern.test/androidx.test.runner.AndroidJUnitRunner
-  // (swap in #testZZSamplingProfileCompile for the compile-side profile) and pull the result with:
-  //   adb pull /sdcard/Android/data/com.tbohne.llkpattern/files/<device>_llk{Match,Compile}_sampling.txt
-  //
-  // /** Frames kept per stack sample in {@link #testZZSamplingProfileMatch}/{@link
-  //  *  #testZZSamplingProfileCompile} -- deep enough to see past {@code Matcher.match}/{@code
-  //  *  MatcherConstruct} dispatch (or, for compile, {@code PatternParser}/{@code PatternConstruct})
-  //  *  into whichever concrete construct is hot, shallow enough to keep the aggregated-chain table
-  //  *  small and readable. {@link Debug#startMethodTracingSampling} (the built-in Android sampling
-  //  *  tracer, tried first) has no way to cap this -- see documents/notes.md's on-device-benchmark
-  //  *  entry for why this hand-rolled sampler replaced it. */
-  // private static final int STACK_SAMPLE_DEPTH = 4;
-  //
-  // private static final long SAMPLE_INTERVAL_MILLIS = 2;
-  //
-  // /**
-  //  * Captures a <b>sampling</b> profile (periodic stack snapshots, not per-call tracing -- this
-  //  * runs the benchmarked work on the test thread while a separate sampler thread periodically
-  //  * snapshots it via {@link Thread#getAllStackTraces()}, rather than instrumenting every call
-  //  * the way {@link Debug#startMethodTracing} does, which would badly distort timing) of a
-  //  * repeated {@code llkMatch} pass, aggregated into a plain-text table of the hottest top-
-  //  * {@link #STACK_SAMPLE_DEPTH}-frame call chains.
-  //  *
-  //  * <p>Opt-in: skipped unless run with {@code -e profile true} -- it's deliberately excluded
-  //  * from the default run since it doesn't produce a timing/GC result, just a profile, and
-  //  * running it every time would slow down routine benchmark runs.
-  //  */
-  // @Test
-  // public void testZZSamplingProfileMatch() throws InterruptedException, IOException {
-  //   captureSamplingProfile("llkMatch", () -> {
-  //     for (int i = 0; i < agreesRows.size(); i++) {
-  //       runLlkMatch(llkPatterns.get(i), agreesRows.get(i));
-  //     }
-  //   });
-  // }
-  //
-  // /** Same as {@link #testZZSamplingProfileMatch}, but of {@code llkCompile} instead -- see
-  //  *  {@link #test2LlkCompile} for the equivalent timed (non-profiled) benchmark. */
-  // @Test
-  // public void testZZSamplingProfileCompile() throws InterruptedException, IOException {
-  //   captureSamplingProfile("llkCompile", () -> {
-  //     for (AndroidGoldenRow row : agreesRows) {
-  //       Ll1Pattern.compile(row.pattern, row.flagBits());
-  //     }
-  //   });
-  // }
-  //
-  // private interface ProfiledWork {
-  //   void runOnePass();
-  // }
-  //
-  // private void captureSamplingProfile(String name, ProfiledWork work)
-  //     throws InterruptedException, IOException {
-  //   Bundle args = InstrumentationRegistry.getArguments();
-  //   assumeTrue(
-  //       "Skipped by default -- pass -e profile true to capture a sampling profile.",
-  //       args != null && Boolean.parseBoolean(args.getString("profile", "false")));
-  //
-  //   Thread targetThread = Thread.currentThread();
-  //   Map<String, Integer> chainCounts = new HashMap<>();
-  //   AtomicBoolean sampling = new AtomicBoolean(true);
-  //   Thread sampler = new Thread(() -> {
-  //     while (sampling.get()) {
-  //       StackTraceElement[] frames = Thread.getAllStackTraces().get(targetThread);
-  //       if (frames != null && frames.length > 0) {
-  //         synchronized (chainCounts) {
-  //           chainCounts.merge(formatChain(frames), 1, Integer::sum);
-  //         }
-  //       }
-  //       try {
-  //         Thread.sleep(SAMPLE_INTERVAL_MILLIS);
-  //       } catch (InterruptedException e) {
-  //         break;
-  //       }
-  //     }
-  //   }, name + "-sampler");
-  //   sampler.setDaemon(true);
-  //   sampler.start();
-  //   try {
-  //     for (int iter = 0; iter < PROFILE_ITERATIONS; iter++) {
-  //       work.runOnePass();
-  //     }
-  //   } finally {
-  //     sampling.set(false);
-  //     sampler.interrupt();
-  //     sampler.join(1000);
-  //   }
-  //
-  //   assertFalse("Sampler collected zero stack samples -- SAMPLE_INTERVAL_MILLIS too coarse for "
-  //       + "how fast this pass ran, or Thread.getAllStackTraces() couldn't see the target "
-  //       + "thread?", chainCounts.isEmpty());
-  //   writeSamplingProfile(name, chainCounts);
-  // }
-  //
-  // /** The top {@link #STACK_SAMPLE_DEPTH} frames of one stack sample, most-recent-call-first (as
-  //  *  {@link StackTraceElement}s already are), joined into one aggregation key. */
-  // private static String formatChain(StackTraceElement[] frames) {
-  //   int depth = Math.min(STACK_SAMPLE_DEPTH, frames.length);
-  //   StringBuilder sb = new StringBuilder();
-  //   for (int i = 0; i < depth; i++) {
-  //     if (i > 0) {
-  //       sb.append(" <- ");
-  //     }
-  //     StackTraceElement f = frames[i];
-  //     sb.append(f.getClassName()).append('.').append(f.getMethodName())
-  //         .append(':').append(f.getLineNumber());
-  //   }
-  //   return sb.toString();
-  // }
-  //
-  // private static void writeSamplingProfile(String name, Map<String, Integer> chainCounts)
-  //     throws IOException {
-  //   List<Map.Entry<String, Integer>> sorted = new ArrayList<>(chainCounts.entrySet());
-  //   sorted.sort((a, b) -> b.getValue() - a.getValue());
-  //   int totalSamples = 0;
-  //   for (Map.Entry<String, Integer> e : sorted) {
-  //     totalSamples += e.getValue();
-  //   }
-  //
-  //   File file = new File(externalFilesDir(), deviceName() + "_" + name + "_sampling.txt");
-  //   try (Writer w = new FileWriter(file)) {
-  //     w.write(String.format(Locale.ROOT,
-  //         "Sampling profile of %s on %s%n"
-  //             + "stack depth: %d, sample interval: %dms, total samples: %d, distinct chains: %d%n"
-  //             + "count (%% of samples)  top-%d-frame call chain (most-recent-call-first)%n%n",
-  //         name, deviceName(), STACK_SAMPLE_DEPTH, SAMPLE_INTERVAL_MILLIS, totalSamples,
-  //         sorted.size(), STACK_SAMPLE_DEPTH));
-  //     for (Map.Entry<String, Integer> e : sorted) {
-  //       double pct = 100.0 * e.getValue() / totalSamples;
-  //       w.write(String.format(Locale.ROOT, "%6d (%5.1f%%)  %s%n", e.getValue(), pct, e.getKey()));
-  //     }
-  //   }
-  //   System.out.println("AndroidCorpusBenchmark sampling profile written to " + file.getAbsolutePath());
-  // }
+   /**
+    * Captures a <b>sampling</b> profile (periodic stack snapshots, not per-call tracing -- this
+    * runs the benchmarked work on the test thread while a separate sampler thread periodically
+    * snapshots it via {@link Thread#getAllStackTraces()}, rather than instrumenting every call
+    * the way {@link Debug#startMethodTracing} does, which would badly distort timing) of a
+    * repeated {@code MatchLlk} pass, aggregated into a plain-text table of the hottest top-
+    * {@link #STACK_SAMPLE_DEPTH}-frame call chains.
+    *
+    * <p>Opt-in: skipped unless run with {@code -e profile true} -- it's deliberately excluded
+    * from the default run since it doesn't produce a timing/GC result, just a profile, and
+    * running it every time would slow down routine benchmark runs.
+    */
+   @Test
+   public void sampleMatchLlk() throws InterruptedException, IOException {
+     captureSamplingProfile("MatchLlk", MATCH_PROFILE_ITERATIONS, () -> {
+       for (int i = 0; i < agreesRows.size(); i++) {
+         runMatchLlk(llkPatterns.get(i), agreesRows.get(i));
+       }
+     });
+   }
+
+   /** Same as {@link #sampleMatchLlk}, but of {@code CompileLlk} instead -- see
+    *  {@link #testCompileLlk} for the equivalent timed (non-profiled) benchmark. */
+   @Test
+   public void sampleCompileLlk() throws InterruptedException, IOException {
+     captureSamplingProfile("CompileLlk", COMPILE_PROFILE_ITERATIONS, () -> {
+       for (AndroidGoldenRow row : agreesRows) {
+         Ll1Pattern.compile(row.pattern, row.flagBits());
+       }
+     });
+   }
+
+   private interface ProfiledWork {
+     void runOnePass();
+   }
+
+   private void captureSamplingProfile(String name, int profileIterations, ProfiledWork work)
+       throws InterruptedException, IOException {
+     Bundle args = InstrumentationRegistry.getArguments();
+     Thread targetThread = Thread.currentThread();
+     Map<String, Integer> chainCounts = new TreeMap<>();
+     AtomicBoolean sampling = new AtomicBoolean(true);
+     Thread sampler = new Thread(() -> {
+       while (sampling.get()) {
+         StackTraceElement[] frames = Thread.getAllStackTraces().get(targetThread);
+         if (frames != null && frames.length > 0) {
+           synchronized (chainCounts) {
+             chainCounts.merge(formatChain(frames), 1, Integer::sum);
+           }
+         }
+         try {
+           Thread.sleep(SAMPLE_INTERVAL_MILLIS);
+         } catch (InterruptedException e) {
+           break;
+         }
+       }
+     }, name + "-sampler");
+     sampler.setDaemon(true);
+     sampler.start();
+     try {
+       for (int iter = 0; iter < profileIterations; iter++) {
+         work.runOnePass();
+       }
+     } finally {
+       sampling.set(false);
+       sampler.interrupt();
+       sampler.join(1000);
+     }
+
+     assertFalse("Sampler collected zero stack samples -- SAMPLE_INTERVAL_MILLIS too coarse for "
+         + "how fast this pass ran, or Thread.getAllStackTraces() couldn't see the target "
+         + "thread?", chainCounts.isEmpty());
+     writeSamplingProfile(name, chainCounts, profileIterations);
+   }
+
+   /** The top {@link #STACK_SAMPLE_DEPTH} frames of one stack sample, most-recent-call-first (as
+    *  {@link StackTraceElement}s already are), joined into one aggregation key. */
+   private static String formatChain(StackTraceElement[] frames) {
+     int depth = Math.min(STACK_SAMPLE_DEPTH, frames.length);
+     StringBuilder sb = new StringBuilder();
+     for (int i = 0; i < depth; i++) {
+       if (i > 0) {
+         sb.append(" <- ");
+       }
+       StackTraceElement f = frames[i];
+       sb.append(f.getClassName()).append('.').append(f.getMethodName())
+           .append(':').append(f.getLineNumber());
+     }
+     return sb.toString();
+   }
+
+   private static void writeSamplingProfile(String name, Map<String, Integer> chainCounts, int profileIterations)
+       throws IOException {
+     List<Map.Entry<String, Integer>> sorted = new ArrayList<>(chainCounts.entrySet());
+     sorted.sort((a, b) -> b.getValue() - a.getValue());
+     int totalSamples = 0;
+     for (Map.Entry<String, Integer> e : sorted) {
+       totalSamples += e.getValue();
+     }
+
+     String fileName = deviceName() + "_" + name + "_sampling.txt";
+     try (OutputStream w = PlatformTestStorageRegistry.getInstance().openOutputFile(fileName)) {
+       w.write(String.format(Locale.ROOT,
+           "Sampling profile of %s on %s%n"
+               + "stack depth: %d, sample interval: %dms, profile iterations: %d, total samples: %d, distinct chains: %d%n"
+               + "count (%% of samples)  top-%d-frame call chain (most-recent-call-first)%n%n",
+           name, deviceName(), STACK_SAMPLE_DEPTH, SAMPLE_INTERVAL_MILLIS, profileIterations, totalSamples,
+           sorted.size(), STACK_SAMPLE_DEPTH).getBytes(StandardCharsets.UTF_8));
+       for (int i=0; i<20 && i<sorted.size(); i++) {
+         Map.Entry<String, Integer> e = sorted.get(i);
+         double pct = 100.0 * e.getValue() / totalSamples;
+         w.write(String.format(Locale.ROOT, "%6d (%5.1f%%)  %s%n", e.getValue(), pct, e.getKey()).getBytes(StandardCharsets.UTF_8));
+       }
+     }
+     System.out.println("AndroidCorpusBenchmark sampling profile written to " + fileName);
+   }
 
   private interface CorpusPass {
     void run();
   }
 
-  /** Runs {@link #WARMUP_ITERATIONS} untimed passes, then {@link #MEASURED_ITERATIONS} timed
+  /** Runs {@link #WARMUP_ITERATIONS} untimed passes, then measuredIterations timed
    *  passes over the whole subsampled corpus, and records the average per-pass time plus GCs
    *  triggered during the measured passes under {@code name} in {@link #results}. This is a much
    *  cruder methodology than JMH's (no forked JVM per benchmark, no statistical error bars) --
    *  good enough for coarse device comparisons, not for chasing single-digit-percent regressions
    *  the way the desktop {@code CorpusBenchmark} run is used for. */
-  private static void runBenchmark(String name, CorpusPass pass) {
+  private static void runBenchmark(String name, int measuredIterations, CorpusPass pass) {
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
       pass.run();
     }
 
     long gcCountBefore = Debug.getGlobalGcInvocationCount();
     long startNanos = System.nanoTime();
-    for (int i = 0; i < MEASURED_ITERATIONS; i++) {
+    for (int i = 0; i < measuredIterations; i++) {
       pass.run();
     }
     long elapsedNanos = System.nanoTime() - startNanos;
     long gcCount = Debug.getGlobalGcInvocationCount() - gcCountBefore;
 
-    double avgMillisPerPass = (elapsedNanos / 1_000_000.0) / MEASURED_ITERATIONS;
-    Map<String, Object> entry = new LinkedHashMap<>();
+    double avgMillisPerPass = (elapsedNanos / 1_000_000.0) / measuredIterations;
+    Map<String, Object> entry = new TreeMap<>();
     entry.put("avgMillisPerCorpusPass", avgMillisPerPass);
     entry.put("gcCountDuringMeasuredIterations", gcCount);
     results.put(name, entry);
   }
 
-  private static boolean runRegexMatch(Pattern pattern, AndroidGoldenRow row) {
+  private static boolean runMatchRegex(Pattern pattern, AndroidGoldenRow row) {
     java.util.regex.Matcher m = pattern.matcher(row.input);
     switch (row.mode) {
       case MATCHES:
@@ -401,7 +386,7 @@ public class AndroidCorpusBenchmark {
     }
   }
 
-  private static boolean runLlkMatch(Ll1Pattern pattern, AndroidGoldenRow row) {
+  private static boolean runMatchLlk(Ll1Pattern pattern, AndroidGoldenRow row) {
     com.tbohne.llkpattern.Matcher m = pattern.matcher(row.input);
     switch (row.mode) {
       case MATCHES:
@@ -417,19 +402,16 @@ public class AndroidCorpusBenchmark {
 
   @AfterClass
   public static void writeResults() throws IOException {
-    try (OutputStream file = resultsFile()) {
+    String fileName = deviceName() + "_corpus_benchmark_results.json";
+    try (OutputStream file = PlatformTestStorageRegistry.getInstance().openOutputFile(fileName)) {
       file.write(toJson(results).getBytes(StandardCharsets.UTF_8));
       // No JSON assertion library pulled in for this (androidTest keeps a small dependency set);
       // this is a plain System.out so `adb logcat` / the test runner's own output shows the path
       // even if the test host doesn't offer file access.
-      System.out.println("AndroidCorpusBenchmark results written to " + file);
+      System.out.println("AndroidCorpusBenchmark results written to " + fileName);
     } catch (IOException e) {
-      throw new UncheckedIOException("Failed writing benchmark results to output", e);
+      throw new UncheckedIOException("Failed writing benchmark results to " + fileName, e);
     }
-  }
-
-  private static OutputStream resultsFile() throws FileNotFoundException {
-    return PlatformTestStorageRegistry.getInstance().openOutputFile(deviceName() + "_corpus_benchmark_results.json");
   }
 
   private static File externalFilesDir() {

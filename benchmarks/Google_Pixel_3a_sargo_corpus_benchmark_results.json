@@ -1,14 +1,15 @@
 {
   "device": "Google_Pixel_3a_sargo",
-  "buildTime": "2026-09-11T20:34:50.882Z",
-  "testTime": "2026-09-11T20:35:02.371322Z",
+  "buildTime": "2026-09-11T21:15:02.613Z",
+  "testTime": "2026-09-11T21:15:15.676996Z",
   "androidRelease": "12",
   "androidSdkInt": 32,
   "fractionOfTestRows": 1.0000,
-  "measuredIterations": 1000,
+  "compileIterations": 1000,
+  "matchIterations": 3500,
   "rowCount": 406,
-  "regexCompile": {"avgMillisPerCorpusPass": 6.3660, "gcCountDuringMeasuredIterations": 0},
-  "llkCompile": {"avgMillisPerCorpusPass": 12.2202, "gcCountDuringMeasuredIterations": 0},
-  "regexMatch": {"avgMillisPerCorpusPass": 3.5003, "gcCountDuringMeasuredIterations": 0},
-  "llkMatch": {"avgMillisPerCorpusPass": 1.3094, "gcCountDuringMeasuredIterations": 0}
+  "compileLlk": {"avgMillisPerCorpusPass": 11.0112, "gcCountDuringMeasuredIterations": 0},
+  "compileRegex": {"avgMillisPerCorpusPass": 6.8923, "gcCountDuringMeasuredIterations": 0},
+  "matchLlk": {"avgMillisPerCorpusPass": 0.7953, "gcCountDuringMeasuredIterations": 0},
+  "matchRegex": {"avgMillisPerCorpusPass": 3.9419, "gcCountDuringMeasuredIterations": 0}
 }

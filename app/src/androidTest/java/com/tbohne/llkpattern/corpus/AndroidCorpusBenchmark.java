@@ -269,7 +269,7 @@ public class AndroidCorpusBenchmark {
      AtomicBoolean sampling = new AtomicBoolean(true);
      Thread sampler = new Thread(() -> {
        while (sampling.get()) {
-         StackTraceElement[] frames = Thread.getAllStackTraces().get(targetThread);
+         StackTraceElement[] frames = targetThread.getStackTrace();
          if (frames != null && frames.length > 0) {
            synchronized (chainCounts) {
              chainCounts.merge(formatChain(frames), 1, Integer::sum);
@@ -306,12 +306,9 @@ public class AndroidCorpusBenchmark {
      int depth = Math.min(STACK_SAMPLE_DEPTH, frames.length);
      StringBuilder sb = new StringBuilder();
      for (int i = 0; i < depth; i++) {
-       if (i > 0) {
-         sb.append(" <- ");
-       }
        StackTraceElement f = frames[i];
        sb.append(f.getClassName()).append('.').append(f.getMethodName())
-           .append(':').append(f.getLineNumber());
+           .append(':').append(f.getLineNumber()).append("\n\t\t\t");
      }
      return sb.toString();
    }
@@ -336,7 +333,7 @@ public class AndroidCorpusBenchmark {
        for (int i=0; i<20 && i<sorted.size(); i++) {
          Map.Entry<String, Integer> e = sorted.get(i);
          double pct = 100.0 * e.getValue() / totalSamples;
-         w.write(String.format(Locale.ROOT, "%6d (%5.1f%%)  %s%n", e.getValue(), pct, e.getKey()).getBytes(StandardCharsets.UTF_8));
+         w.write(String.format(Locale.ROOT, "%d\t%2.1f%%\t%s%n", e.getValue(), pct, e.getKey()).getBytes(StandardCharsets.UTF_8));
        }
      }
      System.out.println("AndroidCorpusBenchmark sampling profile written to " + fileName);

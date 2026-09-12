@@ -289,8 +289,32 @@ actually needed again.
 - [ ] **`BackReference` aliasing its referenced group's own entry point directly**, instead of going through the separate `firstCharSet`/`lastCharSet` static-walk helpers -- proposed this session, NOT done: `firstCharSet(referencedGroup)` and `referencedGroup.getEntryPointMap()` diverge for a nullable referenced group (the latter folds in `next`'s entries via `buildLoopEntryMap`'s `min == 0` case, and can throw `EntryPointCycleException` on a pattern that compiles fine today), so this needs verifying against `(a?)\1` and `(a|b)?\1` before landing, not just assumed safe.
 - [ ] **`lastCharSet`/`WordBoundaryConstruct.priorCharSet` should NOT be removed** -- raised and rejected this session. `lastCharSet` isn't dead now that sequences link `next` pointers directly; it's the compile-time `\b`/`\B` static-wordness optimization (`WordBoundaryConstruct.classify`'s subset/disjoint checks need an actual queryable `CodePointMap`, which a push-only API can't give it). Removing it wouldn't fail any test, just silently push every `\b` onto the runtime-check path -- noted here so it isn't attempted again without realizing that.
 - [ ] `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`) and the `QuantifiedUnion`-branch-union temporary maps inside those two methods are still real, un-eliminated `CodePointMap` allocations beyond the "4 real consumers" -- left alone this session per the item above (converting `lastCharSet`'s callers to a push model isn't viable; `firstCharSet`'s one call site might be, see above, but wasn't converted).
-- [ ] `PatternConstruct.QuantifiableConstruct.buildContinueTarget`'s `bodyEntries` filtering map is still a real intermediate allocation, unconverted -- a candidate for whenever the quantified-loop case above is revisited.
-
 ## Loop-compilation performance follow-ups (2026-09-09)
 
-- [ ] **Skip the full `CodePointMapBuilder` merge for `buildLoopMatcher`'s `result` (body + `next`) too, when `body.size() == 1`** -- same idea as the `bodyOnlyResult` optimization already done (see notes.md), one level up: with exactly 2 candidates (`body.get(0)` and `next`), the merge/ambiguity-check could be a direct pairwise disjointness comparison instead of going through the sort-coalesce-conflict-check pipeline built for an arbitrary number of candidates. Not yet attempted -- unclear whether the win is worth the added special-casing, given `mergeEntryPoints`'s conflict-error-reporting path (candidate index, offending range) would need an equivalent for the direct-comparison path too.
+- [ ] **Skip the full `CodePointMapBuilder` merge `buildLoopMatcher` still does purely to validate
+      body-vs-`next` disjointness (`validateDisjointness(pattern, candidatesWithNext, ...)`),
+      when `body.size() == 1`** -- same idea as the `bodyOnlyResult` optimization already done (see
+      notes.md), one level up: with exactly 2 candidates (`body.get(0)` and `next`), the
+      merge/ambiguity-check could be a direct pairwise disjointness comparison instead of going
+      through the sort-coalesce-conflict-check pipeline built for an arbitrary number of candidates.
+      Not yet attempted -- unclear whether the win is worth the added special-casing, given
+      `mergeEntryPoints`'s conflict-error-reporting path (candidate index, offending range) would
+      need an equivalent for the direct-comparison path too.
+
+## Fork-chain dispatch (2026-09-11) -- steps 2 and 3 of the performance plan
+
+Step 1 done this session: `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
+`CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) is gone, replaced by chains of a
+new `ForkingMatcherConstruct` (a plain 2-way fork on set membership) for unions and a quantified
+construct's own entry point, plus a related but separate `LoopMatcherConstruct` for a loop's own
+continue-vs-exit choice -- see design.md's "Quantifier/loop compilation" and "Opcode set" sections,
+and notes.md's 2026-09-11 entry for the case-insensitive priority bug this surfaced and fixed along
+the way. Full suite green (1501 tests, 0 failing, 561 skipped).
+
+- [ ] **Step 2**: now that nothing builds a `CodePointMap<MatcherConstruct>` dispatch table any
+      more, shrink `CodePointMap<Boolean>` (`entryMap`, character-class ranges, `ForkingMatcherConstruct
+      .memberSet`) down to a leaner `CodePointSet` (no `V[] values` array, since every real value is
+      always `true`) -- cuts memory/writes further. Not started.
+- [ ] **Step 3** (experimental, blocked on step 2): a `CodePointSet` implementation that's the union
+      of two delegate sets, so `ComplexCharacter` can reference a `NamedChars` set by union instead
+      of copying its entries in. Not started.

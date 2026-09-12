@@ -1,7 +1,6 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.Matcher.Group;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
@@ -26,18 +25,17 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * <p>Almost every node has exactly one possible successor, known at construction time --
  * {@link SingleDispatchingMatcherConstruct} covers those, holding a {@code final} successor
  * reference since there's no risk of a node needing to see its own not-yet-built successor. The
- * handful of nodes that genuinely branch on the next code point -- a union's {@code |}, and a
- * loop's "keep looping vs. exit" choice -- extend
- * {@link MultiDispatchingMatcherConstruct} instead, whose dispatch map/else-value are
- * intentionally not {@code final}: a `final` field can only be safely published to other threads
- * if it's set before the constructor completes, but a self-referential dispatch entry (a loop
- * dispatching back to its own entry node) is unavoidably written by a *different* (nested)
- * constructor call while this one is still running. Instead, every dispatch/build step for an
- * entire {@code Ll1Pattern} happens synchronously, before that pattern's own constructor (which
- * does have a `final` field) runs -- so the whole graph is safely published transitively through
- * {@code Ll1Pattern}'s `final compiled` field, even though the individual
- * {@code MultiDispatchingMatcherConstruct}s reachable from it are not `final` themselves. Treat
- * these fields as immutable *by contract* once construction of the whole graph is finished.
+ * handful of nodes that genuinely branch on the next code point -- a union's {@code |}, a loop's
+ * own entry point, and a loop's own "keep looping vs. exit" choice -- are all built from chains of
+ * {@link ForkingMatcherConstruct}, a plain 2-way if/else on set membership: there is no N-way
+ * dispatch-table node anywhere in this engine. Per CLAUDE.md's rule for this class, every field on
+ * every {@code MatcherConstruct} -- {@code ForkingMatcherConstruct} included -- stays genuinely
+ * {@code final}; the one place a fork's successor genuinely isn't known until after it
+ * self-registers to break a construction-time cycle (a loop's own back edge -- see {@link
+ * LoopMatcherConstruct}) indirects through its owning {@code PatternConstruct}'s own already-mutable
+ * {@code matcher} field instead of adding a mutable field here, so no node's own fields ever need
+ * the "immutable by contract, not by the compiler" caveat this design used to require of its one
+ * dispatch-table node.
  */
 abstract class MatcherConstruct {
 	// The CASE_INSENSITIVE/UNICODE_CASE/etc. flags in effect where this node's PatternConstruct was
@@ -101,18 +99,19 @@ abstract class MatcherConstruct {
 
 	/**
 	 * True if {@code peeked} (or, under {@code CASE_INSENSITIVE}, one of its other-case forms) is a
-	 * member of {@code ranges}. Used by {@link SingleCharMatcherConstruct} in place of a dispatch
-	 * map: a character class has exactly one successor regardless of *which* member character was
-	 * seen, so all it needs is a yes/no membership test, not a lookup keyed by the character.
+	 * member of {@code ranges}. Used both by {@link SingleCharMatcherConstruct} (in place of a
+	 * dispatch map: a character class has exactly one successor regardless of *which* member
+	 * character was seen, so all it needs is a yes/no membership test) and by {@link
+	 * ForkingMatcherConstruct}'s own membership test.
 	 */
 	static boolean containsFolded(CodePointMap<Boolean> ranges, int peeked, int flags) {
 		// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is checked FIRST and
-		// unconditionally, unlike getNext()'s use of getExplicit() for a similar-looking check: a
-		// negated class (e.g. "[^a-z]") is an else-value map, and its else-value fill legitimately
-		// covers every real code point it doesn't explicitly exclude -- membership here has to see
-		// that fill (hence get(), not getExplicit()), but -1 is never a real code point, so it must
-		// never be reported a "member" of even a total (else-valued) ranges map. This is the same
-		// domain guard ComplexCharacter#validRanges() used to provide via clamping a Guava RangeSet.
+		// unconditionally: a negated class (e.g. "[^a-z]") is an else-value map, and its else-value
+		// fill legitimately covers every real code point it doesn't explicitly exclude -- membership
+		// here has to see that fill (hence get(), not getExplicit()), but -1 is never a real code
+		// point, so it must never be reported a "member" of even a total (else-valued) ranges map.
+		// This is the same domain guard ComplexCharacter#validRanges() used to provide via clamping a
+		// Guava RangeSet.
 		if (peeked == -1) {
 			return false;
 		}
@@ -133,11 +132,13 @@ abstract class MatcherConstruct {
 	 * known at construction time -- matching input at that node never depends on *which* character
 	 * was seen to decide where to go next, only whether matching succeeded at all.
 	 *
-	 * <p>{@code next} is safe to be {@code final} here (unlike {@link MultiDispatchingMatcherConstruct}'s
-	 * fields) because none of this class's subclasses are ever the self-referential node in a
-	 * cycle -- that role belongs exclusively to a loop's entry {@code MultiDispatchingMatcherConstruct}
-	 * -- so a Single-dispatching node's successor is always some other node that's already fully
-	 * built (or at least already self-registered) by the time this constructor runs.
+	 * <p>{@code next} is safe to be a plain {@code final MatcherConstruct} here because none of this
+	 * class's subclasses are ever the self-referential node in a cycle -- that role belongs
+	 * exclusively to a loop's own {@link LoopMatcherConstruct} (which sidesteps needing a mutable
+	 * field of its own by indirecting through a {@code PatternConstruct}'s {@code matcher} field
+	 * instead -- see its own doc) -- so a Single-dispatching node's successor is always some other
+	 * node that's already fully built (or at least already self-registered) by the time this
+	 * constructor runs.
 	 *
 	 * <p>{@code next.match(...)} is called as a plain virtual call ({@link #matchNext}), not via a
 	 * {@code MethodHandle} -- an earlier version of this class bound one via {@code findSpecial}
@@ -173,63 +174,6 @@ abstract class MatcherConstruct {
 	}
 
 	/**
-	 * Base class for the handful of nodes that genuinely branch on the next code point without
-	 * consuming it: a union's {@code |}, a loop's entry dispatch, and a loop's own re-check
-	 * ({@link LoopMatcherConstruct}, reached as the body's own continuation instead of self-
-	 * registering) -- see {@code QuantifiableConstruct.buildLoopMatcher}. See the class doc above for why
-	 * these fields, unlike {@link SingleDispatchingMatcherConstruct#next}, are not {@code final}.
-	 */
-	abstract static class MultiDispatchingMatcherConstruct extends MatcherConstruct {
-		// The "else" destination lives as dispatchMap's own else-value (CodePointMap#getElseValue)
-		// rather than a separate field, since that's exactly what it is: wherever the next code
-		// point isn't explicitly claimed. getNext() below has to use getExplicit(), not get(), for
-		// its own intermediate lookups -- get() would fold the else-value in too early and short-
-		// circuit the case-insensitive fallback (see its comment).
-		MutableCodePointMap<MatcherConstruct> dispatchMap = new ArrayCodePointMap<>();
-
-		MultiDispatchingMatcherConstruct(PatternConstruct owner) {
-			super(owner);
-		}
-
-		MultiDispatchingMatcherConstruct(int flags) {
-			super(flags);
-		}
-
-		@Nullable MatcherConstruct getNext(Matcher matcher, int peeked) {
-			MatcherConstruct mapped = dispatchMap.getExplicit(peeked);
-			if (mapped == null && peeked != -1) {
-				// CASE_INSENSITIVE/UNICODE_CASE (2026-09-06): dispatchMap's keys are exactly the code
-				// points the pattern was written with (e.g. "[a-z]" only ever puts 'a'-'z' in the map),
-				// so a case-insensitive match has to try the *input* character's other-case forms
-				// against that same map, rather than expanding every character class's ranges at compile
-				// time. Two lookups (not one) because there's no single "canonical case" that works for
-				// both an all-lowercase pattern matching an uppercase input and vice versa.
-				// Uses this node's own local `flags` (its PatternConstruct's parse-time flags), not
-				// matcher.pattern.flags(), so an inline "(?i:...)" only affects matching within its own
-				// scope instead of the whole pattern.
-				if ((flags & Ll1Pattern.CASE_INSENSITIVE) != 0) {
-					boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
-					int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
-					int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
-					if (upper != peeked) {
-						mapped = dispatchMap.getExplicit(upper);
-					}
-					if (mapped == null && lower != peeked) {
-						mapped = dispatchMap.getExplicit(lower);
-					}
-				}
-			}
-			return (mapped != null) ? mapped : dispatchMap.getElseValue();
-		}
-
-		@VisibleForTesting
-		CodePointMap<MatcherConstruct> getDispatchMap() { return dispatchMap; }
-
-		@VisibleForTesting
-		@Nullable MatcherConstruct getElse() { return dispatchMap.getElseValue(); }
-	}
-
-	/**
 	 * Matches exactly one code point against {@code validRanges} (a character class -- {@code .}, a
 	 * literal single character, or {@code [...]}), then advances to whatever comes next. A pure
 	 * membership test, not a dispatch: every member character leads to the same single successor.
@@ -251,7 +195,22 @@ abstract class MatcherConstruct {
 		}
 	}
 
-	/** Matches a fixed literal string exactly, then advances to whatever comes next. */
+	/**
+	 * Matches a fixed literal string exactly, then advances to whatever comes next. Compares the
+	 * whole {@code value} against the input in one call rather than code-point-at-a-time:
+	 * {@code String#regionMatches} is a JIT intrinsic on every JVM this project targets, so this is
+	 * both simpler and faster than the character-loop version it replaced. Case-insensitive matching
+	 * still needs two different strategies, since {@code regionMatches(true, ...)}'s notion of
+	 * "ignore case" is full Unicode case-folding (via {@code Character#toUpperCase}/{@code
+	 * #toLowerCase}) -- exactly {@code UNICODE_CASE}'s own definition, but NOT what plain {@code
+	 * CASE_INSENSITIVE} (without {@code UNICODE_CASE}) means here: that's ASCII-only folding (see
+	 * {@link #foldAsciiUpper}/{@link #foldAsciiLower}), which leaves non-ASCII characters alone --
+	 * something {@code regionMatches(true, ...)} would get wrong (e.g. folding a non-ASCII character
+	 * that has a Unicode case mapping but no ASCII one). That case falls back to a manual per-{@code
+	 * char} loop (not per-code-point: ASCII folding never touches anything outside {@code a-z}/{@code
+	 * A-Z}, so treating a surrogate pair as two separate {@code char}s compares correctly without
+	 * ever needing to decode one).
+	 */
 	static final class LiteralMatcherConstruct extends SingleDispatchingMatcherConstruct {
 		final String value;
 
@@ -260,87 +219,117 @@ abstract class MatcherConstruct {
 			this.value = value;
 		}
 
-		// TODO: optimize to compare the entire `String value` as a single operation.
 		boolean match(Matcher matcher, int peeked) {
-			int i=0;
-			do {
-				int next = value.codePointAt(i);
-				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
-				if (!codePointsMatch(next, peeked, flags)) {
+			int end = matcher.pos + value.length();
+			if (end > matcher.regionEnd) {
+				return false;
+			}
+			boolean matches;
+			if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+				matches = matcher.input.regionMatches(matcher.pos, value, 0, value.length());
+			} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
+				matches = matcher.input.regionMatches(true, matcher.pos, value, 0, value.length());
+			} else {
+				matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value);
+			}
+			if (!matches) {
+				return false;
+			}
+			if (end < matcher.regionEnd
+					&& Character.isHighSurrogate(value.charAt(value.length() - 1))
+					&& Character.isLowSurrogate(matcher.input.charAt(end))) {
+				// `value` ends on an unpaired high surrogate, but the input keeps going with a real
+				// low surrogate right there -- the input's actual code point at this position is the
+				// combined supplementary one, not the lone surrogate `value` means to match. Every
+				// other position is safe (two positions' raw units can only agree if their
+				// surrogate-pairing structure agrees too, since pairing is a pure function of the
+				// unit values themselves); only right at `value`'s own end does the comparison above
+				// stop looking one unit before it would matter.
+				return false;
+			}
+			return matchNext(matcher, matcher.consumeCodeUnits(value.length()));
+		}
+
+		private static boolean asciiFoldRegionMatches(String input, int offset, String value) {
+			int len = value.length();
+			for (int i = 0; i < len; i++) {
+				char a = input.charAt(offset + i);
+				char b = value.charAt(i);
+				if (a != b && foldAsciiUpper(a) != foldAsciiUpper(b)) {
 					return false;
 				}
-				peeked = matcher.consumeCodeUnits(units);
-				i += units;
-			} while (i<value.length());
-			return matchNext(matcher, peeked);
+			}
+			return true;
 		}
 	}
 
 	/**
-	 * Dispatches immediately based on the next code point, without consuming any input itself. This
-	 * is what a {@code QuantifiedUnion}'s alternation (the {@code |} branches) compiles to, and --
-	 * built directly by {@code QuantifiableConstruct.buildLoopMatcher} -- also what a quantified
-	 * construct's own entry point compiles to: picking a branch doesn't consume a character, the
-	 * chosen path's own matcher does.
+	 * A single 2-way fork: goes to {@code next} if the next code point is a member of {@code
+	 * memberSet}, or to {@code otherwise} if not -- without consuming any input itself. Chains of
+	 * these are how this engine now expresses every genuine branch on the next code point -- a plain
+	 * union's {@code |} branches, and a loop's own entry point (see {@code
+	 * PatternConstruct.buildForkChain}: one fork per candidate but the last, tried in order, falling
+	 * through to {@code otherwise} -- either the next fork in the chain, or the final fallback
+	 * target. The chain's actual tail (the last candidate) is never itself wrapped in a fork: when
+	 * there's a real catch-all branch, that candidate becomes the second-to-last fork's own {@code
+	 * otherwise} target directly; when there's no catch-all, the last candidate's own compiled
+	 * matcher is dispatched to directly and unconditionally instead -- by definition of "not
+	 * claiming a catch-all", that matcher already re-verifies membership as its own first action
+	 * (whatever character/literal/nested check that involves), so a redundant wrapping fork would
+	 * only ever end up testing something whose answer is already implied. A loop's own "keep
+	 * looping vs. exit" choice is a separate, related node -- {@link LoopMatcherConstruct} -- kept
+	 * as its own top-level class rather than a subclass of this one, since its one successor
+	 * genuinely isn't known until after it self-registers to break a construction-time cycle; see
+	 * that class's own doc for how it stays {@code final} anyway, by indirecting through a
+	 * {@code PatternConstruct}'s own already-mutable {@code matcher} field instead of adding any new
+	 * mutable-field escape hatch here. There is no N-way dispatch-table node anywhere in this engine
+	 * any more; every branch, however many-way it conceptually is, is expressed as a chain of these
+	 * 2-way forks.
+	 *
+	 * <p>Every field here is {@code final}, per CLAUDE.md's rule for this class: {@code
+	 * buildForkChain} always builds tail-to-head, so every fork's successor is already fully
+	 * resolved by the time that fork is constructed. Reuses each candidate's own already-computed
+	 * {@code entryMap} as {@code memberSet} directly (no new {@code CodePointMap} allocation)
+	 * wherever possible, so ambiguity between candidates is NOT re-checked here -- it's the
+	 * caller's job (still {@code PatternConstruct.mergeEntryPoints}) to have already rejected any
+	 * overlap between candidates before a chain is ever built from them; a fork chain's inherent
+	 * first-wins priority would otherwise silently accept an ambiguous pattern.
 	 */
-	static final class DispatchMatcherConstruct extends MultiDispatchingMatcherConstruct {
-		/**
-		 * Self-registering variant that populates from an explicit entry map/else instead of {@code
-		 * owner}'s own {@code entryMap}/{@code entryElse} fields -- needed by {@code
-		 * QuantifiedUnion.buildMatcher()}'s non-capturing case: {@code owner.entryMap} is deliberately
-		 * re-keyed onto {@code owner} itself (see {@code QuantifiedUnion.rawEntryMap}'s doc), which
-		 * would make {@code populate()} resolve every entry to {@code owner.matcher} -- i.e. to this
-		 * very node, once self-registration sets it -- an infinite self-dispatch loop. {@code
-		 * rawEntryMap}/{@code rawEntryElse} keep the original, immediately-resolvable candidate
-		 * identities this constructor actually needs. (A simpler self-registering constructor that
-		 * just read {@code owner.getEntryPointMap()} directly used to exist here too, but had no
-		 * callers -- removed 2026-09-08 alongside entryMap's Boolean-value migration, which would
-		 * have made it read the wrong thing anyway: entryMap's values are always {@code true}, not a
-		 * dispatch target -- see PatternConstruct.entryMap's doc.)
-		 */
-		DispatchMatcherConstruct(PatternConstruct owner, CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
+	static class ForkingMatcherConstruct extends MatcherConstruct {
+		final CodePointMap<Boolean> memberSet;
+		final MatcherConstruct next;
+		final MatcherConstruct otherwise;
+
+		/** Self-registering variant -- used for the head of a chain that is some construct's own matcher. */
+		ForkingMatcherConstruct(PatternConstruct owner, CodePointMap<Boolean> memberSet, MatcherConstruct next, MatcherConstruct otherwise) {
 			super(owner);
-			populate(entryMap, entryElse);
+			this.memberSet = memberSet;
+			this.next = next;
+			this.otherwise = otherwise;
 		}
 
-		/**
-		 * Internal (non-self-registering) variant, used when a capturing union's actual entry point
-		 * is a {@link BeginCaptureMatcherConstruct} that wraps this node instead.
-		 */
-		DispatchMatcherConstruct(CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse, int flags) {
+		/** Internal (non-self-registering) variant -- every other fork in a chain. */
+		ForkingMatcherConstruct(int flags, CodePointMap<Boolean> memberSet, MatcherConstruct next, MatcherConstruct otherwise) {
 			super(flags);
-			populate(entryMap, entryElse);
-		}
-
-		/**
-		 * Self-registering variant that takes an already-resolved ({@code MatcherConstruct}-valued,
-		 * not {@code PatternConstruct}-valued) dispatch map directly, instead of populating one from
-		 * an entry map -- used by {@code QuantifiableConstruct.buildLoopMatcher} to build a quantified
-		 * construct's own entry point, once every body candidate is compiled and (for a capturing
-		 * loop) substituted for the shared {@link BeginCaptureMatcherConstruct} -- see that method's
-		 * doc and design.md's opcode section.
-		 */
-		DispatchMatcherConstruct(PatternConstruct owner, MutableCodePointMap<MatcherConstruct> dispatchMap, @Nullable MatcherConstruct elseValue) {
-			super(owner);
-			this.dispatchMap = dispatchMap;
-			this.dispatchMap.setElseValue(elseValue);
-		}
-
-		private void populate(CodePointMap<PatternConstruct> entryMap, @Nullable PatternConstruct entryElse) {
-			// dispatchMap starts empty and entryMap's ranges are already ascending, so appendSorted's
-			// O(1)-amortized bulk path applies here too (just a per-entry value transform, not a
-			// filter or reorder). forEachRange(), not entrySet(), to avoid a Range/Entry/Iterator
-			// allocation per range.
-			entryMap.forEachRange((min, max, value) -> dispatchMap.appendSorted(min, max, value.matcher));
-			dispatchMap.setElseValue(entryElse != null ? entryElse.matcher : null);
+			this.memberSet = memberSet;
+			this.next = next;
+			this.otherwise = otherwise;
 		}
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			MatcherConstruct next = getNext(matcher, peeked);
-			return next != null && next.match(matcher, peeked);
+			return containsFolded(memberSet, peeked, flags)
+					? next.match(matcher, peeked)
+					: otherwise.match(matcher, peeked);
 		}
+
+		@VisibleForTesting
+		MatcherConstruct getNext() { return next; }
+
+		@VisibleForTesting
+		MatcherConstruct getOtherwise() { return otherwise; }
 	}
+
 
 	/**
 	 * Matches whatever {@code captureConstructIndex}'s group actually captured last, then advances
@@ -618,56 +607,106 @@ abstract class MatcherConstruct {
 
 	/**
 	 * Compiled as a loop body's own continuation -- reached only that way (see {@code
-	 * QuantifiableConstruct.buildLoopMatcher}), never as the loop's actual entry point (a separate,
-	 * plain {@link DispatchMatcherConstruct} built afterward handles the very first attempt -- see
-	 * design.md's opcode section). {@code dispatchMap} is built directly from merging the body's and
-	 * {@code next}'s own entry points (each range resolved to its real {@code MatcherConstruct}
-	 * target, or to {@code nextMatcher} for "exit"), so one {@code getNext()} call both picks where
-	 * to go AND -- by comparing the result against {@code nextMatcher} -- which bound to enforce:
-	 * continuing re-checks {@code max} (this node used to be paired with a separate node that only
-	 * checked {@code min} on the way out; the two are folded into one class since they're really the
-	 * same decision seen from either side).
+	 * QuantifiableConstruct.buildLoopMatcher}), never as the loop's actual entry point (a separate
+	 * {@link ForkingMatcherConstruct} chain built afterward handles the very first attempt -- see
+	 * design.md's opcode section). Conceptually a 2-way fork on {@code FIRST(body)} (does the next
+	 * code point belong to the loop body at all?): on membership this always means "continue" -- so
+	 * it's exactly where the {@code max} bound gets enforced, before dispatching onward; on
+	 * non-membership it always means "exit", so {@code min} is enforced (and the counter reset)
+	 * before dispatching to {@code otherwise} (the loop's real {@code next.matcher}). Folding both
+	 * bound checks into one node (rather than a separate continue-checking and exit-checking pair)
+	 * works because, from this node's position, the fork's own two outcomes ARE exactly "continue"
+	 * and "exit" -- there's no third possibility, and no need to compare the winning target's
+	 * identity against anything the way an N-way dispatch table used to have to.
+	 *
+	 * <p>Kept as its own top-level class rather than a {@link ForkingMatcherConstruct} subclass,
+	 * because its "continue" successor -- the body-part-selection chain -- genuinely isn't known
+	 * until AFTER this node has already self-registered onto the {@link
+	 * PatternConstruct.LoopBackMarker} it owns (breaking the construction-time cycle every loop
+	 * body creates: the body's own compiled matcher loops back to this very node). Rather than
+	 * adding a mutable field to sidestep that, {@code continuation} is a
+	 * plain {@code final PatternConstruct} reference, and {@code match()} reads {@code
+	 * continuation.matcher} -- reusing the SAME self-registration mechanism every other
+	 * {@code PatternConstruct}/{@code MatcherConstruct} pair in this codebase already relies on
+	 * ({@code PatternConstruct.matcher} is the one place in this whole design that's allowed to be
+	 * filled in after the fact) instead of inventing a second one scoped to this class. By the time
+	 * {@code match()} ever actually runs, {@code continuation.matcher} is guaranteed non-null --
+	 * {@code QuantifiableConstruct.buildLoopMatcher} resolves it before compiling anything that
+	 * could reach this node at match time.
+	 *
+	 * <p>{@code match()} deliberately does NOT just test {@code memberSet} the way a plain {@link
+	 * ForkingMatcherConstruct} does: under {@code CASE_INSENSITIVE}, a literal immediately following
+	 * the loop can be the folded counterpart of a body character (e.g. {@code (?i:[a-z]+)X} against
+	 * {@code "ABCX"}: uppercase {@code X} folds to {@code x}, which IS in {@code [a-z]}) -- exact
+	 * (unfolded) membership on EITHER side must win before folding gets a say at all, exactly like
+	 * the old merged-dispatch-table design's single flat lookup used to check every candidate's real
+	 * keys before ever trying a folded retry (see notes.md for how this was first found, while
+	 * migrating this class off that table). {@code exitSet} (the real {@code next}'s own entry
+	 * point) exists solely so the exact side of that priority can be checked without needing a
+	 * combined table -- once exact fails on both sides, folding is only ever tried against {@code
+	 * memberSet}: a fold-match against {@code exitSet} would still just mean "exit", which is already
+	 * what happens by default once {@code memberSet} doesn't fold-match either.
 	 */
-	static final class LoopMatcherConstruct extends MultiDispatchingMatcherConstruct {
+	static final class LoopMatcherConstruct extends MatcherConstruct {
 		final int quantifiableIndex;
 		final int min;
 		final int max;
-		final MatcherConstruct nextMatcher;
+		final CodePointMap<Boolean> memberSet;
+		final PatternConstruct continuation;
+		final MatcherConstruct otherwise;
+		final CodePointMap<Boolean> exitSet;
 
-		LoopMatcherConstruct(PatternConstruct owner, int quantifiableIndex, int min, int max, MatcherConstruct nextMatcher) {
+		LoopMatcherConstruct(
+				PatternConstruct owner, int quantifiableIndex, int min, int max,
+				CodePointMap<Boolean> memberSet, PatternConstruct continuation, MatcherConstruct otherwise,
+				CodePointMap<Boolean> exitSet) {
 			super(owner);
 			this.quantifiableIndex = quantifiableIndex;
 			this.min = min;
 			this.max = max;
-			this.nextMatcher = nextMatcher;
+			this.memberSet = memberSet;
+			this.continuation = continuation;
+			this.otherwise = otherwise;
+			this.exitSet = exitSet;
 		}
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
 			// Unconditional: reaching this node at all means a body pass (the very first, or another
 			// re-check after a prior successful one) has just finished, so this always represents one
-			// more completed iteration -- regardless of which way the dispatch below then decides to
-			// go.
+			// more completed iteration -- regardless of which way the fork below then decides to go.
 			int loopCount = ++matcher.quantifiableCounts[quantifiableIndex];
-			MatcherConstruct next = getNext(matcher, peeked);
-			if (next == null) {
+			boolean goContinue;
+			if (peeked != -1 && memberSet.get(peeked) != null) {
+				goContinue = true; // exact (unfolded) body membership -- always wins outright.
+			} else if (peeked != -1 && exitSet.get(peeked) != null) {
+				goContinue = false; // exact (unfolded) exit membership -- also wins outright.
+			} else if (peeked != -1 && (flags & Ll1Pattern.CASE_INSENSITIVE) != 0) {
+				// Neither side claims this code point exactly -- only now does CASE_INSENSITIVE
+				// folding get a say, checked against `memberSet` only (see class doc above).
+				boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
+				int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
+				int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
+				goContinue = (upper != peeked && memberSet.get(upper) != null)
+						|| (lower != peeked && memberSet.get(lower) != null);
+			} else {
+				goContinue = false;
+			}
+			if (goContinue) {
+				return loopCount < max && continuation.matcher.match(matcher, peeked);
+			}
+			if (loopCount < min) {
 				return false;
 			}
-			if (next != nextMatcher) {
-				if (loopCount >= max) {
-					return false;
-				}
-			} else {
-				if (loopCount < min) {
-					return false;
-				}
-				// Never backtracks, so a failed attempt aborts the whole match rather than retrying
-				// with stale counter state -- this reset (only on the successful exit path) is enough
-				// to guarantee the slot is already 0 whenever this loop is next freshly (re-)entered.
-				matcher.quantifiableCounts[quantifiableIndex] = 0;
-			}
-			return next.match(matcher, peeked);
+			// Never backtracks, so a failed attempt aborts the whole match rather than retrying
+			// with stale counter state -- this reset (only on the successful exit path) is enough
+			// to guarantee the slot is already 0 whenever this loop is next freshly (re-)entered.
+			matcher.quantifiableCounts[quantifiableIndex] = 0;
+			return otherwise.match(matcher, peeked);
 		}
+
+		@VisibleForTesting
+		MatcherConstruct getContinuation() { return continuation.matcher; }
 	}
 
 	static final class BeginCaptureMatcherConstruct extends SingleDispatchingMatcherConstruct {

@@ -90,7 +90,7 @@ public class BackReferenceTest {
   public void twoPossiblyEmptyBackReferences_bothCatchAll_rejectedAsAmbiguous() {
     // Two different possibly-empty groups' backreferences, as sibling alternation branches, both
     // fall back to a catch-all entry set -- exactly the "two candidates both allow any character"
-    // ambiguity compileAndMergeCandidates already rejects for any other construct type.
+    // ambiguity mergeEntryPoints already rejects for any other construct type.
     try {
       Ll1Pattern.compile("(a*)(b*)c(?:\\1|\\2)");
       fail("expected PatternSyntaxException for two catch-all backreference branches");

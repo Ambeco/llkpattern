@@ -86,9 +86,8 @@ public interface CodePointMap<V> {
   /**
    * Like {@link #get}, but ignores {@link #getElseValue}: returns non-null only for a code point
    * with a real, explicit entry, {@code null} for both "no mapping" and "covered only by the
-   * else-value fill." Useful for callers doing their own layered fallback lookup (see {@link
-   * MatcherConstruct.MultiDispatchingMatcherConstruct#getNext}'s case-folding) that needs to tell
-   * those two apart before falling back to {@link #getElseValue} itself.
+   * else-value fill." Useful for callers doing their own layered fallback lookup that needs to
+   * tell those two apart before falling back to {@link #getElseValue} itself.
    */
   @Nullable
   V getExplicit(int codePoint);

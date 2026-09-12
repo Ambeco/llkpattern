@@ -1381,6 +1381,94 @@ Notes to self about how to work on this project, and other context that doesn't 
   shorter call chains -- this is what prompted making 4 frames the project default shortly after
   (see the entry above), once the *next* round's 8-frame capture came out flat by comparison.
 
+- 2026-09-11: replaced `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
+  `CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) with chains of a new
+  `ForkingMatcherConstruct` -- a plain 2-way fork on set membership -- for a plain union's `|`
+  branches and a quantified construct's own entry point (`PatternConstruct.buildForkChain`). Per
+  the project owner's direction: (1) `LoopMatcherConstruct` (a loop body's own re-check node) also
+  moved off the old N-way table onto the same 2-way-fork shape (continue vs. exit), rather than
+  being decomposed into a further chain of forks underneath a 2-way head -- it's kept as its own
+  top-level class, not a `ForkingMatcherConstruct` subclass, since its "continue" successor
+  genuinely isn't resolvable until after it self-registers to break the loop-body construction
+  cycle; (2) every `MatcherConstruct` field stays genuinely `final` (see CLAUDE.md's new rule) --
+  no mutable field, and no bespoke `Ref`/cell indirection type either (an initial version of this
+  change introduced one and was corrected): `LoopMatcherConstruct` instead holds a `final
+  PatternConstruct continuation` and reads `continuation.matcher` at match time, reusing
+  `PatternConstruct.matcher`'s own already-established "resolved later, exactly once" mechanism
+  (via a second marker, `LoopContinueMarker`) instead of adding an equivalent one scoped to
+  `MatcherConstruct`; (3) a fork chain with no catch-all candidate needs no explicit "always fails"
+  sentinel (an initial version added a `FAIL`/`MemberGuardMatcherConstruct` node for this and both
+  were removed) -- the chain's last candidate, not claiming a catch-all, already re-verifies
+  membership as its own compiled matcher's first action, so it becomes the unconditional final link
+  with no wrapping fork at all.
+
+  Found and fixed one real bug while migrating `LoopMatcherConstruct` off the old table: under
+  `CASE_INSENSITIVE`, `(?i:[a-z]+)X` against `"ABCX"` broke (the loop wrongly consumed the trailing
+  `X`) because a naive per-candidate `containsFolded` check tries folding too early -- uppercase `X`
+  folds to `x`, which IS in `[a-z]`, so testing the loop body's own membership (with folding) before
+  ever checking whether `next` (the literal `X`) claims this code point *exactly* let the fold-match
+  win when it shouldn't have. The old merged-dispatch-table design got this right for free (one flat
+  lookup checks every candidate's real, unfolded keys before ever trying a folded retry); the fix
+  applies the same "exact wins over fold, across every candidate" priority explicitly: both
+  `LoopMatcherConstruct.match()` and `PatternConstruct.buildForkChain` (whenever `CASE_INSENSITIVE`
+  is set) check every candidate's exact membership first, and only fall back to folding once every
+  candidate's exact claim has failed -- for `buildForkChain` this means literally building two
+  chained passes (an exact-only chain falling through to a fold-only one) rather than one. Full
+  suite green afterward (1501 tests, 0 failing, 561 skipped) -- see `CaseInsensitiveTest
+  .inlineFlagGroup_scopesCharClassCaseInsensitivityToJustTheGroup`, which already existed and caught
+  this immediately.
+
+  This is step 1 of the project owner's 3-step performance plan (see remaining_work.md): steps 2
+  (shrinking `CodePointMap<Boolean>` to a leaner `CodePointSet` now that nothing builds a
+  `CodePointMap<MatcherConstruct>` dispatch table any more) and 3 (an experimental union-of-two-sets
+  `CodePointSet` implementation) are follow-up work, not done this session.
+- 2026-09-11 (later the same day): three further match/compile-time cleanups, prompted by the
+  project owner reading the freshly-migrated code:
+  - **`LiteralMatcherConstruct.match` reimplemented around `String#regionMatches`** instead of a
+    per-code-point loop -- `regionMatches` is a JIT intrinsic, so this is both simpler and faster.
+    Case-insensitive matching still needs two strategies (`regionMatches(true, ...)`'s "ignore
+    case" is full Unicode folding, exactly `UNICODE_CASE`'s own definition but NOT plain
+    `CASE_INSENSITIVE`'s ASCII-only folding, which needed its own manual per-`char` loop). Found and
+    fixed a real regression while implementing this: comparing raw UTF-16 units instead of decoded
+    code points breaks if `value` ends on an unpaired high surrogate and the input happens to
+    continue right there with a real low surrogate -- the input's actual code point at that
+    position is the combined supplementary one, not the lone surrogate `value` means to match. This
+    is exactly what one of the scraped-corpus supplementary-character golden rows exercises
+    (`ဆ1|\uD800` vs `\U00010062`); caught immediately by the existing test, fixed with an
+    explicit boundary check (see the class's own doc). Full suite green afterward.
+  - **`MergedEntries.ranges` changed from genuinely `PatternConstruct`-valued to plain
+    `Boolean`-valued**, prompted by the project owner asking directly whether this was now possible
+    now that nothing builds a runtime dispatch table from candidate identities any more (see this
+    file's earlier 2026-09-11 entry). It was: `mergeEntryPoints` now projects its own transient,
+    `PatternConstruct`-valued merge (still needed, but only to run the ambiguity check with a useful
+    "candidate #N" error message) down to `Boolean` once, itself, instead of every caller
+    (`QuantifiedUnion.buildEntryMap`, `QuantifiableConstruct.buildLoopEntryMap`, `bodyMemberSet`)
+    doing its own separate projection pass. This also let `QuantifiedUnion.rawEntryMap` (the
+    PatternConstruct-valued field this same session's earlier `ForkingMatcherConstruct` migration
+    had already stopped reading for dispatch purposes, but hadn't yet removed) be deleted entirely.
+  - **Regression found and fixed in the above**: moving the Boolean projection into
+    `mergeEntryPoints` unconditionally meant `buildLoopMatcher`'s disjointness-only check (`body`
+    vs. `next`, validated every re-check regardless of `min` -- see design.md's "Quantifier/loop
+    compilation" section) started paying for a Boolean projection it immediately discards, since it
+    never reads `MergedEntries.ranges` at all -- caught by re-running the JMH benchmark per
+    CLAUDE.md's ritual and noticing `llkCompile`'s `gc.alloc.rate.norm` had gone *up* (1,337,120 ->
+    1,508,312 B/op) instead of down. Fixed by splitting the shared merge-and-ambiguity-check logic
+    into a private `mergeEntryPointsRaw` helper: `mergeEntryPoints` (the two real per-construct
+    callers) still projects to Boolean; a new `validateDisjointness` (replacing
+    `compileAndMergeCandidates`, which had exactly one caller) uses the raw helper directly and
+    never projects at all, since only the ambiguity check's side effect matters there.
+  - Combined effect (desktop JMH, this session's final numbers): `llkCompile` 0.646 -> 0.457 ms/op
+    (`gc.alloc.rate.norm` 1,886,560 -> 1,297,456 B/op), `llkMatch` 0.039 -> 0.034 ms/op. Full suite
+    green (1501 tests, 0 failing, 561 skipped) after each step.
+- 2026-09-11 (later still): re-ran the on-device Pixel 3a benchmark
+  (`./gradlew :app:connectedAndroidTest`) to bring it in sync with this session's fork-chain/
+  regionMatches/MergedEntries changes above -- both benchmark and sampling files under `benchmarks/`
+  are now written automatically by the Gradle task itself (see the 2026-09-11 entry earlier this
+  same day), so this was just a plug-in-and-run. Large improvement on-device too: `compileLlk`
+  18.01 -> 8.49 ms/pass, `matchLlk` 1.36 -> 0.80 ms/pass (`compileRegex`/`matchRegex` essentially
+  unchanged at 6.95/3.51, as expected since nothing here touches `java.util.regex` itself) --
+  `matchLlk` is now clearly faster than `matchRegex` on this device too, not just on desktop.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

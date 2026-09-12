@@ -15,6 +15,17 @@ performance, once the test suite is green:
    flat/diffuse to be useful) and update the relevant
    `benchmarks/Intel-i7-9750H_*_sampling.txt` file(s) -- stale sampling naming a
    since-removed method is worse than no sampling at all.
-3. Prompt the user to plug in and unlock the Pixel 3a so the on-device numbers
-   (`benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json`) can be re-run and
-   updated too, rather than letting the desktop and on-device numbers drift out of sync silently.
+3. Prompt the user to plug in and unlock the Pixel 3a so `./gradlew :app:connectedAndroidTest` can
+   be re-run. Its benchmark/sampling output files under `benchmarks/` are now updated
+   automatically by the Gradle task itself -- no manual pull/copy needed -- but double-check after
+   the run that they actually updated (new timestamp/numbers), since JMH's own desktop benchmark
+   (step 1 above) is NOT yet wired up the same way and still needs its results copied in by hand.
+
+## `MatcherConstruct` fields must be `final`
+
+Every field on a `MatcherConstruct` (`MatcherConstruct.java`) and its subclasses must be `final` --
+including dispatch/successor fields, not just data fields. If a node's successor genuinely can't be
+known until after it self-registers to break a construction-time cycle (a loop's own back edge),
+hold a one-shot forward-reference indirection (see `MatcherConstruct.Ref`) instead of leaving the
+field itself mutable -- the indirection is the only place that ever needs to tolerate "not resolved
+yet".

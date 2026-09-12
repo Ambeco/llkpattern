@@ -6,8 +6,8 @@ import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertThrows;
 
-import com.tbohne.llkpattern.MatcherConstruct.DispatchMatcherConstruct;
 import com.tbohne.llkpattern.MatcherConstruct.EndMatcherConstruct;
+import com.tbohne.llkpattern.MatcherConstruct.ForkingMatcherConstruct;
 import com.tbohne.llkpattern.MatcherConstruct.LiteralMatcherConstruct;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -76,13 +76,16 @@ public class PatternParserTest {
 
 	@Test
 	public void compile_alternation_dispatchesToEachBranch() {
+		// "a|b" (no catch-all branch) compiles to just ONE fork: on 'a' -> literal 'a', else -> the
+		// literal 'b' matcher directly, unconditionally -- the second (last, catch-all-less) branch
+		// needs no wrapping fork of its own, since its own compiled matcher already re-verifies
+		// membership as its first action -- see MatcherConstruct.ForkingMatcherConstruct's own doc.
 		MatcherConstruct compiled = compile("a|b");
 
-		assertThat(compiled, instanceOf(DispatchMatcherConstruct.class));
-		DispatchMatcherConstruct dispatch = (DispatchMatcherConstruct) compiled;
-		assertThat(dispatch.getDispatchMap().get(+'a'), instanceOf(LiteralMatcherConstruct.class));
-		assertThat(dispatch.getDispatchMap().get(+'b'), instanceOf(LiteralMatcherConstruct.class));
-		assertThat(dispatch.getDispatchMap().get(+'c'), nullValue());
+		assertThat(compiled, instanceOf(ForkingMatcherConstruct.class));
+		ForkingMatcherConstruct firstFork = (ForkingMatcherConstruct) compiled;
+		assertThat(firstFork.getNext(), instanceOf(LiteralMatcherConstruct.class));
+		assertThat(firstFork.getOtherwise(), instanceOf(LiteralMatcherConstruct.class));
 	}
 
 	@Test

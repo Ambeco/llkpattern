@@ -1,26 +1,26 @@
 Desktop CPU-sampling profile of CorpusBenchmark.llkMatch
 Device: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz (this dev machine)
-Captured: 2026-09-09, via JMH's built-in `stack` profiler at 4-frame depth (this project's default
-  sampling depth as of this capture -- 8-frame was tried first and came out too flat/diffuse to be
-  useful; see CLAUDE.md)
+Captured: 2026-09-11, via JMH's built-in `stack` profiler at 4-frame depth (this project's default
+  sampling depth -- see CLAUDE.md)
   (`profilers = ['gc', 'stack:lines=4;detailLine=true']` in llkpattern/build.gradle, temporary --
   not the checked-in default, which is just ['gc']. Run with: `./gradlew :llkpattern:jmh` after
   adding that profiler string, JAVA_HOME pointed at JDK 17/21 for the Gradle daemon; the benchmark
   fork's own JVM is already pinned to JDK 25 in the committed jmh {} block.)
-Code state: after consolidating the loop opcode set (EndLoopMatcherConstruct folded into
-  LoopMatcherConstruct, entry point split into its own plain DispatchMatcherConstruct built by
-  QuantifiableConstruct.buildLoopMatcher -- see design.md's "Quantifier/loop compilation" section)
-  and replacing every hot-path `entrySet()` iteration with `forEachRange()` -- this replaces the
-  prior sampling in this file (captured before either change, at 8-frame depth).
+Code state: after replacing `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
+  `CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) with chains of a new
+  `ForkingMatcherConstruct` (a plain 2-way fork on set membership) for a plain union's `|` branches
+  and a quantified construct's own entry point, plus a related `LoopMatcherConstruct` for a loop's
+  own continue-vs-exit choice -- see design.md's "Quantifier/loop compilation" and "Opcode set"
+  sections. This replaces the prior sampling in this file (captured before this change).
 
 # JMH version: 1.36
 # VM version: JDK 25.0.3, Java HotSpot(TM) 64-Bit Server VM, 25.0.3+9-LTS-195
 # Warmup: 3 iterations, 10 s each; Measurement: 5 iterations, 10 s each
 
 Result "com.tbohne.llkpattern.corpus.CorpusBenchmark.llkMatch":
-  0.044 +-(99.9%) 0.003 ms/op [Average]
-  (min, avg, max) = (0.043, 0.044, 0.045), stdev = 0.001
-  gc.alloc.rate.norm: 46064.002 B/op
+  0.037 +-(99.9%) 0.005 ms/op [Average]
+  (min, avg, max) = (0.035, 0.037, 0.039), stdev = 0.001
+  gc.alloc.rate.norm: 46664.002 B/op
 
 Stack profiler ([RUNNABLE] samples, 4-frame call chains, aggregated by leaf method):
 
@@ -30,52 +30,52 @@ Stack profiler ([RUNNABLE] samples, 4-frame call chains, aggregated by leaf meth
 
 ....[Thread state: RUNNABLE]........................................................................
  33.3%  50.0% <stack is empty, everything is filtered?>
-  5.3%   8.0% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:251
-              com.tbohne.llkpattern.ArrayCodePointMap.getExplicit:192
-              com.tbohne.llkpattern.MatcherConstruct$MultiDispatchingMatcherConstruct.getNext:199
-              com.tbohne.llkpattern.MatcherConstruct$LoopMatcherConstruct.match:652
-
-  4.8%   7.2% java.util.Arrays.fill:3178
-              com.tbohne.llkpattern.Matcher.resetPerAttemptState:239
-              com.tbohne.llkpattern.Matcher.attemptMatch:314
-              com.tbohne.llkpattern.Matcher.find:130
-
-  3.0%   4.5% com.tbohne.llkpattern.Matcher.attemptMatch:315
-              com.tbohne.llkpattern.Matcher.find:130
-              com.tbohne.llkpattern.Matcher.find:102
+  3.4%   5.2% com.tbohne.llkpattern.Matcher.attemptMatch:334
+              com.tbohne.llkpattern.Matcher.find:140
+              com.tbohne.llkpattern.Matcher.find:112
               com.tbohne.llkpattern.corpus.CorpusBenchmark.runLlkMatch:145
 
-  1.9%   2.9% com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:168
-              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:250
-              com.tbohne.llkpattern.Matcher.attemptMatch:315
-              com.tbohne.llkpattern.Matcher.find:130
+  3.2%   4.9% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:246
+              com.tbohne.llkpattern.ArrayCodePointMap.getOrDefault:367
+              com.tbohne.llkpattern.CodePointMap.get:65
+              com.tbohne.llkpattern.MatcherConstruct.containsFolded:118
 
-  1.9%   2.8% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:251
-              com.tbohne.llkpattern.ArrayCodePointMap.getOrDefault:405
-              com.tbohne.llkpattern.CodePointMap.get:60
-              com.tbohne.llkpattern.MatcherConstruct.containsFolded:119
+  2.6%   3.9% com.tbohne.llkpattern.MatcherConstruct$LoopMatcherConstruct.match:662
+              com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:169
+              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:194
+              com.tbohne.llkpattern.MatcherConstruct$LoopMatcherConstruct.match:653
 
-  1.9%   2.8% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:251
-              com.tbohne.llkpattern.ArrayCodePointMap.getExplicit:192
-              com.tbohne.llkpattern.MatcherConstruct$MultiDispatchingMatcherConstruct.getNext:199
-              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:340
+  2.5%   3.8% com.tbohne.llkpattern.ArrayCodePointMap.floorIndex:246
+              com.tbohne.llkpattern.ArrayCodePointMap.getOrDefault:367
+              com.tbohne.llkpattern.CodePointMap.get:65
+              com.tbohne.llkpattern.MatcherConstruct$LoopMatcherConstruct.match:637
 
-  1.8%   2.7% com.tbohne.llkpattern.MatcherConstruct$LiteralMatcherConstruct.match:274
-              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:341
-              com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:168
-              com.tbohne.llkpattern.MatcherConstruct$BeginCaptureMatcherConstruct.match:693
+  2.4%   3.6% com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:169
+              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:194
+              com.tbohne.llkpattern.Matcher.attemptMatch:334
+              com.tbohne.llkpattern.Matcher.find:140
 
-  1.3%   2.0% com.tbohne.llkpattern.MatcherConstruct$LiteralMatcherConstruct.match:274
-              com.tbohne.llkpattern.Matcher.attemptMatch:315
-              com.tbohne.llkpattern.Matcher.find:130
-              com.tbohne.llkpattern.Matcher.find:102
+  2.0%   3.0% com.tbohne.llkpattern.MatcherConstruct$LiteralMatcherConstruct.match:218
+              com.tbohne.llkpattern.Matcher.attemptMatch:334
+              com.tbohne.llkpattern.Matcher.find:140
+              com.tbohne.llkpattern.Matcher.find:112
 
-  0.8%   1.2% com.tbohne.llkpattern.MatcherConstruct$EndCaptureMatcherConstruct.match:708
-              com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:168
-              com.tbohne.llkpattern.MatcherConstruct$LiteralMatcherConstruct.match:275
-              com.tbohne.llkpattern.MatcherConstruct$DispatchMatcherConstruct.match:341
+  1.5%   2.3% com.tbohne.llkpattern.MatcherConstruct$LiteralMatcherConstruct.match:218
+              com.tbohne.llkpattern.MatcherConstruct$LoopMatcherConstruct.match:662
+              com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:169
+              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:194
 
- 10.6%  15.9% <other>
+  1.4%   2.0% java.util.Arrays.fill:3178
+              com.tbohne.llkpattern.Matcher.resetPerAttemptState:250
+              com.tbohne.llkpattern.Matcher.attemptMatch:331
+              com.tbohne.llkpattern.Matcher.find:140
+
+  0.9%   1.3% com.tbohne.llkpattern.MatcherConstruct$SingleDispatchingMatcherConstruct.matchNext:169
+              com.tbohne.llkpattern.MatcherConstruct$SingleCharMatcherConstruct.match:194
+              com.tbohne.llkpattern.MatcherConstruct$ForkingMatcherConstruct.match:279
+              com.tbohne.llkpattern.Matcher.attemptMatch:334
+
+ 13.3%  20.0% <other>
 
 ....[Thread state: TIMED_WAITING]...................................................................
  33.3% 100.0% java.lang.Object.wait0:-2
@@ -83,11 +83,14 @@ Stack profiler ([RUNNABLE] samples, 4-frame call chains, aggregated by leaf meth
               java.lang.ref.ReferenceQueue.remove0:123
               java.lang.ref.ReferenceQueue.remove:201
 
-Read: `LoopMatcherConstruct.match`'s own `ArrayCodePointMap.floorIndex` (binary search inside
-`getExplicit`) is now the single largest named leaf at 8.0% -- this is the consolidated loop
-re-check node's dispatch lookup, doing the work that used to be split across a separate
-entry/re-entry `DispatchMatcherConstruct` plus `LoopMatcherConstruct`/`EndLoopMatcherConstruct`.
-`Matcher.resetPerAttemptState`'s `Arrays.fill` remains the next-largest named cost, unchanged from
-prior rounds. Consistent with `llkMatch` improving by a real, already-measured amount this round
-(0.051 -> 0.044 ms/op) from removing a layer of indirection (the old design's separate `owner`
-entry node plus `EndLoopMatcherConstruct` on the exit path) rather than any single line moving.
+Read: `ArrayCodePointMap.floorIndex` (binary search inside `get`/`containsFolded`) is still the
+hottest *category* of leaf (two separate call sites, ~4.9% + ~3.8%), same as before this change --
+expected, since a `ForkingMatcherConstruct`/`LoopMatcherConstruct` fork's membership test is still a
+`CodePointMap#get` lookup underneath, just against a smaller per-candidate map instead of one big
+merged dispatch table. No new hot spot appeared from the fork-chain redesign itself (the top leaf,
+`Matcher.attemptMatch`/`find`'s own overhead, is unrelated to this change), and the old
+`DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct.getNext` leaves are simply gone,
+replaced by ordinary `matchNext`/fork `match()` calls. `llkMatch` itself improved slightly this
+round (0.044 -> 0.037 ms/op) -- consistent with the advisor's flagged risk (a fork chain trading one
+binary search over k targets for up to k-1 sequential membership tests) not materializing as a
+regression on this corpus, at least at its actual candidate-count distribution.

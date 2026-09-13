@@ -45,31 +45,68 @@ sourceSets {
     }
 }
 
+// Named for the machine these benchmarks run on (see the Pixel 3a's own equivalently-named results
+// files) -- this is a desktop-only benchmark, so whoever runs it on a different machine should
+// override this, e.g. `./gradlew :llkpattern:jmh -PbenchmarkMachine=My-Machine`.
+ext.benchmarkMachineName = project.findProperty('benchmarkMachine') ?: 'Intel-i7-9750H'
+// Pinned so the benchmark fork always runs on the same JDK every committed baseline in benchmarks/
+// was measured on, regardless of which JDK the Gradle daemon itself is running (see
+// documents/notes.md's toolchain note -- the daemon has to stay on JDK 17/21).
+ext.benchmarkJvm = "C:/Program Files/Java/jdk-25.0.3/bin/java.exe"
+// Only llkCompile/llkMatch (the Ll1Pattern side) are ever CPU-sampled -- regexCompile/regexMatch
+// are java.util.regex's own internals, not this project's code, so profiling them isn't useful.
+ext.samplingBenchmarkNames = ['llkCompile', 'llkMatch']
+
 jmh {
     // GCProfiler adds gc.count/gc.time (GCs triggered and time spent in them during measurement)
     // and gc.alloc.rate.norm (heap bytes allocated per op) as secondary metrics on every existing
     // benchmark -- see documents/notes.md's 2026-09-08 entry for why this doesn't extend to real
     // native (off-heap) memory tracking: both java.util.regex and Ll1Pattern are pure Java (no
     // JNI/off-heap allocation), so there's nothing for Native Memory Tracking to show here.
+    //
+    // Deliberately NOT including the `stack` sampling profiler here too -- its per-sample thread
+    // interruption adds overhead that would perturb the ms/op numbers written to
+    // corpus_benchmark_results.json. The `jmhSampling` task below re-runs llkCompile/llkMatch a
+    // second time, stack-profiler-only, right after this task finishes.
     profilers = ['gc']
     warmupIterations = 3
     iterations = 5
     fork = 1
-    // The Gradle daemon itself has to run on JDK 17/21 (see documents/notes.md's toolchain note --
-    // this wrapper's Groovy buildscript compiler crashes on JDK 25), but the benchmark fork should
-    // still run on the same JDK 25 every committed baseline in benchmarks/ was measured
-    // on -- pin it explicitly rather than silently forking on whatever JDK the daemon happens to be.
-    jvm = "C:/Program Files/Java/jdk-25.0.3/bin/java.exe"
+    jvm = benchmarkJvm
     // Console output (the plugin always prints a human-readable summary as the jmh task runs)
     // plus a checked-in JSON baseline file -- see remaining_work.md's "results go both places"
     // decision -- committed after a deliberate benchmark run so later runs can `git diff` it to
     // spot regressions, rather than treated as always-fresh generated output.
     resultFormat = 'JSON'
-    // Named for the machine it was run on (see the Pixel 3a's own equivalently-named results file)
-    // -- this is a desktop-only benchmark, so whoever runs it should rename this if their machine
-    // isn't an Intel i7-9750H.
-    resultsFile = project.file("${rootDir}/benchmarks/Intel-i7-9750H_corpus_benchmark_results.json")
+    resultsFile = project.file("${rootDir}/benchmarks/${benchmarkMachineName}_corpus_benchmark_results.json")
 }
+
+// Re-runs llkCompile/llkMatch under JMH's built-in `stack` CPU-sampling profiler and writes each
+// one straight to benchmarks/<machine>_<benchmark>_sampling.txt -- the automated equivalent of the
+// old manual "temporarily add 'stack:lines=4;detailLine=true' to jmh{}'s profilers, run, copy-paste
+// the relevant console block, revert" dance (see documents/notes.md's 2026-09-08/09 entries). Runs
+// SamplingRunner's main() (JMH's Java Runner API, not the `org.openjdk.jmh.Main` CLI) via the
+// `jmhJar` fat jar's classpath -- see SamplingRunner's own javadoc for why the Java API beats
+// shelling out and scraping console text. A second `me.champeau.jmh` task isn't an option here
+// since that plugin only supports one profiler configuration per project.
+//
+// Automatically runs right after `jmh` (see `finalizedBy` below); run alone via
+// `./gradlew :llkpattern:jmhSampling` to re-capture sampling without re-running the timing pass.
+task jmhSampling(type: JavaExec) {
+    group = 'verification'
+    description = 'Re-runs llkCompile/llkMatch under JMH\'s stack profiler and writes benchmarks/*_sampling.txt.'
+    dependsOn jmhJar
+    executable = benchmarkJvm
+    classpath = files(jmhJar.archiveFile)
+    mainClass = 'com.tbohne.llkpattern.corpus.SamplingRunner'
+    args = [
+        benchmarkMachineName,
+        project.file("${rootDir}/benchmarks").toString(),
+        "${jmh.warmupIterations.get()}",
+        "${jmh.iterations.get()}",
+    ] + samplingBenchmarkNames
+}
+tasks.named('jmh').configure { finalizedBy jmhSampling }
 
 // Regenerates a scraped-corpus golden TSV file from a per-source "intermediate" TSV (see
 // ./tools/scrape_*.py and CorpusGenerator's own javadoc). Usage:

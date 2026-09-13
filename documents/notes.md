@@ -1563,9 +1563,14 @@ Notes to self about how to work on this project, and other context that doesn't 
   them via the implicit receiver was never expected to change anything on HotSpot. Kept both
   changes anyway (harmless, and the `final`/parameter-passing make each type's/method's actual
   contract more explicit) but this should NOT be read as evidence to go chase either pattern
-  elsewhere in the codebase -- see remaining_work.md's own note on this if a future session
-  considers reviving the idea for the Android/ART side specifically, which was flagged going in as
-  a plausible place these two would differ from HotSpot but wasn't itself tested here.
+  elsewhere in the codebase.
+
+- 2026-09-13 (same day): re-ran the on-device Pixel 3a benchmark too, to check the same two changes
+  against ART specifically (flagged above as the one place they might still plausibly differ from
+  HotSpot). Same conclusion: `compileLlk` 7.58 -> 7.45 ms/pass, `matchLlk` 0.72 -> 0.77 ms/pass --
+  both the completely-untouched `compileRegex`/`matchRegex` columns moved by a comparable-or-larger
+  amount in the same run, so this is normal device-benchmark noise, not a real effect either way.
+  All 6 on-device tests passed.
 
 ## Misc
 

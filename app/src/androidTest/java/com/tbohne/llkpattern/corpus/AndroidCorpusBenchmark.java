@@ -16,11 +16,13 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -28,9 +30,7 @@ import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.MethodSorters;
- import static org.junit.Assert.assertFalse;
- import android.os.Bundle;
- import java.util.concurrent.atomic.AtomicBoolean;
+import static org.junit.Assert.assertFalse;
 
 import com.tbohne.llkpattern.Ll1Pattern;
 
@@ -55,16 +55,11 @@ import com.tbohne.llkpattern.Ll1Pattern;
  *       several phones is comparing wildly different hardware.
  *   <li>GC counts (not GC time or allocation bytes -- {@link Debug} doesn't expose those cheaply)
  *       are recorded per benchmark via {@link Debug#getGlobalGcInvocationCount()}.
- *   <li>The checked-in code only runs the four timing benchmarks below -- CPU sampling profilers
- *       for both {@code MatchLlk} and {@code CompileLlk} (an 8-frame-deep hand-rolled stack
- *       sampler, not {@code Debug.startMethodTracingSampling}, which can't limit depth) are kept
- *       as commented-out {@code testZZSamplingProfileMatch}/{@code testZZSamplingProfileCompile}
- *       blocks near the bottom of this class, ready to uncomment (along with their imports,
- *       marked the same way at the top of the file) when profiling is actually needed again --
- *       see benchmarks/ for the last captured samples and remaining_work.md for how
- *       they were run. Left commented rather than gated some other way so neither shows up as a
- *       normal runnable {@code @Test} at all in the common case, which is just the four
- *       benchmarks.
+ *   <li>{@link #sampleMatchLlk}/{@link #sampleCompileLlk} run unconditionally alongside the four
+ *       timing benchmarks (not gated behind an instrumentation arg) -- a hand-rolled stack sampler,
+ *       not {@code Debug.startMethodTracingSampling}, which can't limit depth or format its own
+ *       output as the reversed call-tree {@link #captureSamplingProfile} produces. See
+ *       benchmarks/ for the last captured samples.
  * </ul>
  *
  * <p>Run via {@code ./gradlew :app:connectedAndroidTest} (all connected devices) or Android
@@ -107,15 +102,21 @@ public class AndroidCorpusBenchmark {
   private static List<Pattern> regexPatterns;
   private static List<Ll1Pattern> llkPatterns;
 
-  /** Frames kept per stack sample in {@link #sampleMatchLlk}/{@link
-   *  #sampleCompileLlk} -- deep enough to see past {@code Matcher.match}/{@code
-   *  MatcherConstruct} dispatch (or, for compile, {@code PatternParser}/{@code PatternConstruct})
-   *  into whichever concrete construct is hot, shallow enough to keep the aggregated-chain table
-   *  small and readable. {@link Debug#startMethodTracingSampling} (the built-in Android sampling
-   *  tracer, tried first) has no way to cap this -- see documents/notes.md's on-device-benchmark
-   *  entry for why this hand-rolled sampler replaced it. */
-  private static final int STACK_SAMPLE_DEPTH = 4;
+  /** Frames captured per stack sample in {@link #sampleMatchLlk}/{@link #sampleCompileLlk} --
+   *  deep enough to reach past {@code Matcher.match}/{@code MatcherConstruct} dispatch (or, for
+   *  compile, {@code PatternParser}/{@code PatternConstruct}) into whichever concrete construct is
+   *  hot. Unlike the old flat-chain format (see documents/notes.md's 2026-09-08/09 entries for why
+   *  that one was capped at 4 frames -- deeper made it too flat/diffuse to read), the reversed
+   *  call-tree format in {@link #writeSamplingProfile} collapses shared prefixes across samples, so
+   *  capturing deeper doesn't cost readability -- printed depth is governed separately by {@link
+   *  #printCallers}'s cutoff threshold. {@link Debug#startMethodTracingSampling} (the built-in
+   *  Android sampling tracer, tried first) has no way to cap this at all -- see
+   *  documents/notes.md's on-device-benchmark entry for why this hand-rolled sampler replaced it. */
+  private static final int STACK_SAMPLE_DEPTH = 10;
   private static final long SAMPLE_INTERVAL_MILLIS = 1;
+  /** Leaf rank (1-based, so 10 means "the 10th most common leaf") whose most-common caller's
+   *  percentage becomes the depth cutoff in {@link #printCallers} -- see that method's javadoc. */
+  private static final int CUTOFF_LEAF_RANK = 10;
   /**
    * Accumulates one entry per {@code @Test} method; dumped to _corpus_benchmark_results in {@link
    * #writeResults}. JUnit doesn't guarantee test method order across JVMs/runners in general, but
@@ -233,9 +234,9 @@ public class AndroidCorpusBenchmark {
     * repeated {@code MatchLlk} pass, aggregated into a plain-text table of the hottest top-
     * {@link #STACK_SAMPLE_DEPTH}-frame call chains.
     *
-    * <p>Opt-in: skipped unless run with {@code -e profile true} -- it's deliberately excluded
-    * from the default run since it doesn't produce a timing/GC result, just a profile, and
-    * running it every time would slow down routine benchmark runs.
+    * <p>Runs unconditionally alongside the four timing benchmarks -- it doesn't produce a
+    * timing/GC result, just a profile, but the extra wall-clock cost is small next to the timing
+    * benchmarks' own iteration counts.
     */
    @Test
    public void sampleMatchLlk() throws InterruptedException, IOException {
@@ -261,18 +262,51 @@ public class AndroidCorpusBenchmark {
      void runOnePass();
    }
 
+   /** One node of the reversed call tree built by {@link #captureSamplingProfile}: the root's
+    *  children are leaf (innermost) frames, each of *their* children is a caller of that leaf, and
+    *  so on outward -- i.e. a frame's depth in this tree is its distance from the leaf, not from
+    *  the harness. {@code count} is the number of samples whose call chain passed through this
+    *  exact node's path from the root, so a node's count is always &lt;= its parent's. */
+   private static final class ChainNode {
+     final String frame; // null only for the synthetic root.
+     int count;
+     final Map<String, ChainNode> children = new HashMap<>();
+
+     ChainNode(String frame) {
+       this.frame = frame;
+     }
+
+     ChainNode child(String frameKey) {
+       return children.computeIfAbsent(frameKey, ChainNode::new);
+     }
+
+     /** Children ranked most-samples-first -- the order both leaf ranking and caller printing use. */
+     List<ChainNode> rankedChildren() {
+       List<ChainNode> ranked = new ArrayList<>(children.values());
+       ranked.sort((a, b) -> b.count - a.count);
+       return ranked;
+     }
+   }
+
    private void captureSamplingProfile(String name, int profileIterations, ProfiledWork work)
        throws InterruptedException, IOException {
-     Bundle args = InstrumentationRegistry.getArguments();
      Thread targetThread = Thread.currentThread();
-     Map<String, Integer> chainCounts = new TreeMap<>();
+     ChainNode root = new ChainNode(null);
      AtomicBoolean sampling = new AtomicBoolean(true);
      Thread sampler = new Thread(() -> {
        while (sampling.get()) {
          StackTraceElement[] frames = targetThread.getStackTrace();
          if (frames != null && frames.length > 0) {
-           synchronized (chainCounts) {
-             chainCounts.merge(formatChain(frames), 1, Integer::sum);
+           List<String> leafToOuter = extractFrames(frames);
+           if (!leafToOuter.isEmpty()) {
+             synchronized (root) {
+               root.count++;
+               ChainNode node = root;
+               for (String frameKey : leafToOuter) {
+                 node = node.child(frameKey);
+                 node.count++;
+               }
+             }
            }
          }
          try {
@@ -295,48 +329,131 @@ public class AndroidCorpusBenchmark {
      }
 
      assertFalse("Sampler collected zero stack samples -- SAMPLE_INTERVAL_MILLIS too coarse for "
-         + "how fast this pass ran, or Thread.getAllStackTraces() couldn't see the target "
-         + "thread?", chainCounts.isEmpty());
-     writeSamplingProfile(name, chainCounts, profileIterations);
+         + "how fast this pass ran, or Thread.getStackTrace() couldn't see the target thread?",
+         root.children.isEmpty());
+     writeSamplingProfile(name, root, profileIterations);
    }
 
-   /** The top {@link #STACK_SAMPLE_DEPTH} frames of one stack sample, most-recent-call-first (as
-    *  {@link StackTraceElement}s already are), joined into one aggregation key. */
-   private static String formatChain(StackTraceElement[] frames) {
-     int depth = Math.min(STACK_SAMPLE_DEPTH, frames.length);
-     StringBuilder sb = new StringBuilder();
-     for (int i = 0; i < depth; i++) {
-       StackTraceElement f = frames[i];
-       sb.append(f.getClassName()).append('.').append(f.getMethodName())
-           .append(':').append(f.getLineNumber()).append("\n\t\t\t");
+   /** The innermost-to-outermost frames of one stack sample, as trie-insertion keys (leaf first,
+    *  matching {@link StackTraceElement}s' own most-recent-call-first order), capped at {@link
+    *  #STACK_SAMPLE_DEPTH} and trimmed at the {@link #captureSamplingProfile} boundary so trees
+    *  bottom out in benchmarked code rather than continuing into the sampler-thread/harness/JUnit
+    *  frames below it (which are identical across every sample and would just be dead weight at
+    *  the bottom of every branch). */
+   private static List<String> extractFrames(StackTraceElement[] frames) {
+     String harnessClass = AndroidCorpusBenchmark.class.getName();
+     List<String> keys = new ArrayList<>(STACK_SAMPLE_DEPTH);
+     for (StackTraceElement f : frames) {
+       if (keys.size() >= STACK_SAMPLE_DEPTH) {
+         break;
+       }
+       if (f.getClassName().equals(harnessClass) && f.getMethodName().equals("captureSamplingProfile")) {
+         break;
+       }
+       keys.add(f.getClassName() + "." + f.getMethodName() + ":" + f.getLineNumber());
      }
-     return sb.toString();
+     return keys;
    }
 
-   private static void writeSamplingProfile(String name, Map<String, Integer> chainCounts, int profileIterations)
+   /** Never prints a caller node below this percentage of total samples, however the rank-based
+    *  cutoff in {@link #computeCallerCutoffPercent} computes out -- a floor against a corpus with
+    *  very few distinct leaves or callers making that computation degenerate (e.g. resolving to
+    *  ~0%, which would print every node down to single-sample noise). */
+   private static final double MIN_CALLER_CUTOFF_PERCENT = 0.5;
+
+   /**
+    * Writes {@code root}'s reversed call tree as a plain-text report: leaves (root's children)
+    * ranked most-common-first, each followed by its own callers recursively ranked the same way.
+    * Each printed percentage is that exact node's sample count over the grand total -- i.e. "what
+    * fraction of all samples took this leaf via this specific caller chain", not how often the
+    * caller method appears anywhere else or how often it's a leaf in its own right.
+    *
+    * <p>Caller printing stops once a node's percentage drops below {@link
+    * #computeCallerCutoffPercent}'s threshold -- see that method's own javadoc for how it's
+    * derived from the leaf ranking, so this stays a data-driven cutoff rather than a fixed depth.
+    */
+   private static void writeSamplingProfile(String name, ChainNode root, int profileIterations)
        throws IOException {
-     List<Map.Entry<String, Integer>> sorted = new ArrayList<>(chainCounts.entrySet());
-     sorted.sort((a, b) -> b.getValue() - a.getValue());
-     int totalSamples = 0;
-     for (Map.Entry<String, Integer> e : sorted) {
-       totalSamples += e.getValue();
+     int totalSamples = root.count;
+     List<ChainNode> leaves = root.rankedChildren();
+     double cutoffPercent = computeCallerCutoffPercent(leaves, totalSamples);
+
+     StringBuilder body = new StringBuilder();
+     body.append(String.format(Locale.ROOT,
+         "Sampling profile of %s on %s%n"
+             + "capture depth: %d frames, sample interval: %dms, profile iterations: %d, "
+             + "total samples: %d, distinct leaf methods: %d%n"
+             + "caller cutoff: %.2f%% (the %d%s most common leaf's most common caller's own "
+             + "%%-of-total-samples, floored at %.1f%%)%n"
+             + "Reversed call tree: leaves ranked by frequency, then each leaf's callers ranked "
+             + "the same way beneath it. A caller's %% is its own share of all samples, not the "
+             + "leaf's -- see this file's generating code for the exact semantics.%n%n",
+         name, deviceName(), STACK_SAMPLE_DEPTH, SAMPLE_INTERVAL_MILLIS, profileIterations,
+         totalSamples, leaves.size(), cutoffPercent, CUTOFF_LEAF_RANK, ordinalSuffix(CUTOFF_LEAF_RANK),
+         MIN_CALLER_CUTOFF_PERCENT));
+     for (ChainNode leaf : leaves) {
+       double pct = 100.0 * leaf.count / totalSamples;
+       body.append(String.format(Locale.ROOT, "* %s (%.1f%%)%n", leaf.frame, pct));
+       printCallers(body, leaf, totalSamples, cutoffPercent, 1);
      }
 
      String fileName = deviceName() + "_" + name + "_sampling.txt";
      try (OutputStream w = PlatformTestStorageRegistry.getInstance().openOutputFile(fileName)) {
-       w.write(String.format(Locale.ROOT,
-           "Sampling profile of %s on %s%n"
-               + "stack depth: %d, sample interval: %dms, profile iterations: %d, total samples: %d, distinct chains: %d%n"
-               + "count (%% of samples)  top-%d-frame call chain (most-recent-call-first)%n%n",
-           name, deviceName(), STACK_SAMPLE_DEPTH, SAMPLE_INTERVAL_MILLIS, profileIterations, totalSamples,
-           sorted.size(), STACK_SAMPLE_DEPTH).getBytes(StandardCharsets.UTF_8));
-       for (int i=0; i<20 && i<sorted.size(); i++) {
-         Map.Entry<String, Integer> e = sorted.get(i);
-         double pct = 100.0 * e.getValue() / totalSamples;
-         w.write(String.format(Locale.ROOT, "%d\t%2.1f%%\t%s%n", e.getValue(), pct, e.getKey()).getBytes(StandardCharsets.UTF_8));
-       }
+       w.write(body.toString().getBytes(StandardCharsets.UTF_8));
      }
      System.out.println("AndroidCorpusBenchmark sampling profile written to " + fileName);
+   }
+
+   /**
+    * The depth cutoff for {@link #printCallers}: the {@link #CUTOFF_LEAF_RANK}-th most common
+    * leaf's most common caller's own percentage of total samples (or, if that leaf has no captured
+    * callers at all, the leaf's own percentage) -- per the project owner's rule of thumb, this
+    * tracks where the data itself stops distinguishing meaningfully hot chains from noise, rather
+    * than a fixed depth that would be too shallow for some benchmarks and too deep for others.
+    * Falls back to {@link #MIN_CALLER_CUTOFF_PERCENT} when fewer than {@link #CUTOFF_LEAF_RANK}
+    * distinct leaves exist, or whenever the computed value is smaller than that floor.
+    */
+   private static double computeCallerCutoffPercent(List<ChainNode> leaves, int totalSamples) {
+     int rankIndex = Math.min(CUTOFF_LEAF_RANK, leaves.size()) - 1;
+     if (rankIndex < 0) {
+       return MIN_CALLER_CUTOFF_PERCENT; // Only reachable if leaves is empty, which the caller
+                                          // (via captureSamplingProfile's assertFalse) prevents.
+     }
+     ChainNode cutoffLeaf = leaves.get(rankIndex);
+     List<ChainNode> callers = cutoffLeaf.rankedChildren();
+     ChainNode reference = callers.isEmpty() ? cutoffLeaf : callers.get(0);
+     double pct = 100.0 * reference.count / totalSamples;
+     return Math.max(pct, MIN_CALLER_CUTOFF_PERCENT);
+   }
+
+   /** Recursively prints {@code node}'s callers (its children in the reversed tree), most common
+    *  first, stopping -- for this node and, since siblings are sorted desc, every remaining sibling
+    *  too -- as soon as a caller's percentage drops below {@code cutoffPercent}. */
+   private static void printCallers(
+       StringBuilder body, ChainNode node, int totalSamples, double cutoffPercent, int depth) {
+     for (ChainNode caller : node.rankedChildren()) {
+       double pct = 100.0 * caller.count / totalSamples;
+       if (pct < cutoffPercent) {
+         break;
+       }
+       for (int i = 0; i < depth; i++) {
+         body.append("   ");
+       }
+       body.append(String.format(Locale.ROOT, "* %s (%.1f%%)%n", caller.frame, pct));
+       printCallers(body, caller, totalSamples, cutoffPercent, depth + 1);
+     }
+   }
+
+   private static String ordinalSuffix(int n) {
+     if (n % 100 >= 11 && n % 100 <= 13) {
+       return "th";
+     }
+     switch (n % 10) {
+       case 1: return "st";
+       case 2: return "nd";
+       case 3: return "rd";
+       default: return "th";
+     }
    }
 
   private interface CorpusPass {

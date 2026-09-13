@@ -1572,6 +1572,62 @@ Notes to self about how to work on this project, and other context that doesn't 
   amount in the same run, so this is normal device-benchmark noise, not a real effect either way.
   All 6 on-device tests passed.
 
+### Desktop JMH ~8x slower than Android's benchmark: time-boxed vs count-boxed iterations (2026-09-12)
+
+- The project owner flagged `./gradlew :llkpattern:jmh` (with its `jmhSampling` finalizer) taking
+  much longer wall-clock than `AndroidCorpusBenchmark` despite the phone being much older/slower
+  hardware. Confirmed by reading `benchmarks/Intel-i7-9750H_corpus_benchmark_results.json`'s own
+  JMH config fields rather than adding new instrumentation: `warmupIterations: 3`,
+  `warmupTime: "10 s"`, `measurementIterations: 5`, `measurementTime: "10 s"`. JMH is
+  **time-boxed** here -- the Gradle `jmh {}` block tightened iteration *counts* but left iteration
+  *time* at JMH's 10s default, so each benchmark always spends `(3+5)*10s = 80s` regardless of code
+  speed: ~320s for the `jmh` task's 4 benchmarks, ~160s more for `jmhSampling` re-running
+  `llkCompile`/`llkMatch`, ~480s (8 min) total, essentially independent of corpus size or how fast
+  the code actually is. `AndroidCorpusBenchmark` is **count-boxed** instead (fixed
+  `WARMUP_ITERATIONS`/`*_PERFORMANCE_ITERATIONS`), so its wall-clock scales with actual code speed
+  and stays small. `FRACTION_OF_TEST_ROWS = 1.0f` on the Android side, so corpus size isn't the
+  difference either. Matches the hypothesis already recorded in `remaining_work.md`'s
+  now-removed "Investigate why..." item -- confirmed rather than left as a guess. Decided not to
+  change the desktop `warmupTime`/`measurementTime` for now; 8 minutes is acceptable given the
+  statistical-rigor tradeoff.
+
+### Reversed-call-tree sampling format for `AndroidCorpusBenchmark` (2026-09-12)
+
+- Replaced the flat "top-N 4-frame chains, ranked by count" sampling output (`chainCounts:
+  Map<String,Integer>` keyed by a pre-joined frame string) with a reversed call tree: samples are
+  inserted leaf-first into a trie (`ChainNode`), leaves (the trie root's children) are ranked by
+  frequency, and each leaf's callers are printed recursively beneath it, also ranked by frequency --
+  per the project owner's request, since shared caller prefixes now collapse into one branch instead
+  of each being a separate top-level row, making it much easier to see where time actually
+  concentrates.
+  - Capture depth bumped from 4 to 10 frames: the old 4-frame cap existed specifically to keep the
+    *flat* table readable (see the 2026-09-09 depth-tuning entry below) -- with the tree format,
+    shared prefixes collapse instead of exploding the row count, so that constraint no longer
+    applies and printed depth is governed by the cutoff rule below instead.
+  - Frames are trimmed at the `captureSamplingProfile` call boundary (matched by class+method name)
+    so trees bottom out in benchmarked code, not JUnit/instrumentation-runner internals that would
+    be identical (and useless) at the bottom of every branch.
+  - A caller's printed percentage is *that exact node's* sample count over the grand total (i.e. how
+    much of all sampled time took this leaf via this specific caller chain) -- not the caller
+    method's overall frequency across all chains, and not relative to its parent leaf's count.
+  - Depth-of-printing cutoff, per the project owner's suggested rule of thumb: take the 10th most
+    common leaf's most common caller's own percentage, and stop printing callers anywhere below
+    that threshold (floored at 0.5% so a corpus with few distinct leaves/callers can't make the
+    computed threshold degenerate toward 0 and print single-sample noise).
+  - Scope: Android-only. The desktop side (`SamplingRunner`, `llkpattern/src/jmh/...`) only has
+    access to JMH's `StackProfiler.extendedInfo()`, which is pre-formatted text with no per-sample
+    data -- reformatting it would mean replacing JMH's stack profiler entirely, out of scope for
+    this change. `Intel-i7-9750H_*_sampling.txt` stays in the old flat JMH format; only the
+    `Google_Pixel_3a_*_sampling.txt` files use the new reversed-tree format.
+  - Re-ran on the Pixel 3a (`./gradlew :app:connectedAndroidTest`) to recapture both
+    `Google_Pixel_3a_sargo_{CompileLlk,MatchLlk}_sampling.txt` in the new format.
+  - Also found and fixed a stale-docs situation while touching this file: `sampleMatchLlk`/
+    `sampleCompileLlk` were already live, ungated `@Test` methods (not commented-out as the class
+    javadoc and `remaining_work.md` both still claimed), and an unused `Bundle args =
+    InstrumentationRegistry.getArguments()` was a leftover remnant of a `-e profile true` gate that
+    no longer exists. Decided to fix the docs to match the (already-live, working-fine) code rather
+    than add the gate back.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

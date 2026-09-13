@@ -1,104 +1,104 @@
 Sampling profile of CompileLlk on Google_Pixel_3a_sargo
-stack depth: 4, sample interval: 1ms, profile iterations: 600, total samples: 3644, distinct chains: 799
+stack depth: 4, sample interval: 1ms, profile iterations: 600, total samples: 4596, distinct chains: 930
 count (% of samples)  top-4-frame call chain (most-recent-call-first)
 
-98	2.7%	java.lang.String.charAt:-2
+123	2.7%	java.lang.String.charAt:-2
 			java.lang.String.indexOf:2396
 			java.lang.String.indexOf:2335
-			com.tbohne.llkpattern.PatternParser.parseUnion:201
+			com.tbohne.llkpattern.PatternParser.parseUnion:202
 			
-68	1.9%	com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:312
-			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:340
-			com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:497
-			com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildEntryMap:1246
+92	2.0%	com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:312
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:341
+			com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:498
+			com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildEntryMap:1247
 			
-66	1.8%	com.tbohne.llkpattern.PatternConstruct.lambda$mergeEntryPoints$2:340
+79	1.7%	com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
+			com.tbohne.llkpattern.CodePointMapBuilder.build:152
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPointsRaw:309
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:333
+			
+78	1.7%	com.tbohne.llkpattern.ArrayCodePointMap.keyMax:217
+			com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:341
+			com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:498
+			
+78	1.7%	java.lang.String.charAt:-2
+			com.tbohne.llkpattern.PatternParser.<init>:114
+			com.tbohne.llkpattern.Ll1Pattern.compile:42
+			com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark.lambda$sampleCompileLlk$0:255
+			
+77	1.7%	com.tbohne.llkpattern.PatternConstruct.lambda$mergeEntryPoints$0:341
 			com.tbohne.llkpattern.PatternConstruct$$ExternalSyntheticLambda2.accept:0
 			com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
-			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:340
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:341
 			
-59	1.6%	com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
+66	1.4%	com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
 			com.tbohne.llkpattern.CodePointMapBuilder.build:152
-			com.tbohne.llkpattern.PatternConstruct.mergeEntryPointsRaw:308
-			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:332
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPointsRaw:309
+			com.tbohne.llkpattern.PatternConstruct.validateDisjointness:361
 			
-56	1.5%	com.tbohne.llkpattern.ArrayCodePointSet.<init>:72
-			com.tbohne.llkpattern.CodePointSetBuilder.build:78
-			com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:607
-			com.tbohne.llkpattern.PatternParser.parseComplexCharacter:562
+54	1.2%	com.tbohne.llkpattern.PatternConstruct.<init>:96
+			com.tbohne.llkpattern.PatternConstruct$LiteralString.<init>:1053
+			com.tbohne.llkpattern.PatternParser.parseUnion:204
+			com.tbohne.llkpattern.PatternParser.parse:188
 			
-49	1.3%	java.lang.String.charAt:-2
+53	1.2%	java.lang.String.charAt:-2
 			java.lang.Character.offsetByCodePoints:10020
 			java.lang.String.offsetByCodePoints:1411
-			com.tbohne.llkpattern.PatternParser.advanceCodePoint:143
+			com.tbohne.llkpattern.PatternParser.advanceCodePoint:144
 			
-46	1.3%	com.tbohne.llkpattern.ArrayCodePointSet.appendSorted:318
-			com.tbohne.llkpattern.PatternConstruct.lambda$mergeEntryPoints$2:340
-			com.tbohne.llkpattern.PatternConstruct$$ExternalSyntheticLambda2.accept:0
-			com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
-			
-44	1.2%	com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
-			com.tbohne.llkpattern.CodePointMapBuilder.build:152
-			com.tbohne.llkpattern.PatternConstruct.mergeEntryPointsRaw:308
-			com.tbohne.llkpattern.PatternConstruct.validateDisjointness:360
-			
-43	1.2%	com.tbohne.llkpattern.ArrayCodePointMap.keyMax:217
-			com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
-			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:340
-			com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:497
-			
-43	1.2%	java.lang.String.charAt:-2
-			com.tbohne.llkpattern.PatternParser.<init>:113
+39	0.8%	com.tbohne.llkpattern.PatternParser.<init>:111
 			com.tbohne.llkpattern.Ll1Pattern.compile:42
-			com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark.lambda$sampleCompileLlk$5:255
+			com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark.lambda$sampleCompileLlk$0:255
+			com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark$$ExternalSyntheticLambda7.runOnePass:0
 			
-39	1.1%	com.tbohne.llkpattern.PatternConstruct.<init>:95
-			com.tbohne.llkpattern.PatternConstruct$LiteralString.<init>:1052
-			com.tbohne.llkpattern.PatternParser.parseUnion:203
-			com.tbohne.llkpattern.PatternParser.parse:187
-			
-32	0.9%	java.lang.System.arraycopy:-2
-			java.util.Arrays.copyOf:4247
-			java.util.Arrays.copyOf:4214
-			java.util.ArrayList.toArray:377
-			
-32	0.9%	java.lang.System.arraycopy:-2
+39	0.8%	java.lang.System.arraycopy:-2
 			java.util.Arrays.copyOf:4337
 			com.tbohne.llkpattern.ArrayCodePointSet.ensureCapacity:290
 			com.tbohne.llkpattern.ArrayCodePointSet.appendSorted:334
 			
-29	0.8%	com.tbohne.llkpattern.CodePointSetBuilder$$ExternalSyntheticLambda0.<init>:0
-			com.tbohne.llkpattern.CodePointSetBuilder.addAll:51
-			com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:635
-			com.tbohne.llkpattern.PatternParser.parseComplexCharacter:562
+38	0.8%	com.tbohne.llkpattern.MatcherConstruct.<init>:66
+			com.tbohne.llkpattern.MatcherConstruct$ForkingMatcherConstruct.<init>:313
+			com.tbohne.llkpattern.PatternConstruct.buildForkChainInternal:442
+			com.tbohne.llkpattern.PatternConstruct.buildForkChain:402
 			
-27	0.7%	com.tbohne.llkpattern.ArrayCodePointSet.<init>:72
-			com.tbohne.llkpattern.CodePointSetBuilder.build:78
-			com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:606
-			com.tbohne.llkpattern.PatternParser.parseComplexCharacter:562
+34	0.7%	com.tbohne.llkpattern.ArrayCodePointSet.appendSorted:318
+			com.tbohne.llkpattern.PatternConstruct.lambda$mergeEntryPoints$0:341
+			com.tbohne.llkpattern.PatternConstruct$$ExternalSyntheticLambda2.accept:0
+			com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
 			
-25	0.7%	com.tbohne.llkpattern.CodePointMapBuilder.add:70
-			com.tbohne.llkpattern.PatternConstruct$ComplexCharacter.lambda$addCodePointsTo$0:1183
-			com.tbohne.llkpattern.PatternConstruct$ComplexCharacter$$ExternalSyntheticLambda0.accept:0
+34	0.7%	com.tbohne.llkpattern.PatternConstruct$$ExternalSyntheticLambda2.accept:0
+			com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:341
+			com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:498
+			
+31	0.7%	java.lang.StringFactory.newStringFromUtf16Bytes:-2
+			java.lang.StringUTF16.newString:1141
+			java.lang.StringBuilder.toString:501
+			com.tbohne.llkpattern.PatternParser.parseUnion:204
+			
+31	0.7%	java.util.ArrayList$Itr.<init>:1057
+			java.util.ArrayList.iterator:1037
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPointsRaw:294
+			com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:333
+			
+30	0.7%	com.tbohne.llkpattern.PatternParser.skipComments:165
+			com.tbohne.llkpattern.PatternParser.parseUnion:201
+			com.tbohne.llkpattern.PatternParser.parse:188
+			com.tbohne.llkpattern.Ll1Pattern.compile:43
+			
+30	0.7%	java.lang.System.arraycopy:-2
+			java.util.Arrays.copyOf:4247
+			java.util.Arrays.copyOf:4214
+			java.util.ArrayList.toArray:377
+			
+29	0.6%	com.tbohne.llkpattern.UnionCodePointSet$RangeCursor.lambda$new$0$com-tbohne-llkpattern-UnionCodePointSet$RangeCursor:131
+			com.tbohne.llkpattern.UnionCodePointSet$RangeCursor$$ExternalSyntheticLambda0.accept:0
 			com.tbohne.llkpattern.ArrayCodePointSet.forEachRange:199
+			com.tbohne.llkpattern.UnionCodePointSet$RangeCursor.<init>:122
 			
-24	0.7%	com.tbohne.llkpattern.PatternParser$$ExternalSyntheticLambda1.<init>:0
-			com.tbohne.llkpattern.PatternParser.lambda$intersect$1:677
-			com.tbohne.llkpattern.PatternParser$$ExternalSyntheticLambda0.accept:0
-			com.tbohne.llkpattern.ArrayCodePointSet.forEachRange:199
-			
-24	0.7%	com.tbohne.llkpattern.PatternParser.<init>:110
-			com.tbohne.llkpattern.Ll1Pattern.compile:42
-			com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark.lambda$sampleCompileLlk$5:255
-			com.tbohne.llkpattern.corpus.AndroidCorpusBenchmark$$ExternalSyntheticLambda7.runOnePass:0
-			
-24	0.7%	java.util.AbstractList.<init>:80
-			java.util.ArrayList.<init>:176
-			com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion.<init>:727
-			com.tbohne.llkpattern.PatternParser.parse:181
-			
-22	0.6%	com.tbohne.llkpattern.ArrayCodePointSet.add:296
-			com.tbohne.llkpattern.PatternParser.lambda$intersect$0:677
-			com.tbohne.llkpattern.PatternParser$$ExternalSyntheticLambda1.accept:0
-			com.tbohne.llkpattern.ArrayCodePointSet.forEachRange:199
+29	0.6%	java.lang.String.charAt:-2
+			com.tbohne.llkpattern.PatternParser.tryParseBackReference:908
+			com.tbohne.llkpattern.PatternParser.parseUnion:329
+			com.tbohne.llkpattern.PatternParser.parse:188
 			

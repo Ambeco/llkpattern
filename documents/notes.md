@@ -1534,6 +1534,12 @@ Notes to self about how to work on this project, and other context that doesn't 
   large named-class members (the only shape this actually saves a copy on) to show up as a compile
   win at this scale.
 
+- 2026-09-12/13: re-ran the on-device Pixel 3a benchmark to measure step 3's effect there:
+  `compileLlk` 7.47 -> 7.58 ms/pass, `compileRegex` 7.26 -> 7.09 ms/pass, `matchLlk` 0.78 -> 0.72
+  ms/pass, `matchRegex` 3.68 -> 3.83 ms/pass -- all within normal device-to-device run noise (both
+  `regex` columns, which step 3 doesn't touch at all, moved by a comparable amount), consistent with
+  desktop JMH showing no measurable change either.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

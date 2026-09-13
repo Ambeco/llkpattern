@@ -1712,6 +1712,50 @@ Notes to self about how to work on this project, and other context that doesn't 
   mean. Confirms the "quieter machine -> lower error" hypothesis the two entries above couldn't.
   This is now the committed baseline.
 
+### Desktop allocation-stack sampling via JFR (2026-09-13)
+
+- The project owner asked how hard it'd be to add an allocation-callstack-sampling variant of the
+  performance tests, matching the CPU-sampling one already in place. Scoped to desktop-only after
+  discussion: Android/ART has no equivalent of JFR's allocation-sampling event accessible from app
+  code (`Debug.startAllocCounting()` gives counts, not stacks; the real option there is Perfetto's
+  `heapprofd`, a much bigger, differently-shaped lift than anything else in this project -- left for
+  a future session if wanted).
+- New `AllocationSamplingRunner` (`llkpattern/src/jmh/java/.../corpus/`), invoked by a new
+  `jmhAllocSampling` Gradle task (opt-in, NOT chained after `jmh`/`jmhSampling` -- a separate
+  exploratory pass). Verified the exact JFR API/event shape empirically before writing the real
+  class (via small throwaway programs, not just documentation): a bare `new Recording();
+  rec.enable("jdk.ObjectAllocationSample")` is sufficient (no need for the heavier `"profile"`
+  `Configuration` preset, which also enables unrelated CPU/GC/IO events) -- each event's `weight`
+  field (`long`, accessed via `event.getLong("weight")`) is JFR's own extrapolated-byte-count for
+  that stack (see the 2026-09-10 JFR entry above for the caveats already known about that
+  extrapolation), and `RecordedStackTrace.getFrames()` returns leaf-first, same order as
+  `StackTraceElement[]`.
+- Drives `CorpusBenchmark`'s `@Benchmark` methods directly in a plain loop rather than going
+  through JMH's `Runner` at all -- JFR does its own independent background sampling regardless of
+  timing, so there's nothing for JMH's machinery to add here. This needed a `Blackhole` instance
+  outside a real JMH run, which JMH supports on purpose via a magic-string constructor
+  (`Blackhole.class`'s own doc explains why it's not just `public`) -- the exact string is
+  version-sensitive prose ("Today's password is swordfish. I understand instantiating Blackholes
+  directly is dangerous." for jmh-core 1.36, this project's pinned version), not the shorter phrase
+  that shows up in some casual online examples; got it wrong on the first attempt (`IllegalStateException:
+  Blackholes should not be instantiated directly`) and had to pull the exact string from jmh-core's
+  own sources jar rather than guessing.
+- Reused the reversed-call-tree design from `AndroidCorpusBenchmark`'s CPU sampler (leaf ranking,
+  recursive caller printing, the 10th-leaf's-top-caller cutoff rule, the 10-leaf cap) but as a
+  freshly-written, weight-summing (`long`, not per-sample `int` counts) copy rather than a shared
+  class -- same reasoning as `AndroidGoldenRow`'s own precedent for duplicating across these two
+  modules' incompatible source sets, and here there wasn't even an existing desktop-side
+  reversed-tree implementation to share from (the CPU-sampling `SamplingRunner` just dumps JMH's own
+  `StackProfiler.extendedInfo()` text as-is, still the old flat format).
+- First real run confirmed real, useful signal, not just plumbing working: `llkCompile`'s top leaf
+  (`java.util.Arrays.copyOf`, 12.7%) traces straight back through `ArrayCodePointSet.ensureCapacity`
+  -> `appendSorted` -> `PatternConstruct.mergeEntryPoints`/`buildLoopEntryMap` -- consistent with
+  what CPU sampling already flagged as hot in that area, now with an allocation-weight lens on the
+  same code path. `llkMatch` only yielded 135 allocation-sample events at the same 3000-iteration
+  count (vs. `llkCompile`'s ~3000) since matching simply allocates far less per pass, but still
+  showed a clear, sensible dominant leaf: `Ll1Pattern.matcher` (constructing a new `Matcher` per
+  call, which is exactly what the benchmark does) at 97.9%.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

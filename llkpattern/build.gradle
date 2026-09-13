@@ -119,6 +119,30 @@ task jmhSampling(type: JavaExec) {
 }
 tasks.named('jmh').configure { finalizedBy jmhSampling }
 
+// Captures an allocation-stack sampling profile via JDK Flight Recorder's jdk.ObjectAllocationSample
+// event and writes benchmarks/<machine>_<benchmark>_alloc_sampling.txt -- see
+// AllocationSamplingRunner's own javadoc for how this differs from jmhSampling's CPU sampling
+// above (no JMH involved at all; JFR does its own independent background sampling). Opt-in, NOT
+// chained after `jmh`/`jmhSampling` -- this is a separate exploratory profiling pass, not paired
+// 1:1 with every timing run the way CPU sampling is. Run via
+// `./gradlew :llkpattern:jmhAllocSampling`.
+task jmhAllocSampling(type: JavaExec) {
+    group = 'verification'
+    description = 'Captures an allocation-stack sampling profile via JFR, writes benchmarks/*_alloc_sampling.txt.'
+    dependsOn jmhJar
+    executable = benchmarkJvm
+    classpath = files(jmhJar.archiveFile)
+    mainClass = 'com.tbohne.llkpattern.corpus.AllocationSamplingRunner'
+    args = [
+        benchmarkMachineName,
+        project.file("${rootDir}/benchmarks").toString(),
+        // Corpus passes per benchmark -- sized empirically (see documents/notes.md) to yield
+        // enough jdk.ObjectAllocationSample events for a useful tree, not tied to jmh's own
+        // warmup/iteration counts since JFR's sampling has no wall-clock budget to size against.
+        "3000",
+    ] + samplingBenchmarkNames
+}
+
 // Regenerates a scraped-corpus golden TSV file from a per-source "intermediate" TSV (see
 // ./tools/scrape_*.py and CorpusGenerator's own javadoc). Usage:
 //   ./gradlew :llkpattern:generateCorpus -Pinput=<intermediate.tsv> -Poutput=<golden.tsv> -Pmode=FIND

@@ -124,6 +124,16 @@ as JSON to `benchmarks/Intel-i7-9750H_corpus_benchmark_results.json` (named afte
 desktop it was run on, mirroring the Pixel 3a's own results file below -- rename if run on a
 different machine) (only once the *entire* run completes -- an interrupted run leaves that file
 empty), meant to be committed as a baseline and diffed against on later runs to catch regressions.
+CPU-sampling (`SamplingRunner`, JMH's `stack` profiler, flat chain format) and allocation-sampling
+(`AllocationSamplingRunner`, JFR's `jdk.ObjectAllocationSample` event, reversed call-tree format --
+see `AndroidCorpusBenchmark`'s CPU sampler for the same tree format) are separate, opt-in Gradle
+tasks (`jmhSampling`, auto-chained after `jmh`; `jmhAllocSampling`, standalone) writing
+`benchmarks/<machine>_<name>_sampling.txt`/`_alloc_sampling.txt` respectively.
+- [ ] `jmhAllocSampling`'s fixed 3000-iteration count (`llkpattern/build.gradle`) was sized for
+      `llkCompile` (yielded ~3000 `jdk.ObjectAllocationSample` events, a good sample size); the same
+      count only yielded 135 events for `llkMatch` (it allocates far less per pass) -- still enough
+      to show a clear dominant leaf (`Ll1Pattern.matcher` at 97.9%), but a `regexMatch`/`llkMatch`-
+      specific higher iteration count would give finer resolution if that ever matters.
 
 ## On-device (Android) corpus benchmark
 

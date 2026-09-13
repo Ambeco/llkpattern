@@ -1540,6 +1540,33 @@ Notes to self about how to work on this project, and other context that doesn't 
   `regex` columns, which step 3 doesn't touch at all, moved by a comparable amount), consistent with
   desktop JMH showing no measurable change either.
 
+- 2026-09-13: investigated two speculative micro-optimizations the project owner asked about,
+  neither expected to matter and neither did:
+  1. **Marking hot-path methods `final`**: every concrete `MatcherConstruct` subclass except
+     `ForkingMatcherConstruct` was already a `final class` (so `match()` was already effectively
+     final); made `ForkingMatcherConstruct` (the one exception, and the most heavily-used node
+     shape -- every fork-chain link) `final` too and re-ran the desktop JMH corpus benchmark.
+  2. **Converting pure private instance helpers to `static` with their fields passed as
+     parameters**, on the theory that this removes an implicit-receiver indirection: converted
+     `ArrayCodePointSet#floorIndex` (the corpus sampling's own repeatedly-hottest `llkMatch` leaf,
+     called from both `contains`/`containsAll`) and `WordBoundaryMatcherConstruct#isWordChar`
+     (`wordSet` passed explicitly instead of read via `this`).
+
+  Both changes: full suite stays green (1543 tests), and JMH before/after showed no measurable
+  difference in either direction on `llkCompile`/`llkMatch` -- movement between runs was consistent
+  with normal noise (the completely-untouched `regexCompile`/`regexMatch` columns moved by a
+  comparable amount each time). Consistent with the expectation going in: HotSpot's JIT already
+  profiles and speculatively devirtualizes monomorphic call sites at runtime regardless of the
+  `final` keyword (which mainly helps when the JIT *can't* profile well -- cold code, megamorphic
+  sites -- not this benchmark's steady-state hot loop), and a private instance method already
+  inlines with no dynamic dispatch at all, so passing its fields as parameters instead of reading
+  them via the implicit receiver was never expected to change anything on HotSpot. Kept both
+  changes anyway (harmless, and the `final`/parameter-passing make each type's/method's actual
+  contract more explicit) but this should NOT be read as evidence to go chase either pattern
+  elsewhere in the codebase -- see remaining_work.md's own note on this if a future session
+  considers reviving the idea for the Android/ART side specifically, which was flagged going in as
+  a plausible place these two would differ from HotSpot but wasn't itself tested here.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

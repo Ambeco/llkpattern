@@ -295,7 +295,7 @@ abstract class MatcherConstruct {
 	 * overlap between candidates before a chain is ever built from them; a fork chain's inherent
 	 * first-wins priority would otherwise silently accept an ambiguous pattern.
 	 */
-	static class ForkingMatcherConstruct extends MatcherConstruct {
+	static final class ForkingMatcherConstruct extends MatcherConstruct {
 		final CodePointSet memberSet;
 		final MatcherConstruct next;
 		final MatcherConstruct otherwise;
@@ -566,7 +566,10 @@ abstract class MatcherConstruct {
 			this.peekMustBeWord = peekMustBeWord;
 		}
 
-		private boolean isWordChar(int codePoint) {
+		// Static, with `wordSet` passed as a parameter, rather than an instance method reading
+		// `this.wordSet` -- part of the same experiment as ArrayCodePointSet#floorIndex (see its own
+		// doc); no measurable difference found here either (see notes.md's dated entry).
+		private static boolean isWordChar(CodePointSet wordSet, int codePoint) {
 			return codePoint >= 0 && wordSet.contains(codePoint);
 		}
 
@@ -579,9 +582,9 @@ abstract class MatcherConstruct {
 			boolean checkPrior = priorMustBeWord != PriorWordBoundaryMatchType.Unchecked
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;
-			boolean priorIsWord = checkPrior && isWordChar(matcher.peekPrevious());
+			boolean priorIsWord = checkPrior && isWordChar(wordSet, matcher.peekPrevious());
 			boolean checkPeek = peekMustBeWord != PeekWordBoundaryMatchType.Unchecked;
-			boolean peekIsWord = checkPeek && isWordChar(peeked);
+			boolean peekIsWord = checkPeek && isWordChar(wordSet, peeked);
 
 			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
 				return false;

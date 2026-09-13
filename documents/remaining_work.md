@@ -264,6 +264,20 @@ actually needed again.
     worth trying a `long[]` variant with 42 range/mask bits instead of `int[]`'s 11, trading larger
     per-entry size for fewer wasted bits when ranges/gaps are long.
 
+## Micro-optimization follow-ups (2026-09-13)
+
+- [ ] **Re-check `final`-on-hot-methods / static-with-explicit-params on Android/ART specifically**,
+      not just desktop HotSpot. Both were tried this session (`ForkingMatcherConstruct` made
+      `final`; `ArrayCodePointSet#floorIndex`/`WordBoundaryMatcherConstruct#isWordChar` converted to
+      take their fields as parameters instead of reading them via `this`) and showed no measurable
+      desktop JMH difference, as expected -- HotSpot's JIT already speculatively devirtualizes
+      monomorphic call sites and already fully inlines private instance methods regardless. ART's
+      JIT/AOT compiler is a different (and historically less mature, especially on an older device
+      like the Pixel 3a) pipeline, so this is the one place these two changes could plausibly still
+      matter -- not yet checked against `./gradlew :app:connectedAndroidTest`. Low priority
+      (desktop result makes a real win unlikely), but cheap to check next time the Pixel is already
+      plugged in for something else.
+
 ## Toolchain
 
 - [ ] Pin a Checker Framework version compatible with modern JDKs (or a JDK toolchain constraint) and re-enable the nullness checker in `llkpattern/build.gradle` — currently disabled because the default-resolved 3.19.0 crashes against JDK 25's javac internals.

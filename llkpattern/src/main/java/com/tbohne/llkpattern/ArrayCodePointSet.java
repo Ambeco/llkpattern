@@ -113,7 +113,15 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
   /** Index of the last entry whose min is {@code <= codePoint}, or {@code -1} if none. See {@link ArrayCodePointMap#floorIndex}'s own doc for the hybrid binary/linear search this mirrors. */
   private static final int LINEAR_SEARCH_THRESHOLD = 65;
 
-  private int floorIndex(int codePoint) {
+  // Static, with `keys`/`size` passed as parameters, rather than an instance method reading
+  // `this.keys`/`this.size` directly -- an experiment (per the project owner) checking whether a
+  // pure helper on this class's own hot path (this is the `contains`/`containsAll` leaf profiling
+  // has repeatedly shown as the hottest single method during matching) benefits from losing the
+  // implicit receiver. JMH showed no measurable difference either way (see notes.md's dated
+  // entry) -- kept in this shape anyway since it's no worse and makes the "pure function of its
+  // arguments" nature explicit, but this is NOT expected to matter for any other private helper
+  // in this codebase and shouldn't be treated as a new default style to chase elsewhere.
+  private static int floorIndex(int[] keys, int size, int codePoint) {
     int lo = 0;
     int hi = size - 1;
     while (lo + LINEAR_SEARCH_THRESHOLD <= hi) {
@@ -133,7 +141,7 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   private int windowStart(int min) {
-    int idx = floorIndex(min);
+    int idx = floorIndex(keys, size, min);
     if (idx < 0 || keyMax(keys[idx]) <= min) {
       idx++;
     }
@@ -167,7 +175,7 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public boolean contains(int codePoint) {
-    int idx = floorIndex(codePoint);
+    int idx = floorIndex(keys, size, codePoint);
     boolean explicit = idx >= 0 && codePoint < keyMax(keys[idx]);
     return explicit != invert;
   }
@@ -182,7 +190,7 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
     }
     int cp = min;
     while (cp < max) {
-      int idx = floorIndex(cp);
+      int idx = floorIndex(keys, size, cp);
       if (idx >= 0 && cp < keyMax(keys[idx])) {
         cp = keyMax(keys[idx]);
       } else {

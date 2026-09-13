@@ -325,6 +325,21 @@ real bug found along the way (a private "complement" constructor overload silent
 public copy constructor for any same-class argument -- fixed via a static factory instead of a
 constructor overload).
 
-- [ ] **Step 3** (experimental): a `CodePointSet` implementation that's the union of two delegate
-      sets, so `ComplexCharacter` can reference a `NamedChars` set by union instead of copying its
-      entries in. Not started.
+Step 3 (2026-09-12): added `UnionCodePointSet`, a read-only lazy union of two delegate `CodePointSet`s
+(see its own class doc). Wired into `PatternParser#parseComplexCharacterRanges`: a bracket run's
+escape/nested-class contributions (`\d`, `\p{...}`, `[...]`) are unioned in by reference while the
+run is being parsed, instead of each one being copied into the run's `CodePointSetBuilder`
+immediately. The lazy union is **always materialized back into a concrete `ArrayCodePointSet`**
+before the run's result leaves `parseComplexCharacterRanges` (`mergeRun`'s job) -- a `Union
+CodePointSet` is measurably slower than `ArrayCodePointSet` at `contains`/`containsAll`/
+`forEachRange` (extra virtual calls, or a full materialize), so letting one reach `ComplexCharacter
+.ranges`/a compiled matcher would trade a one-time parse-time copy for a permanent match-time cost --
+see notes.md's 2026-09-12 entry. Net effect: a bracket combining multiple large sets (e.g.
+`[\d\w\s]`) now does its unioning in one pass at the end instead of copying each one in turn, but a
+bracket with only one such contribution and no other members (e.g. `[\d]`) skips the copy entirely.
+JMH before/after (`0.353`/`0.355` ms/op compile, `0.035`/`0.035` ms/op match) showed no measurable
+match-time change and no measurable compile-time change either -- the corpus has few brackets with
+multiple large named-class members, so this is a real but narrow win; not surprising given the
+guard above intentionally limits its own scope. The "bracket-embedded named classes still merge"
+item elsewhere in this file describes the same remaining copy-at-the-end behavior from a different
+angle -- not fully superseded by this, since `mergeRun` still materializes eagerly today.

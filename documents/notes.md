@@ -1512,6 +1512,28 @@ Notes to self about how to work on this project, and other context that doesn't 
   copy-pasting the `CodePointMap<V>` pattern's fully-qualified-nested-type habit onto a type that
   isn't generic and doesn't need it.
 
+- 2026-09-12: step 3 of the performance plan (see remaining_work.md's "Fork-chain dispatch" entry):
+  added `UnionCodePointSet`, a lazy read-only union of two delegate `CodePointSet`s (12 new tests,
+  including a regression test for a real bug found and fixed before it ever ran against production
+  code -- the first `forEachRange` draft folded any b-range with `min <= a`'s running max into a's
+  current range, which silently bridged genuinely disjoint ranges whenever one delegate had an early
+  range preceding the other's first one; fixed with a real two-pointer sorted merge over two small
+  per-delegate `RangeCursor`s instead). Wired into `PatternParser#parseComplexCharacterRanges`: a
+  bracket run's escape/nested-class contributions are unioned in by reference while the run is being
+  parsed, instead of copied into the run's builder immediately. Caught by the advisor before this was
+  called done: the union must never be allowed to reach a compiled matcher un-materialized -- its
+  `contains`/`containsAll`/`forEachRange` are real virtual dispatch (or a full materialize) instead
+  of `ArrayCodePointSet`'s single `floorIndex` binary search, which is exactly the corpus's known hot
+  `llkMatch` leaf per repeated CPU sampling. Fixed by having `mergeRun` (the run-finalization helper)
+  always collapse the lazy union back into a concrete `ArrayCodePointSet` before the run's result
+  leaves the method, skipping the copy only in the one case where nothing needs merging (`literalSet`
+  empty and `runUnion` not itself a further union). Full suite green (1543 tests, unchanged from step
+  2's count + 12 new `UnionCodePointSetTest`s). Desktop JMH before/after: `llkCompile` 0.353 -> 0.355
+  ms/op, `llkMatch` 0.035 -> 0.035 ms/op -- both within noise, confirming the materialize-before-return
+  guard didn't just move the cost around, and that the corpus has few brackets combining multiple
+  large named-class members (the only shape this actually saves a copy on) to show up as a compile
+  win at this scale.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

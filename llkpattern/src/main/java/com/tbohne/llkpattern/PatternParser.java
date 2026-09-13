@@ -583,12 +583,17 @@ final class PatternParser {
       advance(1);
     }
     CodePointSetBuilder ranges = new CodePointSetBuilder();
+    // Large sets unioned into the current operand run (a NamedCharClass-backed escape, or a nested
+    // "[...]" class) are kept HERE by reference, not copied into `ranges` -- see UnionCodePointSet's
+    // own doc for why (avoids copying e.g. \p{L}'s hundreds of ranges just to combine it with a
+    // couple of individual bracket members). null until the first such contribution is seen.
+    @Nullable CodePointSet runUnion = null;
     // IntersectionCharacter -> UnionCharacter (&& IntersectionCharacter)?  -- "&&" is a real
     // operator token, not tied to a bracket: [a-z&&aeiou] intersects the *whole run* of members
     // up to the next "&&" or the closing "]" against everything accumulated so far, whether or
-    // not that run happens to be wrapped in its own "[...]". So `ranges` below always accumulates
-    // only the *current* union-operand run; `intersectionSoFar` (null until the first "&&" is
-    // seen) holds the running intersection of every completed operand run before it. A
+    // not that run happens to be wrapped in its own "[...]". So `ranges`/`runUnion` below always
+    // accumulate only the *current* union-operand run; `intersectionSoFar` (null until the first
+    // "&&" is seen) holds the running intersection of every completed operand run before it. A
     // CodePointSetBuilder, not a MutableCodePointSet, since members of a single operand run arrive
     // in whatever order the bracket expression wrote them (e.g. "[cba]" adds 'c', 'b', 'a') --
     // CodePointSetBuilder#add is a plain O(1)-amortized append regardless of order, deferring the
@@ -602,10 +607,11 @@ final class PatternParser {
         case ']':
           if (index > startIndex + 1) {
             advance(1); // consume the ']' -- callers expect peek to be past this construct
+            CodePointSet completedRun = mergeRun(ranges, runUnion);
             CodePointSet finalRanges =
                 intersectionSoFar == null
-                    ? ranges.build()
-                    : intersect(intersectionSoFar, ranges.build());
+                    ? completedRun
+                    : intersect(intersectionSoFar, completedRun);
             return negate ? finalRanges.complement() : finalRanges;
           } else {
             ranges.add(+']', +']' + 1);
@@ -625,15 +631,21 @@ final class PatternParser {
               ranges.add(eCodePoint, eCodePoint + 1);
             }
           } else {
-            ranges.addAll(parseComplexEscape());
+            // A standalone escape (\D, \p{...}, etc.) is a NamedCharClass-backed constant, often
+            // with far more ranges than this bracket expression's own individual members -- union
+            // it in lazily instead of copying its entries into `ranges` (see UnionCodePointSet).
+            CodePointSet escapeSet = parseComplexEscape();
+            runUnion = runUnion == null ? escapeSet : new UnionCodePointSet(runUnion, escapeSet);
           }
           break;
         case '[':
           // RangeCharacter -> "[" IntersectionCharacter "]" -- a nested class is itself a member
           // of the enclosing union, e.g. "[a-c[p-z]]" or an operand of "&&" in "[[a-b]&&[c-d]]".
-          // Union its ranges into the current operand run; "&&" (below) intersects whole runs,
-          // not individual members, so this is exactly like unioning in any other member.
-          ranges.addAll(parseComplexCharacterRanges(index));
+          // Union its ranges into the current operand run (lazily, same reasoning as the escape
+          // case above) -- "&&" (below) intersects whole runs, not individual members, so this is
+          // exactly like unioning in any other member.
+          CodePointSet nested = parseComplexCharacterRanges(index);
+          runUnion = runUnion == null ? nested : new UnionCodePointSet(runUnion, nested);
           break;
         case '&':
           if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
@@ -643,12 +655,13 @@ final class PatternParser {
             // valid Java regex syntax, intersecting against the literal run "aeiou", not just
             // [a-z&&[aeiou]].
             advance(2);
-            CodePointSet completedRun = ranges.build();
+            CodePointSet completedRun = mergeRun(ranges, runUnion);
             intersectionSoFar =
                 intersectionSoFar == null
                     ? completedRun
                     : intersect(intersectionSoFar, completedRun);
             ranges = new CodePointSetBuilder();
+            runUnion = null;
             break;
           }
           // fallthrough
@@ -676,6 +689,37 @@ final class PatternParser {
     MutableCodePointSet result = new ArrayCodePointSet();
     a.forEachRange((aMin, aMax) ->
         b.intersection(aMin, aMax).forEachRange((bMin, bMax) -> result.add(bMin, bMax)));
+    return result;
+  }
+
+  /**
+   * Combines a run's literal-member builder with its (possibly null) lazily-unioned large sets.
+   * The laziness in {@code runUnion} (see {@link #parseComplexCharacterRanges}'s doc on that field)
+   * only exists to avoid copying a large set's entries into the builder *while the run is still
+   * being parsed* -- once the run is finished, the result must be a concrete {@link
+   * ArrayCodePointSet} before it can go anywhere near a compiled matcher (as {@code
+   * ComplexCharacter.ranges}, a {@code ForkingMatcherConstruct.memberSet}, etc.), since a {@link
+   * UnionCodePointSet}'s {@code contains}/{@code containsAll}/{@code forEachRange} are all
+   * measurably more expensive than {@code ArrayCodePointSet}'s -- see its own class doc. So this
+   * materializes eagerly here, at the one point (a completed run) where the saved copy would
+   * otherwise turn into a permanent cost on the match-time hot path instead of a one-time parse-time
+   * saving.
+   */
+  private static CodePointSet mergeRun(CodePointSetBuilder literals, @Nullable CodePointSet runUnion) {
+    CodePointSet literalSet = literals.build();
+    if (runUnion == null) {
+      return literalSet;
+    }
+    // runUnion is a bare escape/nested-class result (already concrete -- see this method's own
+    // recursive use) unless this run combined *multiple* large sets (e.g. "[\d\w]"), in which case
+    // it's a UnionCodePointSet that must be materialized here too, same as when literalSet is
+    // non-empty -- either way, nothing but a concrete ArrayCodePointSet may leave this method.
+    if (literalSet.isEmpty() && !(runUnion instanceof UnionCodePointSet)) {
+      return runUnion;
+    }
+    MutableCodePointSet result = new ArrayCodePointSet();
+    result.addAll(runUnion);
+    result.addAll(literalSet);
     return result;
   }
 

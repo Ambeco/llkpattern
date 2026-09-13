@@ -6,21 +6,24 @@ Captured: 2026-09-11, via JMH's built-in `stack` profiler at 4-frame depth (this
   not the checked-in default, which is just ['gc']. Run with: `./gradlew :llkpattern:jmh` after
   adding that profiler string, JAVA_HOME pointed at JDK 17/21 for the Gradle daemon; the benchmark
   fork's own JVM is already pinned to JDK 25 in the committed jmh {} block.)
-Code state: after replacing `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
-  `CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) with chains of a new
-  `ForkingMatcherConstruct` (a plain 2-way fork on set membership) for a plain union's `|` branches
-  and a quantified construct's own entry point, plus a related `LoopMatcherConstruct` for a loop's
-  own continue-vs-exit choice -- see design.md's "Quantifier/loop compilation" and "Opcode set"
-  sections. This replaces the prior sampling in this file (captured before this change).
+Code state: after replacing `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` with
+  `ForkingMatcherConstruct` chains (see the sibling `llkMatch` sampling file's own note, and
+  design.md's "Quantifier/loop compilation"/"Opcode set" sections), AND the same-day follow-on
+  cleanups: `LiteralMatcherConstruct.match` reimplemented around `String#regionMatches`, and
+  `MergedEntries.ranges` changed from `PatternConstruct`-valued to `Boolean`-valued (with
+  `mergeEntryPoints` split into a shared `mergeEntryPointsRaw` plus `validateDisjointness`, so the
+  disjointness-only call site doesn't pay for a projection it never uses) -- see notes.md's later
+  2026-09-11 entries for both. This replaces the prior sampling in this file (captured mid-session,
+  before those two follow-on cleanups landed).
 
 # JMH version: 1.36
 # VM version: JDK 25.0.3, Java HotSpot(TM) 64-Bit Server VM, 25.0.3+9-LTS-195
 # Warmup: 3 iterations, 10 s each; Measurement: 5 iterations, 10 s each
 
 Result "com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile":
-  0.480 +-(99.9%) 0.025 ms/op [Average]
-  (min, avg, max) = (0.475, 0.480, 0.492), stdev = 0.007
-  gc.alloc.rate.norm: 1337120.021 B/op
+  0.521 +-(99.9%) 0.150 ms/op [Average]
+  (min, avg, max) = (0.478, 0.521, 0.578), stdev = 0.039
+  gc.alloc.rate.norm: 1289376.022 B/op
 
 Stack profiler ([RUNNABLE] samples, 4-frame call chains, aggregated by leaf method):
 
@@ -30,52 +33,52 @@ Stack profiler ([RUNNABLE] samples, 4-frame call chains, aggregated by leaf meth
 
 ....[Thread state: RUNNABLE]........................................................................
  33.3%  50.0% <stack is empty, everything is filtered?>
-  4.9%   7.4% com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.lambda$buildLoopEntryMap$0:463
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct$$Lambda/0x0000000084068860.accept:-1
+  5.8%   8.7% com.tbohne.llkpattern.PatternConstruct.lambda$mergeEntryPoints$2:342
+              com.tbohne.llkpattern.PatternConstruct$$Lambda/0x000000001e068860.accept:-1
               com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:463
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:342
 
-  2.2%   3.2% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
+  1.6%   2.5% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
               com.tbohne.llkpattern.CodePointMapBuilder.build:152
               com.tbohne.llkpattern.CodePointMapBuilder.build:185
               com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:609
 
-  1.6%   2.4% java.lang.Character.offsetByCodePoints:10024
-              java.lang.String.offsetByCodePoints:1743
-              com.tbohne.llkpattern.PatternParser.advanceCodePoint:144
-              com.tbohne.llkpattern.PatternParser.parseUnion:356
+  1.4%   2.1% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
+              com.tbohne.llkpattern.CodePointMapBuilder.build:152
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPointsRaw:310
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:334
 
-  1.3%   2.0% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
+  1.4%   2.1% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
               com.tbohne.llkpattern.CodePointMapBuilder.build:152
               com.tbohne.llkpattern.CodePointMapBuilder.build:185
               com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:608
 
-  1.3%   2.0% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
+  1.2%   1.8% java.lang.Character.offsetByCodePoints:10024
+              java.lang.String.offsetByCodePoints:1743
+              com.tbohne.llkpattern.PatternParser.advanceCodePoint:144
+              com.tbohne.llkpattern.PatternParser.parseUnion:356
+
+  1.2%   1.7% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
               com.tbohne.llkpattern.CodePointMapBuilder.build:152
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:282
-              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopEntryMap:454
+              com.tbohne.llkpattern.PatternConstruct.mergeEntryPointsRaw:310
+              com.tbohne.llkpattern.PatternConstruct.validateDisjointness:362
 
-  1.0%   1.5% com.tbohne.llkpattern.ArrayCodePointMap.<init>:116
-              com.tbohne.llkpattern.CodePointMapBuilder.build:152
-              com.tbohne.llkpattern.PatternConstruct.mergeEntryPoints:282
-              com.tbohne.llkpattern.PatternConstruct.compileAndMergeCandidates:317
+  0.8%   1.2% com.tbohne.llkpattern.PatternParser.parse:188
+              com.tbohne.llkpattern.Ll1Pattern.compile:43
+              com.tbohne.llkpattern.corpus.CorpusBenchmark.llkCompile:105
+              com.tbohne.llkpattern.corpus.jmh_generated.CorpusBenchmark_llkCompile_jmhTest.llkCompile_avgt_jmhStub:232
 
-  0.9%   1.4% com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion.lambda$buildEntryMap$0:824
-              com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion$$Lambda/0x00000000840697c8.accept:-1
-              com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
-              com.tbohne.llkpattern.PatternConstruct$QuantifiedUnion.buildEntryMap:824
-
-  0.8%   1.1% com.tbohne.llkpattern.PatternParser.parseComplexCharacterRanges:657
-              com.tbohne.llkpattern.PatternParser.parseComplexCharacter:564
-              com.tbohne.llkpattern.PatternParser.parseUnion:215
-              com.tbohne.llkpattern.PatternParser.parse:188
-
-  0.7%   1.0% com.tbohne.llkpattern.PatternParser.lambda$intersect$0:679
-              com.tbohne.llkpattern.PatternParser$$Lambda/0x000000008406a968.accept:-1
+  0.8%   1.2% com.tbohne.llkpattern.PatternParser.lambda$intersect$0:679
+              com.tbohne.llkpattern.PatternParser$$Lambda/0x000000001e06a950.accept:-1
               com.tbohne.llkpattern.ArrayCodePointMap.forEachRange:313
               com.tbohne.llkpattern.PatternParser.lambda$intersect$1:679
 
- 18.7%  28.0% <other>
+  0.8%   1.1% com.tbohne.llkpattern.PatternConstruct.compile:188
+              com.tbohne.llkpattern.PatternConstruct.validateDisjointness:360
+              com.tbohne.llkpattern.PatternConstruct$QuantifiableConstruct.buildLoopMatcher:587
+              com.tbohne.llkpattern.PatternConstruct$ComplexQuantifiedCharacter.buildMatcher:1262
+
+ 18.4%  27.7% <other>
 
 ....[Thread state: TIMED_WAITING]...................................................................
  33.3% 100.0% java.lang.Object.wait0:-2
@@ -83,15 +86,13 @@ Stack profiler ([RUNNABLE] samples, 4-frame call chains, aggregated by leaf meth
               java.lang.ref.ReferenceQueue.remove0:123
               java.lang.ref.ReferenceQueue.remove:201
 
-Read: the old top leaves (`buildLoopMatcher`'s own `forEachRange` lambdas, building the
-now-removed `DispatchMatcherConstruct`/loop dispatch table) are gone entirely -- `buildForkChain`
-builds its chain by walking the candidate list directly, with no `forEachRange` pass of its own.
-The new top leaf is `buildLoopEntryMap`'s own `forEachRange` lambda (projecting the merged
-entry-point map down to plain `Boolean` values for `entryMap` -- unrelated to this change, still
-needed for ambiguity detection), followed by `ArrayCodePointMap` construction inside
-`CodePointMapBuilder.build` (both the parser's own character-range building and
-`mergeEntryPoints`'s ambiguity-detection merge) and parser overhead. `gc.alloc.rate.norm` dropped
-from 1,886,560 B/op (previous baseline, see git history) to 1,337,120 B/op -- consistent with no
-longer allocating a `CodePointMap<MatcherConstruct>` dispatch table (and its backing
-`ArrayCodePointMap`) for every union/loop-entry node. `llkCompile` itself improved from
-0.646 ms/op to 0.480 ms/op this round.
+Read: the top leaf is now `mergeEntryPoints`'s own `forEachRange` lambda -- the single Boolean
+projection pass it does once per call, shared by every caller (see notes.md) -- followed by
+`ArrayCodePointMap` construction inside `CodePointMapBuilder.build` (both the parser's own
+character-range building and `mergeEntryPointsRaw`, called from both `mergeEntryPoints` and
+`validateDisjointness`) and ordinary parser overhead. `gc.alloc.rate.norm` is 1,289,376 B/op here --
+consistent with the committed baseline (1,297,456 B/op, this run's normal noise) and down from
+1,886,560 B/op before this project's move to fork-chain dispatch. No single hot spot dominates,
+consistent with `llkCompile` having improved by real, already-measured amounts from removing the
+old N-way dispatch table and consolidating the Boolean projection into one place, rather than there
+being an obvious next single-line fix visible in the profile.

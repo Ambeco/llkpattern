@@ -26,6 +26,8 @@ performance, once the test suite is green:
 Every field on a `MatcherConstruct` (`MatcherConstruct.java`) and its subclasses must be `final` --
 including dispatch/successor fields, not just data fields. If a node's successor genuinely can't be
 known until after it self-registers to break a construction-time cycle (a loop's own back edge),
-hold a one-shot forward-reference indirection (see `MatcherConstruct.Ref`) instead of leaving the
-field itself mutable -- the indirection is the only place that ever needs to tolerate "not resolved
-yet".
+don't add a mutable (or wrapped-mutable) field to sidestep that -- indirect through a
+`PatternConstruct`'s own already-mutable-once `matcher` field instead (a second, purpose-built
+marker `PatternConstruct`, resolved by ordinary assignment once the real target is known), the same
+mechanism every other forward reference in this codebase already relies on. See
+`MatcherConstruct.LoopMatcherConstruct`'s own class doc for a worked example.

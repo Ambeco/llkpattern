@@ -3,6 +3,7 @@ package com.tbohne.llkpattern;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
+import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import org.junit.Test;
 
 public class CodePointSetBuilderTest {
@@ -45,7 +46,7 @@ public class CodePointSetBuilderTest {
   @Test
   public void addAll_pushesSourceSetsRanges() {
     CodePointSetBuilder builder = new CodePointSetBuilder();
-    CodePointSet.MutableCodePointSet source = new ArrayCodePointSet();
+    MutableCodePointSet source = new ArrayCodePointSet();
     source.add('x', 'z' + 1);
     builder.addAll(source);
     CodePointSet set = builder.build();

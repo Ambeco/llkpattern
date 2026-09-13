@@ -328,8 +328,3 @@ constructor overload).
 - [ ] **Step 3** (experimental): a `CodePointSet` implementation that's the union of two delegate
       sets, so `ComplexCharacter` can reference a `NamedChars` set by union instead of copying its
       entries in. Not started.
-- [ ] Re-run the on-device Pixel 3a benchmark to measure step 2's actual effect there and keep it in
-      sync with the desktop numbers above -- desktop JMH already re-run (`llkCompile` 0.457 -> 0.353
-      ms/op, `gc.alloc.rate.norm` 1,297,456 -> 1,073,368 B/op; `llkMatch` unchanged within noise, as
-      expected since step 2 only touches compile-time structure-building), but the device needs
-      plugging in and unlocking first.

@@ -1,5 +1,6 @@
 package com.tbohne.llkpattern;
 
+import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import com.tbohne.llkpattern.PatternConstruct.*;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
@@ -245,7 +246,7 @@ final class PatternParser {
               // "Everything" is exactly an inverted set with no explicit (excluded) entries -- see
               // CodePointSet#invert's doc for why that's always a finite, valid set here rather
               // than the mathematically-unbounded RangeSet Guava's complement() used to produce.
-              CodePointSet.MutableCodePointSet everything = new ArrayCodePointSet();
+              MutableCodePointSet everything = new ArrayCodePointSet();
               everything.invert();
               dot = new ComplexCharacter(index, everything);
             } else {
@@ -671,8 +672,8 @@ final class PatternParser {
    * a complement (e.g. {@code [a-z&&[^aeiou]]}) without materializing one, unlike the old
    * complement-based formula, which would have.
    */
-  private static CodePointSet.MutableCodePointSet intersect(CodePointSet a, CodePointSet b) {
-    CodePointSet.MutableCodePointSet result = new ArrayCodePointSet();
+  private static MutableCodePointSet intersect(CodePointSet a, CodePointSet b) {
+    MutableCodePointSet result = new ArrayCodePointSet();
     a.forEachRange((aMin, aMax) ->
         b.intersection(aMin, aMax).forEachRange((bMin, bMax) -> result.add(bMin, bMax)));
     return result;

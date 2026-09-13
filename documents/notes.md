@@ -1503,6 +1503,15 @@ Notes to self about how to work on this project, and other context that doesn't 
   (expected -- step 2 only changes compile-time structure-building, not the match-time node shapes
   step 1 already optimized). On-device Pixel 3a re-run still pending as of this entry.
 
+- 2026-09-12/13: re-ran the on-device Pixel 3a benchmark to measure step 2's effect there:
+  `compileLlk` 8.49 -> 7.47 ms/pass, `matchLlk` 0.80 -> 0.78 ms/pass (unchanged within noise, same
+  as desktop -- expected, since step 2 only touches compile-time structure-building). Also cleaned
+  up `CodePointSet.MutableCodePointSet` call sites down to a plain `MutableCodePointSet` via a
+  proper import (`PatternConstruct`/`PatternParser`/`CodePointSetBuilderTest`), matching
+  `NamedCharClass`'s and `ArrayCodePointSet`'s own style -- leftover verbosity from initially
+  copy-pasting the `CodePointMap<V>` pattern's fully-qualified-nested-type habit onto a type that
+  isn't generic and doesn't need it.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

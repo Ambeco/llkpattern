@@ -1,6 +1,7 @@
 package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
+import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.MatcherConstruct.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 
@@ -239,11 +240,11 @@ abstract class PatternConstruct {
 	 * why that would be a real bug, not just a style concern).
 	 */
 	static final class MergedEntries {
-		final CodePointSet.MutableCodePointSet ranges;
+		final MutableCodePointSet ranges;
 		// Whichever candidate claimed "matches any other character" (at most one is allowed to).
 		final @Nullable PatternConstruct elseCandidate;
 
-		MergedEntries(CodePointSet.MutableCodePointSet ranges, @Nullable PatternConstruct elseCandidate) {
+		MergedEntries(MutableCodePointSet ranges, @Nullable PatternConstruct elseCandidate) {
 			this.ranges = ranges;
 			this.elseCandidate = elseCandidate;
 		}
@@ -336,7 +337,7 @@ abstract class PatternConstruct {
 		// separate projection pass. `raw.merged`'s ranges are already ascending, so appendSorted's
 		// O(1)-amortized bulk path applies; forEachRange(), not entrySet(), to avoid a
 		// Range/Entry/Iterator allocation per range.
-		CodePointSet.MutableCodePointSet ranges = new ArrayCodePointSet();
+		MutableCodePointSet ranges = new ArrayCodePointSet();
 		raw.merged.forEachRange((min, max, value) -> ranges.appendSorted(min, max));
 		return new MergedEntries(ranges, raw.elseCandidate);
 	}
@@ -1081,7 +1082,7 @@ abstract class PatternConstruct {
 			// A true leaf -- nothing to alias from -- so this is still a genuinely new (if tiny,
 			// single-entry) set, built via a local mutable variable since entryMap itself is a plain
 			// (non-Mutable) CodePointSet reference now -- see its own doc.
-			CodePointSet.MutableCodePointSet set = new ArrayCodePointSet();
+			MutableCodePointSet set = new ArrayCodePointSet();
 			set.add(value.codePointAt(0));
 			entryMap = set;
 		}
@@ -1154,7 +1155,7 @@ abstract class PatternConstruct {
 
 		ComplexCharacter(int startIndex, int character) {
 			super(startIndex);
-			CodePointSet.MutableCodePointSet single = new ArrayCodePointSet();
+			MutableCodePointSet single = new ArrayCodePointSet();
 			single.add(character, character + 1);
 			this.ranges = single;
 		}
@@ -1476,7 +1477,7 @@ abstract class PatternConstruct {
 			if (union.min < 1 || union.constructs.isEmpty()) {
 				return null;
 			}
-			CodePointSet.MutableCodePointSet result = new ArrayCodePointSet();
+			MutableCodePointSet result = new ArrayCodePointSet();
 			for (PatternConstruct branch : union.constructs) {
 				CodePointSet branchSet = lastCharSet(branch);
 				if (branchSet == null) {
@@ -1494,7 +1495,7 @@ abstract class PatternConstruct {
 	}
 
 	private static CodePointSet singletonCodePointMap(int codePoint) {
-		CodePointSet.MutableCodePointSet result = new ArrayCodePointSet();
+		MutableCodePointSet result = new ArrayCodePointSet();
 		result.add(codePoint, codePoint + 1);
 		return result;
 	}
@@ -1524,7 +1525,7 @@ abstract class PatternConstruct {
 			if (union.min < 1 || union.constructs.isEmpty()) {
 				return null;
 			}
-			CodePointSet.MutableCodePointSet result = new ArrayCodePointSet();
+			MutableCodePointSet result = new ArrayCodePointSet();
 			for (PatternConstruct branch : union.constructs) {
 				CodePointSet branchSet = firstCharSet(branch);
 				if (branchSet == null) {

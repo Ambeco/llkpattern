@@ -1628,6 +1628,36 @@ Notes to self about how to work on this project, and other context that doesn't 
     no longer exists. Decided to fix the docs to match the (already-live, working-fine) code rather
     than add the gate back.
 
+### Desktop JMH timing/sampling shrunk to count-boxed-equivalent iterations (2026-09-13)
+
+- Following up on the previous entry's "8 minutes is acceptable" call: the project owner asked to
+  shrink it anyway, matching `AndroidCorpusBenchmark`'s own tuning philosophy (iterations sized so
+  each regex+llkpattern pair takes ~20s total) and noting that JMH's separate warmup *iterations*
+  are largely redundant once the JIT is hot from the first one. Changed the `jmh {}` block
+  (`llkpattern/build.gradle`) from `warmupIterations = 3` / `iterations = 5` at JMH's 10s/iteration
+  default to `warmupIterations = 1, warmup = '1s', iterations = 10, timeOnIteration = '1s'` --
+  ~11s/benchmark instead of ~80s. Total desktop wall-clock (`jmh` + its `jmhSampling` finalizer)
+  dropped from ~8 minutes to ~78s in a real run.
+- `jmhSampling`'s `SamplingRunner` was hardcoded to JMH's own 10s default regardless of the `jmh {}`
+  block's settings (it only ever received iteration *counts*, not times, as args) -- fixed by
+  threading `jmh.warmup`/`jmh.timeOnIteration` through as two more `jmhSampling` task args and two
+  more `SamplingRunner` CLI args, applied via `OptionsBuilder.warmupTime`/`.measurementTime`, so a
+  future change to those Gradle properties can't silently leave the sampling run on old timing.
+- Re-ran both `./gradlew :llkpattern:jmh` and `./gradlew :app:connectedAndroidTest` after this and
+  the reversed-call-tree change above; refreshed benchmark numbers in README.md's tables and all
+  four `benchmarks/*_corpus_benchmark_results.json`/`*_sampling.txt` files.
+
+### Reversed-call-tree cutoff refinements (2026-09-13)
+
+- Two follow-up corrections to the previous entry's tree format, both from the project owner:
+  caller printing was already correctly inclusive of ties at the cutoff threshold (`pct <
+  cutoffPercent`, strict-less-than, so an exact match still prints) -- confirmed rather than
+  changed. But the *leaf* list itself had no cap at all (the old flat format's `top 20` limit was
+  dropped when rewriting `writeSamplingProfile`), so every distinct leaf method was printing
+  unconditionally regardless of how small its share was. Capped leaves to exactly `CUTOFF_LEAF_RANK`
+  (10) even when a tie straddles the boundary, rather than including every leaf tied with the 10th
+  -- keeps the report bounded regardless of how many leaves land at some shared low sample count.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

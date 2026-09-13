@@ -362,35 +362,41 @@ public class AndroidCorpusBenchmark {
    private static final double MIN_CALLER_CUTOFF_PERCENT = 0.5;
 
    /**
-    * Writes {@code root}'s reversed call tree as a plain-text report: leaves (root's children)
-    * ranked most-common-first, each followed by its own callers recursively ranked the same way.
-    * Each printed percentage is that exact node's sample count over the grand total -- i.e. "what
-    * fraction of all samples took this leaf via this specific caller chain", not how often the
-    * caller method appears anywhere else or how often it's a leaf in its own right.
+    * Writes {@code root}'s reversed call tree as a plain-text report: the top {@link
+    * #CUTOFF_LEAF_RANK} leaves (root's children, ranked most-common-first -- capped at exactly
+    * that many even if a tie straddles the boundary, so the report can't grow unbounded just
+    * because several leaves happen to share the 10th-place count), each followed by its own
+    * callers recursively ranked the same way. Each printed percentage is that exact node's sample
+    * count over the grand total -- i.e. "what fraction of all samples took this leaf via this
+    * specific caller chain", not how often the caller method appears anywhere else or how often
+    * it's a leaf in its own right.
     *
-    * <p>Caller printing stops once a node's percentage drops below {@link
-    * #computeCallerCutoffPercent}'s threshold -- see that method's own javadoc for how it's
-    * derived from the leaf ranking, so this stays a data-driven cutoff rather than a fixed depth.
+    * <p>Caller printing stops once a node's percentage drops <em>strictly below</em> {@link
+    * #computeCallerCutoffPercent}'s threshold (so a caller exactly at the threshold -- including
+    * the very node the threshold was computed from -- still prints) -- see that method's own
+    * javadoc for how the threshold is derived from the leaf ranking, so this stays a data-driven
+    * cutoff rather than a fixed depth.
     */
    private static void writeSamplingProfile(String name, ChainNode root, int profileIterations)
        throws IOException {
      int totalSamples = root.count;
-     List<ChainNode> leaves = root.rankedChildren();
-     double cutoffPercent = computeCallerCutoffPercent(leaves, totalSamples);
+     List<ChainNode> allLeaves = root.rankedChildren();
+     double cutoffPercent = computeCallerCutoffPercent(allLeaves, totalSamples);
+     List<ChainNode> leaves = allLeaves.subList(0, Math.min(CUTOFF_LEAF_RANK, allLeaves.size()));
 
      StringBuilder body = new StringBuilder();
      body.append(String.format(Locale.ROOT,
          "Sampling profile of %s on %s%n"
              + "capture depth: %d frames, sample interval: %dms, profile iterations: %d, "
-             + "total samples: %d, distinct leaf methods: %d%n"
+             + "total samples: %d, distinct leaf methods: %d (top %d shown)%n"
              + "caller cutoff: %.2f%% (the %d%s most common leaf's most common caller's own "
              + "%%-of-total-samples, floored at %.1f%%)%n"
              + "Reversed call tree: leaves ranked by frequency, then each leaf's callers ranked "
              + "the same way beneath it. A caller's %% is its own share of all samples, not the "
              + "leaf's -- see this file's generating code for the exact semantics.%n%n",
          name, deviceName(), STACK_SAMPLE_DEPTH, SAMPLE_INTERVAL_MILLIS, profileIterations,
-         totalSamples, leaves.size(), cutoffPercent, CUTOFF_LEAF_RANK, ordinalSuffix(CUTOFF_LEAF_RANK),
-         MIN_CALLER_CUTOFF_PERCENT));
+         totalSamples, allLeaves.size(), leaves.size(), cutoffPercent, CUTOFF_LEAF_RANK,
+         ordinalSuffix(CUTOFF_LEAF_RANK), MIN_CALLER_CUTOFF_PERCENT));
      for (ChainNode leaf : leaves) {
        double pct = 100.0 * leaf.count / totalSamples;
        body.append(String.format(Locale.ROOT, "* %s (%.1f%%)%n", leaf.frame, pct));

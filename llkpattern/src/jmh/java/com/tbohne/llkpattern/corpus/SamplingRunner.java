@@ -14,6 +14,7 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
 
 /**
  * Re-runs one or more {@link CorpusBenchmark} methods under JMH's built-in {@link StackProfiler}
@@ -30,35 +31,48 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * {@link Result#extendedInfo()} instead of a regex match against human-readable console formatting
  * that JMH makes no compatibility promises about.
  *
- * <p>Args: {@code <machineName> <benchmarksDir> <warmupIterations> <iterations> <benchmarkName>...}
+ * <p>Args: {@code <machineName> <benchmarksDir> <warmupIterations> <warmupTime> <iterations>
+ * <measurementTime> <benchmarkName>...} -- {@code warmupTime}/{@code measurementTime} are JMH
+ * duration strings (e.g. {@code "1s"}), passed through from the {@code jmh {}} block's own
+ * {@code warmup}/{@code timeOnIteration} so this sampling run's per-iteration wall-clock budget
+ * always matches the main timing run's, rather than silently falling back to JMH's 10s default
+ * whenever that block's times are tuned.
  */
 public final class SamplingRunner {
   private SamplingRunner() {}
 
   public static void main(String[] args) throws RunnerException, IOException {
-    if (args.length < 5) {
+    if (args.length < 7) {
       throw new IllegalArgumentException(
-          "Usage: SamplingRunner <machineName> <benchmarksDir> <warmupIterations> <iterations>"
-              + " <benchmarkName>... (did the jmhSampling Gradle task's args change shape?)");
+          "Usage: SamplingRunner <machineName> <benchmarksDir> <warmupIterations> <warmupTime>"
+              + " <iterations> <measurementTime> <benchmarkName>... (did the jmhSampling Gradle"
+              + " task's args change shape?)");
     }
     String machineName = args[0];
     Path benchmarksDir = Path.of(args[1]);
     int warmupIterations = Integer.parseInt(args[2]);
-    int iterations = Integer.parseInt(args[3]);
-    for (int i = 4; i < args.length; i++) {
-      captureOneBenchmark(machineName, benchmarksDir, warmupIterations, iterations, args[i]);
+    String warmupTime = args[3];
+    int iterations = Integer.parseInt(args[4]);
+    String measurementTime = args[5];
+    for (int i = 6; i < args.length; i++) {
+      captureOneBenchmark(
+          machineName, benchmarksDir, warmupIterations, warmupTime, iterations, measurementTime,
+          args[i]);
     }
   }
 
   private static void captureOneBenchmark(
-      String machineName, Path benchmarksDir, int warmupIterations, int iterations, String name)
+      String machineName, Path benchmarksDir, int warmupIterations, String warmupTime,
+      int iterations, String measurementTime, String name)
       throws RunnerException, IOException {
     Options opts =
         new OptionsBuilder()
             .include(".*" + CorpusBenchmark.class.getSimpleName() + "\\." + name + "$")
             .addProfiler(StackProfiler.class, "lines=4;detailLine=true")
             .warmupIterations(warmupIterations)
+            .warmupTime(TimeValue.fromString(warmupTime))
             .measurementIterations(iterations)
+            .measurementTime(TimeValue.fromString(measurementTime))
             .forks(1)
             .build();
     Collection<RunResult> results = new Runner(opts).run();

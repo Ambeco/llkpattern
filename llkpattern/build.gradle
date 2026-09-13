@@ -69,8 +69,17 @@ jmh {
     // corpus_benchmark_results.json. The `jmhSampling` task below re-runs llkCompile/llkMatch a
     // second time, stack-profiler-only, right after this task finishes.
     profilers = ['gc']
-    warmupIterations = 3
-    iterations = 5
+    // JMH's own defaults (10s/iteration) left warmup+measurement fixed at ~80s per benchmark
+    // regardless of how fast the code is -- see documents/notes.md's 2026-09-12 entry for how that
+    // was found to be the whole explanation for the desktop run's wall-clock cost dwarfing
+    // AndroidCorpusBenchmark's (which times a fixed iteration count instead, mirrored here by
+    // aiming for ~10 measured 1s iterations, matching that harness's per-benchmark budget). Only
+    // one warmup iteration since a corpus pass warms up fully within it -- separate warmup
+    // iterations mostly just re-measure the same already-hot state, not build on it further.
+    warmupIterations = 1
+    warmup = '1s'
+    iterations = 10
+    timeOnIteration = '1s'
     fork = 1
     jvm = benchmarkJvm
     // Console output (the plugin always prints a human-readable summary as the jmh task runs)
@@ -103,7 +112,9 @@ task jmhSampling(type: JavaExec) {
         benchmarkMachineName,
         project.file("${rootDir}/benchmarks").toString(),
         "${jmh.warmupIterations.get()}",
+        jmh.warmup.get(),
         "${jmh.iterations.get()}",
+        jmh.timeOnIteration.get(),
     ] + samplingBenchmarkNames
 }
 tasks.named('jmh').configure { finalizedBy jmhSampling }

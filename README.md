@@ -60,7 +60,6 @@ See [documents/remaining_work.md](documents/remaining_work.md) for the full, act
 - **Multi-digit backreferences** (`\12`+) — only `\1`-`\9` are supported today.
 - **`Matcher`/`Ll1Pattern` API gaps** — `replaceAll`/`replaceFirst`/`split` and friends, `region()`'s interaction with anchoring/transparent bounds, are still stubs.
 - **More scraped-corpus sources planned** beyond OpenJDK — AOSP/libcore, RE2J (another non-backtracking engine, interesting as a design comparison), dregex, dk.brics.automaton, and DataDog/java-reggie are all identified candidates.
-- **Investigating a real-world performance oddity**: the desktop JMH benchmark run takes ~5-6 minutes wall-clock, notably longer than the equivalent on-device Android benchmark on a much lower-end phone (~45s-2min) — likely (not yet confirmed) because the two harnesses budget different amounts of work rather than a genuine hardware gap.
 - **`ArrayCodePointMap` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
 
 ## 4. Current Progress
@@ -84,13 +83,13 @@ Both tables are milliseconds per pass over the full OpenJDK-derived test corpus 
 
 | | Intel-i7-9750H<br>regex | Intel-i7-9750H<br>llkpattern | Pixel 3a<br>regex | Pixel 3a<br>llkpattern |
 |---|-------------------------|---|---|---|
-| Compile | 0.091                   | 0.355 | 6.92 | 7.45 |
+| Compile | 0.103                   | 0.434 | 6.55 | 7.66 |
 
 **Corpus match time (ms/pass) (each pass matches/finds/look_ats 406 patterns):**
 
 | | Intel-i7-9750H<br>regex | Intel-i7-9750H<br>llkpattern | Pixel 3a<br>regex | Pixel 3a<br>llkpattern |
 |---|-------------------------|---|---|---|
-| Match | 0.045 | 0.035 | 3.51 | 0.77 |
+| Match | 0.053 | 0.042 | 3.99 | 0.78 |
 
 llkpattern still compiles slower than `java.util.regex` on both devices (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch — see notes.md for the compile-time performance history. Match time is now faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
 

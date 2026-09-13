@@ -1689,6 +1689,29 @@ Notes to self about how to work on this project, and other context that doesn't 
   owner's own call that this deserves a dedicated session rather than folding it into ongoing
   benchmark-tuning work.
 
+### Re-ran desktop JMH with the IDE closing down -- first attempt was a stale cache replay (2026-09-13)
+
+- The project owner was about to stop using this desktop (closing their IDE) and suggested
+  re-running the desktop JMH benchmark for less noisy numbers than the IDE-contending runs above.
+  The first attempt (`./gradlew :llkpattern:jmh`) printed what looked like a live run (JMH's own
+  per-iteration console output, "Run complete", etc.) but produced a `corpus_benchmark_results.json`
+  bit-for-bit identical to the immediately-prior committed baseline -- an astronomically unlikely
+  coincidence for independent timing measurements, which gave it away. Re-running with `-q` removed
+  and checking task states confirmed it: `:llkpattern:jmh` was `UP-TO-DATE` and never actually
+  re-executed the benchmark at all; only `:llkpattern:jmhSampling` (a plain `JavaExec`, not
+  input/output-tracked the way the `me.champeau.jmh` plugin's own task is) genuinely reran.
+  **Gotcha for future runs**: re-running `:llkpattern:jmh` to get a fresh measurement with no
+  tracked input changed (same `jmh {}` config, same source) silently does nothing and leaves the
+  stale numbers in place -- pass `--rerun` (as in `./gradlew :llkpattern:jmh --rerun`) whenever a
+  deliberate re-measurement (not a source/config change) is the point.
+  Forcing a real rerun with `--rerun` gave meaningfully different, and much better, numbers:
+  `llkCompile` 7.3%, `llkMatch` 3.5%, `regexCompile` 8.7%, `regexMatch` 7.2% error (all under 9%,
+  down from the 5.6-36% range across every prior run this session) -- and the scores themselves
+  dropped too (`llkCompile` 0.428 -> 0.376 ms/op, `regexCompile` 0.125 -> 0.098 ms/op), consistent
+  with genuinely less background contention rather than just tighter error bars on the same noisy
+  mean. Confirms the "quieter machine -> lower error" hypothesis the two entries above couldn't.
+  This is now the committed baseline.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

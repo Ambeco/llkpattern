@@ -1658,6 +1658,37 @@ Notes to self about how to work on this project, and other context that doesn't 
   (10) even when a tie straddles the boundary, rather than including every leaf tied with the 10th
   -- keeps the report bounded regardless of how many leaves land at some shared low sample count.
 
+### Tried 2s x2 warmup / 2s x10 measurement on desktop JMH -- reverted, error got worse (2026-09-13)
+
+- Following up on the prior 1s-iteration change: the project owner noticed `scoreError` running
+  ~7-36% of score and raw scores drifting ~15% higher across repeated runs, and asked to try
+  doubling iteration duration (`warmupIterations=2, warmup='2s', iterations=10,
+  timeOnIteration='2s'`) to see whether longer iterations would stabilize the noise. They didn't:
+  `llkMatch`'s error went from 10.3% to 35.7% and `regexCompile`'s from 5.6% to 26.3%, while all
+  four scores climbed further rather than converging, and total wall-clock roughly doubled (~78s ->
+  ~153s) for no error improvement. Reverted back to `warmupIterations=1, warmup='1s', iterations=10,
+  timeOnIteration='1s'`. This pattern (longer iterations => noisier, not more stable, plus a
+  persistent upward score drift across repeated runs) points at environmental noise (background
+  load, thermal throttling, cold Gradle daemon) rather than something JMH's iteration-duration knob
+  can address -- the standard next lever for that is `fork` count (each fork is a fresh JVM,
+  averaging across different JIT/thermal luck), not iteration length; not yet tried.
+
+### Found a real supplementary-character parsing bug via CPU sampling (2026-09-13)
+
+- While reviewing a fresh `llkCompile` sampling capture (the reversed-call-tree format above), the
+  project owner noticed `PatternParser.<init>`'s `pattern.charAt(0)` call showing up at ~2% of
+  total time and asked about it, then immediately spotted the real issue: it's a correctness bug,
+  not just a hot line. `advanceCodePoint()` (`PatternParser.java`) advances `index` a full code
+  point via `pattern.offsetByCodePoints`, but reads `peek = pattern.charAt(index)` afterward --
+  which returns only the UTF-16 code unit at that index. For a supplementary (astral) character
+  literally present in a pattern's source text, that's a lone surrogate half, not the actual
+  character. `peek`'s field type (`char`) can't represent a full code point in the first place, so
+  this isn't a one-line fix -- filed as its own `remaining_work.md` HIGHEST PRIORITY item rather
+  than fixed inline, since it needs an audit of every char-based lookahead in the file (dozens of
+  `charAt` call sites) against the code-point-aware ones that already exist, per the project
+  owner's own call that this deserves a dedicated session rather than folding it into ongoing
+  benchmark-tuning work.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

@@ -178,21 +178,21 @@ public class UnicodeAnalyzer {
 	}
 
 	/**
-	 * Emits one {@code private static CodePointMap<Boolean> init_NAME()}/{@code static final
-	 * CodePointMap<Boolean> NAME} field pair, built via {@code ArrayCodePointMap#appendSorted}.
-	 * {@code ranges} must already be in ascending {@code min} order and pairwise disjoint -- see
-	 * the comment in intPredicate() for why each field gets its own method (the shared
-	 * {@code <clinit>}'s 64KB bytecode limit).
+	 * Emits one {@code private static CodePointSet init_NAME()}/{@code static final CodePointSet
+	 * NAME} field pair, built via {@code ArrayCodePointSet#appendSorted}. {@code ranges} must
+	 * already be in ascending {@code min} order and pairwise disjoint -- see the comment in
+	 * intPredicate() for why each field gets its own method (the shared {@code <clinit>}'s 64KB
+	 * bytecode limit).
 	 */
 	public static void printCodePointMap(String name, List<Range<Integer>> ranges) {
-		System.out.printf("private static CodePointMap<Boolean> init_%s() {\n", name);
-		System.out.print("\tArrayCodePointMap<Boolean> result = new ArrayCodePointMap<>();\n");
+		System.out.printf("private static CodePointSet init_%s() {\n", name);
+		System.out.print("\tArrayCodePointSet result = new ArrayCodePointSet();\n");
 		System.out.printf("\tresult.ensureCapacity(%d);\n", ranges.size());
 		for (Range<Integer> range : ranges) {
-			System.out.printf("\tresult.appendSorted(0x%x, 0x%x, Boolean.TRUE);\n", range.lowerEndpoint(), range.upperEndpoint());
+			System.out.printf("\tresult.appendSorted(0x%x, 0x%x);\n", range.lowerEndpoint(), range.upperEndpoint());
 		}
 		System.out.print("\treturn result;\n");
 		System.out.print("}\n");
-		System.out.printf("static final CodePointMap<Boolean> %s = init_%s();\n\n", name, name);
+		System.out.printf("static final CodePointSet %s = init_%s();\n\n", name, name);
 	}
 }

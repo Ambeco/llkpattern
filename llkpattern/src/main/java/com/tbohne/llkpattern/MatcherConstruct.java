@@ -104,18 +104,18 @@ abstract class MatcherConstruct {
 	 * character was seen, so all it needs is a yes/no membership test) and by {@link
 	 * ForkingMatcherConstruct}'s own membership test.
 	 */
-	static boolean containsFolded(CodePointMap<Boolean> ranges, int peeked, int flags) {
+	static boolean containsFolded(CodePointSet ranges, int peeked, int flags) {
 		// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is checked FIRST and
-		// unconditionally: a negated class (e.g. "[^a-z]") is an else-value map, and its else-value
-		// fill legitimately covers every real code point it doesn't explicitly exclude -- membership
-		// here has to see that fill (hence get(), not getExplicit()), but -1 is never a real code
-		// point, so it must never be reported a "member" of even a total (else-valued) ranges map.
-		// This is the same domain guard ComplexCharacter#validRanges() used to provide via clamping a
-		// Guava RangeSet.
+		// unconditionally: a negated class (e.g. "[^a-z]") is an inverted set, and its fill
+		// legitimately covers every real code point it doesn't explicitly exclude -- membership
+		// here has to see that fill (hence contains(), a real query), but -1 is never a real code
+		// point, so it must never be reported a "member" of even a total (inverted) set. This is the
+		// same domain guard ComplexCharacter#validRanges() used to provide via clamping a Guava
+		// RangeSet.
 		if (peeked == -1) {
 			return false;
 		}
-		if (ranges.get(peeked) != null) {
+		if (ranges.contains(peeked)) {
 			return true;
 		}
 		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
@@ -124,7 +124,7 @@ abstract class MatcherConstruct {
 		boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
 		int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
 		int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
-		return (upper != peeked && ranges.get(upper) != null) || (lower != peeked && ranges.get(lower) != null);
+		return (upper != peeked && ranges.contains(upper)) || (lower != peeked && ranges.contains(lower));
 	}
 
 	/**
@@ -179,7 +179,7 @@ abstract class MatcherConstruct {
 	 * membership test, not a dispatch: every member character leads to the same single successor.
 	 */
 	static final class SingleCharMatcherConstruct extends SingleDispatchingMatcherConstruct {
-		final CodePointMap<Boolean> validRanges;
+		final CodePointSet validRanges;
 
 		SingleCharMatcherConstruct(ComplexCharacter owner) {
 			super(owner, owner.next.matcher);
@@ -296,12 +296,12 @@ abstract class MatcherConstruct {
 	 * first-wins priority would otherwise silently accept an ambiguous pattern.
 	 */
 	static class ForkingMatcherConstruct extends MatcherConstruct {
-		final CodePointMap<Boolean> memberSet;
+		final CodePointSet memberSet;
 		final MatcherConstruct next;
 		final MatcherConstruct otherwise;
 
 		/** Self-registering variant -- used for the head of a chain that is some construct's own matcher. */
-		ForkingMatcherConstruct(PatternConstruct owner, CodePointMap<Boolean> memberSet, MatcherConstruct next, MatcherConstruct otherwise) {
+		ForkingMatcherConstruct(PatternConstruct owner, CodePointSet memberSet, MatcherConstruct next, MatcherConstruct otherwise) {
 			super(owner);
 			this.memberSet = memberSet;
 			this.next = next;
@@ -309,7 +309,7 @@ abstract class MatcherConstruct {
 		}
 
 		/** Internal (non-self-registering) variant -- every other fork in a chain. */
-		ForkingMatcherConstruct(int flags, CodePointMap<Boolean> memberSet, MatcherConstruct next, MatcherConstruct otherwise) {
+		ForkingMatcherConstruct(int flags, CodePointSet memberSet, MatcherConstruct next, MatcherConstruct otherwise) {
 			super(flags);
 			this.memberSet = memberSet;
 			this.next = next;
@@ -543,13 +543,13 @@ abstract class MatcherConstruct {
 			PeekMustBeOppositePrior
 		}
 
-		final CodePointMap<Boolean> wordSet;
+		final CodePointSet wordSet;
 		final PriorWordBoundaryMatchType priorMustBeWord;
 		final PeekWordBoundaryMatchType peekMustBeWord;
 
 		WordBoundaryMatcherConstruct(
 				PatternConstruct owner,
-				CodePointMap<Boolean> wordSet,
+				CodePointSet wordSet,
 				PriorWordBoundaryMatchType priorMustBeWord,
 				PeekWordBoundaryMatchType peekMustBeWord) {
 			super(owner, owner.next.matcher);
@@ -567,7 +567,7 @@ abstract class MatcherConstruct {
 		}
 
 		private boolean isWordChar(int codePoint) {
-			return codePoint >= 0 && wordSet.containsKey(codePoint);
+			return codePoint >= 0 && wordSet.contains(codePoint);
 		}
 
 		@Override
@@ -651,15 +651,15 @@ abstract class MatcherConstruct {
 		final int quantifiableIndex;
 		final int min;
 		final int max;
-		final CodePointMap<Boolean> memberSet;
+		final CodePointSet memberSet;
 		final PatternConstruct continuation;
 		final MatcherConstruct otherwise;
-		final CodePointMap<Boolean> exitSet;
+		final CodePointSet exitSet;
 
 		LoopMatcherConstruct(
 				PatternConstruct owner, int quantifiableIndex, int min, int max,
-				CodePointMap<Boolean> memberSet, PatternConstruct continuation, MatcherConstruct otherwise,
-				CodePointMap<Boolean> exitSet) {
+				CodePointSet memberSet, PatternConstruct continuation, MatcherConstruct otherwise,
+				CodePointSet exitSet) {
 			super(owner);
 			this.quantifiableIndex = quantifiableIndex;
 			this.min = min;
@@ -677,9 +677,9 @@ abstract class MatcherConstruct {
 			// more completed iteration -- regardless of which way the fork below then decides to go.
 			int loopCount = ++matcher.quantifiableCounts[quantifiableIndex];
 			boolean goContinue;
-			if (peeked != -1 && memberSet.get(peeked) != null) {
+			if (peeked != -1 && memberSet.contains(peeked)) {
 				goContinue = true; // exact (unfolded) body membership -- always wins outright.
-			} else if (peeked != -1 && exitSet.get(peeked) != null) {
+			} else if (peeked != -1 && exitSet.contains(peeked)) {
 				goContinue = false; // exact (unfolded) exit membership -- also wins outright.
 			} else if (peeked != -1 && (flags & Ll1Pattern.CASE_INSENSITIVE) != 0) {
 				// Neither side claims this code point exactly -- only now does CASE_INSENSITIVE
@@ -687,8 +687,8 @@ abstract class MatcherConstruct {
 				boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
 				int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
 				int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
-				goContinue = (upper != peeked && memberSet.get(upper) != null)
-						|| (lower != peeked && memberSet.get(lower) != null);
+				goContinue = (upper != peeked && memberSet.contains(upper))
+						|| (lower != peeked && memberSet.contains(lower));
 			} else {
 				goContinue = false;
 			}

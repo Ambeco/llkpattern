@@ -2,7 +2,7 @@ package com.tbohne.llkpattern;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
-import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
+import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 
 import java.util.regex.Pattern;
 
@@ -146,17 +146,17 @@ enum NamedCharClass {
       Source.UProperty,
       build(
           m -> {
-            m.put(+'\t', +'\r' + 1, Boolean.TRUE); // U+0009-000D
-            m.put(+' ', Boolean.TRUE);
-            m.put(0x0085, Boolean.TRUE);
-            m.put(0x00A0, Boolean.TRUE);
-            m.put(0x1680, Boolean.TRUE);
-            m.put(0x2000, 0x200B, Boolean.TRUE);
-            m.put(0x2028, Boolean.TRUE);
-            m.put(0x2029, Boolean.TRUE);
-            m.put(0x202F, Boolean.TRUE);
-            m.put(0x205F, Boolean.TRUE);
-            m.put(0x3000, Boolean.TRUE);
+            m.add(+'\t', +'\r' + 1); // U+0009-000D
+            m.add(+' ');
+            m.add(0x0085);
+            m.add(0x00A0);
+            m.add(0x1680);
+            m.add(0x2000, 0x200B);
+            m.add(0x2028);
+            m.add(0x2029);
+            m.add(0x202F);
+            m.add(0x205F);
+            m.add(0x3000);
           })),
   // Digit is reachable both as the bare POSIX class \p{Digit} (ASCII-default, widens to
   // full-Unicode only under UNICODE_CHARACTER_CLASS) and as the Unicode binary property
@@ -180,41 +180,41 @@ enum NamedCharClass {
       Source.UProperty,
       build(
           m -> {
-            m.put(+'a', +'f' + 1, Boolean.TRUE);
-            m.put(+'A', +'F' + 1, Boolean.TRUE);
-            m.put(+'0', +'9' + 1, Boolean.TRUE);
-            m.put(0xFF41, 0xFF47, Boolean.TRUE);
-            m.put(0xFF21, 0xFF27, Boolean.TRUE);
-            m.put(0xFF10, 0xFF1A, Boolean.TRUE);
+            m.add(+'a', +'f' + 1);
+            m.add(+'A', +'F' + 1);
+            m.add(+'0', +'9' + 1);
+            m.add(0xFF41, 0xFF47);
+            m.add(0xFF21, 0xFF27);
+            m.add(0xFF10, 0xFF1A);
           })),
   Join_Control(
-      Source.UProperty, build(m -> m.put(0x200C, 0x200E, Boolean.TRUE))),
+      Source.UProperty, build(m -> m.add(0x200C, 0x200E))),
   Noncharacter_Code_Point(
       Source.UProperty,
       build( // not public in Java :(
           m -> {
-            m.put(0xFDD0, 0xFDF0, Boolean.TRUE);
-            m.put(0xFFFE, 0x10000, Boolean.TRUE);
-            m.put(0x1FFFE, 0x20000, Boolean.TRUE);
-            m.put(0x2FFFE, 0x30000, Boolean.TRUE);
-            m.put(0x3FFFE, 0x40000, Boolean.TRUE);
-            m.put(0x4FFFE, 0x50000, Boolean.TRUE);
-            m.put(0x5FFFE, 0x60000, Boolean.TRUE);
-            m.put(0x6FFFE, 0x70000, Boolean.TRUE);
-            m.put(0x7FFFE, 0x80000, Boolean.TRUE);
-            m.put(0x8FFFE, 0x90000, Boolean.TRUE);
-            m.put(0x9FFFE, 0xA0000, Boolean.TRUE);
-            m.put(0xAFFFE, 0xB0000, Boolean.TRUE);
-            m.put(0xBFFFE, 0xC0000, Boolean.TRUE);
-            m.put(0xCFFFE, 0xD0000, Boolean.TRUE);
-            m.put(0xDFFFE, 0xE0000, Boolean.TRUE);
-            m.put(0xEFFFE, 0xF0000, Boolean.TRUE);
-            m.put(0xFFFFE, 0x100000, Boolean.TRUE);
-            m.put(0x10FFFE, 0x110000, Boolean.TRUE);
+            m.add(0xFDD0, 0xFDF0);
+            m.add(0xFFFE, 0x10000);
+            m.add(0x1FFFE, 0x20000);
+            m.add(0x2FFFE, 0x30000);
+            m.add(0x3FFFE, 0x40000);
+            m.add(0x4FFFE, 0x50000);
+            m.add(0x5FFFE, 0x60000);
+            m.add(0x6FFFE, 0x70000);
+            m.add(0x7FFFE, 0x80000);
+            m.add(0x8FFFE, 0x90000);
+            m.add(0x9FFFE, 0xA0000);
+            m.add(0xAFFFE, 0xB0000);
+            m.add(0xBFFFE, 0xC0000);
+            m.add(0xCFFFE, 0xD0000);
+            m.add(0xDFFFE, 0xE0000);
+            m.add(0xEFFFE, 0xF0000);
+            m.add(0xFFFFE, 0x100000);
+            m.add(0x10FFFE, 0x110000);
           })),
   Assigned(
       Source.UProperty,
-      UnicodePredicates.UNASSIGNED.complement(Boolean.TRUE)),
+      UnicodePredicates.UNASSIGNED.complement()),
 
   // POSIX character classes
   Lower(
@@ -243,10 +243,10 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.put(0x0021, 0x0030, Boolean.TRUE);
-            m.put(0x003a, 0x0041, Boolean.TRUE);
-            m.put(0x005B, 0x0061, Boolean.TRUE);
-            m.put(0x007B, 0x007F, Boolean.TRUE);
+            m.add(0x0021, 0x0030);
+            m.add(0x003a, 0x0041);
+            m.add(0x005B, 0x0061);
+            m.add(0x007B, 0x007F);
           }),
       Punctuation.unicode),
   Graph(
@@ -256,24 +256,24 @@ enum NamedCharClass {
               UnicodePredicates.CONTROL,
               UnicodePredicates.SURROGATE,
               UnicodePredicates.UNASSIGNED)
-          .complement(Boolean.TRUE)),
+          .complement()),
   Blank(
       Source.POSIX,
       build(
           m -> {
-            m.put(+' ', Boolean.TRUE);
-            m.put(+'\t', Boolean.TRUE);
+            m.add(+' ');
+            m.add(+'\t');
           }),
       difference(
           White_Space.unicode,
           unionOf(
               build(
                   m -> {
-                    m.put(0x000a, Boolean.TRUE); // LF
-                    m.put(0x000b, Boolean.TRUE); // VT
-                    m.put(0x000c, Boolean.TRUE); // FF
-                    m.put(0x000d, Boolean.TRUE); // CR
-                    m.put(0x0085, Boolean.TRUE); // NEL
+                    m.add(0x000a); // LF
+                    m.add(0x000b); // VT
+                    m.add(0x000c); // FF
+                    m.add(0x000d); // CR
+                    m.add(0x0085); // NEL
                   }),
               UnicodePredicates.LINE_SEPARATOR,
               UnicodePredicates.PARAGRAPH_SEPARATOR))),
@@ -281,16 +281,16 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.put(0x0000, 0x0020, Boolean.TRUE); // U+0000-001F
-            m.put(0x007F, Boolean.TRUE); // U+007F
+            m.add(0x0000, 0x0020); // U+0000-001F
+            m.add(0x007F); // U+007F
           }),
       UnicodePredicates.CONTROL),
   Print(
       Source.POSIX,
       build(
           m -> {
-            m.putAll(Graph.ascii);
-            m.put(0x0020, Boolean.TRUE);
+            m.addAll(Graph.ascii);
+            m.add(0x0020);
           }),
       difference(
           unionOf(Graph.unicode, Blank.unicode),
@@ -322,12 +322,12 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.put(+' ', Boolean.TRUE);
-            m.put(+'\t', Boolean.TRUE);
-            m.put(+'\n', Boolean.TRUE);
-            m.put(0x000B, Boolean.TRUE);
-            m.put(+'\f', Boolean.TRUE);
-            m.put(+'\r', Boolean.TRUE);
+            m.add(+' ');
+            m.add(+'\t');
+            m.add(+'\n');
+            m.add(0x000B);
+            m.add(+'\f');
+            m.add(+'\r');
           }),
       White_Space.unicode),
   ;
@@ -349,15 +349,14 @@ enum NamedCharClass {
   }
 
   /**
-   * Builds an immutable {@link CodePointMap}{@code <Boolean>} via a scratch {@link
-   * ArrayCodePointMap}, for a hand-written literal set too irregular to express as a single
-   * {@code put} call. Replaces the old {@code ImmutableRangeSet.Builder} chains -- {@code put}
+   * Builds an immutable {@link CodePointSet} via a scratch {@link ArrayCodePointSet}, for a
+   * hand-written literal set too irregular to express as a single {@code add} call. {@code add}
    * (unlike {@code appendSorted}, which the generated {@code UnicodePredicates} uses) tolerates
    * entries added out of order, which several of the literals below are (e.g. {@code Hex_Digit}'s
    * a-f/A-F/0-9/fullwidth-digits ordering).
    */
-  private static CodePointMap<Boolean> build(java.util.function.Consumer<MutableCodePointMap<Boolean>> filler) {
-    ArrayCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+  private static CodePointSet build(java.util.function.Consumer<MutableCodePointSet> filler) {
+    ArrayCodePointSet result = new ArrayCodePointSet();
     filler.accept(result);
     return result;
   }
@@ -365,14 +364,11 @@ enum NamedCharClass {
   /**
    * Unions any number of code-point sets that may legitimately overlap each other (e.g. two
    * different Unicode category predicates both claiming the same code point). {@link
-   * CodePointMap#union} already tolerates overlap (last writer wins, and every set here agrees on
-   * {@code Boolean.TRUE} wherever they overlap), so this is just a repeated {@code union} --
-   * unlike the old {@code ImmutableRangeSet.Builder}, which threw on overlapping ranges and needed
-   * a separate {@code TreeRangeSet}-based {@code union} helper to work around that.
+   * CodePointSet#union} already tolerates overlap (there's only one state, "member", to agree on),
+   * so this is just a repeated {@code union}.
    */
-  @SafeVarargs
-  private static CodePointMap<Boolean> unionOf(CodePointMap<Boolean>... sets) {
-    CodePointMap<Boolean> merged = sets[0];
+  private static CodePointSet unionOf(CodePointSet... sets) {
+    CodePointSet merged = sets[0];
     for (int i = 1; i < sets.length; i++) {
       merged = merged.union(sets[i]);
     }
@@ -380,10 +376,10 @@ enum NamedCharClass {
   }
 
   /**
-   * {@code a} minus {@code b}: every code point {@code a} maps and {@code b} doesn't. Thin wrapper
-   * over {@link CodePointMap#difference} kept for symmetry with {@link #unionOf} above.
+   * {@code a} minus {@code b}: every code point {@code a} has and {@code b} doesn't. Thin wrapper
+   * over {@link CodePointSet#difference} kept for symmetry with {@link #unionOf} above.
    */
-  private static CodePointMap<Boolean> difference(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
+  private static CodePointSet difference(CodePointSet a, CodePointSet b) {
     return a.difference(b);
   }
 
@@ -392,8 +388,8 @@ enum NamedCharClass {
   // but see the Digit constant above for the one case (a name shared between a POSIX class and a
   // Unicode binary property) that needs to override this to allow prefixes from both families.
   final ImmutableSet<CharacterClassPrefix> allowedPrefixes;
-  final CodePointMap<Boolean> ascii;
-  final CodePointMap<Boolean> unicode;
+  final CodePointSet ascii;
+  final CodePointSet unicode;
 
   NamedCharClass(Source source, NamedCharClass delegate) {
     this.source = source;
@@ -402,7 +398,7 @@ enum NamedCharClass {
     this.unicode = delegate.unicode;
   }
 
-  NamedCharClass(Source source, CodePointMap<Boolean> unicode) {
+  NamedCharClass(Source source, CodePointSet unicode) {
     this.source = source;
     this.allowedPrefixes = source.allowedPrefixes;
     this.ascii = unicode;
@@ -411,7 +407,7 @@ enum NamedCharClass {
 
   static final boolean SLICED_ASCII = true;
   NamedCharClass(
-      Source source, CodePointMap<Boolean> unicode, boolean slicedAscii) {
+      Source source, CodePointSet unicode, boolean slicedAscii) {
     this(source.allowedPrefixes, source, unicode, slicedAscii);
   }
 
@@ -419,7 +415,7 @@ enum NamedCharClass {
   // and Source.UProperty rather than just inheriting one Source's set.
   NamedCharClass(
       ImmutableSet<CharacterClassPrefix> allowedPrefixes,
-      Source source, CodePointMap<Boolean> unicode, boolean slicedAscii) {
+      Source source, CodePointSet unicode, boolean slicedAscii) {
     this.source = source;
     this.allowedPrefixes = allowedPrefixes;
     // UnicodePredicates.ascii is exactly one contiguous range ([0, 0x80)), so restricting to it
@@ -429,14 +425,14 @@ enum NamedCharClass {
   }
 
   NamedCharClass(
-      Source source, CodePointMap<Boolean> ascii, CodePointMap<Boolean> unicode) {
+      Source source, CodePointSet ascii, CodePointSet unicode) {
     this.source = source;
     this.allowedPrefixes = source.allowedPrefixes;
     this.ascii = ascii;
     this.unicode = unicode;
   }
 
-  CodePointMap<Boolean> get(CharacterClassPrefix prefix, int flags) {
+  CodePointSet get(CharacterClassPrefix prefix, int flags) {
     Preconditions.checkArgument(allowedPrefixes.contains(prefix));
     // Any Unicode-property-style prefix (\p{IsXxx}, \p{script=Xxx}, \p{block=Xxx},
     // \p{general_category=Xxx}) always means "exactly this Unicode-defined set" -- the
@@ -461,7 +457,7 @@ enum NamedCharClass {
   }
 
   enum RegexCharacterClass {
-    DOT(build(m -> m.put(+'\n', Boolean.TRUE)).complement(Boolean.TRUE)),
+    DOT(build(m -> m.add(+'\n')).complement()),
     d(Digit),
     // Bug fix (2026-09-07): this used to be a single-RangeSet `D(Digit.unicode.complement())`,
     // which (like every other single-RangeSet constructor call here) is flag-insensitive -- so \D
@@ -469,43 +465,43 @@ enum NamedCharClass {
     // UNICODE_CHARACTER_CLASS entirely (unlike \S/\W below, which already complement `ascii`/
     // `unicode` separately). Found via PredefinedClassTest's \d/\D UNICODE_CHARACTER_CLASS
     // coverage, added alongside the NamedCharClass.Digit/PosixDigit merge (see its own doc).
-    D(Digit.ascii.complement(Boolean.TRUE), Digit.unicode.complement(Boolean.TRUE)),
+    D(Digit.ascii.complement(), Digit.unicode.complement()),
     h(build(
           m -> {
-            m.put(+'\t', Boolean.TRUE);
-            m.put(0x00A0, Boolean.TRUE);
-            m.put(0x1680, Boolean.TRUE);
-            m.put(0x180e, Boolean.TRUE);
-            m.put(0x202f, Boolean.TRUE);
-            m.put(0x205f, Boolean.TRUE);
-            m.put(0x3000, Boolean.TRUE);
-            m.put(0x2000, 0x200b, Boolean.TRUE);
+            m.add(+'\t');
+            m.add(0x00A0);
+            m.add(0x1680);
+            m.add(0x180e);
+            m.add(0x202f);
+            m.add(0x205f);
+            m.add(0x3000);
+            m.add(0x2000, 0x200b);
           })),
-    H(h.unicode.complement(Boolean.TRUE)),
+    H(h.unicode.complement()),
     // Bug fix (2026-09-06): now delegates to NamedCharClass.Space instead of duplicating its own
     // hardcoded ASCII whitespace literal + a separate White_Space.unicode reference -- see Space's
     // own comment for why that duplication exists (breaking a circular static-init dependency) and
     // why this direction (RegexCharacterClass -> NamedCharClass, not the reverse) is safe.
     s(Space.ascii, Space.unicode),
-    S(s.ascii.complement(Boolean.TRUE), s.unicode.complement(Boolean.TRUE)),
+    S(s.ascii.complement(), s.unicode.complement()),
     v(build(
           m -> {
-            m.put(+'\n', Boolean.TRUE);
-            m.put(0x000B, Boolean.TRUE);
-            m.put(+'\f', Boolean.TRUE);
-            m.put(+'\r', Boolean.TRUE);
-            m.put(0x0085, Boolean.TRUE);
-            m.put(0x2028, Boolean.TRUE);
-            m.put(0x2029, Boolean.TRUE);
+            m.add(+'\n');
+            m.add(0x000B);
+            m.add(+'\f');
+            m.add(+'\r');
+            m.add(0x0085);
+            m.add(0x2028);
+            m.add(0x2029);
           })),
-    V(v.unicode.complement(Boolean.TRUE)),
+    V(v.unicode.complement()),
     w(
         build(
             m -> {
-              m.put(+'a', +'z' + 1, Boolean.TRUE);
-              m.put(+'A', +'Z' + 1, Boolean.TRUE);
-              m.put(+'0', +'9' + 1, Boolean.TRUE);
-              m.put(+'_', Boolean.TRUE);
+              m.add(+'a', +'z' + 1);
+              m.add(+'A', +'Z' + 1);
+              m.add(+'0', +'9' + 1);
+              m.add(+'_');
             }),
         unionOf(
             Alphabetic.unicode,
@@ -515,28 +511,28 @@ enum NamedCharClass {
             UnicodePredicates.ENCLOSING_MARK,
             UnicodePredicates.CONNECTOR_PUNCTUATION,
             Join_Control.unicode)),
-    W(w.ascii.complement(Boolean.TRUE), w.unicode.complement(Boolean.TRUE)),
+    W(w.ascii.complement(), w.unicode.complement()),
     R(build(
           m -> {
-            m.put(+'\n', Boolean.TRUE);
-            m.put(+'\r', Boolean.TRUE);
-            m.put(0x000B, Boolean.TRUE);
-            m.put(0x000C, Boolean.TRUE);
-            m.put(0x0085, Boolean.TRUE);
-            m.put(0x2028, Boolean.TRUE);
-            m.put(0x2029, Boolean.TRUE);
+            m.add(+'\n');
+            m.add(+'\r');
+            m.add(0x000B);
+            m.add(0x000C);
+            m.add(0x0085);
+            m.add(0x2028);
+            m.add(0x2029);
           }));
 
-    final CodePointMap<Boolean> ascii;
-    final CodePointMap<Boolean> unicode;
+    final CodePointSet ascii;
+    final CodePointSet unicode;
 
-    RegexCharacterClass(CodePointMap<Boolean> unicode) {
+    RegexCharacterClass(CodePointSet unicode) {
       this.ascii = unicode.intersection(0, 0x80);
       this.unicode = unicode;
     }
 
     RegexCharacterClass(
-        CodePointMap<Boolean> ascii, CodePointMap<Boolean> unicode) {
+        CodePointSet ascii, CodePointSet unicode) {
       this.ascii = ascii;
       this.unicode = unicode;
     }
@@ -546,7 +542,7 @@ enum NamedCharClass {
       this.unicode = delegate.unicode;
     }
 
-    CodePointMap<Boolean> get(int flags) {
+    CodePointSet get(int flags) {
       return ((flags & Pattern.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
     }
   }

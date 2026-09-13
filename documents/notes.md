@@ -1468,6 +1468,40 @@ Notes to self about how to work on this project, and other context that doesn't 
   18.01 -> 8.49 ms/pass, `matchLlk` 1.36 -> 0.80 ms/pass (`compileRegex`/`matchRegex` essentially
   unchanged at 6.95/3.51, as expected since nothing here touches `java.util.regex` itself) --
   `matchLlk` is now clearly faster than `matchRegex` on this device too, not just on desktop.
+- 2026-09-12: step 2 of the performance plan (see remaining_work.md's "Fork-chain dispatch" entry):
+  introduced `CodePointSet`/`ArrayCodePointSet`/`CodePointSetBuilder` -- a non-generic, `V[]
+  values`-array-free counterpart to `CodePointMap<Boolean>`/`ArrayCodePointMap<Boolean>` -- and
+  migrated every production Boolean-valued use over to it: `PatternConstruct.entryMap`,
+  `ComplexCharacter.ranges`, `ForkingMatcherConstruct.memberSet`/`LoopMatcherConstruct.memberSet`/
+  `exitSet`, `WordBoundaryConstruct`'s word-set classification, and every `NamedCharClass`/
+  generated `UnicodePredicates` constant (`unicodeanalyzer`'s `UnicodeAnalyzer` generator updated
+  to emit `CodePointSet` fields directly; `UnicodePredicates.java` regenerated). `CodePointMap<V>`
+  remains in production only for `mergeEntryPointsRaw`'s transient, genuinely `PatternConstruct`-
+  valued ambiguity-check merge; `TreeCodePointMap`/`CodePointMapDifferentialTest` remain as the
+  general-purpose (`String`-valued) test oracle. The key design idea, prompted by the project
+  owner: instead of `CodePointMap`'s `V elseValue` (needing a "punched hole" null-value trick to
+  represent a negated/complemented map finitely), `ArrayCodePointSet` just tracks a `boolean
+  invert` -- a set has only two states at any code point ("in"/"out"), so a negated set is the
+  exact same recorded entries with the opposite meaning, and `complement()` is a flag flip plus a
+  cheap array copy (no real rebuild, no "double complement" special case needed at all, unlike the
+  map version's).
+
+  Found and fixed a real bug while implementing this: `ArrayCodePointSet` initially had a private
+  `ArrayCodePointSet(ArrayCodePointSet source)` constructor for `complement()` alongside the public
+  copy constructor `ArrayCodePointSet(CodePointSet other)` -- Java overload resolution picks the
+  MORE SPECIFIC applicable overload, so any `new ArrayCodePointSet(this)` call made from *within*
+  the class (e.g. `union()`) silently resolved to the private complement constructor instead of the
+  intended plain copy, since the private one is accessible from inside its own class and more
+  specific for a same-class argument. Caught immediately by `ArrayCodePointSetTest`'s own
+  `union_disjointSets_hasBothMembers` test. Fixed by replacing the private constructor with a
+  static factory (`complementOf`), which isn't a constructor overload and so can't be silently
+  preferred by argument-type specificity.
+
+  Full suite green afterward (1531 tests -- 1501 plus 30 new `ArrayCodePointSet`/
+  `CodePointSetBuilder` tests -- 0 failing, 561 skipped). Desktop JMH: `llkCompile` 0.457 -> 0.353
+  ms/op (`gc.alloc.rate.norm` 1,297,456 -> 1,073,368 B/op); `llkMatch` unchanged within noise
+  (expected -- step 2 only changes compile-time structure-building, not the match-time node shapes
+  step 1 already optimized). On-device Pixel 3a re-run still pending as of this entry.
 
 ## Misc
 

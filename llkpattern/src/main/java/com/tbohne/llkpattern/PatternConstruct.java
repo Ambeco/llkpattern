@@ -35,12 +35,12 @@ abstract class PatternConstruct {
 	// thread the continuation through again.
 	@MonotonicNonNull PatternConstruct next;
 
-	// A shared, never-mutated empty map -- the default for any construct (BoundaryConstruct,
+	// A shared, never-mutated empty set -- the default for any construct (BoundaryConstruct,
 	// WordBoundaryConstruct) whose buildEntryMap() only ever sets entryElse, never entryMap itself.
-	// One shared instance rather than `new ArrayCodePointMap<>()` per construct instance, now that
-	// entryMap is a plain (immutable-from-here) CodePointMap reference, not something built up via
+	// One shared instance rather than `new ArrayCodePointSet()` per construct instance, now that
+	// entryMap is a plain (immutable-from-here) CodePointSet reference, not something built up via
 	// per-construct mutation -- see entryMap's own doc below.
-	private static final CodePointMap<Boolean> EMPTY_ENTRY_MAP = new ArrayCodePointMap<>();
+	private static final CodePointSet EMPTY_ENTRY_MAP = new ArrayCodePointSet();
 
 	// The set of code points this construct claims as its own entry point, once it (and anything
 	// it can trivially skip, e.g. an optional quantifier) has matched. Populated by buildEntryMap()
@@ -49,24 +49,22 @@ abstract class PatternConstruct {
 	// and to build the MatcherConstruct graph. Never read directly outside this construct's own
 	// buildEntryMap() -- every other reader goes through the getters.
 	//
-	// The value type is Boolean (always TRUE) rather than PatternConstruct, even though this looks
-	// exactly like a "code point -> owning construct" map: every entryMap-populating call in every
-	// buildEntryMap() override below either aliases another Boolean-valued entryMap directly (a
-	// construct whose own entry point is exactly some other construct's -- Sequence's first
-	// element, CaptureEndMarker's realNext, a bare-flags-only union's next, a ComplexCharacter's
-	// own validRanges(), a BackReference's referenced group's firstCharSet -- see each override's
-	// own comment) or inserts `true`, never a PatternConstruct identity -- so the value always
-	// carries zero information; it's inferable from *which* construct's entryMap you're looking at,
-	// and every consumer already knows that. This is a plain (not Mutable) CodePointMap
-	// specifically so aliasing is safe: nothing can mutate an aliased map out from under whichever
-	// other construct also holds it. A genuinely multi-valued map DOES exist transiently, inside
-	// mergeEntryPoints (where an entry's value is which distinct candidate owns it, needed to run
-	// the ambiguity check with a useful "candidate #N" error message) -- but mergeEntryPoints itself
-	// projects that down to plain Boolean values before ever handing anything back (see its own
-	// doc), specifically so no caller can make the mistake a real 2026-09-06 bug once did: exposing
-	// a PatternConstruct-valued map as an ancestor's entry map, breaking downstream `==` identity
-	// checks like a loop's continue-vs-exit classification.
-	CodePointMap<Boolean> entryMap = EMPTY_ENTRY_MAP;
+	// Plain code-point-set membership (never a "code point -> owning construct" map) -- every
+	// entryMap-populating call in every buildEntryMap() override below either aliases another
+	// construct's own entryMap directly (a construct whose own entry point is exactly some other
+	// construct's -- Sequence's first element, CaptureEndMarker's realNext, a bare-flags-only
+	// union's next, a ComplexCharacter's own validRanges(), a BackReference's referenced group's
+	// firstCharSet -- see each override's own comment) or inserts a code point with no further
+	// payload, so there's never a PatternConstruct identity to lose. This is a plain (not Mutable)
+	// CodePointSet specifically so aliasing is safe: nothing can mutate an aliased set out from
+	// under whichever other construct also holds it. A genuinely multi-valued map DOES exist
+	// transiently, inside mergeEntryPoints (where an entry's value is which distinct candidate owns
+	// it, needed to run the ambiguity check with a useful "candidate #N" error message) -- but
+	// mergeEntryPoints itself projects that down to a plain CodePointSet before ever handing
+	// anything back (see its own doc), specifically so no caller can make the mistake a real
+	// 2026-09-06 bug once did: exposing a PatternConstruct-valued map as an ancestor's entry map,
+	// breaking downstream `==` identity checks like a loop's continue-vs-exit classification.
+	CodePointSet entryMap = EMPTY_ENTRY_MAP;
 	@MonotonicNonNull PatternConstruct entryElse;
 
 	private static final int ENTRY_POINT_NOT_STARTED = 0;
@@ -104,7 +102,7 @@ abstract class PatternConstruct {
 	 * compilation" section. Lazily triggers {@link #buildEntryMap} on first call, independent of
 	 * whether this construct has been (or is being) {@link #compile}d.
 	 */
-	final CodePointMap<Boolean> getEntryPointMap() {
+	final CodePointSet getEntryPointMap() {
 		ensureEntryPointBuilt();
 		return entryMap;
 	}
@@ -151,7 +149,7 @@ abstract class PatternConstruct {
 	 * QuantifiedUnion}'s bare-flags-group override for the one case that does this safely).
 	 */
 	<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
-		getEntryPointMap().forEachRange((min, max, value) -> builder.add(min, max, tag));
+		getEntryPointMap().forEachRange((min, max) -> builder.add(min, max, tag));
 	}
 
 	/**
@@ -233,7 +231,7 @@ abstract class PatternConstruct {
 
 	/**
 	 * Result of {@link #mergeEntryPoints}. {@code ranges} is
-	 * plain {@code Boolean}-valued, not {@code PatternConstruct}-valued -- {@link #mergeEntryPoints}
+	 * a plain {@code CodePointSet}, not {@code PatternConstruct}-valued -- {@link #mergeEntryPoints}
 	 * itself projects its own transient, genuinely-multi-valued merge (needed only to run the
 	 * ambiguity/conflict check with useful per-candidate error messages) down to this once, so no
 	 * caller needs its own separate projection pass, and no caller can accidentally alias a
@@ -241,11 +239,11 @@ abstract class PatternConstruct {
 	 * why that would be a real bug, not just a style concern).
 	 */
 	static final class MergedEntries {
-		final MutableCodePointMap<Boolean> ranges;
+		final CodePointSet.MutableCodePointSet ranges;
 		// Whichever candidate claimed "matches any other character" (at most one is allowed to).
 		final @Nullable PatternConstruct elseCandidate;
 
-		MergedEntries(MutableCodePointMap<Boolean> ranges, @Nullable PatternConstruct elseCandidate) {
+		MergedEntries(CodePointSet.MutableCodePointSet ranges, @Nullable PatternConstruct elseCandidate) {
 			this.ranges = ranges;
 			this.elseCandidate = elseCandidate;
 		}
@@ -333,13 +331,13 @@ abstract class PatternConstruct {
 	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
 		RawMerge raw = mergeEntryPointsRaw(pattern, candidates, candidateNounPlural);
 		// `raw.merged` (genuinely PatternConstruct-valued, needed only for the conflict check above)
-		// is otherwise discarded here -- projected once to plain Boolean values for
+		// is otherwise discarded here -- projected once to a plain CodePointSet for
 		// MergedEntries.ranges (see that field's own doc), rather than every caller doing its own
 		// separate projection pass. `raw.merged`'s ranges are already ascending, so appendSorted's
 		// O(1)-amortized bulk path applies; forEachRange(), not entrySet(), to avoid a
 		// Range/Entry/Iterator allocation per range.
-		MutableCodePointMap<Boolean> ranges = new ArrayCodePointMap<>();
-		raw.merged.forEachRange((min, max, value) -> ranges.appendSorted(min, max, true));
+		CodePointSet.MutableCodePointSet ranges = new ArrayCodePointSet();
+		raw.merged.forEachRange((min, max, value) -> ranges.appendSorted(min, max));
 		return new MergedEntries(ranges, raw.elseCandidate);
 	}
 
@@ -556,7 +554,7 @@ abstract class PatternConstruct {
 			// whole `CodePointMapBuilder`-sort-coalesce-conflict-check pipeline entirely, same as
 			// before: there's nothing to conflict with when there's only one candidate.
 			MergedEntries bodyOnlyResult = body.size() == 1
-					? new MergedEntries(new ArrayCodePointMap<>(), body.get(0).claimsEntryElse() ? body.get(0) : null)
+					? new MergedEntries(new ArrayCodePointSet(), body.get(0).claimsEntryElse() ? body.get(0) : null)
 					: mergeEntryPoints(pattern, body, "loop part");
 			// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
 			// `loopNode` itself; this one's `.matcher` is where LoopMatcherConstruct's "continue"
@@ -629,18 +627,18 @@ abstract class PatternConstruct {
 		}
 
 		/**
-		 * {@code FIRST(body)} as a plain {@code CodePointMap<Boolean>} -- {@link
-		 * LoopMatcherConstruct}'s own membership test for "does the next code point belong to the
-		 * loop body at all?" (as opposed to {@code next}, i.e. exit). Both cases alias an
-		 * already-built map with no copy: a single-element body aliases that element's own
-		 * already-cached entry point directly; a multi-element body aliases {@code
-		 * bodyOnlyResult.ranges} (already Boolean-valued -- see {@link #mergeEntryPoints}'s own doc).
+		 * {@code FIRST(body)} as a plain {@link CodePointSet} -- {@link LoopMatcherConstruct}'s own
+		 * membership test for "does the next code point belong to the loop body at all?" (as opposed
+		 * to {@code next}, i.e. exit). Both cases alias an already-built set with no copy: a
+		 * single-element body aliases that element's own already-cached entry point directly; a
+		 * multi-element body aliases {@code bodyOnlyResult.ranges} (see {@link #mergeEntryPoints}'s
+		 * own doc).
 		 */
-		private static CodePointMap<Boolean> bodyMemberSet(List<PatternConstruct> body, MergedEntries bodyOnlyResult) {
+		private static CodePointSet bodyMemberSet(List<PatternConstruct> body, MergedEntries bodyOnlyResult) {
 			if (body.size() == 1) {
 				return body.get(0).getEntryPointMap();
 			}
-			return bodyOnlyResult.ranges; // already Boolean-valued -- see mergeEntryPoints' own doc.
+			return bodyOnlyResult.ranges;
 		}
 
 		/**
@@ -1081,11 +1079,11 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			// A true leaf -- nothing to alias from -- so this is still a genuinely new (if tiny,
-			// single-entry) map, built via a local mutable variable since entryMap itself is a plain
-			// (non-Mutable) CodePointMap reference now -- see its own doc.
-			MutableCodePointMap<Boolean> map = new ArrayCodePointMap<>();
-			map.put(value.codePointAt(0), true);
-			entryMap = map;
+			// single-entry) set, built via a local mutable variable since entryMap itself is a plain
+			// (non-Mutable) CodePointSet reference now -- see its own doc.
+			CodePointSet.MutableCodePointSet set = new ArrayCodePointSet();
+			set.add(value.codePointAt(0));
+			entryMap = set;
 		}
 
 		@Override
@@ -1113,7 +1111,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			CodePointMap<Boolean> firstChars = firstCharSet(referencedGroup);
+			CodePointSet firstChars = firstCharSet(referencedGroup);
 			if (firstChars == null) {
 				// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
 				// fall back to the catch-all entry set rather than risk silently wrong zero-width
@@ -1121,10 +1119,9 @@ abstract class PatternConstruct {
 				entryElse = this;
 				return;
 			}
-			// Aliased directly -- firstCharSet() already returns a Boolean-valued CodePointMap (often
-			// itself an alias, e.g. straight through to a ComplexCharacter's own validRanges()), and
-			// entryMap's values always being `true` regardless of source (see its own doc) means
-			// there's no identity to lose by sharing it instead of copying its entries.
+			// Aliased directly -- firstCharSet() already returns a plain CodePointSet (often itself an
+			// alias, e.g. straight through to a ComplexCharacter's own validRanges()), so there's no
+			// identity to lose by sharing it instead of copying its entries.
 			entryMap = firstChars;
 		}
 
@@ -1137,28 +1134,28 @@ abstract class PatternConstruct {
 	static final class ComplexCharacter
 			extends PatternConstruct {
 		// Effectively immutable once a ComplexCharacter exists: every constructor below sets this
-		// exactly once, from a map PatternParser finished building beforehand (see
+		// exactly once, from a set PatternParser finished building beforehand (see
 		// PatternParser#parseComplexCharacter's own local `ranges` accumulator) -- so it's typed as
-		// the plain (non-Mutable) CodePointMap here, and can be assigned directly from a
+		// the plain (non-Mutable) CodePointSet here, and can be assigned directly from a
 		// NamedCharClass/RegexCharacterClass static constant with no defensive copy, since nothing
 		// past construction ever mutates it.
-		final CodePointMap<Boolean> ranges;
+		final CodePointSet ranges;
 		@Nullable PatternConstruct dotElse;
 
-		ComplexCharacter(int startIndex, CodePointMap<Boolean> ranges) {
+		ComplexCharacter(int startIndex, CodePointSet ranges) {
 			super(startIndex);
 			this.ranges = ranges;
 		}
 
-		ComplexCharacter(int startIndex, int endIndex, CodePointMap<Boolean> ranges) {
+		ComplexCharacter(int startIndex, int endIndex, CodePointSet ranges) {
 			super(startIndex, endIndex);
 			this.ranges = ranges;
 		}
 
 		ComplexCharacter(int startIndex, int character) {
 			super(startIndex);
-			MutableCodePointMap<Boolean> single = new ArrayCodePointMap<>();
-			single.put(character, character + 1, true);
+			CodePointSet.MutableCodePointSet single = new ArrayCodePointSet();
+			single.add(character, character + 1);
 			this.ranges = single;
 		}
 
@@ -1168,13 +1165,13 @@ abstract class PatternConstruct {
 		 * existed: Guava {@code RangeSet#complement()} (negated classes via {@code [^...]}, {@code .},
 		 * built-ins like {@code \D}/{@code \S}/{@code \W}) produced a mathematically unbounded
 		 * result that could swallow {@code -1}, the sentinel {@code Matcher} uses for "no more input"
-		 * (see {@code Matcher#peek}). {@code CodePointMap}'s else-value-based {@link
-		 * CodePointMap#complement} is always finite over {@code [0, MAX_CODE_POINT]} by construction
-		 * (see its own doc), so no clamping is needed here any more -- {@link
-		 * MatcherConstruct#containsFolded} instead guards {@code -1} directly, since a
-		 * else-valued {@code ranges} would otherwise report it a "member" via the fill.
+		 * (see {@code Matcher#peek}). {@link CodePointSet}'s {@link CodePointSet#complement} is
+		 * always finite over {@code [0, MAX_CODE_POINT]} by construction (see its own doc), so no
+		 * clamping is needed here any more -- {@link MatcherConstruct#containsFolded} instead guards
+		 * {@code -1} directly, since an inverted {@code ranges} would otherwise report it a "member"
+		 * via the fill.
 		 */
-		CodePointMap<Boolean> validRanges() {
+		CodePointSet validRanges() {
 			return ranges;
 		}
 
@@ -1183,7 +1180,7 @@ abstract class PatternConstruct {
 			// A true leaf, and never recursive -- push directly from `ranges` rather than going
 			// through getEntryPointMap()/ensureEntryPointBuilt (which would just return this same
 			// data anyway, since entryMap is aliased straight to validRanges() below).
-			validRanges().forEachRange((min, max, value) -> builder.add(min, max, tag));
+			validRanges().forEachRange((min, max) -> builder.add(min, max, tag));
 		}
 
 		@Override
@@ -1336,7 +1333,7 @@ abstract class PatternConstruct {
 		// Sequence.buildEntryMap (via lastCharSet(), below) before compile() runs; null (the
 		// default, e.g. when this boundary opens its Sequence, or isn't in one at all) means "not
 		// statically known", which is always a safe fallback, just a missed optimization.
-		@Nullable CodePointMap<Boolean> priorCharSet;
+		@Nullable CodePointSet priorCharSet;
 
 		WordBoundaryConstruct(String pattern, int startIndex, int endIndex, boolean isWordBoundary) {
 			super(startIndex, endIndex);
@@ -1356,18 +1353,18 @@ abstract class PatternConstruct {
 		}
 
 		/** True if every code point in {@code a} is also in {@code b}. */
-		private static boolean isSubsetOf(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
+		private static boolean isSubsetOf(CodePointSet a, CodePointSet b) {
 			// first(), not entrySet(), so a violation short-circuits instead of scanning the rest of
-			// `a` regardless -- see CodePointMap#first's own doc.
-			return !a.first((min, max, value) -> !b.containsKeys(min, max));
+			// `a` regardless -- see CodePointSet#first's own doc.
+			return !a.first((min, max) -> !b.containsAll(min, max));
 		}
 
 		/** True if no code point in {@code a} is also in {@code b}. */
-		private static boolean isDisjointFrom(CodePointMap<Boolean> a, CodePointMap<Boolean> b) {
-			return !a.first((min, max, value) -> !b.intersection(min, max).isEmpty());
+		private static boolean isDisjointFrom(CodePointSet a, CodePointSet b) {
+			return !a.first((min, max) -> !b.intersection(min, max).isEmpty());
 		}
 
-		private static Wordness classify(@Nullable CodePointMap<Boolean> set, CodePointMap<Boolean> wordSet) {
+		private static Wordness classify(@Nullable CodePointSet set, CodePointSet wordSet) {
 			if (set == null) {
 				return Wordness.UNKNOWN;
 			}
@@ -1391,11 +1388,11 @@ abstract class PatternConstruct {
 			// of the boundary (the character just consumed, and the one about to be) are classified
 			// as always-word/always-non-word/unknown at compile time; whichever side is statically
 			// known doesn't need to be checked at match time at all.
-			CodePointMap<Boolean> wordSet = RegexCharacterClass.w.get(flags);
+			CodePointSet wordSet = RegexCharacterClass.w.get(flags);
 			Wordness prior = classify(priorCharSet, wordSet);
-			// next's own entry-point map is already exactly a CodePointMap<Boolean> -- no separate
+			// next's own entry-point map is already exactly a plain CodePointSet -- no separate
 			// RangeSet needs building here any more.
-			CodePointMap<Boolean> peekRanges = next.getEntryElse() == null ? next.getEntryPointMap() : null;
+			CodePointSet peekRanges = next.getEntryElse() == null ? next.getEntryPointMap() : null;
 			Wordness peek = classify(peekRanges, wordSet);
 
 			if (prior != Wordness.UNKNOWN && peek != Wordness.UNKNOWN) {
@@ -1458,7 +1455,7 @@ abstract class PatternConstruct {
 	 * simply not recognizing the construct -- rather than chasing what an earlier sibling might
 	 * contribute in that case; that's always a safe fallback, just a missed optimization.
 	 */
-	static @Nullable CodePointMap<Boolean> lastCharSet(PatternConstruct pc) {
+	static @Nullable CodePointSet lastCharSet(PatternConstruct pc) {
 		if (pc instanceof LiteralString) {
 			String value = ((LiteralString) pc).value;
 			if (value.isEmpty()) {
@@ -1479,13 +1476,13 @@ abstract class PatternConstruct {
 			if (union.min < 1 || union.constructs.isEmpty()) {
 				return null;
 			}
-			MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+			CodePointSet.MutableCodePointSet result = new ArrayCodePointSet();
 			for (PatternConstruct branch : union.constructs) {
-				CodePointMap<Boolean> branchSet = lastCharSet(branch);
+				CodePointSet branchSet = lastCharSet(branch);
 				if (branchSet == null) {
 					return null;
 				}
-				result.putAll(branchSet);
+				result.addAll(branchSet);
 			}
 			return result;
 		}
@@ -1496,9 +1493,9 @@ abstract class PatternConstruct {
 		return null;
 	}
 
-	private static CodePointMap<Boolean> singletonCodePointMap(int codePoint) {
-		MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
-		result.put(codePoint, codePoint + 1, true);
+	private static CodePointSet singletonCodePointMap(int codePoint) {
+		CodePointSet.MutableCodePointSet result = new ArrayCodePointSet();
+		result.add(codePoint, codePoint + 1);
 		return result;
 	}
 
@@ -1510,7 +1507,7 @@ abstract class PatternConstruct {
 	 * exactly the referenced group's possible first characters. Returns null ("not statically
 	 * known") for anything that could match zero-width, same safe fallback as {@code lastCharSet}.
 	 */
-	static @Nullable CodePointMap<Boolean> firstCharSet(PatternConstruct pc) {
+	static @Nullable CodePointSet firstCharSet(PatternConstruct pc) {
 		if (pc instanceof LiteralString) {
 			String value = ((LiteralString) pc).value;
 			return value.isEmpty() ? null : singletonCodePointMap(value.codePointAt(0));
@@ -1527,13 +1524,13 @@ abstract class PatternConstruct {
 			if (union.min < 1 || union.constructs.isEmpty()) {
 				return null;
 			}
-			MutableCodePointMap<Boolean> result = new ArrayCodePointMap<>();
+			CodePointSet.MutableCodePointSet result = new ArrayCodePointSet();
 			for (PatternConstruct branch : union.constructs) {
-				CodePointMap<Boolean> branchSet = firstCharSet(branch);
+				CodePointSet branchSet = firstCharSet(branch);
 				if (branchSet == null) {
 					return null;
 				}
-				result.putAll(branchSet);
+				result.addAll(branchSet);
 			}
 			return result;
 		}

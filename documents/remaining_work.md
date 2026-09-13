@@ -301,20 +301,35 @@ actually needed again.
       `mergeEntryPoints`'s conflict-error-reporting path (candidate index, offending range) would
       need an equivalent for the direct-comparison path too.
 
-## Fork-chain dispatch (2026-09-11) -- steps 2 and 3 of the performance plan
+## Fork-chain dispatch (2026-09-11/12) -- the performance plan
 
-Step 1 done this session: `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
+Step 1 (2026-09-11): `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
 `CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) is gone, replaced by chains of a
 new `ForkingMatcherConstruct` (a plain 2-way fork on set membership) for unions and a quantified
 construct's own entry point, plus a related but separate `LoopMatcherConstruct` for a loop's own
 continue-vs-exit choice -- see design.md's "Quantifier/loop compilation" and "Opcode set" sections,
 and notes.md's 2026-09-11 entry for the case-insensitive priority bug this surfaced and fixed along
-the way. Full suite green (1501 tests, 0 failing, 561 skipped).
+the way.
 
-- [ ] **Step 2**: now that nothing builds a `CodePointMap<MatcherConstruct>` dispatch table any
-      more, shrink `CodePointMap<Boolean>` (`entryMap`, character-class ranges, `ForkingMatcherConstruct
-      .memberSet`) down to a leaner `CodePointSet` (no `V[] values` array, since every real value is
-      always `true`) -- cuts memory/writes further. Not started.
-- [ ] **Step 3** (experimental, blocked on step 2): a `CodePointSet` implementation that's the union
-      of two delegate sets, so `ComplexCharacter` can reference a `NamedChars` set by union instead
-      of copying its entries in. Not started.
+Step 2 (2026-09-12): every `CodePointMap<Boolean>` production use (`PatternConstruct.entryMap`,
+`ComplexCharacter.ranges`, `ForkingMatcherConstruct.memberSet`/`LoopMatcherConstruct.memberSet`/
+`exitSet`, `WordBoundaryConstruct`'s word-set classification, every `NamedCharClass`/
+`UnicodePredicates` constant) is now a plain `CodePointSet`/`ArrayCodePointSet` -- no `V[] values`
+array, and `complement()` is a flag flip (`invert`) instead of a real rebuild. `UnicodeAnalyzer`
+(the `unicodeanalyzer` module's generator) updated to emit `CodePointSet` fields directly;
+`UnicodePredicates.java` regenerated. `ArrayCodePointMap<V>`/`CodePointMap<V>` remain in use only
+where a real multi-valued map is still needed: `mergeEntryPointsRaw`'s transient
+`PatternConstruct`-valued ambiguity-check merge, and the general-purpose `String`-valued test
+oracle (`TreeCodePointMap`/`CodePointMapDifferentialTest`). See notes.md's 2026-09-12 entry for a
+real bug found along the way (a private "complement" constructor overload silently shadowing the
+public copy constructor for any same-class argument -- fixed via a static factory instead of a
+constructor overload).
+
+- [ ] **Step 3** (experimental): a `CodePointSet` implementation that's the union of two delegate
+      sets, so `ComplexCharacter` can reference a `NamedChars` set by union instead of copying its
+      entries in. Not started.
+- [ ] Re-run the on-device Pixel 3a benchmark to measure step 2's actual effect there and keep it in
+      sync with the desktop numbers above -- desktop JMH already re-run (`llkCompile` 0.457 -> 0.353
+      ms/op, `gc.alloc.rate.norm` 1,297,456 -> 1,073,368 B/op; `llkMatch` unchanged within noise, as
+      expected since step 2 only touches compile-time structure-building), but the device needs
+      plugging in and unlocking first.

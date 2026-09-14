@@ -1,5 +1,11 @@
 package com.tbohne.llkpattern;
 
+import static com.tbohne.llkpattern.SupplementaryChars.A;
+import static com.tbohne.llkpattern.SupplementaryChars.B;
+import static com.tbohne.llkpattern.SupplementaryChars.C;
+import static com.tbohne.llkpattern.SupplementaryChars.D;
+import static com.tbohne.llkpattern.SupplementaryChars.Z;
+import static com.tbohne.llkpattern.SupplementaryChars.repeat;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -9,7 +15,14 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/** End-to-end matches()/group() tests for quantifier (loop) and capture-group compilation. */
+/**
+ * End-to-end matches()/group() tests for quantifier (loop) and capture-group compilation.
+ *
+ * <p>Uses SupplementaryChars' A-Z (supplementary/astral code points) in place of the plain ASCII
+ * letters this file originally used -- see SupplementaryPatternTextTest for why exercising the
+ * parser's own lookahead across a multi-code-unit character matters here specifically (quantifier
+ * suffixes, capture-group boundaries, loop entry/exit dispatch).
+ */
 @RunWith(JUnit4.class)
 public class QuantifierAndCaptureTest {
 
@@ -21,63 +34,63 @@ public class QuantifierAndCaptureTest {
 
   @Test
   public void star_zeroOccurrences_matches() {
-    assertThat(matches("a*", ""), is(true));
+    assertThat(matches(A + "*", ""), is(true));
   }
 
   @Test
   public void star_manyOccurrences_matches() {
-    assertThat(matches("a*", "aaa"), is(true));
+    assertThat(matches(A + "*", repeat(A, 3)), is(true));
   }
 
   @Test
   public void star_followedByLiteral_choosesCorrectExit() {
-    assertThat(matches("a*b", "aaab"), is(true));
-    assertThat(matches("a*b", "b"), is(true));
+    assertThat(matches(A + "*" + B, repeat(A, 3) + B), is(true));
+    assertThat(matches(A + "*" + B, B), is(true));
   }
 
   // --- Plus (+): one or more ---
 
   @Test
   public void plus_zeroOccurrences_fails() {
-    assertThat(matches("a+", ""), is(false));
+    assertThat(matches(A + "+", ""), is(false));
   }
 
   @Test
   public void plus_oneOrMoreOccurrences_matches() {
-    assertThat(matches("a+", "a"), is(true));
-    assertThat(matches("a+", "aaa"), is(true));
+    assertThat(matches(A + "+", A), is(true));
+    assertThat(matches(A + "+", repeat(A, 3)), is(true));
   }
 
   // --- Optional (?): zero or one ---
 
   @Test
   public void optional_zeroOccurrences_matches() {
-    assertThat(matches("a?", ""), is(true));
+    assertThat(matches(A + "?", ""), is(true));
   }
 
   @Test
   public void optional_oneOccurrence_matches() {
-    assertThat(matches("a?", "a"), is(true));
+    assertThat(matches(A + "?", A), is(true));
   }
 
   // --- Bounded ({n,m}) ---
 
   @Test
   public void bounded_belowMin_fails() {
-    assertThat(matches("a{2,3}", "a"), is(false));
+    assertThat(matches(A + "{2,3}", A), is(false));
   }
 
   @Test
   public void bounded_withinRange_matches() {
-    assertThat(matches("a{2,3}", "aa"), is(true));
-    assertThat(matches("a{2,3}", "aaa"), is(true));
+    assertThat(matches(A + "{2,3}", repeat(A, 2)), is(true));
+    assertThat(matches(A + "{2,3}", repeat(A, 3)), is(true));
   }
 
   @Test
   public void bounded_aboveMax_fails() {
     // Also guards against the {n,m} parser bug (fixed alongside this) where the second number
     // silently overwrote the first instead of setting max, making every bound effectively {m,m}.
-    assertThat(matches("a{2,3}", "aaaa"), is(false));
+    assertThat(matches(A + "{2,3}", repeat(A, 4)), is(false));
   }
 
   // --- Alternation inside a loop ---
@@ -86,52 +99,54 @@ public class QuantifierAndCaptureTest {
   public void loopOfAlternation_matchesEitherBranchRepeatedly() {
     // Non-capturing (?:...) -- a plain (a|b)* is *also* a capturing group by default, which hits
     // the "capturing and quantified at once" case tested separately below.
-    assertThat(matches("(?:a|b)*c", "abbac"), is(true));
-    assertThat(matches("(?:a|b)*c", "c"), is(true));
+    assertThat(matches("(?:" + A + "|" + B + ")*" + C, A + B + B + A + C), is(true));
+    assertThat(matches("(?:" + A + "|" + B + ")*" + C, C), is(true));
   }
 
   @Test
   public void loopOfAlternation_ambiguousBranches_stillRejectedAtCompileTime() {
-    assertThrows(java.util.regex.PatternSyntaxException.class, () -> Ll1Pattern.compile("(?:ab|ac)*d"));
+    assertThrows(
+        java.util.regex.PatternSyntaxException.class,
+        () -> Ll1Pattern.compile("(?:" + A + B + "|" + A + C + ")*" + D));
   }
 
   // --- Capturing groups (non-quantified) ---
 
   @Test
   public void capturingGroup_recordsMatchedSubstring() {
-    Matcher m = Ll1Pattern.compile("(a)").matcher("a");
+    Matcher m = Ll1Pattern.compile("(" + A + ")").matcher(A);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("a"));
+    assertThat(m.group(1), is(A));
   }
 
   @Test
   public void capturingGroup_recordsWhicheverAlternationBranchMatched() {
-    Matcher m = Ll1Pattern.compile("(a|b)c").matcher("bc");
+    Matcher m = Ll1Pattern.compile("(" + A + "|" + B + ")" + C).matcher(B + C);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("b"));
+    assertThat(m.group(1), is(B));
   }
 
   @Test
   public void capturingGroup_inMiddleOfSequence_recordsOnlyItsOwnSubstring() {
-    Matcher m = Ll1Pattern.compile("a(b)c").matcher("abc");
+    Matcher m = Ll1Pattern.compile(A + "(" + B + ")" + C).matcher(A + B + C);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("b"));
+    assertThat(m.group(1), is(B));
   }
 
   @Test
   public void nonCapturingGroup_matchesWithoutRecordingAnything() {
-    Matcher m = Ll1Pattern.compile("(?:a)b").matcher("ab");
+    Matcher m = Ll1Pattern.compile("(?:" + A + ")" + B).matcher(A + B);
     assertThat(m.matches(), is(true));
     assertThat(m.groupCount(), is(0));
   }
 
   @Test
   public void namedCapturingGroup_accessibleByName() {
-    Matcher m = Ll1Pattern.compile("(?<letter>a)").matcher("a");
+    Matcher m = Ll1Pattern.compile("(?<letter>" + A + ")").matcher(A);
     assertThat(m.matches(), is(true));
-    assertThat(m.group("letter"), is("a"));
+    assertThat(m.group("letter"), is(A));
     assertThat(m.start("letter"), is(0));
-    assertThat(m.end("letter"), is(1));
+    assertThat(m.end("letter"), is(A.length()));
   }
 
   // --- Capturing AND quantified at once (e.g. "(a)*") ---
@@ -140,29 +155,29 @@ public class QuantifierAndCaptureTest {
   public void capturingAndQuantifiedGroup_recordsLastIterationOnly() {
     // Real regex semantics: (a)* captures whichever iteration matched last, not the first or a
     // concatenation of all of them.
-    Matcher m = Ll1Pattern.compile("(a)*").matcher("aaa");
+    Matcher m = Ll1Pattern.compile("(" + A + ")*").matcher(repeat(A, 3));
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("a"));
+    assertThat(m.group(1), is(A));
   }
 
   @Test
   public void capturingAndQuantifiedGroup_zeroIterations_leavesCaptureUnset() {
-    Matcher m = Ll1Pattern.compile("(a)*").matcher("");
+    Matcher m = Ll1Pattern.compile("(" + A + ")*").matcher("");
     assertThat(m.matches(), is(true));
     assertThat(m.group(1), nullValue());
   }
 
   @Test
   public void capturingAndQuantifiedGroup_ofAlternation_recordsLastMatchedBranch() {
-    Matcher m = Ll1Pattern.compile("(a|b)*").matcher("abba");
+    Matcher m = Ll1Pattern.compile("(" + A + "|" + B + ")*").matcher(A + B + B + A);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("a"));
+    assertThat(m.group(1), is(A));
   }
 
   @Test
   public void capturingAndQuantifiedGroup_followedByLiteral_stillChoosesCorrectExit() {
-    assertThat(matches("(a)*b", "aaab"), is(true));
-    assertThat(matches("(a)*b", "b"), is(true));
+    assertThat(matches("(" + A + ")*" + B, repeat(A, 3) + B), is(true));
+    assertThat(matches("(" + A + ")*" + B, B), is(true));
   }
 
   // --- A quantified/loop construct immediately followed by a COMPOSITE (non-leaf) construct --
@@ -174,32 +189,32 @@ public class QuantifierAndCaptureTest {
 
   @Test
   public void quantifiedGroup_followedByCapturingGroup_zeroIterations_choosesCorrectExit() {
-    Matcher m = Ll1Pattern.compile("(a)(b)*(z)").matcher("az");
+    Matcher m = Ll1Pattern.compile("(" + A + ")(" + B + ")*(" + Z + ")").matcher(A + Z);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("a"));
+    assertThat(m.group(1), is(A));
     assertThat(m.group(2), nullValue());
-    assertThat(m.group(3), is("z"));
+    assertThat(m.group(3), is(Z));
   }
 
   @Test
   public void quantifiedGroup_followedByCapturingGroup_someIterations_choosesCorrectExit() {
-    Matcher m = Ll1Pattern.compile("(a)(b)*(z)").matcher("abbbz");
+    Matcher m = Ll1Pattern.compile("(" + A + ")(" + B + ")*(" + Z + ")").matcher(A + B + B + B + Z);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("a"));
-    assertThat(m.group(2), is("b"));
-    assertThat(m.group(3), is("z"));
+    assertThat(m.group(1), is(A));
+    assertThat(m.group(2), is(B));
+    assertThat(m.group(3), is(Z));
   }
 
   @Test
   public void quantifiedGroup_followedByNonCapturingGroup_choosesCorrectExit() {
-    assertThat(matches("(b)*(?:zz)", "zz"), is(true));
-    assertThat(matches("(b)*(?:zz)", "bbbzz"), is(true));
+    assertThat(matches("(" + B + ")*(?:" + Z + Z + ")", Z + Z), is(true));
+    assertThat(matches("(" + B + ")*(?:" + Z + Z + ")", repeat(B, 3) + Z + Z), is(true));
   }
 
   @Test
   public void quantifiedGroup_followedByMultiLiteralSequence_choosesCorrectExit() {
-    assertThat(matches("(b)*cd", "cd"), is(true));
-    assertThat(matches("(b)*cd", "bbcd"), is(true));
+    assertThat(matches("(" + B + ")*" + C + D, C + D), is(true));
+    assertThat(matches("(" + B + ")*" + C + D, B + B + C + D), is(true));
   }
 
   // --- Dot (.) quantified -- see remaining_work.md's dated bug entry: PatternParser used to check
@@ -215,39 +230,39 @@ public class QuantifierAndCaptureTest {
 
   @Test
   public void dotStar_matchesZeroOrMoreOfAnyCharacter() {
-    assertThat(matches("a.*", "a"), is(true));
-    assertThat(matches("a.*", "abbb"), is(true));
+    assertThat(matches(A + ".*", A), is(true));
+    assertThat(matches(A + ".*", A + "bbb"), is(true));
     // Would have (wrongly) required the literal text "*" (as a 1-character match) before this fix.
-    assertThat(matches("a.*", "a*"), is(true));
-    assertThat(matches("a*", "a*"), is(false)); // sanity check: "a*" alone does NOT match "a*"
+    assertThat(matches(A + ".*", A + "*"), is(true));
+    assertThat(matches(A + "*", A + "*"), is(false)); // sanity check: "a*" alone does NOT match "a*"
   }
 
   @Test
   public void dotPlus_requiresAtLeastOneCharacter() {
-    assertThat(matches("a.+", "a"), is(false));
-    assertThat(matches("a.+", "ab"), is(true));
+    assertThat(matches(A + ".+", A), is(false));
+    assertThat(matches(A + ".+", A + B), is(true));
   }
 
   @Test
   public void dotQuestion_matchesZeroOrOneCharacter() {
-    assertThat(matches("a.?", "a"), is(true));
-    assertThat(matches("a.?", "ab"), is(true));
-    assertThat(matches("a.?", "abb"), is(false));
+    assertThat(matches(A + ".?", A), is(true));
+    assertThat(matches(A + ".?", A + B), is(true));
+    assertThat(matches(A + ".?", A + B + B), is(false));
   }
 
   @Test
   public void dotBraceQuantifier_honorsExplicitBounds() {
-    assertThat(matches("a.{2}", "abb"), is(true));
-    assertThat(matches("a.{2}", "ab"), is(false));
+    assertThat(matches(A + ".{2}", A + "bb"), is(true));
+    assertThat(matches(A + ".{2}", A + "b"), is(false));
   }
 
   @Test
   public void dotQuantifier_ambiguousWithFollowingLiteral_rejectedAtCompileTime() {
-    // "." (which matches 'z' too) competing with a following literal 'z' for the same next
-    // character is exactly as ambiguous as "[a-z]+z" -- both must be compile-time errors, not a
-    // silently-wrong match.
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".*z"));
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".+z"));
+    // "." (which matches Z too) competing with a following literal Z for the same next character
+    // is exactly as ambiguous as "[a-z]+z" -- both must be compile-time errors, not a silently-
+    // wrong match.
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".*" + Z));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".+" + Z));
   }
 
   // --- Three specific ambiguity shapes the project owner asked to confirm are covered: a plain
@@ -261,7 +276,7 @@ public class QuantifierAndCaptureTest {
     // "a" and "ab" both start with 'a' -- same overlap as "ab|ac" (see
     // PatternParserTest#compile_ambiguousAlternation_throwsPatternSyntaxException), but here one
     // branch is a strict prefix of the other rather than just sharing a first character.
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a|ab"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(A + "|" + A + B));
   }
 
   @Test
@@ -271,7 +286,7 @@ public class QuantifierAndCaptureTest {
     // following "a"'s entry set both claim 'a', so skipping "a?" is indistinguishable from matching
     // it. This is QuantifiableConstruct.buildLoopEntryMap's min==0 body-vs-next merge, not a union's
     // branch-vs-branch merge (see the two tests above/below for those).
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a?a"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(A + "?" + A));
   }
 
   @Test
@@ -280,7 +295,7 @@ public class QuantifierAndCaptureTest {
     // (not a single code point or an else-value "everything" map like "."/".*z" above) -- this is
     // the one that actually needs a genuine CodePointMap range intersection, not just a single
     // code point or else-value comparison, to detect that 'a' is claimed by both sides.
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("[ab]?a"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("[" + A + B + "]?" + A));
   }
 
   // --- Nested quantified/loop constructs -- see remaining_work.md's former "Core implementation"
@@ -292,19 +307,19 @@ public class QuantifierAndCaptureTest {
   public void loopContainingAnotherLoop_matchesSingleIteration() {
     // The minimal repro from remaining_work.md: a single iteration of the outer "+" ("a" with the
     // optional "b" absent) should trivially succeed.
-    assertThat(matches("(a(b)?)+", "a"), is(true));
+    assertThat(matches("(" + A + "(" + B + ")?)+", A), is(true));
   }
 
   @Test
   public void loopContainingAnotherLoop_matchesMultipleIterations() {
-    assertThat(matches("(a(b)?)+", "aabab"), is(true));
-    assertThat(matches("(a(b)?)+", "aaa"), is(true));
+    assertThat(matches("(" + A + "(" + B + ")?)+", A + A + B + A + B), is(true));
+    assertThat(matches("(" + A + "(" + B + ")?)+", repeat(A, 3)), is(true));
   }
 
   @Test
   public void loopContainingAnotherLoop_nonCapturing_stillMatches() {
-    assertThat(matches("(?:ab?)+", "a"), is(true));
-    assertThat(matches("(?:ab?)+", "ababa"), is(true));
+    assertThat(matches("(?:" + A + B + "?)+", A), is(true));
+    assertThat(matches("(?:" + A + B + "?)+", A + B + A + B + A), is(true));
   }
 
   @Test
@@ -313,7 +328,7 @@ public class QuantifierAndCaptureTest {
     // would require itself to already be known -- a genuine cycle, and also an infinite-loop
     // hazard in its own right (an iteration that consumes nothing). Must be a compile-time error,
     // not a stack overflow or a silently-wrong dispatch.
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(a?)+"));
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?:a?)+"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(" + A + "?)+"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?:" + A + "?)+"));
   }
 }

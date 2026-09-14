@@ -87,7 +87,16 @@ final class PatternParser {
   private final String pattern;
   private int flags;
   private int index;
-  private char peek;
+  // Bug fix (2026-09-14): was `char`, which can't hold a supplementary code point at all -- every
+  // assignment below used to read `pattern.charAt(index)`, a lone surrogate half whenever `index`
+  // sits on a supplementary character, not the real code point. Every dispatch site in this file
+  // compares `peek` only against fixed ASCII tokens, which happens to make a stale surrogate half
+  // compare as "no match" the same way a real supplementary code point would -- but
+  // parseComplexEscape's `RegexCharacterClass.valueOf(Character.toString(peek))` invalid-escape-name
+  // lookup (and its error message) genuinely used `peek`'s numeric value, and got the wrong one for
+  // "\" followed directly by a supplementary character. See codePointAt()/advanceCodePoint()/
+  // advance() below -- every `peek` assignment now goes through pattern.codePointAt, never charAt.
+  private int peek;
   private int quantifiableIndex;
   private int captureConstructIndex;
   // \G doesn't match any specific position in the input -- per the project owner (2026-09-07),
@@ -111,7 +120,7 @@ final class PatternParser {
   PatternParser(String pattern, int flags) {
     this.pattern = pattern;
     index = 0;
-    peek = pattern.length() > 0 ? pattern.charAt(0) : '\0';
+    peek = codePointAt(0);
     this.flags = flags;
     quantifiableIndex = 0;
     captureConstructIndex = 0;
@@ -137,17 +146,35 @@ final class PatternParser {
     return anchorsToPreviousMatchEnd;
   }
 
+  // `'\0'` (rather than -1) is the sentinel for "past the end of the pattern" throughout this
+  // class, matching every literal '\0' comparison/switch-case against `peek` below -- consistent
+  // with `advance`/`advanceCodePoint`'s own prior behavior, just centralized here so every `peek`
+  // assignment goes through pattern.codePointAt, never charAt (see `peek`'s own field doc for why
+  // that distinction matters for a supplementary code point).
+  private int codePointAt(int i) {
+    return i < pattern.length() ? pattern.codePointAt(i) : '\0';
+  }
+
   private void advanceCodePoint() {
     // offsetByCodePoints(index, 1) already returns the new absolute index one code point past
     // `index` -- it's not a delta to add to `index` (that was the bug: it double-advanced every
     // call after the first, since index==0 made `index += offset` and `index = offset` coincide).
     index = pattern.offsetByCodePoints(index, 1);
-    peek = index < pattern.length() ? pattern.charAt(index) : '\0';
+    peek = codePointAt(index);
   }
 
   private void advance(int count) {
     index += count;
-    peek = index < pattern.length() ? pattern.charAt(index) : '\0';
+    peek = codePointAt(index);
+  }
+
+  // The code point right after `peek` -- unlike `index + 1`, correctly skips a supplementary
+  // `peek` (2 code units) rather than landing on its low surrogate half. Every call site computes
+  // this immediately after confirming peek == '\\' (always 1 code unit), so this is equivalent to
+  // codePointAt(index + 1) in practice today -- but computed the fully-general way via
+  // Character.charCount(peek) rather than assuming that, consistent with `peek`'s own fix above.
+  private int peekAfter() {
+    return codePointAt(index + Character.charCount(peek));
   }
 
   /**
@@ -167,10 +194,16 @@ final class PatternParser {
     }
     for (; ; ) {
       if (Character.isWhitespace(peek)) {
-        advance(1);
+        // advanceCodePoint(), not advance(1) -- this skips arbitrary pattern text (not a fixed
+        // ASCII token), which could in principle be a supplementary character (no such code point
+        // is actually flagged Unicode whitespace today, but there's no reason to assume that
+        // forever, and advanceCodePoint() costs nothing extra when it doesn't matter).
+        advanceCodePoint();
       } else if (peek == '#') {
+        // Same reasoning: a comment body is arbitrary pattern text up to the next '\n', which can
+        // genuinely contain a supplementary character.
         while (peek != '\n' && peek != '\0') {
-          advance(1);
+          advanceCodePoint();
         }
       } else {
         return;
@@ -478,7 +511,7 @@ final class PatternParser {
             if ((enableFlags & flagValue) != 0) {
               throw throwUnexpectedChar(
                   "It doesn't make sense for a group to enable the same flag \"",
-                  peek,
+                  new CodePoint(peek),
                   "\" multiple times.");
             }
             enableFlags |= flagValues[flagIdx];
@@ -491,13 +524,13 @@ final class PatternParser {
               if ((enableFlags & flagValue) != 0) {
                 throw throwUnexpectedChar(
                     "It doesn't make sense for a group and disable the same flag \"",
-                    peek,
+                    new CodePoint(peek),
                     "\" at the same time.");
               }
               if ((disableFlags & flagValue) != 0) {
                 throw throwUnexpectedChar(
                     "It doesn't make sense for a group to disable the same flag \"",
-                    peek,
+                    new CodePoint(peek),
                     "\" multiple times.");
               }
               disableFlags |= flagValues[flagIdx];
@@ -743,7 +776,7 @@ final class PatternParser {
     if (peek != '\\') {
       throw new IllegalStateException("entered tryParseSingleCharEscape at illegal start point");
     }
-    int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
+    int peek2 = peekAfter();
     if (META_CHARACTERS.indexOf(peek2) >= 0) {
       advance(2);
       return peek2;
@@ -867,7 +900,7 @@ final class PatternParser {
     if (peek != '\\') {
       throw new IllegalStateException("entered tryParseBoundary at illegal start point");
     }
-    int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
+    int peek2 = peekAfter();
     switch (peek2) {
       case 'b': {
         advance(2);
@@ -919,7 +952,7 @@ final class PatternParser {
     if (peek != '\\') {
       throw new IllegalStateException("entered tryParseBackReference at illegal start point");
     }
-    int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
+    int peek2 = peekAfter();
     if (peek2 >= '1' && peek2 <= '9') {
       int startIndex = index;
       int groupNumber = peek2 - '0';
@@ -1005,8 +1038,13 @@ final class PatternParser {
         advance(1);
         return result;
       } catch (IllegalArgumentException e) {
+        // Bug fix (2026-09-14): was string-concatenated directly ("escape \"" + peek + "\" ..."),
+        // which rendered as `peek`'s raw int value (e.g. "escape "68" not in...") now that `peek`
+        // is int-typed rather than char-typed -- wrap in CodePoint instead, same as every other
+        // character embedded in an exception message in this file.
         throw throwUnexpectedChar(
-            "escape \"" + peek + "\" not in [dDhHsSvVwWR]. Is it a non-standard regex escape?");
+            "escape \"", new CodePoint(peek), "\" not in [dDhHsSvVwWR]. Is it a non-standard "
+                + "regex escape?");
       }
     }
     // All the rest of this method is parsing named character classes
@@ -1054,19 +1092,16 @@ final class PatternParser {
     // actually typed, not the stripped-down name used for the NamedCharClass.valueOf() lookup.
     String originalCharClassName = charClassName;
     advance(end - index + 1);
-    // Bounds-checked like every other lookahead-by-one in this file (e.g.
-    // tryParseSingleCharEscape's own `peek2`) -- unguarded, this crashed with
-    // StringIndexOutOfBoundsException whenever a "\p{...}"/"\P{...}" construct was the very last
-    // thing in the pattern (index + 1 == pattern.length()), e.g. the bare pattern "\p{Cs}".
-    int peek2 = index + 1 < pattern.length() ? pattern.charAt(index + 1) : '\0';
-    // Bug fix (2026-09-06): this used to branch on `peek`/`peek2`, but `advance(end - index + 1)`
+    // Bug fix (2026-09-06): this used to branch on `peek`/`peek2` (a lookahead-by-one past `index`,
+    // bounds-checked the same way every other one in this file is), but `advance(end - index + 1)`
     // just above already moved the parser's lookahead PAST the whole "\p{...}" construct -- so
     // `peek`/`peek2` were actually the character(s) *following* the escape, not the first
     // character(s) of the class name, making every Is/In/java-prefixed class (\p{IsAlphabetic},
     // \p{javaLowerCase}, etc.) fail with "unknown named character class" unless the pattern text
     // happened to coincidentally continue with 'I'/'j'. Fixed to check `charClassName` itself
     // (captured before the advance), which is what these prefixes are actually part of. See
-    // remaining_work.md.
+    // remaining_work.md. `peek2` itself was dead (never read after being assigned) -- removed
+    // rather than left as an unused local.
     // Bare "Digit" needs no special-casing here -- NamedCharClass.Digit itself accepts both the
     // `none` prefix (this branch, ASCII-default/flag-sensitive) and `is` (always full-Unicode,
     // see NamedCharClass.Digit's own doc for why it's the one name that needs both).

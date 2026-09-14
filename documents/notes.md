@@ -1813,6 +1813,55 @@ Notes to self about how to work on this project, and other context that doesn't 
   re-running brought all four back in line with the baseline. Worth trying first whenever a desktop
   JMH run looks suspiciously uniformly worse across every benchmark, `regex*` included.
 
+### Fixed `PatternParser.peek`/`peek2`'s code-point bug (2026-09-14)
+
+- Followed up on the 2026-09-13 CPU-sampling finding (`peek`'s field type, `char`, can't hold a
+  supplementary code point -- see remaining_work.md's former "HIGHEST PRIORITY" entry, now removed).
+  Audited every `charAt`/lookahead site in `PatternParser.java` before touching anything (there are
+  dozens): almost all of them turned out to already be safe by construction, not by luck fixed here
+  -- every real literal-character VALUE extraction already went through `pattern.codePointAt(index)`
+  directly (never trusted `peek`'s own numeric value as data), and every comparison against `peek`
+  is against a fixed ASCII token, which a stale lone-surrogate `char` value can never accidentally
+  equal (so dispatch was already correct too). The one genuine, observable bug: `parseComplexEscape`'s
+  invalid-escape-name path did `RegexCharacterClass.valueOf(Character.toString(peek))` and then
+  embedded `peek` directly in the thrown message -- for `"\" + <supplementary char>` (not a
+  recognized escape form), this used only the char's high-surrogate half, both as the (wrong) lookup
+  key and in the error text.
+- Changed `peek`'s field type to `int`, added a `codePointAt(int)` helper (bounds-checked,
+  `'\0'`-sentinel, same convention as before) that every `peek` assignment (constructor,
+  `advanceCodePoint()`, `advance(int)`) now goes through instead of `charAt`, and a `peekAfter()`
+  helper (`codePointAt(index + Character.charCount(peek))`, not `index + 1`) for the three real
+  `peek2`-style one-ahead lookaheads (`tryParseSingleCharEscape`, `tryParseBoundary`,
+  `tryParseBackReference` -- all three already only ever compute it right after confirming
+  `peek == '\\'`, so this is equivalent to the old `index + 1` in every real case, just computed the
+  fully-general way). Found and deleted a 4th, dead `peek2` local in `parseComplexEscape`'s
+  `\p{...}` handling -- assigned, explained in a comment referencing a 2026-09-06 bug fix, but never
+  actually read afterward.
+- Also swapped `skipComments`'s two `advance(1)` loops (whitespace run, `#`-to-end-of-line comment
+  body) to `advanceCodePoint()` -- arbitrary pattern text, not a fixed ASCII token, so could contain
+  a supplementary character even though no current comment/whitespace behavior change resulted (no
+  Unicode code point flagged whitespace is supplementary, and comment bodies just get fully skipped
+  either way).
+- Fixed 4 message-construction sites that passed raw `peek` as an exception-message `Object` arg
+  (3 repeated-inline-flag messages, 1 the invalid-escape-name message above) -- these used to
+  autobox to `Character` (renders as the actual char); with `peek` now `int`, they'd autobox to
+  `Integer` and print the numeric code point instead. Wrapped each in
+  `PatternSyntaxException.CodePoint`, consistent with how every other embedded character in this
+  file's exception messages is already handled.
+- Added `SupplementaryPatternTextTest` (9 cases) targeting exactly the positions this bug could have
+  affected: a supplementary literal right after a group/alternation/bracket-class/quantified-group,
+  a quantifier applied to a supplementary literal, two consecutive supplementary literals, COMMENTS
+  mode with a supplementary character inside a comment, and the invalid-escape-name message itself.
+  Verified the new tests actually catch the pre-fix bug (temporarily `git stash`ed just
+  `PatternParser.java`'s changes and reran -- exactly 1 of the 9 failed: the escape-name message
+  test, as expected from the audit above; all others passed even pre-fix, confirming they were
+  already correct by construction rather than by accident of this fix). Full suite (differential
+  corpus tests included) still green after restoring the fix.
+- Next: sweep the hand-written unit test files one at a time, replacing BMP characters with
+  supplementary ones where reasonable, per the project owner's request and remaining_work.md's new
+  "In progress" entry -- on the theory that this audit, while thorough, may not have caught
+  everything, and a broader sweep across the test suite is worth doing regardless.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

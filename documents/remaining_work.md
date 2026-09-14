@@ -4,20 +4,6 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 ## HIGHEST PRIORITY
 
-- [ ] **`PatternParser`'s `peek`/`peek2` lookahead is `char`-typed, not code-point-aware -- a real
-      correctness bug for supplementary (astral) literal characters in a pattern's source text**
-      (found 2026-09-13 via CPU sampling, where `PatternParser.<init>`'s `pattern.charAt(0)` showed
-      up as ~2% of `llkCompile` time -- worth investigating on its own, separate from the perf
-      angle). `advanceCodePoint()` correctly advances `index` a full code point via
-      `pattern.offsetByCodePoints`, but then sets `peek = pattern.charAt(index)` -- which reads only
-      the UTF-16 code *unit* sitting at that index, i.e. a lone surrogate half for any supplementary
-      character, not the combined code point. `peek`'s field type (`private char peek`) can't hold a
-      full code point at all, so this isn't a one-line `charAt`->`codePointAt` swap: fixing it means
-      auditing every char-based index/lookahead path in the file (there are dozens of `charAt` call
-      sites) against the code-point-aware ones that already exist elsewhere in the class, changing
-      `peek`/`peek2`'s type to `int`, and re-verifying every comparison/return built on them.
-      Large enough (and correctness-critical enough) to be its own session -- see documents/notes.md
-      for the discovery context.
 - [ ] **Implement Unicode scripts** (`\p{IsScript}`/`\p{script=Script}`) — no `NamedCharClass` entry
       uses `Source.Script` at all, so every such reference throws (covered, as throwing, by
       `UnicodeClassTest`). The underlying data already exists: `unicodeanalyzer` already generated
@@ -32,6 +18,17 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       generator support exists for this at all (confirmed 2026-09-07: no block-named constant like
       `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
       just `NamedCharClass` wiring.
+
+## In progress
+
+- [ ] **Migrate hand-written unit test patterns/inputs to supplementary (astral) code points, one
+      file at a time**, in place of BMP characters wherever that's a reasonable substitution --
+      started 2026-09-14 after fixing `PatternParser`'s `peek`/`peek2` code-point bug (see
+      notes.md), on the theory that a broad sweep across the ~36 files under
+      `llkpattern/src/test/java/com/tbohne/llkpattern/` may turn up a few more places with a
+      similar BMP-vs-code-point assumption baked in. Not every test is a reasonable candidate --
+      skip anything testing ASCII-specific behavior on purpose (POSIX classes, `\d`/`\w` semantics,
+      case-folding tests where a matching supplementary case pair doesn't exist, etc.).
 
 ## Also remember for later (currently-unimplemented/deferred features)
 

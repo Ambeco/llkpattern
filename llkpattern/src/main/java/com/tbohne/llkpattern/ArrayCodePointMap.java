@@ -277,6 +277,17 @@ public final class ArrayCodePointMap<V> implements MutableCodePointMap<V> {
     return size == 0;
   }
 
+  /**
+   * The logical entry count -- package-private, not part of {@link CodePointMap}, since it's only
+   * meant for a same-package caller that already holds a concrete {@code ArrayCodePointMap} and
+   * wants a capacity hint for something it's about to build from this map's entries (e.g. {@link
+   * PatternConstruct#mergeEntryPoints}'s {@code ranges.ensureCapacity} call) -- same spirit as
+   * {@code putAll(ArrayCodePointMap)}'s own direct {@code other.size} read just above.
+   */
+  int size() {
+    return size;
+  }
+
   @Override
   public boolean containsKeys(int min, int max) {
     int cp = min;

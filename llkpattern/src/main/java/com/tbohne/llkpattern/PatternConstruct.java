@@ -267,10 +267,13 @@ abstract class PatternConstruct {
 	 */
 	/** The genuinely {@code PatternConstruct}-valued merge {@link #mergeEntryPoints} builds internally. */
 	private static final class RawMerge {
-		final MutableCodePointMap<PatternConstruct> merged;
+		// Concrete type, not the MutableCodePointMap<V> interface -- CodePointMapBuilder.build()
+		// always returns one (see its own body), and mergeEntryPoints wants its package-private
+		// size() below as a capacity hint, which the interface doesn't expose.
+		final ArrayCodePointMap<PatternConstruct> merged;
 		final @Nullable PatternConstruct elseCandidate;
 
-		RawMerge(MutableCodePointMap<PatternConstruct> merged, @Nullable PatternConstruct elseCandidate) {
+		RawMerge(ArrayCodePointMap<PatternConstruct> merged, @Nullable PatternConstruct elseCandidate) {
 			this.merged = merged;
 			this.elseCandidate = elseCandidate;
 		}
@@ -326,7 +329,7 @@ abstract class PatternConstruct {
 							new PatternSyntaxException.CodePoint(range.max - 1),
 							", but a prior part of the same construct already claims those, which is not allowed");
 				});
-		return new RawMerge(merged, elseCandidate);
+		return new RawMerge((ArrayCodePointMap<PatternConstruct>) merged, elseCandidate);
 	}
 
 	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
@@ -338,6 +341,11 @@ abstract class PatternConstruct {
 		// O(1)-amortized bulk path applies; forEachRange(), not entrySet(), to avoid a
 		// Range/Entry/Iterator allocation per range.
 		MutableCodePointSet ranges = new ArrayCodePointSet();
+		// `raw.merged`'s own entry count is a hint, not a strict bound (one map entry can still split
+		// into several ArrayCodePointSet chunks past ArrayCodePointSet.MAX_COUNT code points), but it
+		// kills incremental growth for the overwhelmingly common case (small entry counts, well under
+		// the chunk limit) instead of doubling up from INITIAL_CAPACITY one appendSorted() at a time.
+		ranges.ensureCapacity(raw.merged.size());
 		raw.merged.forEachRange((min, max, value) -> ranges.appendSorted(min, max));
 		return new MergedEntries(ranges, raw.elseCandidate);
 	}

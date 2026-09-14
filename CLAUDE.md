@@ -15,11 +15,15 @@ performance, once the test suite is green:
    flat/diffuse to be useful) and update the relevant
    `benchmarks/Intel-i7-9750H_*_sampling.txt` file(s) -- stale sampling naming a
    since-removed method is worse than no sampling at all.
-3. Prompt the user to plug in and unlock the Pixel 3a so `./gradlew :app:connectedAndroidTest` can
-   be re-run. Its benchmark/sampling output files under `benchmarks/` are now updated
-   automatically by the Gradle task itself -- no manual pull/copy needed -- but double-check after
-   the run that they actually updated (new timestamp/numbers), since JMH's own desktop benchmark
-   (step 1 above) is NOT yet wired up the same way and still needs its results copied in by hand.
+3. Check via `adb devices` whether the Pixel 3a is already plugged in and unlocked. If it is, go
+   ahead and run `./gradlew :app:connectedAndroidTest` without asking first. Its benchmark/sampling
+   output files under `benchmarks/` are now updated automatically by the Gradle task itself -- no
+   manual pull/copy needed -- but double-check after the run that they actually updated (new
+   timestamp/numbers), since JMH's own desktop benchmark (step 1 above) is NOT yet wired up the
+   same way and still needs its results copied in by hand. If the device isn't there (or is there
+   but locked, so the test run would just fail/hang), skip that step and don't block the rest of
+   the work on it -- but once everything else is done, remind the user to plug in and unlock the
+   Pixel 3a so this step can be run.
 
 ## `MatcherConstruct` fields must be `final`
 

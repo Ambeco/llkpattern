@@ -1,7 +1,6 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.tbohne.llkpattern.Matcher.Group;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
 import com.tbohne.llkpattern.PatternConstruct.QuantifiedUnion;
@@ -212,9 +211,15 @@ abstract class MatcherConstruct {
 	 * ever needing to decode one).
 	 */
 	static final class LiteralMatcherConstruct extends SingleDispatchingMatcherConstruct {
-		final String value;
+		// A CharSequence, not a String -- see LiteralString.value's own doc for why (a zero-copy
+		// CharBuffer view for the common case, rather than a materialized copy). This is also why
+		// match() below can't just delegate to String.regionMatches(...) the way it used to:
+		// String.regionMatches only accepts a String for the other side of the comparison, so every
+		// case here (exact, Unicode-case-insensitive, ASCII-fold-insensitive) is now a manual
+		// char-by-char loop instead.
+		final CharSequence value;
 
-		LiteralMatcherConstruct(PatternConstruct owner, String value) {
+		LiteralMatcherConstruct(PatternConstruct owner, CharSequence value) {
 			super(owner, owner.next.matcher);
 			this.value = value;
 		}
@@ -226,9 +231,9 @@ abstract class MatcherConstruct {
 			}
 			boolean matches;
 			if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-				matches = matcher.input.regionMatches(matcher.pos, value, 0, value.length());
+				matches = regionMatches(matcher.input, matcher.pos, value);
 			} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
-				matches = matcher.input.regionMatches(true, matcher.pos, value, 0, value.length());
+				matches = unicodeFoldRegionMatches(matcher.input, matcher.pos, value);
 			} else {
 				matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value);
 			}
@@ -250,7 +255,64 @@ abstract class MatcherConstruct {
 			return matchNext(matcher, matcher.consumeCodeUnits(value.length()));
 		}
 
-		private static boolean asciiFoldRegionMatches(String input, int offset, String value) {
+		private static boolean regionMatches(String input, int offset, CharSequence value) {
+			int len = value.length();
+			for (int i = 0; i < len; i++) {
+				if (input.charAt(offset + i) != value.charAt(i)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		// Same algorithm java.lang.String#regionMatches(true, ...) itself uses (a plain == check,
+		// then upper-casing both sides, then also lower-casing the upper-cased pair) -- replicated
+		// here since that method only accepts a String for the other side, EXCEPT for one thing
+		// this per-char version can't just copy: java.lang.Character#toUpperCase(char)/toLowerCase(char)
+		// can't handle supplementary code points at all (see their own doc -- a lone surrogate isn't
+		// assigned any case mapping, so it folds to itself), yet String#regionMatches(true, ...)
+		// still correctly case-folds e.g. Deseret letters. Its real implementation
+		// (StringUTF16.compareCodePointCI, found while tracking down why a naive port of this
+		// algorithm failed Deseret specifically) special-cases a surrogate pair on both sides by
+		// combining it into one code point and folding that instead -- replicated below.
+		private static boolean unicodeFoldRegionMatches(String input, int offset, CharSequence value) {
+			int len = value.length();
+			for (int i = 0; i < len; i++) {
+				char a = input.charAt(offset + i);
+				char b = value.charAt(i);
+				if (Character.isHighSurrogate(b) && i + 1 < len && Character.isLowSurrogate(value.charAt(i + 1))
+						&& Character.isHighSurrogate(a) && offset + i + 1 < input.length()
+						&& Character.isLowSurrogate(input.charAt(offset + i + 1))) {
+					int codePointA = Character.toCodePoint(a, input.charAt(offset + i + 1));
+					int codePointB = Character.toCodePoint(b, value.charAt(i + 1));
+					i++; // consumed both units of this pair, not just one
+					if (codePointA == codePointB) {
+						continue;
+					}
+					int upperCpA = Character.toUpperCase(codePointA);
+					int upperCpB = Character.toUpperCase(codePointB);
+					if (upperCpA == upperCpB || Character.toLowerCase(upperCpA) == Character.toLowerCase(upperCpB)) {
+						continue;
+					}
+					return false;
+				}
+				if (a == b) {
+					continue;
+				}
+				char upperA = Character.toUpperCase(a);
+				char upperB = Character.toUpperCase(b);
+				if (upperA == upperB) {
+					continue;
+				}
+				if (Character.toLowerCase(upperA) == Character.toLowerCase(upperB)) {
+					continue;
+				}
+				return false;
+			}
+			return true;
+		}
+
+		private static boolean asciiFoldRegionMatches(String input, int offset, CharSequence value) {
 			int len = value.length();
 			for (int i = 0; i < len; i++) {
 				char a = input.charAt(offset + i);
@@ -346,27 +408,34 @@ abstract class MatcherConstruct {
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			Group group = matcher.captureGroups[captureConstructIndex];
-			if (group == null || group.result == null) {
+			int base = captureConstructIndex * 2;
+			int start = matcher.captureGroups[base];
+			int end = matcher.captureGroups[base + 1];
+			if (start < 0) {
 				// The referenced group never participated in the match (e.g. it's in a sibling
 				// alternation branch that wasn't taken) -- java.util.regex treats an unparticipated
 				// group's backreference as never matching, not as matching the empty string.
 				return false;
 			}
-			String value = group.result;
-			if (value.isEmpty()) {
+			if (start == end) {
 				return matchNext(matcher, peeked);
 			}
-			int i = 0;
+			// Compared straight against matcher.input by index rather than materializing the
+			// captured text as its own String/CharSequence first -- there's nothing here that needs
+			// one, and a backreference can be matched repeatedly (e.g. inside a loop), so avoiding an
+			// allocation per comparison (not just per capture) matters more than it would for a
+			// one-shot use.
+			String input = matcher.input;
+			int i = start;
 			do {
-				int next = value.codePointAt(i);
+				int next = input.codePointAt(i);
 				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
 				if (!codePointsMatch(next, peeked, flags)) {
 					return false;
 				}
 				peeked = matcher.consumeCodeUnits(units);
 				i += units;
-			} while (i < value.length());
+			} while (i < end);
 			return matchNext(matcher, peeked);
 		}
 	}
@@ -731,7 +800,13 @@ abstract class MatcherConstruct {
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			matcher.captureGroups[captureConstructIndex] = new Group(matcher.pos);
+			int base = captureConstructIndex * 2;
+			matcher.captureGroups[base] = matcher.pos;
+			// Reset the end slot too: re-entering a capture inside a loop must fully overwrite the
+			// previous iteration's entry, not just its start, or a stale end from that earlier
+			// iteration would linger if (impossibly, given this engine's forward-only structure) this
+			// iteration's own EndCaptureMatcherConstruct somehow didn't run.
+			matcher.captureGroups[base + 1] = -1;
 			return matchNext(matcher, peeked);
 		}
 	}
@@ -746,8 +821,12 @@ abstract class MatcherConstruct {
 
 		@Override
 		boolean match(Matcher matcher, int peeked) {
-			Group group = matcher.captureGroups[captureConstructIndex];
-			group.result = matcher.input.substring(group.inputStartIndex, matcher.pos);
+			// Just records the end index -- no substring materialized here anymore. The captured
+			// text is built lazily by Matcher#group(int), only if a caller actually asks for it (see
+			// allocation sampling in benchmarks/Intel-i7-9750H_llkMatch_alloc_sampling.txt), and
+			// BackReferenceMatcherConstruct above compares directly against these indices without
+			// ever needing a String/CharSequence view at all.
+			matcher.captureGroups[captureConstructIndex * 2 + 1] = matcher.pos;
 			return matchNext(matcher, peeked);
 		}
 	}

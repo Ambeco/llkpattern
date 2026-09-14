@@ -1,8 +1,5 @@
 package com.tbohne.llkpattern;
 
-import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
-
 import java.util.regex.MatchResult;
 
 /**
@@ -37,13 +34,20 @@ public class Matcher implements MatchResult {
 	int regionStart = 0;
 	int pos = 0;
 	int[] quantifiableCounts;
-	// One slot per capture-group construct in the pattern, indexed by captureConstructIndex.
-	// BeginCaptureMatcherConstruct overwrites the slot on entry; since there's no recursion or
+	// Two slots (start, end -- input code-unit indices) per capture-group construct in the
+	// pattern, indexed by captureConstructIndex*2. BeginCaptureMatcherConstruct overwrites the
+	// start slot (and resets the end slot to -1) on entry; since there's no recursion or
 	// backtracking in this engine, the same construct can never be "open" twice at once, so a flat
 	// array (not an actual stack) suffices -- re-entering a capture inside a loop naturally
-	// implements regex's "last iteration wins" semantics by simply overwriting the previous Group,
-	// and a slot a loop never entered stays null (unset), also matching regex semantics.
-	@Nullable Group[] captureGroups;
+	// implements regex's "last iteration wins" semantics by simply overwriting the previous
+	// entry, and a slot a loop never entered stays -1 (unset), also matching regex semantics.
+	// -1 rather than a boxed/nullable Group also means EndCaptureMatcherConstruct no longer has to
+	// eagerly allocate a substring every time a capture completes (see allocation sampling in
+	// benchmarks/Intel-i7-9750H_llkMatch_alloc_sampling.txt) -- group(int) below builds the String
+	// lazily, only when a caller actually asks for that group's text, and
+	// BackReferenceMatcherConstruct compares directly against these indices without ever
+	// materializing one at all.
+	int[] captureGroups;
 
 	// True exactly when quantifiableCounts/captureGroups are already known zero/null -- right after
 	// construction (both arrays are `new`-allocated, so already zero-filled by the JVM without an
@@ -73,7 +77,8 @@ public class Matcher implements MatchResult {
 		this.input = input;
 		this.regionEnd = input.length();
 		this.quantifiableCounts = new int[pattern.quantifiableCount];
-		this.captureGroups = new Group[pattern.captureGroupCount];
+		this.captureGroups = new int[pattern.captureGroupCount * 2];
+		java.util.Arrays.fill(captureGroups, -1);
 	}
 
 	public Matcher appendReplacement(StringBuffer sb, String replacement) {
@@ -93,11 +98,7 @@ public class Matcher implements MatchResult {
 			requireMatch();
 			return matchEnd;
 		}
-		Group g = captureGroup(group);
-		if (g == null || g.result == null) {
-			return -1;
-		}
-		return g.inputStartIndex + g.result.length();
+		return captureGroups[captureGroupBaseIndex(group) + 1];
 	}
 
 	public int end(String name) {
@@ -154,8 +155,14 @@ public class Matcher implements MatchResult {
 			requireMatch();
 			return input.substring(matchStart, matchEnd);
 		}
-		Group g = captureGroup(group);
-		return g == null ? null : g.result;
+		int base = captureGroupBaseIndex(group);
+		int start = captureGroups[base];
+		int end = captureGroups[base + 1];
+		// Built lazily, only for a group a caller actually asks the text of -- EndCaptureMatcherConstruct
+		// itself only ever records the (start, end) indices, not a materialized substring. -1 means
+		// this group never participated in the match (e.g. it's in a sibling alternation branch that
+		// wasn't taken), same as a null Group used to mean before this array-based representation.
+		return start < 0 ? null : input.substring(start, end);
 	}
 
 	public String group(String name) {
@@ -248,7 +255,7 @@ public class Matcher implements MatchResult {
 	 *  explicit reset()/reset(String). */
 	private void resetPerAttemptState() {
 		java.util.Arrays.fill(quantifiableCounts, 0);
-		java.util.Arrays.fill(captureGroups, null);
+		java.util.Arrays.fill(captureGroups, -1);
 	}
 
 	public int start() {
@@ -260,8 +267,7 @@ public class Matcher implements MatchResult {
 			requireMatch();
 			return matchStart;
 		}
-		Group g = captureGroup(group);
-		return g == null ? -1 : g.inputStartIndex;
+		return captureGroups[captureGroupBaseIndex(group)];
 	}
 
 	public int start(String name)  {
@@ -286,7 +292,7 @@ public class Matcher implements MatchResult {
 		}
 		pattern = newPattern;
 		quantifiableCounts = new int[newPattern.quantifiableCount];
-		captureGroups = new Group[newPattern.captureGroupCount];
+		captureGroups = new int[newPattern.captureGroupCount * 2];
 		resetMatchState();
 		return this;
 	}
@@ -346,14 +352,16 @@ public class Matcher implements MatchResult {
 		}
 	}
 
-	private @Nullable Group captureGroup(int group) {
+	/** Index into {@link #captureGroups} of {@code group}'s start slot ({@code +1} for its end
+	 *  slot) -- {@code group} is 1-based public/java.util.regex numbering (group 0, "the whole
+	 *  match", is handled separately by every caller); captureConstructIndex, what this converts
+	 *  to, is 0-based for the first *real* capturing group -- see PatternParser. */
+	private int captureGroupBaseIndex(int group) {
 		requireMatch();
 		if (group < 0 || group > pattern.captureGroupCount) {
 			throw new IndexOutOfBoundsException("No group " + group);
 		}
-		// captureConstructIndex is 0-based for the first *real* capturing group (group 1 in the
-		// public/java.util.regex numbering, where group 0 is the whole match) -- see PatternParser.
-		return captureGroups[group - 1];
+		return (group - 1) * 2;
 	}
 
 	private int groupIndexByName(String name) {
@@ -418,14 +426,5 @@ public class Matcher implements MatchResult {
 
 	void endCapture(int captureId, boolean result) {
 		throw new UnsupportedOperationException("TODO: implement Matcher#endCapture");
-	}
-
-	static final class Group {
-		int inputStartIndex;
-		@MonotonicNonNull String result;
-
-		Group(int inputStartIndex) {
-			this.inputStartIndex = inputStartIndex;
-		}
 	}
 }

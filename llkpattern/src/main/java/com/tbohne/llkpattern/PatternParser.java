@@ -7,6 +7,7 @@ import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 
+import java.nio.CharBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -229,16 +230,46 @@ final class PatternParser {
   private QuantifiedUnion parseUnion(QuantifiedUnion parent) {
     Sequence sequence = new Sequence(index);
     int rawTextStartIndex = -1;
-    StringBuilder rawText = new StringBuilder();
+    // While true, the run accumulating since rawTextStartIndex is a byte-for-byte copy of
+    // `pattern` in that span -- no escape has been decoded into it, and no COMMENTS-mode
+    // whitespace/comment has been silently skipped in the middle of it (skipComments() runs at
+    // the top of every loop iteration) -- so its content can be read straight off `pattern` via a
+    // zero-copy java.nio.CharBuffer view (CharBuffer.wrap) instead of ever touching `rawText`:
+    // java.lang.String#subSequence just calls substring() internally, so it wouldn't actually
+    // save the copy, but CharBuffer.wrap genuinely doesn't copy (see allocation sampling in
+    // benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt, where this literal-text handling
+    // showed up disproportionately). The instant a run stops being pure (an escape decodes, or a
+    // gap opens up), whatever pure prefix had accumulated (rawTextStartIndex..rawTextPureEnd) is
+    // copied into `rawText` once, and the run falls back to the old explicit per-character
+    // accumulation from there.
+    boolean rawTextIsPure = true;
+    int rawTextPureEnd = -1; // meaningful only while rawTextIsPure && rawTextStartIndex >= 0
+    // Lazy, not eagerly `new`-allocated: with the pure-span handling above, most literal runs in
+    // practice (plain ASCII, no escapes, no COMMENTS-mode gaps) never touch `rawText` at all now,
+    // so allocating one unconditionally on every parseUnion() call -- this runs once per union
+    // level, i.e. often -- was pure waste (StringBuilder.<init> itself showed up as ~4.5% of
+    // compile-time CPU in sampling). Reused across every impure run within this one parseUnion
+    // call once it does exist, via setLength(0) at each flush site below (not re-nulled).
+    StringBuilder rawText = null;
     for (; ; ) {
       skipComments();
       if ("()[]|.^$\0".indexOf(peek) > -1) {
-        if (rawText.length() > 0) {
-          LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
+        if (rawTextStartIndex >= 0) {
+          // rawTextPureEnd, not `index`: this iteration's own skipComments() call just above may
+          // already have skipped a trailing comment/whitespace gap since the pure content last
+          // ended (e.g. a literal immediately followed by "# comment" to end of pattern) -- `index`
+          // now sits past that gap, which must not silently become part of the matched literal.
+          CharSequence literalValue = rawTextIsPure
+              ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
+              : rawText.toString();
+          LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
           literal.flags = flags;
           sequence.patterns.add(literal);
-          rawText.setLength(0);
+          if (rawText != null) {
+            rawText.setLength(0);
+          }
           rawTextStartIndex = -1;
+          rawTextIsPure = true;
         }
         switch (peek) {
           case '(':
@@ -330,16 +361,33 @@ final class PatternParser {
         int startIndex = index;
         int codePoint = tryParseSingleCharEscape();
         if (codePoint != -1) {
-          appendCodePoint(rawText, codePoint);
           if (rawTextStartIndex < 0) {
             rawTextStartIndex = startIndex;
+          } else if (rawTextIsPure) {
+            // Back-fill the pure prefix seen so far (excluding any gap before it -- see
+            // rawTextPureEnd's own doc) before switching to explicit accumulation: an escape's
+            // decoded content never equals its own raw source text, so this run can't stay a pure
+            // view of `pattern` from here on.
+            rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, startIndex);
+            rawText.append(pattern, rawTextStartIndex, rawTextPureEnd);
           }
+          rawTextIsPure = false;
+          rawText = ensureRawText(rawText, 0, startIndex);
+          appendCodePoint(rawText, codePoint);
         } else {
-          if (rawText.length() > 0) {
-            LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
+          if (rawTextStartIndex >= 0) {
+            // rawTextPureEnd, not `index` -- same reasoning as the top-of-loop flush above.
+            CharSequence literalValue = rawTextIsPure
+                ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
+                : rawText.toString();
+            LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             sequence.patterns.add(literal);
-            rawText.setLength(0);
+            if (rawText != null) {
+              rawText.setLength(0);
+            }
+            rawTextStartIndex = -1;
+            rawTextIsPure = true;
           }
           if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'G') {
             // \G doesn't match any specific position in the input, so it gets no PatternConstruct
@@ -383,24 +431,58 @@ final class PatternParser {
         int startIndex = index;
         if (rawTextStartIndex < 0) {
           rawTextStartIndex = startIndex;
+          rawTextPureEnd = startIndex;
+        } else if (rawTextIsPure && startIndex != rawTextPureEnd) {
+          // A COMMENTS-mode whitespace/comment run was skipped (skipComments() at the top of this
+          // loop) since the pure prefix last ended -- that gap must not silently become part of
+          // the matched literal, so back-fill the verbatim prefix seen so far and fall back to
+          // explicit accumulation, same as an escape does above.
+          rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, startIndex);
+          rawText.append(pattern, rawTextStartIndex, rawTextPureEnd);
+          rawTextIsPure = false;
         }
         int fullChar = pattern.codePointAt(index);
         advanceCodePoint();
+        // fullChar's own characters end here -- captured before the lookahead skipComments()
+        // just below, which is about to move `index` past any whitespace/comment that follows
+        // (needed to see a quantifier suffix on the far side of one). If that lookahead does skip
+        // something, rawTextPureEnd must stay at this pre-skip position, not wherever `index` ends
+        // up, or the next char's own gap check (above) would never see the gap: it would find
+        // `index` already sitting right where that next char starts, as if nothing were skipped.
+        int afterFullChar = index;
         // Under COMMENTS, a quantifier suffix can be separated from its atom by whitespace/a
         // comment ("a * b" means "a*b") -- skip past any before checking for one, same as
         // parseQuantifiable does for every other atom type (bracket classes, groups, ".").
         skipComments();
         if (peek == '{' || peek == '?' || peek == '+' || peek == '*') {
-          if (rawText.length() > 0) {
-            LiteralString literal = new LiteralString(rawTextStartIndex, index, rawText.toString());
+          // Unlike the other two flush sites, rawTextStartIndex alone isn't enough here: this
+          // very character may have just opened the run (rawTextStartIndex == rawTextPureEnd,
+          // nothing pure actually accumulated yet -- it's about to become its own quantified
+          // ComplexCharacter instead, never joining a literal at all) -- rawText.length() alone
+          // isn't enough either, symmetrically, since a pure run never touches rawText until it
+          // stops being pure. Must check whichever of the two actually holds this run's content.
+          boolean hasPendingLiteral = rawTextIsPure
+              ? rawTextPureEnd > rawTextStartIndex
+              : rawText.length() > 0;
+          if (hasPendingLiteral) {
+            CharSequence literalValue = rawTextIsPure
+                ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
+                : rawText.toString();
+            LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             sequence.patterns.add(literal);
-            rawText.setLength(0);
+            if (rawText != null) {
+              rawText.setLength(0);
+            }
           }
           ComplexCharacter complex = new ComplexCharacter(startIndex, fullChar);
           complex.flags = flags;
           complex.endIndex = index;
           sequence.patterns.add(parseQuantifiable(complex));
+          rawTextStartIndex = -1;
+          rawTextIsPure = true;
+        } else if (rawTextIsPure) {
+          rawTextPureEnd = afterFullChar;
         } else {
           appendCodePoint(rawText, fullChar);
         }
@@ -420,6 +502,39 @@ final class PatternParser {
     } else {
       sb.append(Character.highSurrogate(codePoint)).append(Character.lowSurrogate(codePoint));
     }
+  }
+
+  // The chars that always end a literal run outright, whether encountered directly (the top-level
+  // delimiter check) or as a quantifier suffix on the run's last atom (checked separately, since a
+  // quantifier belongs only to that one atom, not the whole run) -- used only to size `rawText`'s
+  // initial capacity below, so approximate is fine. An escape inside the scanned span (e.g. "\n")
+  // decodes to fewer chars than its own raw source, so this can only over-estimate, never
+  // under-estimate -- also fine for a capacity hint, whose only job is dodging StringBuilder's own
+  // default-capacity regrowth (the OTHER allocation this run's sampling flagged, alongside
+  // StringBuilder.<init> itself -- see rawText's own doc).
+  private static final String LITERAL_RUN_DELIMITERS = "(){}[]|.^$?+*";
+
+  /** How many chars remain in {@code pattern} from {@code fromIndex} up to (not including) the
+   *  next character that would end a literal run -- an upper bound on how much more `rawText`
+   *  might still need to hold for the run resuming at {@code fromIndex}, per {@link
+   *  #LITERAL_RUN_DELIMITERS}'s own doc. */
+  private int literalRunCapacityHint(int fromIndex) {
+    int len = pattern.length();
+    int i = fromIndex;
+    while (i < len && LITERAL_RUN_DELIMITERS.indexOf(pattern.charAt(i)) < 0) {
+      i++;
+    }
+    return i - fromIndex;
+  }
+
+  /** Lazily creates (or reuses) `rawText`, sized for {@code pureCharsCarriedOver} (a pure prefix
+   *  about to be back-filled into it, if any) plus a capacity hint for the rest of the run
+   *  resuming at {@code fromIndex} -- see {@link #literalRunCapacityHint}. */
+  private StringBuilder ensureRawText(
+      @Nullable StringBuilder rawText, int pureCharsCarriedOver, int fromIndex) {
+    return rawText != null
+        ? rawText
+        : new StringBuilder(pureCharsCarriedOver + literalRunCapacityHint(fromIndex));
   }
 
   @SuppressWarnings("FieldCanBeLocal")
@@ -1221,7 +1336,9 @@ final class PatternParser {
             "first parameter of explicit quantifier '{' must be a number written with ASCII characters");
       }
       try {
-        construct.min = Integer.parseInt(pattern.substring(index, end));
+        // Integer.parseInt(CharSequence, int, int, int) (JDK 9+) parses the span directly, no
+        // substring() copy needed for a value used once and discarded.
+        construct.min = Integer.parseInt(pattern, index, end, 10);
       } catch (NumberFormatException e) {
         throw throwUnexpectedChar(
             "first parameter of explicit quantifier '{' must be less than ", Integer.MAX_VALUE);
@@ -1239,7 +1356,7 @@ final class PatternParser {
           construct.max = Integer.MAX_VALUE;
         } else {
           try {
-            construct.max = Integer.parseInt(pattern.substring(index, end));
+            construct.max = Integer.parseInt(pattern, index, end, 10);
           } catch (NumberFormatException e) {
             throw throwUnexpectedChar(
                 "second parameter of explicit quantifier '{' must be less than ",

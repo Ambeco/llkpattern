@@ -33,7 +33,10 @@ public class PatternParserTest {
 		MatcherConstruct compiled = compile(A);
 
 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
-		assertThat(((LiteralMatcherConstruct) compiled).value, is(A));
+		// .value is a CharSequence, not necessarily a String (see its own doc) -- toString() to
+		// compare content rather than relying on CharSequence's own (implementation-specific, often
+		// type-mismatched) equals().
+		assertThat(((LiteralMatcherConstruct) compiled).value.toString(), is(A));
 		// A literal is Single-dispatching -- what comes after the *whole* literal is an unconditional
 		// forward (next), not something keyed by its own first character.
 		assertThat(((LiteralMatcherConstruct) compiled).getNext(), instanceOf(EndMatcherConstruct.class));
@@ -45,7 +48,7 @@ public class PatternParserTest {
 		MatcherConstruct compiled = compile(A + B);
 
 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
-		assertThat(((LiteralMatcherConstruct) compiled).value, is(A + B));
+		assertThat(((LiteralMatcherConstruct) compiled).value.toString(), is(A + B));
 		assertThat(((LiteralMatcherConstruct) compiled).getNext(), instanceOf(EndMatcherConstruct.class));
 	}
 

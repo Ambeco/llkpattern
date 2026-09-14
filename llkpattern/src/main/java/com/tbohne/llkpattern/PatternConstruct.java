@@ -1051,9 +1051,14 @@ abstract class PatternConstruct {
 	}
 
 	static final class LiteralString extends PatternConstruct {
-		final String value;
+		// A CharSequence, not a String: for a literal run PatternParser could decode verbatim from
+		// the pattern text (no escapes, no COMMENTS-mode gaps), it's a zero-copy
+		// java.nio.CharBuffer view of `pattern` rather than a materialized copy -- see
+		// PatternParser.parseUnion's own doc for why (java.lang.String.subSequence/substring both
+		// copy; CharBuffer.wrap doesn't).
+		final CharSequence value;
 
-		LiteralString(int startIndex, int endIndex, String value) {
+		LiteralString(int startIndex, int endIndex, CharSequence value) {
 			super(startIndex, endIndex);
 			this.value = value;
 		}
@@ -1075,7 +1080,7 @@ abstract class PatternConstruct {
 			// single-entry) set, built via a local mutable variable since entryMap itself is a plain
 			// (non-Mutable) CodePointSet reference now -- see its own doc.
 			MutableCodePointSet set = new ArrayCodePointSet();
-			set.add(value.codePointAt(0));
+			set.add(Character.codePointAt(value, 0));
 			entryMap = set;
 		}
 
@@ -1432,11 +1437,11 @@ abstract class PatternConstruct {
 	 */
 	static @Nullable CodePointSet lastCharSet(PatternConstruct pc) {
 		if (pc instanceof LiteralString) {
-			String value = ((LiteralString) pc).value;
-			if (value.isEmpty()) {
+			CharSequence value = ((LiteralString) pc).value;
+			if (value.length() == 0) {
 				return null;
 			}
-			int cp = value.codePointBefore(value.length());
+			int cp = Character.codePointBefore(value, value.length());
 			return singletonCodePointMap(cp);
 		}
 		if (pc instanceof ComplexCharacter) {
@@ -1484,8 +1489,8 @@ abstract class PatternConstruct {
 	 */
 	static @Nullable CodePointSet firstCharSet(PatternConstruct pc) {
 		if (pc instanceof LiteralString) {
-			String value = ((LiteralString) pc).value;
-			return value.isEmpty() ? null : singletonCodePointMap(value.codePointAt(0));
+			CharSequence value = ((LiteralString) pc).value;
+			return value.length() == 0 ? null : singletonCodePointMap(Character.codePointAt(value, 0));
 		}
 		if (pc instanceof ComplexCharacter) {
 			return ((ComplexCharacter) pc).validRanges();

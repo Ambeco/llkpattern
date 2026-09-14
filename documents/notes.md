@@ -1990,3 +1990,93 @@ Notes to self about how to work on this project, and other context that doesn't 
   ~10-20s range the project owner asked for, based on this machine's timings (`llkCompile` ~14s,
   `llkMatch` ~2.5s at that setting). Re-ran `jmhAllocSampling` and committed the refreshed
   `benchmarks/*_alloc_sampling.txt` files.
+
+### Zero-copy literal text and capture groups (2026-09-14, same session)
+
+- Follow-up on the alloc-sampling investigation above: `StringUTF16`-family allocation had been
+  climbing in the sampling as other allocations got trimmed. The project owner identified two
+  concrete sources and asked for them to be fixed:
+  1. `PatternParser.parseUnion`'s `rawText` `StringBuilder`, used to accumulate every literal
+     run's text one code point at a time even though most runs are just a verbatim copy of
+     `pattern` in that span.
+  2. `Matcher.captureGroups` (`Group[]`, one heap object per capture with an eagerly-materialized
+     `String result`), allocated on every `BeginCaptureMatcherConstruct`/`EndCaptureMatcherConstruct`
+     regardless of whether a caller ever reads that group's text.
+- First attempt at (1) used `pattern.subSequence(start, end)` for a literal run's content, on the
+  theory that returning a `CharSequence` would avoid a copy. Wrong: `java.lang.String#subSequence`
+  is implemented as a call to `substring()` internally, so it copies exactly like `substring()`
+  always has -- there's no allocation win from the type alone. `java.nio.CharBuffer.wrap(pattern,
+  start, end)` is the one that's genuinely zero-copy (a lightweight view over the same backing
+  array), so `LiteralString`/`LiteralMatcherConstruct`'s `value` field became `CharSequence`, built
+  via `CharBuffer.wrap` for a literal run that's a pure, undecoded copy of `pattern`.
+- That "pure" condition is real, not automatic: a run stops being safe to view directly the moment
+  either (a) an escape decodes to different text than its own raw source (e.g. `\n` is 2 raw chars
+  for 1 decoded one -- `tryParseSingleCharEscape` never returns the same length it consumed), or
+  (b) `skipComments()` (COMMENTS mode) silently skips whitespace/a comment in the middle of what
+  would otherwise be one contiguous run, which must not silently become part of the matched text.
+  `parseUnion` now tracks a `rawTextIsPure`/`rawTextPureEnd` pair alongside `rawTextStartIndex`: as
+  long as a run stays pure, its content is read straight off `pattern` via `CharBuffer.wrap`
+  lazily, at the point something is finally asked for it; the instant it stops being pure, whatever
+  pure prefix had accumulated is copied into `rawText` once (back-filled), and the run falls back
+  to the original per-character accumulation from there. Getting the exact boundary right for that
+  back-fill took three rounds of test failures to shake out (see the bugs below) -- this is the
+  kind of subtle indexing logic worth double-checking against the actual test suite rather than
+  trusting by inspection.
+  - **Bug 1 (~160 test failures, mostly supplementary-corpus rows):** used `rawTextStartIndex >= 0`
+    alone as "is there a pending literal" in the quantifier-suffix flush site. That's set the
+    instant *any* character opens a run, including one that turns out to be quantified all by
+    itself (e.g. `a*`) and thus never actually joins a literal -- produced a spurious empty
+    `LiteralString` ahead of the quantified atom for every such pattern. Fixed by checking whether
+    content was actually accumulated (`rawTextPureEnd > rawTextStartIndex` when pure, `rawText.length()
+    > 0` when not) instead of just whether a run was open.
+  - **Bug 2 (13 failures, all COMMENTS-mode):** `rawTextPureEnd` was being set to `index` *after*
+    the quantifier-lookahead `skipComments()` call that follows every plain character, so a
+    skipped comment/whitespace gap silently got treated as part of the "pure" span instead of
+    being caught as a gap by the next character's own check. Fixed by capturing the position right
+    after the character's own consumption (before that lookahead `skipComments()`) and using that
+    for `rawTextPureEnd` instead.
+  - **Bug 3 (2 failures, both a pattern ending in "# comment" with no trailing newline):** the
+    top-of-loop and escape-fallback flush sites still used `index` (already past this iteration's
+    own leading `skipComments()`, which had just skipped the trailing comment to end-of-pattern)
+    instead of `rawTextPureEnd` for the `CharBuffer.wrap` boundary -- same class of bug as Bug 2,
+    just at the two flush sites rather than the continuation path. Fixed the same way.
+  - **Unrelated but necessary fix, found along the way:** `Character.toUpperCase(char)`/
+    `toLowerCase(char)` (JDK, single UTF-16 unit) can't fold a supplementary code point at all --
+    only `toUpperCase(int)`/`toLowerCase(int)` (full code point) can. The original code sidestepped
+    this by delegating case-insensitive literal matching to `String#regionMatches(true, ...)`,
+    which turned out to have its own supplementary-aware special case internally
+    (`StringUTF16.compareCodePointCI`, found by decompiling it with `javap -c` after a naive
+    char-by-char port failed two Deseret-letter corpus rows) -- that method's own contract only
+    accepts a `String` on the other side, though, so `LiteralMatcherConstruct.value` becoming a
+    `CharSequence` meant it could no longer be used. Replicated the surrogate-pair-combining
+    behavior by hand in a new `unicodeFoldRegionMatches`. Confirmed the difference matters with a
+    minimal standalone repro (`RM.java`/`RM2.java` etc. in the scratchpad) before touching the real
+    code: `Character.toUpperCase(char)` on a lone low surrogate is a no-op (unassigned in the
+    per-char case table), so a naive per-char port genuinely returns `false` where
+    `String#regionMatches(true, ...)` returns `true`.
+- (2) was more direct: `Matcher.captureGroups` is now a flat `int[pattern.captureGroupCount * 2]`
+  (start, end pairs; `-1` = unset), reset via `Arrays.fill(captureGroups, -1)`.
+  `EndCaptureMatcherConstruct` just records the end index now -- no `Group` object, no substring.
+  `Matcher.group(int)` builds the `String` lazily, only when a caller actually asks. `Matcher.Group`
+  (the old per-capture object with a `@MonotonicNonNull String result`) is gone entirely.
+  `BackReferenceMatcherConstruct` was rewritten to compare code points straight from `matcher.input`
+  using the stored (start, end) indices rather than ever materializing the captured text at all
+  (stronger than the original ask, but free: a backreference can be matched repeatedly inside a
+  loop, so this avoids an allocation per *comparison*, not just per capture).
+- Follow-up (same session): with `rawText` now often never touched at all for a pure run, the
+  project owner noticed the `StringBuilder` itself was still being `new`-allocated unconditionally
+  on every `parseUnion()` call (~4.5% of compile-time CPU in sampling) and, when it *was* used,
+  regrowing its internal buffer from the JDK default capacity (16.3% of alloc-sampling weight on
+  Android). Made `rawText` lazy (`null` until the run first stops being pure, reused across runs
+  within the same `parseUnion()` call after that), and sized its initial capacity with a hint --
+  `literalRunCapacityHint`, a scan from the resume point up to the next character that would
+  definitely end a literal run (`(){}[]|.^$?+*`), used as an upper bound on how much more the run
+  could still need. An escape inside that scanned span makes this an over-estimate (its raw span
+  is longer than its decoded content), never an under-estimate -- fine for a capacity hint per the
+  project owner's own call.
+- Benchmarks re-run per CLAUDE.md's checklist (desktop JMH timing + CPU + allocation sampling, and
+  the on-device Pixel 3a benchmark, which happened to be plugged in and unlocked already). Desktop:
+  `llkCompile` 0.308 -> 0.248 ms/op (-19.5%), 897,448 -> 687,024 B/op (-23.4%); `llkMatch` 0.038 ->
+  0.035 ms/op (-8.4%), 46,664 -> 37,744 B/op (-19.1%). Pixel 3a: `compileLlk` ratio 0.86x -> 0.87x,
+  `matchLlk` ratio 0.20x -> 0.22x -- both flat within this device's known run-to-run noise (see
+  above), not a real regression. README's benchmark tables updated to match.

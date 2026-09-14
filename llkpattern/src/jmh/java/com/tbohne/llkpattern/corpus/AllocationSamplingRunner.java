@@ -242,7 +242,7 @@ public final class AllocationSamplingRunner {
     for (ChainNode leaf : leaves) {
       double pct = 100.0 * leaf.count / totalWeight;
       body.append(String.format(Locale.ROOT, "* %s (%.1f%%)%n", leaf.frame, pct));
-      printCallers(body, leaf, totalWeight, cutoffPercent, 1);
+      printCallers(body, leaf, totalWeight, cutoffPercent, 1, isLlkFrame(leaf.frame));
     }
 
     Path outFile = benchmarksDir.resolve(machineName + "_" + name + "_alloc_sampling.txt");
@@ -264,19 +264,35 @@ public final class AllocationSamplingRunner {
     return Math.max(pct, MIN_CALLER_CUTOFF_PERCENT);
   }
 
+  /** {@code llkSeenInPath} is whether the path from the leaf down to (and including) {@code node}
+   *  already contains a {@code com.tbohne.llkpattern.} frame. While it doesn't, the normal
+   *  percent-of-total cutoff is suspended for {@code node}'s own callers -- guaranteeing every
+   *  printed stack reaches into this project's own code, rather than bottoming out entirely in
+   *  JDK/library allocation machinery (e.g. autoboxing, collection resizing) that the cutoff would
+   *  otherwise have hidden the llkpattern frame beneath. Once an llkpattern frame has appeared,
+   *  the ordinary cutoff resumes for frames further out. */
   private static void printCallers(
-      StringBuilder body, ChainNode node, long totalWeight, double cutoffPercent, int depth) {
+      StringBuilder body, ChainNode node, long totalWeight, double cutoffPercent, int depth,
+      boolean llkSeenInPath) {
     for (ChainNode caller : node.rankedChildren()) {
       double pct = 100.0 * caller.count / totalWeight;
-      if (pct < cutoffPercent) {
+      if (pct < cutoffPercent && llkSeenInPath) {
         break;
       }
       for (int i = 0; i < depth; i++) {
         body.append("   ");
       }
       body.append(String.format(Locale.ROOT, "* %s (%.1f%%)%n", caller.frame, pct));
-      printCallers(body, caller, totalWeight, cutoffPercent, depth + 1);
+      printCallers(
+          body, caller, totalWeight, cutoffPercent, depth + 1,
+          llkSeenInPath || isLlkFrame(caller.frame));
     }
+  }
+
+  private static final String LLKPATTERN_PACKAGE_PREFIX = "com.tbohne.llkpattern.";
+
+  private static boolean isLlkFrame(String frame) {
+    return frame != null && frame.startsWith(LLKPATTERN_PACKAGE_PREFIX);
   }
 
   private static String ordinalSuffix(int n) {

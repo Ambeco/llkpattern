@@ -33,9 +33,18 @@ class PatternSyntaxException extends java.util.regex.PatternSyntaxException {
 	}
 
 	private static StringBuilder appendCodePoint(StringBuilder sb, int codePoint) {
-		return sb.append("'")
-						 .appendCodePoint(codePoint)
-						 .append("' (U+")
+		sb.append("'");
+		// Not sb.appendCodePoint(codePoint) -- the JDK's own implementation allocates a throwaway
+		// char[2] (via Character.toChars) for any supplementary code point just to copy it into sb
+		// right after. This method only runs while building an exception message (cold path, never
+		// once per parsed character the way PatternParser's own copy of this fix is), so the
+		// allocation wouldn't matter here on its own, but there's no reason to pay for it either.
+		if (Character.isBmpCodePoint(codePoint)) {
+			sb.append((char) codePoint);
+		} else {
+			sb.append(Character.highSurrogate(codePoint)).append(Character.lowSurrogate(codePoint));
+		}
+		return sb.append("' (U+")
 						 .append(String.format("%04x", codePoint))
 						 .append(")");
 	}

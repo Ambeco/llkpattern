@@ -297,7 +297,7 @@ final class PatternParser {
         int startIndex = index;
         int codePoint = tryParseSingleCharEscape();
         if (codePoint != -1) {
-          rawText.appendCodePoint(codePoint);
+          appendCodePoint(rawText, codePoint);
           if (rawTextStartIndex < 0) {
             rawTextStartIndex = startIndex;
           }
@@ -369,9 +369,23 @@ final class PatternParser {
           complex.endIndex = index;
           sequence.patterns.add(parseQuantifiable(complex));
         } else {
-          rawText.appendCodePoint(fullChar);
+          appendCodePoint(rawText, fullChar);
         }
       }
+    }
+  }
+
+  // StringBuilder.appendCodePoint's own JDK implementation calls Character.toChars(codePoint) for
+  // any supplementary (non-BMP) code point, allocating a throwaway char[2] just to copy its two
+  // chars into sb right after -- a real cost here, since rawText.appendCodePoint() runs once per
+  // ordinary literal character while parsing (see allocation sampling in
+  // benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt). Character.highSurrogate/lowSurrogate
+  // compute the same two chars with no allocation, so use those directly instead.
+  private static void appendCodePoint(StringBuilder sb, int codePoint) {
+    if (Character.isBmpCodePoint(codePoint)) {
+      sb.append((char) codePoint);
+    } else {
+      sb.append(Character.highSurrogate(codePoint)).append(Character.lowSurrogate(codePoint));
     }
   }
 

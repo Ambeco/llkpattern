@@ -1782,6 +1782,37 @@ Notes to self about how to work on this project, and other context that doesn't 
   working directory lives under a synced Dropbox folder) transiently locking the just-written output
   file. `./gradlew --stop` first, then retry, is a reasonable first move if this recurs.
 
+### Avoiding `StringBuilder.appendCodePoint`'s surrogate-pair allocation (2026-09-14)
+
+- Follow-up to the allocation sampling above: `Character.toChars` (called from
+  `StringBuilder.appendCodePoint` -> `PatternParser.parseUnion`'s two `rawText.appendCodePoint(...)`
+  call sites) showed up in the alloc sampling as a leaf. The JDK's own `appendCodePoint`
+  (`AbstractStringBuilder.appendCodePoint`, verified by disassembling it directly since its javadoc
+  doesn't mention this) is a fast `append((char) codePoint)` for any BMP code point, but for a
+  supplementary one it calls `Character.toChars(codePoint)` -- which allocates a throwaway `char[2]`
+  just to copy its two chars into the builder right after. Fixed by a small local
+  `appendCodePoint(StringBuilder, int)` helper that does the BMP fast path the same way, but for the
+  supplementary case appends `Character.highSurrogate(codePoint)`/`lowSurrogate(codePoint)` directly
+  (both plain `char`-returning, no allocation) instead of going through `toChars`. Applied the same
+  fix to `PatternSyntaxException`'s own (structurally identical, but cold/exception-message-only)
+  `appendCodePoint` helper too, for consistency -- grepped the whole module first to confirm those
+  were the only two call sites.
+- Measured impact was real but small: `llkCompile` allocation dropped only ~600 B/op out of
+  ~986,000 (desktop `corpus_benchmark_results.json`) -- the fix is correct (the leaf is gone from
+  the re-captured allocation sampling entirely), but the OpenJDK-derived corpus this benchmark
+  compiles is overwhelmingly BMP characters, so the supplementary-code-point path barely gets
+  exercised. This is a case where JFR's allocation-sampling weight (the leaf was ~9.9% of sampled
+  weight before the fix) overstated the real B/op impact -- consistent with the "low-sample-count
+  entries can be noisy" caveat from the 2026-09-10 JFR entry above, just showing up as an
+  overestimate here rather than a wildly-wrong one-off number.
+- Confirmed the desktop machine really was noisy mid-session: a `jmh` run right after this change
+  showed llkCompile/llkMatch/regexCompile/regexMatch *all* ~25-35% slower than the committed
+  baseline, including the two `regex*` benchmarks this change never touches -- the same
+  "everything moved together, so it's not a real regression" signature as the Pixel 3a run noted
+  above. Closing Dropbox (this project's working directory lives under a synced Dropbox folder) and
+  re-running brought all four back in line with the baseline. Worth trying first whenever a desktop
+  JMH run looks suspiciously uniformly worse across every benchmark, `regex*` included.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

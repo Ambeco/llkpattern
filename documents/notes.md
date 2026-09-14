@@ -1756,6 +1756,32 @@ Notes to self about how to work on this project, and other context that doesn't 
   showed a clear, sensible dominant leaf: `Ll1Pattern.matcher` (constructing a new `Matcher` per
   call, which is exactly what the benchmark does) at 97.9%.
 
+### Pre-sizing `mergeEntryPoints`' merged `ArrayCodePointSet` (2026-09-14)
+
+- Followed up on the allocation sampling above: `ArrayCodePointSet.ensureCapacity`/`appendSorted`
+  was 12.6%/9.8% of `llkCompile`'s sampled allocation weight, traced to
+  `PatternConstruct.mergeEntryPoints` building its result set from `INITIAL_CAPACITY = 1`, one
+  `appendSorted()` at a time. Fix: `mergeEntryPointsRaw`'s `CodePointMapBuilder` result already
+  knows its own entry count by the time `mergeEntryPoints` copies it into the final set, so
+  `ranges.ensureCapacity(raw.merged.size())` first. Needed a new package-private
+  `ArrayCodePointMap.size()` accessor (none existed) and narrowing `RawMerge.merged`'s field type
+  from the `MutableCodePointMap<V>` interface to the concrete `ArrayCodePointMap<V>` to expose it.
+  Considered summing each candidate's own entry-point set size instead (the project owner's first
+  suggestion) but that would force exactly the `entryMap` materialization `addCodePointsTo` exists
+  to avoid -- `raw.merged`'s own count was the right source since it already exists at that point.
+- Desktop JMH: `llkCompile` allocation 1,066,144 -> 985,728 B/op (~7.5%), GC count 103 -> 80 per
+  measured iteration; wall-clock unchanged within noise.
+- Pixel 3a re-run the same session came back with `compileLlk` 7.66 -> 7.17 ms/pass, but
+  `compileRegex` (untouched by this change) also moved 6.55 -> 7.17 ms/pass -- a swing that size on
+  the unrelated `regex` benchmark means this is mostly (maybe entirely) device-to-device run
+  variance, not a real signal from this fix. Don't read the current desktop-vs-Pixel3a "who compiles
+  faster" comparison as settled off one run; a follow-up session repeating the Pixel 3a run a few
+  times back-to-back would help separate real device characteristics from noise.
+- `connectedAndroidTest` failed once with a `FileSystemException` on the results file mid-copy, then
+  succeeded immediately on retry with no other changes -- consistent with Dropbox (this project's
+  working directory lives under a synced Dropbox folder) transiently locking the just-written output
+  file. `./gradlew --stop` first, then retry, is a reasonable first move if this recurs.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

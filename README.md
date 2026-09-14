@@ -83,15 +83,15 @@ Both tables are milliseconds per pass over the full OpenJDK-derived test corpus 
 
 | | Intel-i7-9750H<br>regex | Intel-i7-9750H<br>llkpattern | Pixel 3a<br>regex | Pixel 3a<br>llkpattern |
 |---|-------------------------|---|---|---|
-| Compile | 0.096                   | 0.381 | 6.55 | 7.66 |
+| Compile | 0.096                   | 0.381 | 7.17 | 7.17 |
 
 **Corpus match time (ms/pass) (each pass matches/finds/look_ats 406 patterns):**
 
 | | Intel-i7-9750H<br>regex | Intel-i7-9750H<br>llkpattern | Pixel 3a<br>regex | Pixel 3a<br>llkpattern |
 |---|-------------------------|---|---|---|
-| Match | 0.047 | 0.040 | 3.99 | 0.78 |
+| Match | 0.047 | 0.040 | 3.77 | 0.79 |
 
-llkpattern still compiles slower than `java.util.regex` on both devices (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch — see notes.md for the compile-time performance history. Match time is now faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
+llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch — see notes.md for the compile-time performance history. On the Pixel 3a the two compile times currently land within noise of each other run-to-run (see notes.md), so don't read the desktop-vs-Pixel3a compile comparison as settled. Match time is faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
 
 ## 5. Authorship
 

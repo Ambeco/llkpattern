@@ -1,5 +1,9 @@
 package com.tbohne.llkpattern;
 
+import static com.tbohne.llkpattern.SupplementaryChars.A;
+import static com.tbohne.llkpattern.SupplementaryChars.B;
+import static com.tbohne.llkpattern.SupplementaryChars.C;
+import static com.tbohne.llkpattern.SupplementaryChars.repeat;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertThrows;
@@ -8,7 +12,19 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/** Tests for Ll1Pattern/Matcher's public API: matches(), lookingAt(), find(), regions, groups. */
+/**
+ * Tests for Ll1Pattern/Matcher's public API: matches(), lookingAt(), find(), regions, groups.
+ *
+ * <p>Uses SupplementaryChars' A/B/C (supplementary/astral code points) in place of the plain
+ * ASCII 'a'/'b'/'c' this file originally used, throughout -- see SupplementaryPatternTextTest.
+ * Every start()/end()/region() offset below is in {@code char} units, not code points (matching
+ * {@code java.util.regex}), and is recalculated accordingly -- {@code A.length() == 2}, not 1.
+ * {@code find_onEmptyMatchingPattern_stillMakesForwardProgress} and {@code
+ * reset_clearsPriorMatchAndRegion} are left as plain ASCII: both are really about Matcher-internal
+ * bookkeeping (zero-width-match forward progress; region bookkeeping surviving reset()) that plain
+ * single-char positions already exercise just as well, without entangling char-vs-code-point
+ * stepping into what each is actually testing.
+ */
 @RunWith(JUnit4.class)
 public class MatcherApiTest {
 
@@ -16,55 +32,58 @@ public class MatcherApiTest {
 
   @Test
   public void matches_requiresConsumingWholeInput() {
-    assertThat(Ll1Pattern.compile("a").matcher("a").matches(), is(true));
-    assertThat(Ll1Pattern.compile("a").matcher("aa").matches(), is(false));
+    assertThat(Ll1Pattern.compile(A).matcher(A).matches(), is(true));
+    assertThat(Ll1Pattern.compile(A).matcher(A + A).matches(), is(false));
   }
 
   @Test
   public void lookingAt_onlyRequiresAMatchingPrefix() {
-    assertThat(Ll1Pattern.compile("a").matcher("aa").lookingAt(), is(true));
-    assertThat(Ll1Pattern.compile("a").matcher("ba").lookingAt(), is(false));
+    assertThat(Ll1Pattern.compile(A).matcher(A + A).lookingAt(), is(true));
+    assertThat(Ll1Pattern.compile(A).matcher(B + A).lookingAt(), is(false));
   }
 
   // --- find(): unanchored search ---
 
   @Test
   public void find_locatesMatchNotAtTheStart() {
-    Matcher m = Ll1Pattern.compile("b").matcher("aab");
+    Matcher m = Ll1Pattern.compile(B).matcher(A + A + B);
     assertThat(m.find(), is(true));
-    assertThat(m.start(), is(2));
-    assertThat(m.end(), is(3));
-    assertThat(m.group(), is("b"));
+    assertThat(m.start(), is(2 * A.length()));
+    assertThat(m.end(), is(2 * A.length() + B.length()));
+    assertThat(m.group(), is(B));
   }
 
   @Test
   public void find_noMatchAnywhere_returnsFalse() {
-    assertThat(Ll1Pattern.compile("z").matcher("aab").find(), is(false));
+    assertThat(Ll1Pattern.compile("z").matcher(A + A + B).find(), is(false));
   }
 
   @Test
   public void find_repeatedCalls_advancePastPreviousMatch() {
-    Matcher m = Ll1Pattern.compile("a").matcher("aaa");
+    Matcher m = Ll1Pattern.compile(A).matcher(A + A + A);
     assertThat(m.find(), is(true));
     assertThat(m.start(), is(0));
     assertThat(m.find(), is(true));
-    assertThat(m.start(), is(1));
+    assertThat(m.start(), is(A.length()));
     assertThat(m.find(), is(true));
-    assertThat(m.start(), is(2));
+    assertThat(m.start(), is(2 * A.length()));
     assertThat(m.find(), is(false));
   }
 
   @Test
   public void find_withExplicitStart_searchesFromThatIndex() {
-    Matcher m = Ll1Pattern.compile("a").matcher("aaa");
-    assertThat(m.find(1), is(true));
-    assertThat(m.start(), is(1));
+    Matcher m = Ll1Pattern.compile(A).matcher(A + A + A);
+    // A.length(), not the literal 1 the original ASCII version used -- searching from a
+    // mid-code-point index isn't what this test is about; this starts exactly at the second A.
+    assertThat(m.find(A.length()), is(true));
+    assertThat(m.start(), is(A.length()));
   }
 
   @Test
   public void find_onEmptyMatchingPattern_stillMakesForwardProgress() {
     // "a*" can match zero characters anywhere -- find() must still advance past a zero-width
-    // match rather than looping on the same position forever.
+    // match rather than looping on the same position forever. Plain ASCII: this is about
+    // Matcher's own zero-width forward-progress bookkeeping, not code-point width.
     Matcher m = Ll1Pattern.compile("a*").matcher("b");
     assertThat(m.find(), is(true));
     assertThat(m.start(), is(0));
@@ -77,16 +96,16 @@ public class MatcherApiTest {
 
   @Test
   public void region_restrictsMatchingToThatSpan() {
-    Matcher m = Ll1Pattern.compile("a").matcher("xaxax");
-    m.region(3, 4);
+    Matcher m = Ll1Pattern.compile(A).matcher("xx" + A + "xx");
+    m.region(2, 2 + A.length());
     assertThat(m.matches(), is(true));
-    assertThat(m.start(), is(3));
+    assertThat(m.start(), is(2));
   }
 
   @Test
   public void region_findRespectsRegionEnd() {
-    Matcher m = Ll1Pattern.compile("a").matcher("axa");
-    m.region(1, 2); // only the middle "x" is in-region
+    Matcher m = Ll1Pattern.compile(A).matcher(A + "x" + A);
+    m.region(A.length(), A.length() + 1); // only the middle "x" is in-region
     assertThat(m.find(), is(false));
   }
 
@@ -94,6 +113,7 @@ public class MatcherApiTest {
 
   @Test
   public void reset_clearsPriorMatchAndRegion() {
+    // Plain ASCII: this is about region bookkeeping surviving reset(), not pattern content.
     Matcher m = Ll1Pattern.compile("a").matcher("aax");
     m.region(1, 2);
     m.reset();
@@ -103,9 +123,9 @@ public class MatcherApiTest {
 
   @Test
   public void resetWithNewInput_matchesAgainstTheNewString() {
-    Matcher m = Ll1Pattern.compile("a").matcher("a");
+    Matcher m = Ll1Pattern.compile(A).matcher(A);
     assertThat(m.matches(), is(true));
-    m.reset("b");
+    m.reset(B);
     assertThat(m.matches(), is(false));
   }
 
@@ -113,12 +133,14 @@ public class MatcherApiTest {
 
   @Test
   public void groupCount_countsOnlyRealCapturingGroups() {
-    assertThat(Ll1Pattern.compile("(a)(?:b)(c)").matcher("abc").groupCount(), is(2));
+    assertThat(
+        Ll1Pattern.compile("(" + A + ")(?:" + B + ")(" + C + ")").matcher(A + B + C).groupCount(),
+        is(2));
   }
 
   @Test
   public void group_beforeAnyMatchAttempt_throwsIllegalStateException() {
-    Matcher m = Ll1Pattern.compile("a").matcher("a");
+    Matcher m = Ll1Pattern.compile(A).matcher(A);
     assertThrows(IllegalStateException.class, m::group);
     assertThrows(IllegalStateException.class, m::start);
     assertThrows(IllegalStateException.class, m::end);
@@ -126,21 +148,23 @@ public class MatcherApiTest {
 
   @Test
   public void group_withInvalidNumber_throwsIndexOutOfBoundsException() {
-    Matcher m = Ll1Pattern.compile("(a)").matcher("a");
+    Matcher m = Ll1Pattern.compile("(" + A + ")").matcher(A);
     m.matches();
     assertThrows(IndexOutOfBoundsException.class, () -> m.group(2));
   }
 
   @Test
   public void group_withUnknownName_throwsIllegalArgumentException() {
-    Matcher m = Ll1Pattern.compile("(?<x>a)").matcher("a");
+    // Group NAME stays ASCII -- GroupName -> [A-Za-z0-9] is an ASCII-only grammar production by
+    // design (see PatternParser's own BNF comment), unrelated to the captured content's width.
+    Matcher m = Ll1Pattern.compile("(?<x>" + A + ")").matcher(A);
     m.matches();
     assertThrows(IllegalArgumentException.class, () -> m.group("y"));
   }
 
   @Test
   public void unmatchedOptionalGroup_returnsNullNotEmptyString() {
-    Matcher m = Ll1Pattern.compile("(a)?b").matcher("b");
+    Matcher m = Ll1Pattern.compile("(" + A + ")?" + B).matcher(B);
     assertThat(m.matches(), is(true));
     assertThat(m.group(1), is((String) null));
     assertThat(m.start(1), is(-1));
@@ -151,13 +175,13 @@ public class MatcherApiTest {
 
   @Test
   public void asPredicate_delegatesToMatches() {
-    assertThat(Ll1Pattern.compile("a+").asPredicate().test("aaa"), is(true));
-    assertThat(Ll1Pattern.compile("a+").asPredicate().test("aaab"), is(false));
+    assertThat(Ll1Pattern.compile(A + "+").asPredicate().test(repeat(A, 3)), is(true));
+    assertThat(Ll1Pattern.compile(A + "+").asPredicate().test(repeat(A, 3) + B), is(false));
   }
 
   @Test
   public void staticMatches_delegatesToMatcherMatches() {
-    assertThat(Ll1Pattern.matches("a+", "aaa"), is(true));
+    assertThat(Ll1Pattern.matches(A + "+", repeat(A, 3)), is(true));
   }
 
   // --- Per-attempt state (quantifiableCounts/captureGroups) must not leak between separate match
@@ -174,16 +198,16 @@ public class MatcherApiTest {
     // first three, since nothing after the loop can tell "stop at 3" from "keep going" -- find()
     // must NOT let that failed attempt's loop counter leak into scanning the next position, which
     // used to spuriously "match" an empty string once the counter happened to already exceed min.
-    Matcher m = Ll1Pattern.compile("a{2,3}").matcher("aaaa");
+    Matcher m = Ll1Pattern.compile(A + "{2,3}").matcher(repeat(A, 4));
     assertThat(m.find(), is(true));
-    assertThat(m.group(), is("aaa"));
+    assertThat(m.group(), is(repeat(A, 3)));
   }
 
   @Test
   public void find_optionalQuantifier_doesNotLeakCaptureStateAcrossScanPositions() {
-    Matcher m = Ll1Pattern.compile("a?b").matcher("aaaab");
+    Matcher m = Ll1Pattern.compile(A + "?" + B).matcher(repeat(A, 4) + B);
     assertThat(m.find(), is(true));
-    assertThat(m.group(), is("ab"));
+    assertThat(m.group(), is(A + B));
   }
 
   @Test
@@ -191,7 +215,7 @@ public class MatcherApiTest {
     // Before the fix, a failed attempt at an earlier find() scan position could leave a nonzero
     // loop counter that let "(ab)+" spuriously satisfy its own min==1 check with an empty match,
     // even though "ab" never actually occurs in the input.
-    Matcher m = Ll1Pattern.compile("(ab)+").matcher("aiiiiw");
+    Matcher m = Ll1Pattern.compile("(" + A + B + ")+").matcher(A + "iiiiw");
     assertThat(m.find(), is(false));
   }
 
@@ -202,20 +226,20 @@ public class MatcherApiTest {
 
   @Test
   public void nestedCapturingGroups_numberedInOpeningOrder() {
-    Matcher m = Ll1Pattern.compile("(a(b)(c))").matcher("abc");
+    Matcher m = Ll1Pattern.compile("(" + A + "(" + B + ")(" + C + "))").matcher(A + B + C);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("abc")); // outermost group opened first
-    assertThat(m.group(2), is("b"));
-    assertThat(m.group(3), is("c"));
+    assertThat(m.group(1), is(A + B + C)); // outermost group opened first
+    assertThat(m.group(2), is(B));
+    assertThat(m.group(3), is(C));
   }
 
   @Test
   public void deeplyNestedCapturingGroups_numberedInOpeningOrder() {
-    Matcher m = Ll1Pattern.compile("((a)(b(c)))").matcher("abc");
+    Matcher m = Ll1Pattern.compile("((" + A + ")(" + B + "(" + C + ")))").matcher(A + B + C);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("abc"));
-    assertThat(m.group(2), is("a"));
-    assertThat(m.group(3), is("bc"));
-    assertThat(m.group(4), is("c"));
+    assertThat(m.group(1), is(A + B + C));
+    assertThat(m.group(2), is(A));
+    assertThat(m.group(3), is(B + C));
+    assertThat(m.group(4), is(C));
   }
 }

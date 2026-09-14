@@ -2114,3 +2114,32 @@ Notes to self about how to work on this project, and other context that doesn't 
     `CodePointMapBuilder` pre-sizing attempts documented earlier in this file hit twice: a
     plausible-sounding heuristic that measured as a net regression once actually tried. Flagged
     back to the project owner rather than guessing at a magic constant.
+
+### Eliminating the `body` + `next` candidate-list copies (2026-09-14, same session)
+
+- The project owner spotted 4.4% of Pixel 3a compile time in `arraycopy`, traced to
+  `QuantifiableConstruct` copying its loop body list (`body`) into a fresh `ArrayList` just to
+  append `next` before handing it to `mergeEntryPoints` -- three separate call sites turned out to
+  do this same "`new ArrayList<>(body)` then `.add(next)`" dance across `buildLoopEntryMap` (feeds
+  `mergeEntryPoints`), and `buildLoopMatcher` (feeds `validateDisjointness` and `buildForkChain`).
+- First attempt: a `mergeEntryPoints(pattern, candidates, extra, candidateNounPlural)` overload
+  that merges an optional extra candidate directly, without ever building a combined list -- the
+  project owner's own suggested fix, extended to a small shared `mergeOneEntryPoint` helper so the
+  ambiguity-check/union logic isn't duplicated between the main loop and the `extra` candidate.
+- For the other two call sites (`validateDisjointness`, `buildForkChain`/`buildForkChainInternal`,
+  which also need `checkDisjoint`), first tried a `withExtra(base, extra)` helper returning a
+  read-only `AbstractList` view (`base` plus one appended element, no copy) so none of those
+  methods' own signatures had to change. The project owner preferred threading an explicit
+  `@Nullable PatternConstruct extra` parameter through instead, matching `mergeEntryPoints`'s own
+  shape, to avoid even the view object's own indirection (a virtual `get()` call per access) inside
+  what are genuinely hot loops -- not just fewer allocations, but simpler dispatch too. Replaced
+  `withExtra` with two small index helpers (`candidateAt`/`candidateCount`) shared by
+  `checkDisjoint` and `buildForkChainInternal`, and threaded `extra` through
+  `validateDisjointness`/`checkDisjoint`/`buildForkChain`/`buildForkChainInternal` -- each treats
+  `candidates` plus (if present) `extra` as one logical list addressed by plain index arithmetic,
+  with `buildForkChain` keeping a 7-arg overload (delegating with `extra = null`) for its three
+  other call sites that don't need one.
+- Benchmarks re-run: desktop `llkCompile` 0.233 -> 0.222 ms/op (-4.8%), 673,536 -> 628,240 B/op
+  (-6.7%); `llkMatch` flat. Pixel 3a `compileLlk` 5.17 -> 4.84 ms/pass (-6.2%), a real win this
+  time (not device noise -- `compileRegex`, untouched, stayed flat at ~7.5-7.6 across both runs).
+  README updated.

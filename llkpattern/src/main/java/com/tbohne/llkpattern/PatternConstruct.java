@@ -244,6 +244,27 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * {@code candidates} with {@code extra} (or nothing, if {@code null}) logically appended as one
+	 * more element, addressed by plain index arithmetic -- no wrapper object, no copy. {@code
+	 * validateDisjointness}/{@code checkDisjoint}/{@code buildForkChain}/{@code
+	 * buildForkChainInternal} all sometimes need a loop's body list plus its own {@code next} as
+	 * one candidate list (via their own {@code extra} parameter); this is how each reads "index i
+	 * of that logical list" without ever materializing it -- a real copy would have been an {@code
+	 * arraycopy} this project's own on-device CPU sampling (Pixel 3a) flagged as real cost. {@link
+	 * #mergeEntryPoints}'s own {@code extra} parameter doesn't go through this: it needs to treat
+	 * {@code extra} specially anyway (the {@code candidates.isEmpty()} fast path), and never
+	 * indexes into the combined list positionally the way these four do.
+	 */
+	private static PatternConstruct candidateAt(
+			List<PatternConstruct> candidates, @Nullable PatternConstruct extra, int index) {
+		return index < candidates.size() ? candidates.get(index) : extra;
+	}
+
+	private static int candidateCount(List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
+		return candidates.size() + (extra != null ? 1 : 0);
+	}
+
+	/**
 	 * Merges {@code candidates}' own entry points (via {@link #getEntryPointMap}/{@link
 	 * #getEntryElse}, not {@link #compile} -- see design.md's "Entry-point computation vs. matcher
 	 * compilation" section), rejecting the first ambiguity: two candidates whose entry ranges
@@ -265,7 +286,23 @@ abstract class PatternConstruct {
 	 * find a conflicting pair -- see {@link #checkDisjoint}'s own doc for why that map is gone.
 	 */
 	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
-		if (candidates.size() == 1) {
+		return mergeEntryPoints(pattern, candidates, null, candidateNounPlural);
+	}
+
+	/**
+	 * Same as {@link #mergeEntryPoints(String, List, String)}, plus one more candidate
+	 * ({@code extra}, or {@code null} for none) merged in without the caller having to copy
+	 * {@code candidates} into a new list just to append it -- {@code
+	 * QuantifiableConstruct.buildLoopEntryMap}'s own reason for existing: {@code next} joins the
+	 * merge only when {@code min == 0}, and was previously always copied into a fresh {@code
+	 * ArrayList<>(body)} first, real work (an {@code arraycopy}) showing up in this project's own
+	 * on-device CPU sampling (Pixel 3a) even though `next` isn't part of the merge at all in the
+	 * far more common {@code min >= 1} case.
+	 */
+	static MergedEntries mergeEntryPoints(
+			String pattern, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+			String candidateNounPlural) {
+		if (extra == null && candidates.size() == 1) {
 			// A lone candidate can't conflict with itself -- skip straight to aliasing its own
 			// already-computed entry point, no union/allocation needed at all, same trick
 			// buildLoopMatcher's bodyOnlyResult already uses for a single-element loop body. This is
@@ -273,24 +310,45 @@ abstract class PatternConstruct {
 			PatternConstruct only = candidates.get(0);
 			return new MergedEntries(only.getEntryPointMap(), only.claimsEntryElse() ? only : null);
 		}
+		if (extra != null && candidates.isEmpty()) {
+			// Mirror image of the fast path above -- `extra` alone is exactly as uncontested as a
+			// lone `candidates` element would be. Not reachable via buildLoopEntryMap (`body` is
+			// always non-empty -- a loop always has a real body), but a real case in general, so
+			// still handled rather than assumed away.
+			return new MergedEntries(extra.getEntryPointMap(), extra.claimsEntryElse() ? extra : null);
+		}
 		MutableCodePointSet ranges = new ArrayCodePointSet();
 		PatternConstruct elseCandidate = null;
 		for (PatternConstruct candidate : candidates) {
-			if (candidate.claimsEntryElse()) {
-				if (elseCandidate != null) {
-					throw PatternSyntaxException.throwWithReferences(
-							pattern,
-							candidate.startIndex,
-							candidateNounPlural, " starting at index ", candidate.startIndex,
-							" allows any character, but another ", candidateNounPlural,
-							" starting at index ", elseCandidate.startIndex,
-							" also allows any character, which is ambiguous");
-				}
-				elseCandidate = candidate;
-			}
-			ranges.addAll(candidate.getEntryPointMap());
+			elseCandidate = mergeOneEntryPoint(pattern, candidate, elseCandidate, candidateNounPlural, ranges);
+		}
+		if (extra != null) {
+			elseCandidate = mergeOneEntryPoint(pattern, extra, elseCandidate, candidateNounPlural, ranges);
 		}
 		return new MergedEntries(ranges, elseCandidate);
+	}
+
+	/** One candidate's own contribution to an in-progress merge (shared by {@link
+	 *  #mergeEntryPoints}'s main-list loop and its {@code extra} candidate) -- unions its entry
+	 *  point into {@code ranges} and returns the (possibly updated) else-candidate, throwing if
+	 *  this candidate and an earlier one both claim the any-other-character catch-all. */
+	private static @Nullable PatternConstruct mergeOneEntryPoint(
+			String pattern, PatternConstruct candidate, @Nullable PatternConstruct elseCandidate,
+			String candidateNounPlural, MutableCodePointSet ranges) {
+		if (candidate.claimsEntryElse()) {
+			if (elseCandidate != null) {
+				throw PatternSyntaxException.throwWithReferences(
+						pattern,
+						candidate.startIndex,
+						candidateNounPlural, " starting at index ", candidate.startIndex,
+						" allows any character, but another ", candidateNounPlural,
+						" starting at index ", elseCandidate.startIndex,
+						" also allows any character, which is ambiguous");
+			}
+			elseCandidate = candidate;
+		}
+		ranges.addAll(candidate.getEntryPointMap());
+		return elseCandidate;
 	}
 
 	/**
@@ -317,12 +375,15 @@ abstract class PatternConstruct {
 	 * other candidate (that's the whole point of a fallback bucket), so checking it here would
 	 * reject every pattern that has one.
 	 */
-	private static void checkDisjoint(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
-		for (int j = 1; j < candidates.size(); j++) {
-			PatternConstruct candidate = candidates.get(j);
+	private static void checkDisjoint(
+			String pattern, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+			String candidateNounPlural) {
+		int count = candidateCount(candidates, extra);
+		for (int j = 1; j < count; j++) {
+			PatternConstruct candidate = candidateAt(candidates, extra, j);
 			CodePointSet own = candidate.getEntryPointMap();
 			for (int i = 0; i < j; i++) {
-				CodePointSet prior = candidates.get(i).getEntryPointMap();
+				CodePointSet prior = candidateAt(candidates, extra, i).getEntryPointMap();
 				if (own.intersects(prior)) {
 					throwOverlapError(pattern, candidate, j + 1, candidateNounPlural, own, prior);
 				}
@@ -370,11 +431,15 @@ abstract class PatternConstruct {
 	 * {@code next} -- so nothing else would ever check body-vs-{@code next} disjointness.
 	 */
 	static void validateDisjointness(
-			String pattern, List<PatternConstruct> candidates, PatternConstruct compileTarget, String candidateNounPlural) {
+			String pattern, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+			PatternConstruct compileTarget, String candidateNounPlural) {
 		for (PatternConstruct candidate : candidates) {
 			candidate.compile(compileTarget);
 		}
-		checkDisjoint(pattern, candidates, candidateNounPlural);
+		if (extra != null) {
+			extra.compile(compileTarget);
+		}
+		checkDisjoint(pattern, candidates, extra, candidateNounPlural);
 	}
 
 	/**
@@ -407,18 +472,35 @@ abstract class PatternConstruct {
 			String candidateNounPlural,
 			Function<PatternConstruct, MatcherConstruct> targetResolver,
 			@Nullable MatcherConstruct elseTarget) {
-		if (candidates.size() == 1 && elseTarget == null) {
+		return buildForkChain(owner, flags, pattern, candidates, null, candidateNounPlural, targetResolver, elseTarget);
+	}
+
+	/** Same as {@link #buildForkChain(PatternConstruct, int, String, List, String, Function,
+	 *  MatcherConstruct)}, plus one more candidate ({@code extra}, or {@code null} for none) --
+	 *  see {@link #mergeEntryPoints(String, List, PatternConstruct, String)}'s own doc for the
+	 *  shared reasoning (this is {@code QuantifiableConstruct.buildLoopMatcher}'s own entry-chain
+	 *  call, which needs its own {@code next} included exactly when {@code min == 0}). */
+	static MatcherConstruct buildForkChain(
+			@Nullable PatternConstruct owner,
+			int flags,
+			String pattern,
+			List<PatternConstruct> candidates,
+			@Nullable PatternConstruct extra,
+			String candidateNounPlural,
+			Function<PatternConstruct, MatcherConstruct> targetResolver,
+			@Nullable MatcherConstruct elseTarget) {
+		if (candidateCount(candidates, extra) == 1 && elseTarget == null) {
 			// Nothing to disambiguate between -- see this method's own doc for why a lone candidate
 			// with no catch-all needs no fork node, CASE_INSENSITIVE or not: its own compiled matcher
 			// already re-verifies membership (folded or not) as its first action.
-			MatcherConstruct target = targetResolver.apply(candidates.get(0));
+			MatcherConstruct target = targetResolver.apply(candidateAt(candidates, extra, 0));
 			if (owner != null) {
 				owner.matcher = target;
 			}
 			return target;
 		}
 		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-			return buildForkChainInternal(owner, flags, pattern, candidates, candidateNounPlural, targetResolver, elseTarget);
+			return buildForkChainInternal(owner, flags, pattern, candidates, extra, candidateNounPlural, targetResolver, elseTarget);
 		}
 		// Under CASE_INSENSITIVE, exact (unfolded) membership on ANY candidate must win over a
 		// folded match on an earlier one in the chain -- e.g. `(?i:[a-z]*)X` against "ABCX": the
@@ -435,16 +517,18 @@ abstract class PatternConstruct {
 		// through to the real (possibly absent) fallback. (This means checkDisjoint below runs twice
 		// -- once per buildForkChainInternal call -- but that's compile-time-error-path-only work,
 		// not worth special-casing away.)
-		MatcherConstruct foldFallback = buildForkChainInternal(null, flags, pattern, candidates, candidateNounPlural, targetResolver, elseTarget);
-		return buildForkChainInternal(owner, flags & ~Ll1Pattern.CASE_INSENSITIVE, pattern, candidates, candidateNounPlural, targetResolver, foldFallback);
+		MatcherConstruct foldFallback = buildForkChainInternal(null, flags, pattern, candidates, extra, candidateNounPlural, targetResolver, elseTarget);
+		return buildForkChainInternal(owner, flags & ~Ll1Pattern.CASE_INSENSITIVE, pattern, candidates, extra, candidateNounPlural, targetResolver, foldFallback);
 	}
 
-	/** {@code candidates.size() >= 2}, guaranteed by {@link #buildForkChain}'s own singleton short-circuit. */
+	/** {@code candidateCount(candidates, extra) >= 2}, guaranteed by {@link #buildForkChain}'s own
+	 *  singleton short-circuit. */
 	private static MatcherConstruct buildForkChainInternal(
 			@Nullable PatternConstruct owner,
 			int flags,
 			String pattern,
 			List<PatternConstruct> candidates,
+			@Nullable PatternConstruct extra,
 			String candidateNounPlural,
 			Function<PatternConstruct, MatcherConstruct> targetResolver,
 			@Nullable MatcherConstruct elseTarget) {
@@ -452,24 +536,25 @@ abstract class PatternConstruct {
 		// higher-priority (earlier) candidate's -- see checkDisjoint's own doc for why this no
 		// longer needs a CodePointMap allocation. The chain itself is then built back to front,
 		// below.
-		checkDisjoint(pattern, candidates, candidateNounPlural);
+		checkDisjoint(pattern, candidates, extra, candidateNounPlural);
+		int count = candidateCount(candidates, extra);
 		int lastForkIndex; // last candidate index that still gets its own wrapping fork.
 		MatcherConstruct chain;
 		if (elseTarget != null) {
 			chain = elseTarget;
-			lastForkIndex = candidates.size() - 1;
+			lastForkIndex = count - 1;
 		} else {
 			// No catch-all -- the last candidate is the unconditional final link (see this method's
 			// class-level doc for why that's safe): dispatch straight into its own compiled matcher,
 			// no fork wrapping it.
-			chain = targetResolver.apply(candidates.get(candidates.size() - 1));
-			lastForkIndex = candidates.size() - 2;
+			chain = targetResolver.apply(candidateAt(candidates, extra, count - 1));
+			lastForkIndex = count - 2;
 		}
 		for (int i = lastForkIndex; i >= 1; i--) {
-			PatternConstruct candidate = candidates.get(i);
+			PatternConstruct candidate = candidateAt(candidates, extra, i);
 			chain = new ForkingMatcherConstruct(flags, candidate.getEntryPointMap(), targetResolver.apply(candidate), chain);
 		}
-		PatternConstruct head = candidates.get(0);
+		PatternConstruct head = candidateAt(candidates, extra, 0);
 		if (owner != null) {
 			return new ForkingMatcherConstruct(owner, head.getEntryPointMap(), targetResolver.apply(head), chain);
 		}
@@ -519,11 +604,10 @@ abstract class PatternConstruct {
 			for (PatternConstruct part : body) {
 				part.next = this;
 			}
-			List<PatternConstruct> candidates = new ArrayList<>(body);
-			if (min == 0) {
-				candidates.add(next);
-			}
-			MergedEntries result = mergeEntryPoints(pattern, candidates, "loop part");
+			// `body` handed straight to mergeEntryPoints, with `next` merged in via its own `extra`
+			// parameter instead of first being copied into a new ArrayList<>(body) just to append it
+			// -- see that overload's own doc.
+			MergedEntries result = mergeEntryPoints(pattern, body, min == 0 ? next : null, "loop part");
 			rawEntryElse = result.entryElse();
 			entryMap = result.ranges; // already Boolean-valued -- see mergeEntryPoints' own doc.
 			entryElse = rawEntryElse != null ? this : null;
@@ -609,9 +693,7 @@ abstract class PatternConstruct {
 			// already validated) -- its own compiled matcher (already built, tail-to-front) is
 			// otherwise untouched here now that the loop-back node no longer builds a combined
 			// dispatch table from this merge's result.
-			List<PatternConstruct> candidatesWithNext = new ArrayList<>(body);
-			candidatesWithNext.add(next);
-			validateDisjointness(pattern, candidatesWithNext, bodyCompileTarget, "loop part");
+			validateDisjointness(pattern, body, next, bodyCompileTarget, "loop part");
 
 			// The body-part-selection chain, shared between LoopMatcherConstruct's "continue" successor
 			// (directly, when not capturing) and the shared BeginCaptureMatcherConstruct's own successor
@@ -629,15 +711,12 @@ abstract class PatternConstruct {
 			continueMarker.matcher = capturing ? continueTarget : bodyChain;
 
 			// This construct's own externally-visible entry point, built AFTER every body candidate is
-			// compiled above (so their .matcher fields are resolvable) -- walking `entryCandidates`
-			// below (body's own candidates, plus `next` itself when min == 0) and falling back per
-			// `rawEntryElse` (computed earlier by buildLoopEntryMap()). Reuses the same shared
-			// `continueTarget` computed above, so a capturing loop's very first attempt captures
-			// exactly like every re-check does.
-			List<PatternConstruct> entryCandidates = new ArrayList<>(body);
-			if (min == 0) {
-				entryCandidates.add(next);
-			}
+			// compiled above (so their .matcher fields are resolvable) -- walking `body`'s own
+			// candidates, plus `next` itself (via buildForkChain's own `extra` parameter) when
+			// min == 0, and falling back per `rawEntryElse` (computed earlier by
+			// buildLoopEntryMap()). Reuses the same shared `continueTarget` computed above, so a
+			// capturing loop's very first attempt captures exactly like every re-check does.
+			@Nullable PatternConstruct entryExtra = min == 0 ? next : null;
 			MatcherConstruct entryElseValue;
 			if (min == 0 && bodyOnlyResult.elseCandidate == null) {
 				// Same reasoning as LoopMatcherConstruct's own "exit is the default" fallback: a
@@ -652,7 +731,7 @@ abstract class PatternConstruct {
 			} else {
 				entryElseValue = null;
 			}
-			buildForkChain(this, flags, pattern, entryCandidates, "loop part", candidate -> resolveTarget(candidate, next, continueTarget), entryElseValue);
+			buildForkChain(this, flags, pattern, body, entryExtra, "loop part", candidate -> resolveTarget(candidate, next, continueTarget), entryElseValue);
 		}
 
 		/**

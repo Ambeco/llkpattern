@@ -1,31 +1,26 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.CodePointMap.Range;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
- * A set of Unicode code points -- the pure-membership counterpart to {@link CodePointMap}, for the
- * (now overwhelming majority) of call sites in this codebase that only ever needed {@code
- * CodePointMap<Boolean>} -- every value was always {@code Boolean.TRUE}, carrying zero information
- * beyond "is this code point in the set" (see {@code PatternConstruct.entryMap}'s own historical
- * doc). Dropping the value entirely -- rather than keeping a generic map and just fixing {@code V}
- * to {@code Boolean} -- removes a whole array ({@link ArrayCodePointMap}'s parallel {@code values}
- * array) and, more importantly, the null-valued "punched hole" trick {@code CodePointMap}'s
- * generic {@link CodePointMap#complement} needs: since a set's only two states at any code point
- * are "in" and "out", a negated set is just this same set with the two states swapped -- see {@link
- * #invert()}. {@link ArrayCodePointMap}/{@link CodePointMap} remain in use wherever a real,
- * multi-valued map is still needed (candidate identities during compile-time ambiguity checking --
- * see {@code PatternConstruct.mergeEntryPointsRaw} -- and the general-purpose differential-test
- * oracle, {@code TreeCodePointMap}).
- *
- * <p>Same {@code [min, max)} range convention as {@link CodePointMap}; see its own doc.
+ * A set of Unicode code points. This engine's entry-point/dispatch machinery
+ * ({@code PatternConstruct}/{@code MatcherConstruct}) and every {@code NamedCharClass}/{@code
+ * UnicodePredicates} constant only ever need pure membership -- "is this code point in the set",
+ * nothing more -- so there's no generic value-carrying map underneath this any more (an earlier
+ * design had one, {@code CodePointMap<V>}, generic over an arbitrary value type fixed to {@code
+ * Boolean} almost everywhere it was used; see notes.md's 2026-09-12/2026-09-14 entries for that
+ * migration and its later cleanup). Dropping the value entirely -- rather than keeping a generic
+ * map and just fixing {@code V} to {@code Boolean} -- removes a whole parallel values array and,
+ * more importantly, the null-valued "punched hole" trick a generic map's {@code complement} would
+ * need: since a set's only two states at any code point are "in" and "out", a negated set is just
+ * this same set with the two states swapped -- see {@link #invert()}.
  *
  * <p>{@link ArrayCodePointSet} is the implementation real callers should use.
  */
 public interface CodePointSet {
-  int MAX_CODE_POINT = CodePointMap.MAX_CODE_POINT;
+  int MAX_CODE_POINT = 0x10FFFF;
 
   boolean isEmpty();
 
@@ -35,10 +30,11 @@ public interface CodePointSet {
   boolean containsAll(int min, int max);
 
   /**
-   * In ascending order by {@link Range#min} -- see {@link CodePointMap}'s ordering contract, which
-   * applies here identically. Default implementation eagerly builds a {@link LinkedHashSet} via
-   * {@link #forEachRange}; {@link ArrayCodePointSet} overrides {@link #forEachRange} directly
-   * instead of this, the same split {@link CodePointMap} uses.
+   * In ascending order by {@link Range#min} -- every implementation maintains this already (it
+   * falls straight out of being a set of disjoint ranges over an ordered domain), so this is a
+   * formal guarantee, not an incidental detail. Default implementation eagerly builds a {@link
+   * LinkedHashSet} via {@link #forEachRange}; {@link ArrayCodePointSet} overrides {@link
+   * #forEachRange} directly instead of this.
    */
   default Set<Range> rangeSet() {
     Set<Range> result = new LinkedHashSet<>();
@@ -55,8 +51,9 @@ public interface CodePointSet {
   /**
    * Visits every range this set contains as a plain {@code (int min, int max)} callback -- no
    * boxed {@link Range} allocated per range, and (for {@link ArrayCodePointSet}) reads the raw
-   * backing array directly. See {@link CodePointMap#forEachRange}'s own doc for why this matters on
-   * a hot path. Default falls back to {@link #rangeSet()}.
+   * backing array directly. Worth using over {@link #rangeSet()} on any hot path that just wants to
+   * visit ranges and has no actual use for a {@code Range} object. Default falls back to {@link
+   * #rangeSet()}.
    */
   default void forEachRange(RangeConsumer action) {
     for (Range r : rangeSet()) {
@@ -72,7 +69,8 @@ public interface CodePointSet {
 
   /**
    * Like {@link #forEachRange}, but a short-circuiting search: stops at (and returns {@code true}
-   * from) the first range {@code predicate} accepts. See {@link CodePointMap#first}'s own doc.
+   * from) the first range {@code predicate} accepts, instead of visiting every remaining range
+   * after the answer is already known.
    */
   default boolean first(RangePredicate predicate) {
     for (Range r : rangeSet()) {
@@ -111,15 +109,19 @@ public interface CodePointSet {
 
     /**
      * Bulk-adds a single range, skipping whatever overlap-checking/coalescing work {@link #add}
-     * normally does -- see {@link CodePointMap.MutableCodePointMap#appendSorted}'s identical
-     * contract (ascending {@code min} order, building up from empty). Default just forwards to
-     * {@link #add}; {@link ArrayCodePointSet} provides the real O(1)-amortized override.
+     * normally does. Callers must supply ranges in ascending {@code min} order, building this set
+     * up from empty. Default just forwards to {@link #add}; {@link ArrayCodePointSet} provides the
+     * real O(1)-amortized override.
      */
     default void appendSorted(int min, int max) {
       add(min, max);
     }
 
-    /** As {@link CodePointMap.MutableCodePointMap#ensureCapacity}. No-op by default. */
+    /**
+     * Optional capacity hint for implementations backed by a resizable array (see {@link
+     * ArrayCodePointSet}): preallocate room for {@code minEntries} upcoming entries, to avoid
+     * incremental array growth when the eventual size is known ahead of time. No-op by default.
+     */
     default void ensureCapacity(int minEntries) {}
 
     /**
@@ -146,6 +148,47 @@ public interface CodePointSet {
 
     default void clear() {
       remove(0, MAX_CODE_POINT + 1);
+    }
+  }
+
+  /**
+   * An inclusive-min, exclusive-max range of code points: {@code [min, max)}. Immutable. Formerly
+   * nested under the now-removed generic {@code CodePointMap<V>} (see this file's own class doc);
+   * lives here now since {@link CodePointSet} is this range convention's only remaining owner.
+   */
+  final class Range {
+    public final int min; // inclusive
+    public final int max; // exclusive
+
+    public Range(int codePoint) {
+      this(codePoint, codePoint + 1);
+    }
+
+    public Range(int min, int max) {
+      if (max <= min) {
+        throw new IllegalArgumentException("max (" + max + ") must be greater than min (" + min + ")");
+      }
+      this.min = min;
+      this.max = max;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+      if (!(other instanceof Range)) {
+        return false;
+      }
+      Range rhs = (Range) other;
+      return min == rhs.min && max == rhs.max;
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * min + max;
+    }
+
+    @Override
+    public String toString() {
+      return "[" + min + "," + max + ")";
     }
   }
 }

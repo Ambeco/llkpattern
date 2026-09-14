@@ -1912,6 +1912,44 @@ Notes to self about how to work on this project, and other context that doesn't 
   sync episode) -- the `peek`/`peek2` field-type change reads an `int` instead of a `char` per
   lookahead step, no new allocation, so no real shift was expected here either.
 
-## Misc
+### Eliminated `entryMap`'s `CodePointMap` allocation, then the whole `CodePointMap<V>` family (2026-09-14, same session)
+
+- `PatternConstruct.mergeEntryPointsRaw`/`CodePointMapBuilder` used to tag every ambiguity-check
+  candidate's ranges into a `CodePointMap<PatternConstruct>` purely to find a conflicting pair.
+  Replaced with `checkDisjoint`, a plain forward pass accumulating a running `CodePointSet` union
+  and checking each later (lower-priority) candidate's own entry set against it via
+  `CodePointSet#intersection` -- no per-candidate identity tagging needed. The check itself moved
+  from entry-point-computation time (`mergeEntryPoints`, called from `buildEntryMap`) to
+  matcher-build time (`buildForkChainInternal`, right before it builds its fork chain over the same
+  candidates) -- `validateDisjointness` (the loop-body-vs-`next` runtime-dispatch check, which never
+  builds a fork chain over its own candidate list) calls `checkDisjoint` directly instead.
+- That left `PatternConstruct#addCodePointsTo` (the push-based `CodePointMapBuilder<T>` API,
+  overridden in ~7 places purely to feed the now-gone `mergeEntryPointsRaw`) fully dead -- removed
+  every override and the base method; `claimsEntryElse`'s existing overrides (a different, still-
+  needed mechanism for avoiding entry-map materialization) took over the doc explaining why each
+  leaf/alias construct skips the full cycle-guarded path.
+- With `CodePointMapBuilder` gone, `CodePointMap<V>`/`ArrayCodePointMap<V>`/`TreeCodePointMap<V>`
+  (the generic, value-carrying map family `CodePointSet` was split off from back on 2026-09-12) had
+  no production consumers left at all -- only their own tests. Deleted all three main-source files
+  plus `CodePointMapBuilder.java`, `CodePointMapBuilderTest.java`, `ArrayCodePointMapTest.java`,
+  `TreeCodePointMapTest.java`, `CodePointMapDifferentialTest.java`, `CodePointMapTestBase.java`, and
+  `ArrayCodePointMap`'s now-unreachable bulk-construction constructor. `CodePointMap.Range` (still
+  needed by `CodePointSet`/`ArrayCodePointSet`/`UnionCodePointSet`) moved to `CodePointSet.Range`.
+  `:llkpattern:test` green throughout every step of this pass.
+
+### Re-ran benchmarks after the `checkDisjoint`/`CodePointMap` cleanup (2026-09-14, same session)
+
+- Per CLAUDE.md's after-a-performance-change checklist: this change removes real allocation (the
+  `CodePointMap<PatternConstruct>` ambiguity-check merge), so re-ran desktop JMH, re-captured both
+  CPU and allocation sampling, and (Pixel 3a already plugged in and unlocked per `adb devices`) the
+  on-device benchmark, all committed to `benchmarks/`.
+- Desktop: llkCompile 0.308 ms/op (ratio to regexCompile 3.18x, was 4.01x before this session's
+  work) with `gc.alloc.rate.norm` down to 897,448 B/op (regexCompile: 418,032 B/op, ratio 2.15x);
+  llkMatch 0.038 ms/op (ratio 0.81x, was 0.77x), 46,664 B/op (regexMatch: 58,752 B/op, ratio 0.79x).
+  Pixel 3a: compileLlk 6.40 ms/pass (ratio 0.90x, was 1.03x), matchLlk 0.75 ms/pass (ratio 0.20x,
+  was 0.21x). The compile-time win lines up with the session's actual change (removing the
+  `CodePointMapBuilder`/`ArrayCodePointMap<PatternConstruct>` ambiguity-check allocation from every
+  union/loop-body compile); README's benchmark tables updated to match, plus a new allocation-ratio
+  table (desktop only -- the Android harness doesn't track byte-level allocation).
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

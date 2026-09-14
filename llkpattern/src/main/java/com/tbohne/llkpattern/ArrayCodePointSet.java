@@ -1,6 +1,6 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.CodePointMap.Range;
+import com.tbohne.llkpattern.CodePointSet.Range;
 import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -9,33 +9,31 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A {@link CodePointSet} implementation specialized to the Unicode code point domain, backed by a
- * single flat array -- the set counterpart of {@link ArrayCodePointMap}, minus that class's
- * parallel {@code values} array. See {@link ArrayCodePointMap}'s own doc for the packed-key format
- * ({@code (min << 11) | count}) and binary-search lookup, which this class reuses verbatim; the
- * real difference is {@link #invert}, replacing {@code elseValue}: since a set has only two states
- * at any code point ("in" or "out"), a negated set doesn't need {@code ArrayCodePointMap}'s
- * null-valued "punched hole" machinery at all -- {@code keys} always means exactly the same thing
- * (a run of code points explicitly recorded), and {@code invert} just says whether that recorded
- * run IS the set ({@code invert == false}) or is EXCLUDED from it ({@code invert == true}, i.e. the
- * set is everything else). {@link #complement()} is therefore a flip of one boolean (plus a cheap
- * array copy, to keep this class's instances independently mutable) rather than a real rebuild.
+ * single flat array of packed {@code (min << 11) | count} keys, kept sorted by {@code min} (so
+ * every lookup is a binary/linear-search hybrid over {@code keys} -- see {@link #floorIndex}), each
+ * entry spanning at most 2048 code points ({@code count}'s 11 bits). {@link #invert} is what makes
+ * membership testing cheap without any parallel "value" array: since a set has only two states at
+ * any code point ("in" or "out"), {@code keys} always means exactly the same thing (a run of code
+ * points explicitly recorded), and {@code invert} just says whether that recorded run IS the set
+ * ({@code invert == false}) or is EXCLUDED from it ({@code invert == true}, i.e. the set is
+ * everything else). {@link #complement()} is therefore a flip of one boolean (plus a cheap array
+ * copy, to keep this class's instances independently mutable) rather than a real rebuild.
  *
- * <p>Homogeneous entries (there's no "value" to disagree on) also simplify {@link #add}/{@link
- * #appendSorted} over {@link ArrayCodePointMap#put}/{@code #appendSorted}: two overlapping or
- * touching entries always merge unconditionally, with no value-equality check needed anywhere.
+ * <p>Homogeneous entries (there's no "value" to disagree on, unlike a generic map) also simplify
+ * {@link #add}/{@link #appendSorted}: two overlapping or touching entries always merge
+ * unconditionally, with no value-equality check needed anywhere.
  */
 public final class ArrayCodePointSet implements MutableCodePointSet {
-  // count occupies the low 11 bits (max 2047, i.e. entries span at most 2048 code points) -- same
-  // packed-key format as ArrayCodePointMap; see its own class doc.
+  // count occupies the low 11 bits (max 2047, i.e. entries span at most 2048 code points).
   private static final int COUNT_BITS = 11;
   private static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
 
   private static final int INITIAL_CAPACITY = 1;
 
-  // Kept sorted by min (equivalently, by key -- see ArrayCodePointMap's own note on why every
-  // comparison here extracts min via floorIndex/keyMin rather than comparing packed keys as raw
-  // ints). `size` is the logical entry count; `keys.length` is capacity, which can run ahead of
-  // `size` -- see ensureCapacity.
+  // Kept sorted by min (equivalently, by key, since min occupies the packed key's high bits --
+  // every comparison here extracts min via floorIndex/keyMin rather than comparing packed keys as
+  // raw ints, purely for readability, not correctness). `size` is the logical entry count;
+  // `keys.length` is capacity, which can run ahead of `size` -- see ensureCapacity.
   private int[] keys;
   private int size;
 
@@ -55,9 +53,11 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
 
   /**
    * Builds a set directly from {@code count} already-sorted-by-min, pairwise-disjoint,
-   * coalesced-where-possible ranges -- see {@link ArrayCodePointMap}'s equivalent bulk constructor.
-   * Package-private -- reached only via {@link CodePointSetBuilder#build}, which has already done
-   * the sort/merge work this constructor's preconditions assume.
+   * coalesced-where-possible ranges -- the one packing/chunking pass any {@code appendSorted} loop
+   * would do, but into a single correctly-sized {@code keys} array computed up front, instead of
+   * growing via {@link #ensureCapacity} as it goes. Package-private -- reached only via {@link
+   * CodePointSetBuilder#build}, which has already done the sort/merge work this constructor's
+   * preconditions assume.
    */
   ArrayCodePointSet(int[] sortedMins, int[] sortedMaxs, int count) {
     int chunkTotal = 0;
@@ -110,7 +110,7 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
     return keyMin(key) + keyCount(key) + 1;
   }
 
-  /** Index of the last entry whose min is {@code <= codePoint}, or {@code -1} if none. See {@link ArrayCodePointMap#floorIndex}'s own doc for the hybrid binary/linear search this mirrors. */
+  /** Index of the last entry whose min is {@code <= codePoint}, or {@code -1} if none. */
   private static final int LINEAR_SEARCH_THRESHOLD = 65;
 
   // Static, with `keys`/`size` passed as parameters, rather than an instance method reading
@@ -303,7 +303,7 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
   public void add(int min, int max) {
     int start = windowStart(min);
     int end = windowEnd(start, max);
-    // No value to disagree on, unlike ArrayCodePointMap#put -- any existing entry this new range
+    // No value to disagree on (unlike a generic map's `put`) -- any existing entry this new range
     // touches or overlaps just merges into one wider run.
     int lo = (start < end) ? Math.min(min, keyMin(keys[start])) : min;
     int hi = (start < end) ? Math.max(max, keyMax(keys[end - 1])) : max;
@@ -395,17 +395,17 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
       }
       if (size == 0 && !invert && !o.invert) {
         // Fast path: this set has nothing of its own yet, so addAll degenerates to a plain array
-        // copy -- same trick ArrayCodePointMap#putAll's empty-target fast path uses.
+        // copy.
         keys = Arrays.copyOf(o.keys, o.size);
         size = o.size;
         return;
       }
     }
-    // General case: a plain range-at-a-time add() per source range. Not the sorted-sweep merge
-    // ArrayCodePointMap#putAll uses (no "other wins on overlap" semantics to preserve here -- a
-    // union just needs every source range folded in, and add() already merges anything it
-    // touches/overlaps) -- correctness-first given every real caller in this codebase builds these
-    // sets from scratch via appendSorted, not addAll/union, so this path isn't hot.
+    // General case: a plain range-at-a-time add() per source range, not a sorted-sweep merge (no
+    // "other wins on overlap" semantics to preserve here -- a union just needs every source range
+    // folded in, and add() already merges anything it touches/overlaps) -- correctness-first given
+    // every real caller in this codebase builds these sets from scratch via appendSorted, not
+    // addAll/union, so this path isn't hot.
     other.forEachRange(this::add);
   }
 

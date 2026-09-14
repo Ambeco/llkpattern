@@ -7,11 +7,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import org.junit.Test;
 
-/**
- * Behavioral tests for {@link ArrayCodePointSet} -- mirrors {@link CodePointMapTestBase}'s
- * coverage, adapted to a pure membership set (no values, {@link CodePointSet#complement()} instead
- * of an else-value).
- */
+/** Behavioral tests for {@link ArrayCodePointSet}. */
 public class ArrayCodePointSetTest {
 
   private MutableCodePointSet create() {
@@ -60,7 +56,7 @@ public class ArrayCodePointSetTest {
     set.add('b', 'e');
     assertThat(set.contains('a'), is(true));
     assertThat(set.contains('d'), is(true));
-    assertThat(set.rangeSet(), equalTo(java.util.Set.of(new CodePointMap.Range('a', 'e'))));
+    assertThat(set.rangeSet(), equalTo(java.util.Set.of(new CodePointSet.Range('a', 'e'))));
   }
 
   @Test
@@ -215,8 +211,8 @@ public class ArrayCodePointSetTest {
 
   @Test
   public void add_rangeLongerThanElevenBitCount_isStillFullyCovered() {
-    // Regression coverage for the 2048-code-point-per-entry packing limit shared with
-    // ArrayCodePointMap: a single add() spanning more than that must still behave as one range.
+    // Regression coverage for the 2048-code-point-per-entry packing limit: a single add() spanning
+    // more than that must still behave as one range.
     MutableCodePointSet set = create();
     set.add(0x4E00, 0x4E00 + 5000); // arbitrary >2048-long range, well within the BMP
     assertThat(set.contains(0x4E00), is(true));

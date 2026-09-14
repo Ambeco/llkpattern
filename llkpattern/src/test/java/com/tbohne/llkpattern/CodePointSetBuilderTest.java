@@ -28,7 +28,7 @@ public class CodePointSetBuilderTest {
     assertThat(set.contains('a'), is(true));
     assertThat(set.contains('b'), is(true));
     assertThat(set.contains('c'), is(true));
-    assertThat(set.rangeSet(), is(java.util.Set.of(new CodePointMap.Range('a', 'c' + 1))));
+    assertThat(set.rangeSet(), is(java.util.Set.of(new CodePointSet.Range('a', 'c' + 1))));
   }
 
   @Test

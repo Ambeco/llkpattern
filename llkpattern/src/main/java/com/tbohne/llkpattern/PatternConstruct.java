@@ -1,6 +1,5 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.CodePointMap.MutableCodePointMap;
 import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.MatcherConstruct.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
@@ -127,43 +126,29 @@ abstract class PatternConstruct {
 	}
 
 	/**
-	 * Pushes this construct's own entry-point ranges directly into {@code builder}, tagged with
-	 * {@code tag} -- the push-based counterpart to {@link #getEntryPointMap()}, used by {@link
-	 * #mergeEntryPoints} instead of pulling each candidate's own (cached) {@link #entryMap} and
-	 * re-keying it. A candidate that's a pure leaf (e.g. {@code LiteralString}) or a pure alias
-	 * ({@code Sequence}, {@code CaptureEndMarker}) overrides this to push straight through --
-	 * skipping materializing (and caching) its own {@code entryMap} purely to be scanned once by
-	 * an ancestor's merge -- see design.md's "CodePointMapBuilder / addCodePointsTo" section.
+	 * Mirror of {@code getEntryElse() != null}, used by {@link #mergeEntryPoints} instead of {@link
+	 * #getEntryElse()} directly. This matters because {@link #getEntryElse()} forces the SAME full,
+	 * cached {@link #buildEntryMap} that {@link #getEntryPointMap()} does (they share one {@link
+	 * #ensureEntryPointBuilt} call) -- calling it on every candidate up front would force every
+	 * candidate's entryMap to materialize, even ones {@link #mergeEntryPoints} otherwise wouldn't
+	 * need to (see {@link #getEntryPointMap()}'s own call in that method). A candidate that's a
+	 * pure leaf (e.g. {@code LiteralString}) or a pure alias ({@code Sequence}, {@code
+	 * CaptureEndMarker}) overrides this to answer straight from whatever it aliases instead --
+	 * skipping materializing its own {@code entryMap} purely to answer this one question.
 	 *
-	 * <p>Default just pulls through the ordinary cached, cycle-guarded {@link #getEntryPointMap()}
-	 * -- correct for any construct, and REQUIRED (not just correct) for the "real consumers" that
+	 * <p>Default just pulls through the ordinary cached, cycle-guarded {@link #getEntryElse()} --
+	 * correct for any construct, and REQUIRED (not just correct) for the "real consumers" that
 	 * actually own ambiguity-checked ranges of their own ({@code ComplexCharacter}'s own ranges,
 	 * and any {@code QuantifiedUnion}/{@code ComplexQuantifiedCharacter} that merges multiple
-	 * candidates via {@code buildLoopEntryMap}): overriding those to push their own raw entries
-	 * directly would skip the cycle guard {@link #ensureEntryPointBuilt} provides, needed because
-	 * a quantified construct's own body can point its {@code next} right back at this same
-	 * construct for a nullable loop (e.g. {@code (a?)+}) -- see {@code
-	 * QuantifiableConstruct.buildLoopEntryMap}'s {@code part.next = this}. Only override this for
-	 * a construct that either has no recursion at all (a true leaf) or delegates to exactly one
-	 * other, structurally-fixed construct (never blindly through {@code next}, unless whatever
-	 * `next` might resolve to is itself guaranteed to still be state-checked -- see {@code
-	 * QuantifiedUnion}'s bare-flags-group override for the one case that does this safely).
-	 */
-	<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
-		getEntryPointMap().forEachRange((min, max) -> builder.add(min, max, tag));
-	}
-
-	/**
-	 * Push-safe mirror of {@code getEntryElse() != null}, used by {@link #mergeEntryPoints}
-	 * alongside {@link #addCodePointsTo} instead of {@link #getEntryElse()} directly. This
-	 * matters because {@link #getEntryElse()} forces the SAME full, cached {@link #buildEntryMap}
-	 * that {@link #getEntryPointMap()} does (they share one {@link #ensureEntryPointBuilt} call) --
-	 * calling it on every candidate before {@link #addCodePointsTo} would silently force every
-	 * candidate's entryMap to materialize anyway, defeating the whole point of pushing. Every
-	 * override here mirrors {@link #addCodePointsTo}'s own delegation exactly, for the same
-	 * reason: a leaf never claims the catch-all (so returns {@code false} outright), a pure alias
-	 * asks whatever it aliases, and a "real consumer" falls back to the default (pull-based, cycle-
-	 * guarded) below.
+	 * candidates via {@code buildLoopEntryMap}): overriding those to answer without going through
+	 * the cycle guard {@link #ensureEntryPointBuilt} provides would be wrong, since a quantified
+	 * construct's own body can point its {@code next} right back at this same construct for a
+	 * nullable loop (e.g. {@code (a?)+}) -- see {@code QuantifiableConstruct.buildLoopEntryMap}'s
+	 * {@code part.next = this}. Only override this for a construct that either has no recursion at
+	 * all (a true leaf) or delegates to exactly one other, structurally-fixed construct (never
+	 * blindly through {@code next}, unless whatever `next` might resolve to is itself guaranteed to
+	 * still be state-checked -- see {@code QuantifiedUnion}'s bare-flags-group override for the one
+	 * case that does this safely).
 	 */
 	boolean claimsEntryElse() {
 		return getEntryElse() != null;
@@ -216,10 +201,10 @@ abstract class PatternConstruct {
 	 * a construct whose {@code buildMatcher()} reads nothing {@code buildEntryMap()} sets -- a true
 	 * leaf like {@code LiteralString}/{@code ComplexCharacter}, whose matcher is built entirely
 	 * from their own constructor-supplied data. This is what lets such a leaf, when reached only as
-	 * a merge candidate (via {@link #addCodePointsTo}/{@link #claimsEntryElse}), skip materializing
-	 * its own {@link #entryMap} entirely -- otherwise {@code compile()}'s own unconditional {@code
-	 * ensureEntryPointBuilt()} call (needed for every OTHER construct) would force that allocation
-	 * right back, defeating the whole point of pushing instead of pulling. Safe even for a leaf
+	 * a merge candidate (via {@link #claimsEntryElse}), skip materializing its own {@link #entryMap}
+	 * entirely -- otherwise {@code compile()}'s own unconditional {@code ensureEntryPointBuilt()}
+	 * call (needed for every OTHER construct) would force that allocation right back, defeating the
+	 * whole point of answering without it. Safe even for a leaf
 	 * that participates in the entry-point cycle guard's graph, because a leaf's {@code
 	 * buildEntryMap()} never reads {@code next} at all -- leaving it at {@code
 	 * ENTRY_POINT_NOT_STARTED} after {@code compile()} can't corrupt anything a later, genuine pull
@@ -240,11 +225,15 @@ abstract class PatternConstruct {
 	 * why that would be a real bug, not just a style concern).
 	 */
 	static final class MergedEntries {
-		final MutableCodePointSet ranges;
+		// Not MutableCodePointSet -- the candidates.size() == 1 fast path in mergeEntryPoints below
+		// aliases that lone candidate's own (immutable-from-here) entryMap directly, with no
+		// allocation of its own; only the real (>= 2 candidates) merge path actually builds a fresh
+		// MutableCodePointSet to hand back here.
+		final CodePointSet ranges;
 		// Whichever candidate claimed "matches any other character" (at most one is allowed to).
 		final @Nullable PatternConstruct elseCandidate;
 
-		MergedEntries(MutableCodePointSet ranges, @Nullable PatternConstruct elseCandidate) {
+		MergedEntries(CodePointSet ranges, @Nullable PatternConstruct elseCandidate) {
 			this.ranges = ranges;
 			this.elseCandidate = elseCandidate;
 		}
@@ -265,34 +254,26 @@ abstract class PatternConstruct {
 	 * QuantifiableConstruct.buildLoopEntryMap}). See {@link #validateDisjointness} for the sibling
 	 * case that needs the same ambiguity check but not the merged ranges themselves.
 	 */
-	/** The genuinely {@code PatternConstruct}-valued merge {@link #mergeEntryPoints} builds internally. */
-	private static final class RawMerge {
-		// Concrete type, not the MutableCodePointMap<V> interface -- CodePointMapBuilder.build()
-		// always returns one (see its own body), and mergeEntryPoints wants its package-private
-		// size() below as a capacity hint, which the interface doesn't expose.
-		final ArrayCodePointMap<PatternConstruct> merged;
-		final @Nullable PatternConstruct elseCandidate;
-
-		RawMerge(ArrayCodePointMap<PatternConstruct> merged, @Nullable PatternConstruct elseCandidate) {
-			this.merged = merged;
-			this.elseCandidate = elseCandidate;
-		}
-	}
-
 	/**
-	 * Does the actual merge-and-ambiguity-check work shared by {@link #mergeEntryPoints} and {@link
-	 * #validateDisjointness}: builds the genuinely {@code PatternConstruct}-valued merge (needed so
-	 * the conflict callback can report a useful "candidate #N" message) and runs the ambiguity check
-	 * as a side effect of {@code builder.build(...)}. Kept separate from {@code mergeEntryPoints} so
-	 * a caller that only needs the ambiguity check (not the merged ranges themselves) doesn't also
-	 * pay for projecting the result down to {@code Boolean} values for nothing.
+	 * Unions {@code candidates}' own entry points and picks out whichever one (at most one is
+	 * allowed to) claims the any-other-character catch-all -- no ambiguity/overlap check here any
+	 * more: that's now {@link #checkDisjoint}'s job, run later against real {@code
+	 * MatcherConstruct}s as {@link #buildForkChainInternal} builds its chain (see that method's own
+	 * doc), not here against {@code PatternConstruct}s while just computing this construct's own
+	 * entry point. This is what lets this method union plain {@code CodePointSet}s directly instead
+	 * of tagging every candidate's ranges into a {@code CodePointMap<PatternConstruct>} purely to
+	 * find a conflicting pair -- see {@link #checkDisjoint}'s own doc for why that map is gone.
 	 */
-	private static RawMerge mergeEntryPointsRaw(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
-		// One CodePointMapBuilder for every candidate's entries, instead of the old approach's one
-		// intermediate ArrayCodePointMap per candidate (to re-key it from Boolean to PatternConstruct
-		// -- see the removed toValueMap) plus another for the running merge -- see
-		// design.md's "CodePointMapBuilder" section.
-		CodePointMapBuilder<PatternConstruct> builder = new CodePointMapBuilder<>();
+	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
+		if (candidates.size() == 1) {
+			// A lone candidate can't conflict with itself -- skip straight to aliasing its own
+			// already-computed entry point, no union/allocation needed at all, same trick
+			// buildLoopMatcher's bodyOnlyResult already uses for a single-element loop body. This is
+			// the common case for a quantified single character/class (e.g. `a+`, `\d*`).
+			PatternConstruct only = candidates.get(0);
+			return new MergedEntries(only.getEntryPointMap(), only.claimsEntryElse() ? only : null);
+		}
+		MutableCodePointSet ranges = new ArrayCodePointSet();
 		PatternConstruct elseCandidate = null;
 		for (PatternConstruct candidate : candidates) {
 			if (candidate.claimsEntryElse()) {
@@ -307,66 +288,75 @@ abstract class PatternConstruct {
 				}
 				elseCandidate = candidate;
 			}
-			candidate.addCodePointsTo(builder, candidate);
+			ranges.addAll(candidate.getEntryPointMap());
 		}
-		MutableCodePointMap<PatternConstruct> merged = builder.build(
-				(range, value1, otherRange, value2) -> {
-					// Blame whichever of the two conflicting candidates comes later in `candidates` --
-					// the same one the old one-candidate-at-a-time merge always blamed, since every
-					// earlier candidate was already folded into `merged` by the time a later one
-					// conflicted with it.
-					int idx1 = candidates.indexOf(value1);
-					int idx2 = candidates.indexOf(value2);
-					PatternConstruct offender = idx2 > idx1 ? value2 : value1;
-					throw PatternSyntaxException.throwWithReferences(
-							pattern,
-							offender.startIndex,
-							candidateNounPlural, " #" + (Math.max(idx1, idx2) + 1),
-							" starting at index ", offender.startIndex,
-							" accepts character(s) ",
-							new PatternSyntaxException.CodePoint(range.min),
-							"-",
-							new PatternSyntaxException.CodePoint(range.max - 1),
-							", but a prior part of the same construct already claims those, which is not allowed");
-				});
-		return new RawMerge((ArrayCodePointMap<PatternConstruct>) merged, elseCandidate);
+		return new MergedEntries(ranges, elseCandidate);
 	}
 
-	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
-		RawMerge raw = mergeEntryPointsRaw(pattern, candidates, candidateNounPlural);
-		// `raw.merged` (genuinely PatternConstruct-valued, needed only for the conflict check above)
-		// is otherwise discarded here -- projected once to a plain CodePointSet for
-		// MergedEntries.ranges (see that field's own doc), rather than every caller doing its own
-		// separate projection pass. `raw.merged`'s ranges are already ascending, so appendSorted's
-		// O(1)-amortized bulk path applies; forEachRange(), not entrySet(), to avoid a
-		// Range/Entry/Iterator allocation per range.
-		MutableCodePointSet ranges = new ArrayCodePointSet();
-		// `raw.merged`'s own entry count is a hint, not a strict bound (one map entry can still split
-		// into several ArrayCodePointSet chunks past ArrayCodePointSet.MAX_COUNT code points), but it
-		// kills incremental growth for the overwhelmingly common case (small entry counts, well under
-		// the chunk limit) instead of doubling up from INITIAL_CAPACITY one appendSorted() at a time.
-		ranges.ensureCapacity(raw.merged.size());
-		raw.merged.forEachRange((min, max, value) -> ranges.appendSorted(min, max));
-		return new MergedEntries(ranges, raw.elseCandidate);
+	/**
+	 * Throws the first ambiguity found among {@code candidates}, checked in priority (list) order:
+	 * two candidates whose entry ranges overlap. Walks forward, accumulating the union of every
+	 * range already claimed by an earlier (higher-priority) candidate into {@code claimed}, and
+	 * checks each later candidate's own entry point against that accumulated union via plain {@link
+	 * CodePointSet#intersection} -- no {@code CodePointMap<PatternConstruct>} tagging every
+	 * candidate's ranges with its own identity just to find a conflicting pair, unlike the old
+	 * {@code mergeEntryPointsRaw}/{@code CodePointMapBuilder} approach this replaces. Blames the
+	 * later (lower-priority) candidate of a conflicting pair, same as that old check did, since it's
+	 * the one redundantly claiming characters an earlier, higher-priority candidate already owns.
+	 *
+	 * <p>Deliberately never checks a candidate against anything outside {@code candidates} itself --
+	 * in particular, {@link #buildForkChainInternal}'s own {@code elseTarget} (this chain's
+	 * catch-all fallback, already resolved to a single {@code MatcherConstruct} by the time this
+	 * runs, by construction of {@link #mergeEntryPoints}'s own {@code elseCandidate} tracking above)
+	 * is passed separately and is never one of {@code candidates} -- it's expected to overlap every
+	 * other candidate (that's the whole point of a fallback bucket), so checking it here would
+	 * reject every pattern that has one.
+	 */
+	private static void checkDisjoint(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
+		MutableCodePointSet claimed = new ArrayCodePointSet();
+		for (int i = 0; i < candidates.size(); i++) {
+			PatternConstruct candidate = candidates.get(i);
+			int candidateNumber = i + 1;
+			CodePointSet own = candidate.getEntryPointMap();
+			own.forEachRange((min, max) -> {
+				CodePointSet overlap = claimed.intersection(min, max);
+				if (!overlap.isEmpty()) {
+					overlap.forEachRange((overlapMin, overlapMax) -> {
+						throw PatternSyntaxException.throwWithReferences(
+								pattern,
+								candidate.startIndex,
+								candidateNounPlural, " #" + candidateNumber,
+								" starting at index ", candidate.startIndex,
+								" accepts character(s) ",
+								new PatternSyntaxException.CodePoint(overlapMin),
+								"-",
+								new PatternSyntaxException.CodePoint(overlapMax - 1),
+								", but a prior part of the same construct already claims those, which is not allowed");
+					});
+				}
+			});
+			claimed.addAll(own);
+		}
 	}
 
 	/**
 	 * Compiles each of {@code candidates} against {@code compileTarget} (harmless/idempotent if a
 	 * candidate is already compiled -- e.g. {@code compileTarget} itself, when it's included as one
-	 * of the candidates), then runs the same ambiguity check {@link #mergeEntryPoints} does --
-	 * needed here (unlike a construct's own {@code buildEntryMap}) because this validates a runtime
-	 * dispatch decision (a loop's continue-vs-exit choice) that needs every candidate's real {@code
-	 * MatcherConstruct} to already exist. Unlike {@link #mergeEntryPoints}, nothing here needs the
-	 * merged ranges themselves afterward (only the ambiguity check's side effect), so this skips
-	 * {@code mergeEntryPoints}' own projection to {@code Boolean} values entirely and returns
-	 * nothing.
+	 * of the candidates), then runs the same {@link #checkDisjoint} ambiguity check {@link
+	 * #buildForkChainInternal} does -- needed here too (unlike a construct's own {@code
+	 * buildEntryMap}, which no longer checks at all -- see {@link #mergeEntryPoints}'s own doc)
+	 * because this validates a runtime dispatch decision (a loop's continue-vs-exit choice) that a
+	 * real fork chain is never actually built over: {@code candidates} here is a loop's body PLUS
+	 * its own {@code next} (see {@code QuantifiableConstruct.buildLoopMatcher}'s own doc), but the
+	 * fork chain actually built for the loop's "continue" dispatch only ever walks the body, not
+	 * {@code next} -- so nothing else would ever check body-vs-{@code next} disjointness.
 	 */
 	static void validateDisjointness(
 			String pattern, List<PatternConstruct> candidates, PatternConstruct compileTarget, String candidateNounPlural) {
 		for (PatternConstruct candidate : candidates) {
 			candidate.compile(compileTarget);
 		}
-		mergeEntryPointsRaw(pattern, candidates, candidateNounPlural);
+		checkDisjoint(pattern, candidates, candidateNounPlural);
 	}
 
 	/**
@@ -380,10 +370,11 @@ abstract class PatternConstruct {
 	 * candidate's own compiled matcher is the unconditional final link, since (not claiming a
 	 * catch-all) it already re-verifies membership as its own first action.
 	 *
-	 * <p>Ambiguity between candidates is NOT checked here -- the caller must have already validated
-	 * (via {@link #mergeEntryPoints}) that no two candidates' entry points overlap, since a fork
-	 * chain's first-wins priority would otherwise silently accept an ambiguous pattern instead of
-	 * rejecting it at compile time.
+	 * <p>Ambiguity between candidates IS checked here now (via {@link #checkDisjoint}, back when
+	 * {@link #buildForkChainInternal} fetches each candidate's own entry point to build its fork --
+	 * see that method's own doc): each candidate's entry set must not intersect any
+	 * higher-priority (earlier) candidate's, except the chain's own {@code elseTarget} fallback
+	 * (never one of {@code candidates} itself), which is expected to overlap everything.
 	 *
 	 * <p>When {@code owner} is non-null, the chain's head self-registers onto it (as an ordinary
 	 * construct's own matcher) -- including the degenerate case of a single candidate with no
@@ -393,7 +384,9 @@ abstract class PatternConstruct {
 	static MatcherConstruct buildForkChain(
 			@Nullable PatternConstruct owner,
 			int flags,
+			String pattern,
 			List<PatternConstruct> candidates,
+			String candidateNounPlural,
 			Function<PatternConstruct, MatcherConstruct> targetResolver,
 			@Nullable MatcherConstruct elseTarget) {
 		if (candidates.size() == 1 && elseTarget == null) {
@@ -407,7 +400,7 @@ abstract class PatternConstruct {
 			return target;
 		}
 		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-			return buildForkChainInternal(owner, flags, candidates, targetResolver, elseTarget);
+			return buildForkChainInternal(owner, flags, pattern, candidates, candidateNounPlural, targetResolver, elseTarget);
 		}
 		// Under CASE_INSENSITIVE, exact (unfolded) membership on ANY candidate must win over a
 		// folded match on an earlier one in the chain -- e.g. `(?i:[a-z]*)X` against "ABCX": the
@@ -421,18 +414,27 @@ abstract class PatternConstruct {
 		// same candidates: an exact-only chain (CASE_INSENSITIVE stripped, so each fork's own
 		// containsFolded call never folds) falling through, only once every candidate's exact claim
 		// has failed, to a fold-only chain (real flags, so folding applies) which itself falls
-		// through to the real (possibly absent) fallback.
-		MatcherConstruct foldFallback = buildForkChainInternal(null, flags, candidates, targetResolver, elseTarget);
-		return buildForkChainInternal(owner, flags & ~Ll1Pattern.CASE_INSENSITIVE, candidates, targetResolver, foldFallback);
+		// through to the real (possibly absent) fallback. (This means checkDisjoint below runs twice
+		// -- once per buildForkChainInternal call -- but that's compile-time-error-path-only work,
+		// not worth special-casing away.)
+		MatcherConstruct foldFallback = buildForkChainInternal(null, flags, pattern, candidates, candidateNounPlural, targetResolver, elseTarget);
+		return buildForkChainInternal(owner, flags & ~Ll1Pattern.CASE_INSENSITIVE, pattern, candidates, candidateNounPlural, targetResolver, foldFallback);
 	}
 
 	/** {@code candidates.size() >= 2}, guaranteed by {@link #buildForkChain}'s own singleton short-circuit. */
 	private static MatcherConstruct buildForkChainInternal(
 			@Nullable PatternConstruct owner,
 			int flags,
+			String pattern,
 			List<PatternConstruct> candidates,
+			String candidateNounPlural,
 			Function<PatternConstruct, MatcherConstruct> targetResolver,
 			@Nullable MatcherConstruct elseTarget) {
+		// Fetch each candidate's own entryCodePointSet and make sure it doesn't intersect any
+		// higher-priority (earlier) candidate's -- see checkDisjoint's own doc for why this no
+		// longer needs a CodePointMap allocation. The chain itself is then built back to front,
+		// below.
+		checkDisjoint(pattern, candidates, candidateNounPlural);
 		int lastForkIndex; // last candidate index that still gets its own wrapping fork.
 		MatcherConstruct chain;
 		if (elseTarget != null) {
@@ -597,7 +599,7 @@ abstract class PatternConstruct {
 			// (directly, when not capturing) and the shared BeginCaptureMatcherConstruct's own successor
 			// (when capturing) -- see the class doc above.
 			MatcherConstruct bodyChain = buildForkChain(
-					null, flags, body, part -> part.matcher,
+					null, flags, pattern, body, "loop part", part -> part.matcher,
 					bodyOnlyResult.elseCandidate != null ? bodyOnlyResult.elseCandidate.matcher : null);
 			// When capturing, every continuing attempt -- whichever body branch ends up matching --
 			// must begin the capture exactly once before that branch's own matcher runs. Shared by both
@@ -632,7 +634,7 @@ abstract class PatternConstruct {
 			} else {
 				entryElseValue = null;
 			}
-			buildForkChain(this, flags, entryCandidates, candidate -> resolveTarget(candidate, next, continueTarget), entryElseValue);
+			buildForkChain(this, flags, pattern, entryCandidates, "loop part", candidate -> resolveTarget(candidate, next, continueTarget), entryElseValue);
 		}
 
 		/**
@@ -766,7 +768,7 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+		boolean claimsEntryElse() {
 			if (isUnquantified() && constructs.isEmpty()) {
 				// Bare flags-only group ("(?i)", no body) -- same aliasing as buildEntryMap: passes
 				// straight through to `next` (this union contributes nothing of its own). Safe even
@@ -774,19 +776,6 @@ abstract class PatternConstruct {
 				// buildLoopEntryMap's `part.next = this`) -- whatever `next` turns out to be, if it's
 				// itself a QuantifiableConstruct it keeps the state-checked default below, so the
 				// cycle is still caught there, just one level further down.
-				next.addCodePointsTo(builder, tag);
-				return;
-			}
-			// Both the quantified case (own `next` might loop back here via a nullable body -- see
-			// buildLoopEntryMap) and the unquantified-with-branches case (a real ambiguity-checked
-			// merge of `constructs`) need the ordinary cycle-guarded, cached path.
-			super.addCodePointsTo(builder, tag);
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			if (isUnquantified() && constructs.isEmpty()) {
-				// Mirrors addCodePointsTo's bare-flags-group case exactly -- see its comment.
 				return next.claimsEntryElse();
 			}
 			return super.claimsEntryElse();
@@ -879,10 +868,10 @@ abstract class PatternConstruct {
 			// self-dispatch loop) instead of to the actual branch matchers.
 			MatcherConstruct elseTarget = rawEntryElse != null ? rawEntryElse.matcher : null;
 			if (isCapturing()) {
-				MatcherConstruct dispatch = buildForkChain(null, flags, constructs, part -> part.matcher, elseTarget);
+				MatcherConstruct dispatch = buildForkChain(null, flags, pattern, constructs, "union subpattern", part -> part.matcher, elseTarget);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
 			} else {
-				buildForkChain(this, flags, constructs, part -> part.matcher, elseTarget);
+				buildForkChain(this, flags, pattern, constructs, "union subpattern", part -> part.matcher, elseTarget);
 			}
 		}
 	}
@@ -905,16 +894,11 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+		boolean claimsEntryElse() {
 			// realNext is a fixed field (unlike `next`, never reassigned to point back at some
 			// ancestor mid-construction), so delegating straight through can't participate in the
 			// one cycle this engine actually has (a nullable loop body) -- safe to bypass this
 			// marker's own cycle guard entirely, same reasoning as its buildEntryMap override.
-			realNext.addCodePointsTo(builder, tag);
-		}
-
-		@Override
-		boolean claimsEntryElse() {
 			return realNext.claimsEntryElse();
 		}
 
@@ -971,10 +955,10 @@ abstract class PatternConstruct {
 		/**
 		 * Wires every element's {@code next} pointer tail-to-front (a plain field assignment, not a
 		 * {@code compile()} call) so a nullable element can still fold in what follows it when asked
-		 * for its own entry point -- shared by {@link #buildEntryMap} and {@link #addCodePointsTo},
-		 * since either one might run first (or, harmlessly, both -- this is idempotent) depending on
-		 * whether this Sequence is reached by a pull or a push. See design.md's "Entry-point
-		 * computation vs. matcher compilation" section for why the split from compiling matters.
+		 * for its own entry point -- shared by {@link #buildEntryMap} and {@link #claimsEntryElse},
+		 * since either one might run first (or, harmlessly, both -- this is idempotent). See
+		 * design.md's "Entry-point computation vs. matcher compilation" section for why the split
+		 * from compiling matters.
 		 */
 		private void wireElementNextPointers() {
 			PatternConstruct tail = next;
@@ -985,17 +969,11 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+		boolean claimsEntryElse() {
 			// Same aliasing as buildEntryMap below: a sequence's own entry point is exactly its
 			// first element's. patterns.get(0) is a fixed field (never reassigned the way `next`
 			// is), so delegating straight through can't itself introduce a cycle -- but its OWN
 			// entry-point computation still depends on the tail-to-front wiring below having run.
-			wireElementNextPointers();
-			patterns.get(0).addCodePointsTo(builder, tag);
-		}
-
-		@Override
-		boolean claimsEntryElse() {
 			wireElementNextPointers();
 			return patterns.get(0).claimsEntryElse();
 		}
@@ -1060,18 +1038,6 @@ abstract class PatternConstruct {
 		LiteralString(int startIndex, int endIndex, String value) {
 			super(startIndex, endIndex);
 			this.value = value;
-		}
-
-		@Override
-		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
-			// A true leaf, and never recursive -- safe to push its single code point directly
-			// without ever materializing (or caching) this construct's own entryMap. buildEntryMap
-			// below still exists for whatever DOES pull via getEntryPointMap() (e.g. this
-			// LiteralString as a Sequence's first element) -- and, thanks to
-			// needsEntryPointBeforeMatcher()'s override below, compile() no longer forces that pull
-			// on its own, so a LiteralString reached only via addCodePointsTo genuinely never pays
-			// for it.
-			builder.add(value.codePointAt(0), tag);
 		}
 
 		@Override
@@ -1185,14 +1151,6 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
-			// A true leaf, and never recursive -- push directly from `ranges` rather than going
-			// through getEntryPointMap()/ensureEntryPointBuilt (which would just return this same
-			// data anyway, since entryMap is aliased straight to validRanges() below).
-			validRanges().forEachRange((min, max) -> builder.add(min, max, tag));
-		}
-
-		@Override
 		boolean claimsEntryElse() {
 			return dotElse != null; // mirrors buildEntryMap's `entryElse = dotElse` exactly.
 		}
@@ -1228,25 +1186,15 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		<T> void addCodePointsTo(CodePointMapBuilder<T> builder, T tag) {
+		boolean claimsEntryElse() {
 			if (!isUnquantified()) {
 				// Real dispatch/ambiguity-checked case -- must go through the ordinary cycle-guarded
 				// path (this construct's own `next` might loop back here, e.g. a nullable body like
 				// `[ab]{0,2}` -- see buildLoopEntryMap).
-				super.addCodePointsTo(builder, tag);
-				return;
-			}
-			// Unquantified: same aliasing as buildEntryMap -- exactly delegate's own ranges,
-			// regardless of what follows, so safe to push straight through.
-			delegate.addCodePointsTo(builder, tag);
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			if (!isUnquantified()) {
 				return super.claimsEntryElse();
 			}
-			return false; // the unquantified case's buildEntryMap never sets entryElse.
+			// Unquantified: the unquantified case's buildEntryMap never sets entryElse.
+			return false;
 		}
 
 		@Override
@@ -1379,8 +1327,8 @@ abstract class PatternConstruct {
 			}
 			// Computed directly as subset/disjoint checks against wordSet, rather than via
 			// wordSet.complement() the way the old RangeSet#enclosesAll version did -- no need to
-			// materialize a complement just to test disjointness (see CodePointMap#complement's doc:
-			// it would still be correct here, just wasted work for a query this cheap already).
+			// materialize a complement just to test disjointness; it would still be correct here,
+			// just wasted work for a query this cheap already.
 			if (isSubsetOf(set, wordSet)) {
 				return Wordness.WORD;
 			}

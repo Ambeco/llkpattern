@@ -273,23 +273,11 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
 
 - [ ] **Reluctant/possessive quantifiers' permanent semantics**: the parser currently accepts and no-ops `?`/`+` quantifier modifiers (per its own comment, "reluctant and possessive quantifiers are no-ops in this Pattern"). Confirm this is the intended permanent semantic (i.e., this engine has one matching behavior, and the reluctant/possessive distinction from `java.util.regex` doesn't apply here) and document it prominently for users migrating from `java.util.regex`, rather than leaving it as an implicit consequence of "no backtracking."
 
-## `CodePointMapBuilder`/`addCodePointsTo` follow-ups (2026-09-08)
+## `firstCharSet`/`lastCharSet` follow-ups (2026-09-08)
 
 - [ ] **`BackReference` aliasing its referenced group's own entry point directly**, instead of going through the separate `firstCharSet`/`lastCharSet` static-walk helpers -- proposed this session, NOT done: `firstCharSet(referencedGroup)` and `referencedGroup.getEntryPointMap()` diverge for a nullable referenced group (the latter folds in `next`'s entries via `buildLoopEntryMap`'s `min == 0` case, and can throw `EntryPointCycleException` on a pattern that compiles fine today), so this needs verifying against `(a?)\1` and `(a|b)?\1` before landing, not just assumed safe.
-- [ ] **`lastCharSet`/`WordBoundaryConstruct.priorCharSet` should NOT be removed** -- raised and rejected this session. `lastCharSet` isn't dead now that sequences link `next` pointers directly; it's the compile-time `\b`/`\B` static-wordness optimization (`WordBoundaryConstruct.classify`'s subset/disjoint checks need an actual queryable `CodePointMap`, which a push-only API can't give it). Removing it wouldn't fail any test, just silently push every `\b` onto the runtime-check path -- noted here so it isn't attempted again without realizing that.
-- [ ] `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`) and the `QuantifiedUnion`-branch-union temporary maps inside those two methods are still real, un-eliminated `CodePointMap` allocations beyond the "4 real consumers" -- left alone this session per the item above (converting `lastCharSet`'s callers to a push model isn't viable; `firstCharSet`'s one call site might be, see above, but wasn't converted).
-## Loop-compilation performance follow-ups (2026-09-09)
-
-- [ ] **Skip the full `CodePointMapBuilder` merge `buildLoopMatcher` still does purely to validate
-      body-vs-`next` disjointness (`validateDisjointness(pattern, candidatesWithNext, ...)`),
-      when `body.size() == 1`** -- same idea as the `bodyOnlyResult` optimization already done (see
-      notes.md), one level up: with exactly 2 candidates (`body.get(0)` and `next`), the
-      merge/ambiguity-check could be a direct pairwise disjointness comparison instead of going
-      through the sort-coalesce-conflict-check pipeline built for an arbitrary number of candidates.
-      Not yet attempted -- unclear whether the win is worth the added special-casing, given
-      `mergeEntryPoints`'s conflict-error-reporting path (candidate index, offending range) would
-      need an equivalent for the direct-comparison path too.
-
+- [ ] **`lastCharSet`/`WordBoundaryConstruct.priorCharSet` should NOT be removed** -- raised and rejected this session. `lastCharSet` isn't dead now that sequences link `next` pointers directly; it's the compile-time `\b`/`\B` static-wordness optimization (`WordBoundaryConstruct.classify`'s subset/disjoint checks need an actual queryable `CodePointSet`, which a push-only API can't give it). Removing it wouldn't fail any test, just silently push every `\b` onto the runtime-check path -- noted here so it isn't attempted again without realizing that.
+- [ ] `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`, and stale-named -- it's a `CodePointSet` now, not a `CodePointMap`) and the `QuantifiedUnion`-branch-union temporary sets inside those two methods are still real, un-eliminated small allocations -- left alone this session per the item above (converting `lastCharSet`'s callers to a push model isn't viable; `firstCharSet`'s one call site might be, see above, but wasn't converted). Worth renaming `singletonCodePointMap` to `singletonCodePointSet` while touching this.
 ## Fork-chain dispatch (2026-09-11/12) -- the performance plan
 
 Step 1 (2026-09-11): `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the

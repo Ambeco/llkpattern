@@ -4,7 +4,7 @@ import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
-import com.tbohne.llkpattern.CodePointMap.Range;
+import com.tbohne.llkpattern.CodePointSet.Range;
 import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import java.util.Set;
 import org.junit.Test;

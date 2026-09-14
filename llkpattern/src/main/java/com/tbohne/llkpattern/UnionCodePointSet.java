@@ -1,6 +1,6 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.CodePointMap.Range;
+import com.tbohne.llkpattern.CodePointSet.Range;
 
 /**
  * A read-only {@link CodePointSet} that's the union of two delegate sets, computed on the fly --
@@ -63,8 +63,8 @@ final class UnionCodePointSet implements CodePointSet {
 
   /**
    * A real sorted-merge of {@code a}'s and {@code b}'s own {@link #forEachRange} streams -- both
-   * are already ascending and internally disjoint (the {@link CodePointMap} ordering contract this
-   * interface shares -- see its own doc). {@link #forEachRange} is push-based on both sides, so
+   * are already ascending and internally disjoint (see {@link CodePointSet#rangeSet}'s own ordering
+   * doc). {@link #forEachRange} is push-based on both sides, so
    * there's no way to directly compare "a's next range" against "b's next range" the way a pull-based
    * iterator merge would -- each side is first drained into a small {@code RangeCursor} (two flat
    * {@code int[]} arrays, sized to that delegate's own range count) so the merge below can freely

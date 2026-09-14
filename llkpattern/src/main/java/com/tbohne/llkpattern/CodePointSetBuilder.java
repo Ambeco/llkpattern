@@ -4,12 +4,11 @@ import java.util.Arrays;
 
 /**
  * Accumulates code point ranges from possibly many sources without maintaining sort order or
- * coalescing as each one is added -- the set counterpart of {@link CodePointMapBuilder}, used
- * wherever the accumulated ranges are homogeneous membership (every entry the same "in the set",
- * with nothing to disagree on). Unlike {@link CodePointMapBuilder#build}, there's no conflict to
- * detect here: two overlapping ranges from different sources both just mean "these code points are
- * in the set" -- always mergeable, never a conflict -- so {@link #build} is a plain sort-and-coalesce,
- * no {@code ConflictHandler} needed at all.
+ * coalescing as each one is added, then sorts and coalesces them all at once in {@link #build} --
+ * a plain O(1)-amortized append per {@link #add} instead of one sorted-insert each, for every
+ * source whose ranges are homogeneous membership (every entry the same "in the set", with nothing
+ * to disagree on). Two overlapping ranges from different sources both just mean "these code points
+ * are in the set" -- always mergeable, never a conflict -- so {@link #build} never throws.
  *
  * <p>Not itself a {@link CodePointSet} -- it has no query methods, only {@link #add}/{@link
  * #build}. Reusable for multiple {@link #build} calls (state isn't consumed), but there's normally
@@ -58,8 +57,7 @@ final class CodePointSetBuilder {
    */
   CodePointSet.MutableCodePointSet build() {
     sortInPlaceByMin();
-    // Merge pass, compacting forward over the SAME mins/maxs arrays -- see
-    // CodePointMapBuilder#build's identical structure/reasoning, minus the value-conflict check.
+    // Merge pass, compacting forward over the SAME mins/maxs arrays.
     int outSize = 0;
     for (int i = 0; i < size; i++) {
       int min = mins[i];
@@ -79,9 +77,9 @@ final class CodePointSetBuilder {
   }
 
   /**
-   * Insertion sort of {@code mins[0..size)}/{@code maxs} in lockstep -- see {@link
-   * CodePointMapBuilder#sortInPlaceByMin}'s identical reasoning (small, near-sorted inputs at every
-   * real call site).
+   * Insertion sort of {@code mins[0..size)}/{@code maxs} in lockstep -- worth it over {@code
+   * Arrays.sort} despite its worse worst-case complexity, since every real call site's input is
+   * small and near-sorted already, where insertion sort's low constant factor wins.
    */
   private void sortInPlaceByMin() {
     for (int i = 1; i < size; i++) {

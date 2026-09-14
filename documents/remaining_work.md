@@ -19,17 +19,6 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
       just `NamedCharClass` wiring.
 
-## In progress
-
-- [ ] **Migrate hand-written unit test patterns/inputs to supplementary (astral) code points, one
-      file at a time**, in place of BMP characters wherever that's a reasonable substitution --
-      started 2026-09-14 after fixing `PatternParser`'s `peek`/`peek2` code-point bug (see
-      notes.md), on the theory that a broad sweep across the ~36 files under
-      `llkpattern/src/test/java/com/tbohne/llkpattern/` may turn up a few more places with a
-      similar BMP-vs-code-point assumption baked in. Not every test is a reasonable candidate --
-      skip anything testing ASCII-specific behavior on purpose (POSIX classes, `\d`/`\w` semantics,
-      case-folding tests where a matching supplementary case pair doesn't exist, etc.).
-
 ## Also remember for later (currently-unimplemented/deferred features)
 
 - [ ] Once implemented, add the same depth of test coverage for: quotation (`\Q...\E`),

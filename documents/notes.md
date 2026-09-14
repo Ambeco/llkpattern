@@ -1862,6 +1862,45 @@ Notes to self about how to work on this project, and other context that doesn't 
   "In progress" entry -- on the theory that this audit, while thorough, may not have caught
   everything, and a broader sweep across the test suite is worth doing regardless.
 
+### Per-file supplementary-code-point test migration sweep (2026-09-14, same session)
+
+- Followed the `peek`/`peek2` fix with the project owner's requested sweep: replace BMP characters
+  in hand-written unit test patterns/inputs with supplementary (astral) code points wherever
+  reasonable, one file at a time, on the theory it might turn up a few more BMP-vs-code-point bugs
+  the earlier audit missed. It didn't -- every migrated file passed cleanly once the parser fix was
+  in, which is itself useful confirmation the fix was complete, not just a lack of trying.
+- Scope: of the 36 files under `llkpattern/src/test/java/com/tbohne/llkpattern/`, ~20 are internal
+  `CodePointMap`/`CodePointSet` data-structure tests that operate on raw `int` code points directly
+  and never touch pattern text at all -- excluded from the start, not candidates. Of the remaining
+  ~16, migrated 10 in full or in part: `PatternParserTest`, `GroupSyntaxTest`, `CharacterClassTest`,
+  `EscapeTest` (one new case added, rest left ASCII -- see below), `QuantifierModifierTest`,
+  `QuantifierAndCaptureTest`, `NestedQuantifierCombinatorialTest`, `LineAndInputBoundaryTest`,
+  `BackReferenceTest` (partial), `MatcherApiTest`, `CommentsFlagTest`, `PreviousMatchEndTest`.
+- Left 6 files untouched, each for a specific reason rather than by omission:
+  `WordBoundaryTest`/most of `BackReferenceTest`'s `\w+`-based tests (hinge on `\w`'s own,
+  ASCII-by-default, word-character classification -- not the parser's literal lookahead);
+  `PredefinedClassTest`/`PosixAndJavaClassTest`/`UnicodeClassTest` (every single literal in these
+  three is a deliberate ASCII/Unicode-category exemplar, not an arbitrary stand-in -- there's
+  nothing to substitute); `CaseInsensitiveTest` (case-folding semantics; a genuine supplementary
+  case-paired script exists, Deseret U+10400-U+1044F, but verifying Java's case-folding actually
+  handles it correctly wasn't worth the risk for a file whose substance is case-fold logic, not
+  code-point width).
+- Added `SupplementaryChars` (test-only, `A`-`Z` as U+10000-U+10019, `OUTSIDE` as U+10400, a
+  Java-8-compatible `repeat()`) after the second migrated file made re-deriving the same constants
+  per-file clearly not worth it -- the first two files (`PatternParserTest`, `GroupSyntaxTest`)
+  predate it and keep their own inline equivalents, consistent with this codebase's general
+  precedent of accepting duplication across independent files.
+- The recurring mechanical risk throughout: `start()`/`end()`/`region()` offsets are always in
+  `char` units, not code points, and a supplementary literal is 2 units wide, not 1 -- every
+  existing numeric offset assertion in a migrated file (`LineAndInputBoundaryTest`,
+  `PreviousMatchEndTest`, `MatcherApiTest`) had to be hand-recalculated, not just its literal text
+  swapped. Also hit `String.repeat()` not existing on this project's Java 8 target
+  (`llkpattern/build.gradle`) -- `SupplementaryChars.repeat()` is a plain loop instead.
+- `CommentsFlagTest`'s `hashStartsACommentToEndOfLine` and `QuantifierAndCaptureTest`'s dot tests
+  specifically target code fixed in the `peek`/`peek2` session (`skipComments()`'s
+  `advanceCodePoint()` switch; the historical `.`-quantifier-suffix bug) rather than just reusing
+  supplementary chars incidentally.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

@@ -125,4 +125,60 @@ public class SurrogateMatchingTest {
     String input = "x" + VALID_PAIR + "y";
     assertThat(Ll1Pattern.compile("[\\udc00-\\udfff]").matcher(input).find(), is(false));
   }
+
+  // --- PLAIN LITERAL TEXT (not a character class/escape range) on one side, a code-unit-only
+  // mismatch on the other. Every case above uses a bracket class or \p{Cs} as the discriminating
+  // construct -- deliberately scoped to just the surrogate range, so it could never accidentally
+  // pass by comparing individual UTF-16 chars instead of real code points (a lone surrogate and a
+  // valid pair's high half are different char VALUES too, e.g. \uDC00 vs \uD800, so a char-level
+  // comparator would already reject those correctly). A plain literal supplementary character is
+  // the case that could actually hide a char-vs-code-point bug: PatternParser reads it as ONE
+  // ComplexCharacter/LiteralString with the real code point value, but if matching ever compared
+  // char-by-char instead of by code point, a literal pattern's *first UTF-16 char* (\uD800, the
+  // valid pair's own high surrogate) would spuriously equal a lone \uD800 in the input, or vice
+  // versa -- exactly what these cases below would catch and the ones above structurally can't.
+  // Verified directly against the installed JDK first (see this file's own class doc for why that
+  // verification step matters here) -- results confirmed identical to java.util.regex for every
+  // case below.
+
+  @Test
+  public void literalSupplementaryPattern_doesNotMatchLoneHighSurrogateInput() {
+    assertFind(VALID_PAIR, LONE_HIGH_SURROGATE, false);
+  }
+
+  @Test
+  public void literalSupplementaryPattern_doesNotMatchLoneLowSurrogateInput() {
+    assertFind(VALID_PAIR, LONE_LOW_SURROGATE, false);
+  }
+
+  @Test
+  public void loneHighSurrogatePattern_doesNotMatchIntoAValidPairInput() {
+    // Must not find a "match" of the pair's own high half sitting inside it -- the pair is one
+    // atomic code point, never split, even just for find()'s own candidate-start scanning.
+    assertFind(LONE_HIGH_SURROGATE, VALID_PAIR, false);
+  }
+
+  @Test
+  public void loneLowSurrogatePattern_doesNotMatchIntoAValidPairInput() {
+    assertFind(LONE_LOW_SURROGATE, VALID_PAIR, false);
+  }
+
+  @Test
+  public void literalSupplementaryPattern_matchesEquivalentSupplementaryInput() {
+    // Sanity check alongside the mismatches above: matching code points on both sides still match.
+    assertFind(VALID_PAIR, VALID_PAIR, true);
+  }
+
+  @Test
+  public void literalSupplementaryPatternFollowedByLiteral_mismatchedInputStillRejected() {
+    // Same mismatch as literalSupplementaryPattern_doesNotMatchLoneHighSurrogateInput, but with a
+    // trailing literal on both sides -- exercises find()'s own multi-construct dispatch, not just
+    // a single-construct pattern/input pair.
+    assertFind(VALID_PAIR + "y", LONE_HIGH_SURROGATE + "y", false);
+  }
+
+  @Test
+  public void loneHighSurrogatePatternFollowedByLiteral_validPairInputStillRejected() {
+    assertFind(LONE_HIGH_SURROGATE + "y", VALID_PAIR + "y", false);
+  }
 }

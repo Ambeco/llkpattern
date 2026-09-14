@@ -1,5 +1,8 @@
 package com.tbohne.llkpattern;
 
+import static com.tbohne.llkpattern.SupplementaryChars.A;
+import static com.tbohne.llkpattern.SupplementaryChars.B;
+import static com.tbohne.llkpattern.SupplementaryChars.C;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
@@ -12,21 +15,30 @@ import org.junit.runners.JUnit4;
  * to \A/\Z by default; match at line boundaries under MULTILINE) -- see design.md's "Boundary
  * matching" section. \b/\B are covered separately in WordBoundaryTest; \G is covered separately
  * in PreviousMatchEndTest (it isn't a position-based boundary at all, see that class's doc).
+ *
+ * <p>{@code ABC} (a 3-code-point supplementary literal, replacing the plain ASCII "abc" this file
+ * originally used) is 6 {@code char} units long, not 3 -- every {@code start()}/{@code end()}
+ * offset assertion below accounts for that, since those offsets are always in {@code char} units
+ * (matching {@code java.util.regex}), never code points. {@code lineBegin_multiline_
+ * doesNotMatchMidTerminator} is left as plain ASCII 'a'/'b' -- it's testing "\r\n" mid-terminator
+ * detection specifically, not the literal marker's own width.
  */
 @RunWith(JUnit4.class)
 public class LineAndInputBoundaryTest {
+  private static final String ABC = A + B + C;
+
   // --- \A: always the true start of input ---
 
   @Test
   public void inputBegin_matchesOnlyAtStart() {
-    assertThat(Ll1Pattern.compile("\\Aabc").matcher("abc").matches(), is(true));
-    assertThat(Ll1Pattern.compile(".\\Aabc").matcher("xabc").matches(), is(false));
+    assertThat(Ll1Pattern.compile("\\A" + ABC).matcher(ABC).matches(), is(true));
+    assertThat(Ll1Pattern.compile(".\\A" + ABC).matcher("x" + ABC).matches(), is(false));
   }
 
   @Test
   public void inputBegin_multilineHasNoEffect() {
-    Ll1Pattern p = Ll1Pattern.compile("\\Aabc", Ll1Pattern.MULTILINE);
-    Matcher m = p.matcher("x\nabc");
+    Ll1Pattern p = Ll1Pattern.compile("\\A" + ABC, Ll1Pattern.MULTILINE);
+    Matcher m = p.matcher("x\n" + ABC);
     assertThat(m.find(), is(false));
   }
 
@@ -34,19 +46,19 @@ public class LineAndInputBoundaryTest {
 
   @Test
   public void inputEnd_matchesOnlyAtEnd() {
-    assertThat(Ll1Pattern.compile("abc\\z").matcher("abc").matches(), is(true));
-    assertThat(Ll1Pattern.compile("abc\\z.").matcher("abcx").matches(), is(false));
+    assertThat(Ll1Pattern.compile(ABC + "\\z").matcher(ABC).matches(), is(true));
+    assertThat(Ll1Pattern.compile(ABC + "\\z.").matcher(ABC + "x").matches(), is(false));
   }
 
   @Test
   public void inputEnd_doesNotMatchBeforeTrailingNewline() {
-    assertThat(Ll1Pattern.compile("abc\\z").matcher("abc\n").matches(), is(false));
+    assertThat(Ll1Pattern.compile(ABC + "\\z").matcher(ABC + "\n").matches(), is(false));
   }
 
   @Test
   public void inputEnd_multilineHasNoEffect() {
-    Ll1Pattern p = Ll1Pattern.compile("abc\\z", Ll1Pattern.MULTILINE);
-    assertThat(p.matcher("abc\ndef").find(), is(false));
+    Ll1Pattern p = Ll1Pattern.compile(ABC + "\\z", Ll1Pattern.MULTILINE);
+    assertThat(p.matcher(ABC + "\ndef").find(), is(false));
   }
 
   // --- \Z: end of input, or immediately before a trailing line terminator. Note this is a
@@ -57,67 +69,68 @@ public class LineAndInputBoundaryTest {
 
   @Test
   public void inputEndExceptTerminator_matchesAtTrueEnd() {
-    assertThat(Ll1Pattern.compile("abc\\Z").matcher("abc").matches(), is(true));
+    assertThat(Ll1Pattern.compile(ABC + "\\Z").matcher(ABC).matches(), is(true));
   }
 
   @Test
   public void inputEndExceptTerminator_findsBeforeTrailingNewlineButDoesNotConsumeIt() {
-    Matcher m = Ll1Pattern.compile("abc\\Z").matcher("abc\n");
+    Matcher m = Ll1Pattern.compile(ABC + "\\Z").matcher(ABC + "\n");
     assertThat(m.find(), is(true));
-    assertThat(m.end(), is(3));
-    assertThat(Ll1Pattern.compile("abc\\Z").matcher("abc\n").matches(), is(false));
+    assertThat(m.end(), is(ABC.length()));
+    assertThat(Ll1Pattern.compile(ABC + "\\Z").matcher(ABC + "\n").matches(), is(false));
   }
 
   @Test
   public void inputEndExceptTerminator_findsBeforeTrailingCrLfButDoesNotConsumeIt() {
-    Matcher m = Ll1Pattern.compile("abc\\Z").matcher("abc\r\n");
+    Matcher m = Ll1Pattern.compile(ABC + "\\Z").matcher(ABC + "\r\n");
     assertThat(m.find(), is(true));
-    assertThat(m.end(), is(3));
+    assertThat(m.end(), is(ABC.length()));
   }
 
   @Test
   public void inputEndExceptTerminator_doesNotMatchBeforeAnInteriorNewline() {
-    assertThat(Ll1Pattern.compile("abc\\Z").matcher("abc\ndef").find(), is(false));
+    assertThat(Ll1Pattern.compile(ABC + "\\Z").matcher(ABC + "\ndef").find(), is(false));
   }
 
   @Test
   public void inputEndExceptTerminator_doesNotMatchBeforeTwoTrailingNewlines() {
     // Only the single, final terminator is exempted -- not an arbitrary run of them.
-    assertThat(Ll1Pattern.compile("abc\\Z").matcher("abc\n\n").find(), is(false));
+    assertThat(Ll1Pattern.compile(ABC + "\\Z").matcher(ABC + "\n\n").find(), is(false));
   }
 
   // --- ^/$ without MULTILINE: equivalent to \A/\Z ---
 
   @Test
   public void lineBegin_withoutMultiline_behavesLikeInputBegin() {
-    assertThat(Ll1Pattern.compile("^abc").matcher("abc").matches(), is(true));
-    assertThat(Ll1Pattern.compile("^abc").matcher("x\nabc").find(), is(false));
+    assertThat(Ll1Pattern.compile("^" + ABC).matcher(ABC).matches(), is(true));
+    assertThat(Ll1Pattern.compile("^" + ABC).matcher("x\n" + ABC).find(), is(false));
   }
 
   @Test
   public void lineEnd_withoutMultiline_behavesLikeInputEndExceptTerminator() {
-    assertThat(Ll1Pattern.compile("abc$").matcher("abc").matches(), is(true));
-    Matcher m = Ll1Pattern.compile("abc$").matcher("abc\n");
+    assertThat(Ll1Pattern.compile(ABC + "$").matcher(ABC).matches(), is(true));
+    Matcher m = Ll1Pattern.compile(ABC + "$").matcher(ABC + "\n");
     assertThat(m.find(), is(true));
-    assertThat(m.end(), is(3));
-    assertThat(Ll1Pattern.compile("abc$").matcher("abc\ndef").find(), is(false));
+    assertThat(m.end(), is(ABC.length()));
+    assertThat(Ll1Pattern.compile(ABC + "$").matcher(ABC + "\ndef").find(), is(false));
   }
 
   // --- ^/$ with MULTILINE: match at every line boundary ---
 
   @Test
   public void lineBegin_multiline_matchesAfterEveryNewline() {
-    Ll1Pattern p = Ll1Pattern.compile("^abc", Ll1Pattern.MULTILINE);
-    Matcher m = p.matcher("x\nabc\nabc");
+    Ll1Pattern p = Ll1Pattern.compile("^" + ABC, Ll1Pattern.MULTILINE);
+    Matcher m = p.matcher("x\n" + ABC + "\n" + ABC);
     assertThat(m.find(), is(true));
-    assertThat(m.start(), is(2));
+    assertThat(m.start(), is(2)); // right after "x\n", unaffected by ABC's own length
     assertThat(m.find(), is(true));
-    assertThat(m.start(), is(6));
+    assertThat(m.start(), is(2 + ABC.length() + 1)); // right after "x\n" + ABC + "\n"
   }
 
   @Test
   public void lineBegin_multiline_doesNotMatchMidTerminator() {
-    // Right after the '\r' of a "\r\n" pair is mid-terminator, not a line begin.
+    // Right after the '\r' of a "\r\n" pair is mid-terminator, not a line begin. Plain ASCII --
+    // this is testing "\r\n" detection specifically, not the literal marker's own width.
     Ll1Pattern p = Ll1Pattern.compile("^", Ll1Pattern.MULTILINE);
     Matcher m = p.matcher("a\r\nb");
     assertThat(m.find(), is(true));
@@ -128,25 +141,25 @@ public class LineAndInputBoundaryTest {
 
   @Test
   public void lineEnd_multiline_matchesBeforeEveryNewline() {
-    Ll1Pattern p = Ll1Pattern.compile("abc$", Ll1Pattern.MULTILINE);
-    Matcher m = p.matcher("abc\nabc");
+    Ll1Pattern p = Ll1Pattern.compile(ABC + "$", Ll1Pattern.MULTILINE);
+    Matcher m = p.matcher(ABC + "\n" + ABC);
     assertThat(m.find(), is(true));
     assertThat(m.start(), is(0));
     assertThat(m.find(), is(true));
-    assertThat(m.start(), is(4));
+    assertThat(m.start(), is(ABC.length() + 1)); // right after ABC + "\n"
   }
 
   @Test
   public void lineEnd_multiline_alsoMatchesTrueEndOfInput() {
-    assertThat(Ll1Pattern.compile("abc$", Ll1Pattern.MULTILINE).matcher("abc").matches(), is(true));
+    assertThat(Ll1Pattern.compile(ABC + "$", Ll1Pattern.MULTILINE).matcher(ABC).matches(), is(true));
   }
 
   // --- UNIX_LINES: only "\n" counts as a line terminator ---
 
   @Test
   public void unixLines_crIsNotALineTerminator() {
-    Ll1Pattern p = Ll1Pattern.compile("abc\\Z", Ll1Pattern.UNIX_LINES);
-    assertThat(p.matcher("abc\r").find(), is(false));
-    assertThat(p.matcher("abc\n").find(), is(true));
+    Ll1Pattern p = Ll1Pattern.compile(ABC + "\\Z", Ll1Pattern.UNIX_LINES);
+    assertThat(p.matcher(ABC + "\r").find(), is(false));
+    assertThat(p.matcher(ABC + "\n").find(), is(true));
   }
 }

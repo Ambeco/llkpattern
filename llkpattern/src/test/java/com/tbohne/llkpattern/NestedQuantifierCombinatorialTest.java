@@ -1,5 +1,7 @@
 package com.tbohne.llkpattern;
 
+import static com.tbohne.llkpattern.SupplementaryChars.A;
+import static com.tbohne.llkpattern.SupplementaryChars.B;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -27,12 +29,12 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class NestedQuantifierCombinatorialTest {
 
-  private static final String[] ATOMS = {"a", "[ab]", "."};
+  private static final String[] ATOMS = {A, "[" + A + B + "]", "."};
   private static final String[] QUANTIFIERS = {"", "?", "*", "+", "{1,2}"};
 
   // A smaller set for the two-atom inner body (structure B below), to keep the combinatorial
   // blowup bounded: 2 atoms x 4 quantifiers x 2 atoms x 4 quantifiers x 4 outer quantifiers = 256.
-  private static final String[] SMALL_ATOMS = {"a", "."};
+  private static final String[] SMALL_ATOMS = {A, "."};
   private static final String[] SMALL_QUANTIFIERS = {"", "?", "*", "+"};
 
   @Test

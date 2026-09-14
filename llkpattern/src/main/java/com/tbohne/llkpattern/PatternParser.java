@@ -253,7 +253,14 @@ final class PatternParser {
     StringBuilder rawText = null;
     for (; ; ) {
       skipComments();
-      if ("()[]|.^$\0".indexOf(peek) > -1) {
+      // A plain == chain instead of a "()[]|.^$\0".indexOf(peek) string scan -- this runs once per
+      // character of every pattern compiled, and showed up in Android CPU sampling; a chain of int
+      // comparisons should be cheaper than a method call into String's own indexOf loop, though (per
+      // the project owner's own hedge) the JIT may already optimize the short constant-string scan
+      // well enough that this makes no measurable difference -- kept for its own sake regardless,
+      // since it's no less readable.
+      if (peek == '(' || peek == ')' || peek == '[' || peek == ']' || peek == '|' || peek == '.'
+          || peek == '^' || peek == '$' || peek == '\0') {
         if (rawTextStartIndex >= 0) {
           // rawTextPureEnd, not `index`: this iteration's own skipComments() call just above may
           // already have skipped a trailing comment/whitespace gap since the pure content last

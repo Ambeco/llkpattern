@@ -2080,3 +2080,37 @@ Notes to self about how to work on this project, and other context that doesn't 
   0.035 ms/op (-8.4%), 46,664 -> 37,744 B/op (-19.1%). Pixel 3a: `compileLlk` ratio 0.86x -> 0.87x,
   `matchLlk` ratio 0.20x -> 0.22x -- both flat within this device's known run-to-run noise (see
   above), not a real regression. README's benchmark tables updated to match.
+
+### Small follow-up tweaks from that sampling data (2026-09-14, same session)
+
+- The project owner reviewed the refreshed sampling files and asked about five specific hot spots.
+  Landed the three with a clear, low-risk win; explained rather than changed the other two, since
+  the data itself (or this project's own prior experience) argued against guessing:
+  1. `Ll1Pattern`'s constructor no longer wraps `namedGroups` in `Collections.unmodifiableMap` --
+     that field is package-private, and its only source (`PatternParser.getNamedGroups()`) hands
+     over its own live `HashMap` right as the throwaway parser instance that built it is discarded,
+     so nothing ever holds a mutable reference to it afterward. The wrapper bought no real safety,
+     just an allocation on every `compile()`.
+  2. `PatternParser.parseUnion`'s top-of-loop delimiter check (`"()[]|.^$\0".indexOf(peek) > -1`,
+     run once per character of every pattern compiled) is now a plain `==` chain. Kept even though
+     the JIT may already optimize the short constant-string scan well enough to make this
+     unmeasurable (the project owner's own hedge) -- no less readable either way.
+  3. `AndroidCorpusBenchmark`'s own CPU-sampling `printCallers` got the same "guarantee a
+     `com.tbohne.llkpattern.` frame in every printed stack" treatment as
+     `AllocationSamplingRunner`'s (see the 2026-09-14 alloc-sampling entry above) -- same
+     duplicated-rather-than-shared reasoning as that class's own doc already gives for why this
+     wasn't factored out once.
+  - **`CharBuffer.wrap` at `parseUnion`'s top-of-loop flush, asked whether it could check
+    `rawTextIsPure && rawTextPureEnd > rawTextStartIndex` first:** traced through every path that
+    reaches that flush and found the existing `rawTextStartIndex >= 0` guard already can't be true
+    with an empty pure span there -- opening a run and finishing the character that opened it
+    happen within the same loop iteration (see `parseUnion`'s own bug-fix history above), so by the
+    time control returns to the top of the loop, `rawTextPureEnd > rawTextStartIndex` already holds
+    whenever `rawTextStartIndex >= 0` does. Added check would be a permanent no-op; not made.
+  - **Pre-sizing `Sequence.patterns`/`QuantifiedUnion.constructs`' `ArrayList`s, possibly by
+    scanning ahead and counting `()[]|`:** not attempted. A scan wide enough to be accurate would
+    need to track paren depth to find each construct's own scope boundary (real parsing work, not
+    a cheap hint), and a cheap-but-inaccurate estimate risks exactly the outcome the 2026-09-10
+    `CodePointMapBuilder` pre-sizing attempts documented earlier in this file hit twice: a
+    plausible-sounding heuristic that measured as a net regression once actually tried. Flagged
+    back to the project owner rather than guessing at a magic constant.

@@ -1,6 +1,5 @@
 package com.tbohne.llkpattern;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -103,7 +102,12 @@ public final class Ll1Pattern {
 		this.compiled = compiled;
 		this.quantifiableCount = quantifiableCount;
 		this.captureGroupCount = captureGroupCount;
-		this.namedGroups = Collections.unmodifiableMap(namedGroups);
+		// Not Collections.unmodifiableMap: `namedGroups` is package-private, and the only caller
+		// (PatternParser.getNamedGroups(), in Ll1Pattern.compile() above) hands over its own live
+		// HashMap right as the throwaway parser instance that built it is discarded -- nothing ever
+		// holds a mutable reference to it afterward, so the wrapper bought no real safety, just an
+		// allocation on every compile().
+		this.namedGroups = namedGroups;
 		this.anchorsToPreviousMatchEnd = anchorsToPreviousMatchEnd;
 	}
 

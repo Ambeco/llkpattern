@@ -1901,6 +1901,17 @@ Notes to self about how to work on this project, and other context that doesn't 
   `advanceCodePoint()` switch; the historical `.`-quantifier-suffix bug) rather than just reusing
   supplementary chars incidentally.
 
+### Re-ran benchmarks after the peek/peek2 fix + test sweep (2026-09-14, same session)
+
+- Per CLAUDE.md's after-a-performance-change checklist, re-ran desktop JMH and re-captured both
+  sampling files, plus the Pixel 3a (`adb devices` showed it already plugged in and unlocked, so
+  ran without asking first). Desktop: llkCompile 0.372 ms/op (ratio to regexCompile 4.01x, was
+  3.82x), llkMatch 0.035 ms/op (ratio 0.77x, unchanged). Pixel 3a: compileLlk 7.58 ms/pass (ratio
+  1.03x, was 1.00x), matchLlk 0.77 ms/pass (ratio 0.21x, unchanged). All movement is within the
+  run-to-run noise already documented above (e.g. the 2026-09-13 IDE-closing entry, the Dropbox-
+  sync episode) -- the `peek`/`peek2` field-type change reads an `int` instead of a `char` per
+  lookahead step, no new allocation, so no real shift was expected here either.
+
 ## Misc
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.

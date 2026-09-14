@@ -1,5 +1,8 @@
 package com.tbohne.llkpattern;
 
+import static com.tbohne.llkpattern.SupplementaryChars.A;
+import static com.tbohne.llkpattern.SupplementaryChars.B;
+import static com.tbohne.llkpattern.SupplementaryChars.C;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -13,6 +16,12 @@ import org.junit.runners.JUnit4;
  * {@code \1}-{@code \9} (numbered backreference) and {@code \k<name>} (named backreference) --
  * see design.md's "Backreferences" section for the compile-time entry-set design being tested
  * here.
+ *
+ * <p>Tests whose literal content is just a group marker (not tied to \w/case-folding semantics)
+ * use SupplementaryChars' A/B/C in place of the plain ASCII 'a'/'b'/'c' they originally used --
+ * see SupplementaryPatternTextTest. The \w+-based tests (repeated-word matching, case
+ * insensitivity) are left as ASCII -- they hinge on \w's own (ASCII-by-default) word-character
+ * classification and case-folding, not the parser's literal lookahead.
  */
 @RunWith(JUnit4.class)
 public class BackReferenceTest {
@@ -44,9 +53,9 @@ public class BackReferenceTest {
     // succeeds -- but see backReference_toPossiblyEmptyGroup_rejectedAsAmbiguous below for why a
     // POSSIBLY-empty group ambiguous with a sibling branch is rejected at compile time instead:
     // "(a?)" here always resolves to exactly "" or "a", never ambiguous with 'b'.
-    Ll1Pattern p = Ll1Pattern.compile("(a?)b\\1");
-    assertThat(p.matcher("ab").matches(), is(false)); // \1="a", but nothing left to match it
-    assertThat(p.matcher("b").matches(), is(true)); // \1=""
+    Ll1Pattern p = Ll1Pattern.compile("(" + A + "?)" + B + "\\1");
+    assertThat(p.matcher(A + B).matches(), is(false)); // \1=A, but nothing left to match it
+    assertThat(p.matcher(B).matches(), is(true)); // \1=""
   }
 
   @Test
@@ -55,9 +64,9 @@ public class BackReferenceTest {
     // BeginCapture never fires, unlike an empty-but-participating "(a?)"). Per java.util.regex
     // semantics, an unparticipated group's backreference fails outright rather than matching the
     // empty string.
-    Ll1Pattern p = Ll1Pattern.compile("(a)?b\\1");
-    assertThat(p.matcher("bx").matches(), is(false)); // group 1 didn't participate: \1 can't match
-    assertThat(p.matcher("aba").matches(), is(true)); // group 1 participated: \1 matches "a"
+    Ll1Pattern p = Ll1Pattern.compile("(" + A + ")?" + B + "\\1");
+    assertThat(p.matcher(B + "x").matches(), is(false)); // group 1 didn't participate: \1 can't match
+    assertThat(p.matcher(A + B + A).matches(), is(true)); // group 1 participated: \1 matches A
   }
 
   // --- Compile-time ambiguity detection (design.md's "Backreferences" section) ---
@@ -67,7 +76,7 @@ public class BackReferenceTest {
     // (a+)\1: the loop's own "keep matching 'a'" branch and \1's entry set ({a}, since group 1
     // always starts with 'a') can both claim 'a' -- ambiguous, same as any other LL(1) violation.
     try {
-      Ll1Pattern.compile("(a+)\\1");
+      Ll1Pattern.compile("(" + A + "+)\\1");
       fail("expected PatternSyntaxException for ambiguous backreference");
     } catch (PatternSyntaxException expected) {
       // expected
@@ -81,9 +90,9 @@ public class BackReferenceTest {
     // BackReference's original, pre-firstCharSet() stub. As a sole alternation sibling next to a
     // branch with a specific, disjoint entry set ('b'), that's not itself ambiguous: 'b' claims
     // its own character and \1 is only ever reached otherwise.
-    Ll1Pattern p = Ll1Pattern.compile("(a*)b(?:\\1|c)");
-    assertThat(p.matcher("aabc").matches(), is(true)); // 'c' branch taken
-    assertThat(p.matcher("aabaa").matches(), is(true)); // \1="aa", the catch-all branch taken
+    Ll1Pattern p = Ll1Pattern.compile("(" + A + "*)" + B + "(?:\\1|" + C + ")");
+    assertThat(p.matcher(A + A + B + C).matches(), is(true)); // C branch taken
+    assertThat(p.matcher(A + A + B + A + A).matches(), is(true)); // \1=AA, the catch-all branch taken
   }
 
   @Test
@@ -92,7 +101,7 @@ public class BackReferenceTest {
     // fall back to a catch-all entry set -- exactly the "two candidates both allow any character"
     // ambiguity mergeEntryPoints already rejects for any other construct type.
     try {
-      Ll1Pattern.compile("(a*)(b*)c(?:\\1|\\2)");
+      Ll1Pattern.compile("(" + A + "*)(" + B + "*)" + C + "(?:\\1|\\2)");
       fail("expected PatternSyntaxException for two catch-all backreference branches");
     } catch (PatternSyntaxException expected) {
       // expected
@@ -104,10 +113,10 @@ public class BackReferenceTest {
     // (a)(?:\1|b): \1's entry set is exactly {a} (group 1 always captures "a"), disjoint from
     // 'b' -- should compile and dispatch to the correct branch based on the next character,
     // rather than always preferring \1 (see design.md's rejected "catch-all" alternative).
-    Ll1Pattern p = Ll1Pattern.compile("(a)(?:\\1|b)");
-    assertThat(p.matcher("aa").matches(), is(true));
-    assertThat(p.matcher("ab").matches(), is(true));
-    assertThat(p.matcher("ac").matches(), is(false));
+    Ll1Pattern p = Ll1Pattern.compile("(" + A + ")(?:\\1|" + B + ")");
+    assertThat(p.matcher(A + A).matches(), is(true));
+    assertThat(p.matcher(A + B).matches(), is(true));
+    assertThat(p.matcher(A + C).matches(), is(false));
   }
 
   // --- Forward references / undefined groups rejected at parse time ---
@@ -115,7 +124,7 @@ public class BackReferenceTest {
   @Test
   public void forwardNumberedReference_rejectedAtParseTime() {
     try {
-      Ll1Pattern.compile("\\1(a)");
+      Ll1Pattern.compile("\\1(" + A + ")");
       fail("expected PatternSyntaxException for forward reference");
     } catch (PatternSyntaxException expected) {
       // expected
@@ -125,7 +134,7 @@ public class BackReferenceTest {
   @Test
   public void undefinedNumberedReference_rejectedAtParseTime() {
     try {
-      Ll1Pattern.compile("(a)\\2");
+      Ll1Pattern.compile("(" + A + ")\\2");
       fail("expected PatternSyntaxException for undefined group reference");
     } catch (PatternSyntaxException expected) {
       // expected
@@ -135,7 +144,7 @@ public class BackReferenceTest {
   @Test
   public void forwardNamedReference_rejectedAtParseTime() {
     try {
-      Ll1Pattern.compile("\\k<word>(?<word>a)");
+      Ll1Pattern.compile("\\k<word>(?<word>" + A + ")");
       fail("expected PatternSyntaxException for forward named reference");
     } catch (PatternSyntaxException expected) {
       // expected
@@ -145,7 +154,7 @@ public class BackReferenceTest {
   @Test
   public void undefinedNamedReference_rejectedAtParseTime() {
     try {
-      Ll1Pattern.compile("(?<word>a)\\k<other>");
+      Ll1Pattern.compile("(?<word>" + A + ")\\k<other>");
       fail("expected PatternSyntaxException for undefined named group reference");
     } catch (PatternSyntaxException expected) {
       assertThat(expected.getMessage(), containsString("other"));
@@ -155,7 +164,7 @@ public class BackReferenceTest {
   @Test
   public void malformedNamedReference_rejectedAtParseTime() {
     try {
-      Ll1Pattern.compile("(?<word>a)\\k<word");
+      Ll1Pattern.compile("(?<word>" + A + ")\\k<word");
       fail("expected PatternSyntaxException for a \\k<name> missing its closing '>'");
     } catch (PatternSyntaxException expected) {
       // expected

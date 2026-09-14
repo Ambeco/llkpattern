@@ -22,6 +22,17 @@ public class EscapeTest {
   }
 
   @Test
+  public void backslash_followedByLiteralSupplementaryCodePoint_parsesCorrectly() {
+    // Exercises the parser's own lookahead resuming correctly right after consuming a "\\"
+    // escape, when what comes next is a supplementary (astral) literal character rather than a
+    // BMP one -- see SupplementaryPatternTextTest, and PatternParser#peek's own field doc.
+    String supplementary = "𐀀"; // U+10000
+    assertThat(
+        Ll1Pattern.compile("a\\\\" + supplementary).matcher("a\\" + supplementary).matches(),
+        is(true));
+  }
+
+  @Test
   public void octal_oneDigit() {
     assertThat(Ll1Pattern.compile("\\07").matcher("\u0007").matches(), is(true));
   }

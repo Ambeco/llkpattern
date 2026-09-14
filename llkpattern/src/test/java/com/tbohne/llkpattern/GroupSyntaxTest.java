@@ -14,23 +14,35 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class GroupSyntaxTest {
+  // U+10000-U+10005 (LINEAR B SYLLABLE B008 A through B038 E), a contiguous supplementary range
+  // standing in for [a-z] below -- same reasoning as SupplementaryPatternTextTest: exercises the
+  // parser's own supplementary-code-point lookahead inside a captured, quantified group, not just
+  // a bare literal.
+  private static final String SUPP_RANGE_START = "𐀀"; // U+10000
+  private static final String SUPP_RANGE_END = "𐀅"; // U+10005
+  private static final String SUPP_HELLO =
+      "𐀀𐀁𐀂𐀂𐀃"; // 5 code points in-range
+  private static final String SUPP_XYZ = "𐀃𐀄𐀅";
+  private static final String SUPP_BANG = "𐀆"; // U+10006, outside the range above
+
   @Test
   public void namedGroup_capturesByName() {
-    Ll1Pattern p = Ll1Pattern.compile("(?<word>[a-z]+)");
-    Matcher m = p.matcher("hello");
+    Ll1Pattern p = Ll1Pattern.compile("(?<word>[" + SUPP_RANGE_START + "-" + SUPP_RANGE_END + "]+)");
+    Matcher m = p.matcher(SUPP_HELLO);
     assertThat(m.matches(), is(true));
-    assertThat(m.group("word"), is("hello"));
+    assertThat(m.group("word"), is(SUPP_HELLO));
   }
 
   @Test
   public void namedGroup_alsoAccessibleByNumber() {
-    // Trailing literal must be outside [a-z] -- an LL(1) engine can't disambiguate a loop that
+    // Trailing literal must be outside the range -- an LL(1) engine can't disambiguate a loop that
     // could still consume the next character from a following literal that's also in-class.
-    Ll1Pattern p = Ll1Pattern.compile("a(?<word>[a-z]+)!");
-    Matcher m = p.matcher("axyz!");
+    Ll1Pattern p = Ll1Pattern.compile(
+        SUPP_RANGE_START + "(?<word>[" + SUPP_RANGE_START + "-" + SUPP_RANGE_END + "]+)" + SUPP_BANG);
+    Matcher m = p.matcher(SUPP_RANGE_START + SUPP_XYZ + SUPP_BANG);
     assertThat(m.matches(), is(true));
-    assertThat(m.group(1), is("xyz"));
-    assertThat(m.group("word"), is("xyz"));
+    assertThat(m.group(1), is(SUPP_XYZ));
+    assertThat(m.group("word"), is(SUPP_XYZ));
   }
 
   @Test

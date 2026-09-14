@@ -136,10 +136,12 @@ task jmhAllocSampling(type: JavaExec) {
     args = [
         benchmarkMachineName,
         project.file("${rootDir}/benchmarks").toString(),
-        // Corpus passes per benchmark -- sized empirically (see documents/notes.md) to yield
-        // enough jdk.ObjectAllocationSample events for a useful tree, not tied to jmh's own
+        // Corpus passes per benchmark -- sized empirically (see documents/notes.md) so the
+        // slower benchmark (llkCompile) lands in the ~10-20s range at the runner's own maxed-out
+        // throttle setting, keeping statistical noise from too few jdk.ObjectAllocationSample
+        // events reasonably low without ballooning capture time; not tied to jmh's own
         // warmup/iteration counts since JFR's sampling has no wall-clock budget to size against.
-        "3000",
+        "45000",
     ] + samplingBenchmarkNames
 }
 

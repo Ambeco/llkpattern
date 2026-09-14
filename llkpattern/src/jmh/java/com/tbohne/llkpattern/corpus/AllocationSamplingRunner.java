@@ -96,8 +96,19 @@ public final class AllocationSamplingRunner {
 
     Path jfrFile = Files.createTempFile("alloc-sampling-" + name, ".jfr");
     try {
+      // JFR's default throttle for this event is 150/s (see default.jfc), tuned for low-overhead
+      // continuous production profiling, not for a short offline capture like this one where we'd
+      // rather trade CPU for lower statistical noise. Cranking the target rate this high doesn't
+      // actually make the JVM emit a million samples a second -- the underlying sampler is
+      // anchored to real per-thread TLAB-retirement activity, so the achieved rate saturates well
+      // below the requested one regardless (confirmed empirically: 1_000_000/s and 1_000_000_000/s
+      // produced byte-identical event counts for the same workload -- see documents/notes.md's
+      // 2026-09-14 entry). There's no setting to disable throttling/sampling outright for this
+      // event -- sampling *is* the mechanism, unlike e.g. jdk.ObjectAllocationInNewTLAB/
+      // OutsideTLAB, which aren't throttled but fire on TLAB-refill events rather than every
+      // allocation and would need a different aggregation approach.
       Recording recording = new Recording();
-      recording.enable("jdk.ObjectAllocationSample");
+      recording.enable("jdk.ObjectAllocationSample").with("throttle", "1000000/s");
       recording.start();
       try {
         for (int i = 0; i < iterations; i++) {

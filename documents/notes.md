@@ -1953,3 +1953,40 @@ Notes to self about how to work on this project, and other context that doesn't 
   table (desktop only -- the Android harness doesn't track byte-level allocation).
 
 - `oldllkpattern/` is the previous implementation attempt, kept around for reference — don't delete without checking with the user first.
+
+### Alloc-sampling noise investigation (2026-09-14)
+
+- The project owner noticed `Matcher.<init>:75` (`quantifiableCounts = new int[...]`) and `:76`
+  (`captureGroups = new Group[...]`) showing wildly different weights (95.6% vs 1.1%) in
+  `Intel-i7-9750H_llkMatch_alloc_sampling.txt` despite both lines executing exactly once per
+  `Matcher` construction -- suspicious enough to question whether `jdk.ObjectAllocationSample` is
+  even a fair sample.
+- Confirmed it's genuinely statistical, not exhaustive: it's throttled (JFR's `throttle` setting,
+  default 150/s per `default.jfc`, which `AllocationSamplingRunner` wasn't overriding), and the
+  underlying HotSpot mechanism (JEP 331) anchors sampling decisions to real per-thread
+  TLAB-retirement activity -- there's no "disable throttling" switch for this event, since sampling
+  *is* how it works (unlike `jdk.ObjectAllocationInNewTLAB`/`OutsideTLAB`, which fire on every
+  TLAB refill rather than being throttle-configurable, but weren't investigated further here).
+- Empirically found the *practical* ceiling: raised the throttle via
+  `recording.enable(...).with("throttle", "<rate>/s")` and tried 1,000,000/s vs 1,000,000,000/s at
+  the same iteration count (`llkMatch`, 45,000 passes) -- both produced byte-identical event counts
+  (1,997/1,999 across two runs), confirming the achieved rate saturates on real allocation activity
+  well below any throttle target that high. So "disable throttling" isn't literally offered, but
+  1,000,000/s is effectively equivalent to no throttle at all for this workload.
+- Scaling iterations from 3,000 to 45,000 (kept the higher throttle) narrowed the gap dramatically:
+  `llkCompile` went from ~2,000 to ~30,700 samples; the `Matcher.<init>:75`/`:76` split (in
+  `llkMatch`'s own sampling file -- separate from `llkCompile`'s) went from 95.6%/1.1% at 3,000
+  iterations, to 24.0%/17.7% at 45,000 iterations in one test run, to 1.1%/0.9% in a later run at
+  the same settings -- the last swing is itself just normal sample-count variance run-to-run (only
+  ~2,000 samples total for this benchmark even at 45,000 iterations, the practical ceiling found
+  above), not something that kept improving with more iterations.
+- The remaining, now-small gap between `:75` and `:76` is real signal, not noise: `int[]` elements
+  and `Group[]` (reference) elements aren't necessarily the same width, and `quantifiableCount` vs.
+  `captureGroupCount` differ per pattern across the corpus -- equal *call* counts never implied
+  equal *byte* weight, so full convergence to 1:1 was never the right expectation to begin with.
+- Landed: `AllocationSamplingRunner` now sets `throttle` to `1000000/s` explicitly (see its
+  comment for the saturation finding), and `jmhAllocSampling`'s corpus-passes arg went from 3,000
+  to 45,000 -- sized so `llkCompile` (the slower, dominant benchmark) lands in the desktop
+  ~10-20s range the project owner asked for, based on this machine's timings (`llkCompile` ~14s,
+  `llkMatch` ~2.5s at that setting). Re-ran `jmhAllocSampling` and committed the refreshed
+  `benchmarks/*_alloc_sampling.txt` files.

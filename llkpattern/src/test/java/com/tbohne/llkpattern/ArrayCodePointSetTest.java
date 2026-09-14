@@ -143,6 +143,66 @@ public class ArrayCodePointSetTest {
   }
 
   @Test
+  public void intersects_overlappingRanges_isTrue() {
+    MutableCodePointSet a = create();
+    a.add('a', 'm'); // [a, m)
+    MutableCodePointSet b = create();
+    b.add('g', 'z' + 1); // [g, {) -- overlaps a in [g, m)
+
+    assertThat(a.intersects(b), is(true));
+    assertThat(b.intersects(a), is(true)); // symmetric
+  }
+
+  @Test
+  public void intersects_disjointRanges_isFalse() {
+    MutableCodePointSet a = create();
+    a.add('a', 'c'); // [a, c)
+    MutableCodePointSet b = create();
+    b.add('x', 'z' + 1); // [x, {)
+
+    assertThat(a.intersects(b), is(false));
+    assertThat(b.intersects(a), is(false));
+  }
+
+  @Test
+  public void intersects_touchingRanges_isFalse() {
+    // [a, c) and [c, e) share no code point -- 'c' belongs only to the second range.
+    MutableCodePointSet a = create();
+    a.add('a', 'c');
+    MutableCodePointSet b = create();
+    b.add('c', 'e');
+
+    assertThat(a.intersects(b), is(false));
+  }
+
+  @Test
+  public void intersects_invertedSet_treatsGapsAsMembers() {
+    // Inverted `a` excludes ['b', 'y'), i.e. its real members are everything else -- including
+    // 'a' and 'z', both of which `b` also claims.
+    MutableCodePointSet a = create();
+    a.add('b', 'y');
+    a.invert();
+    MutableCodePointSet b = create();
+    b.add('a');
+    b.add('z');
+
+    assertThat(a.intersects(b), is(true));
+  }
+
+  @Test
+  public void intersects_invertedSetFullyCoveringOther_isFalse() {
+    // Inverted `a` excludes ['a', 'z' + 1) entirely, so it has no members in that whole range --
+    // whatever `b` claims within it can't be a real intersection.
+    MutableCodePointSet a = create();
+    a.add('a', 'z' + 1);
+    a.invert();
+    MutableCodePointSet b = create();
+    b.add('m');
+
+    assertThat(a.intersects(b), is(false));
+  }
+
+  @Test
   public void complement_excludesMemberCodePointsOnly() {
     MutableCodePointSet set = create();
     set.add('a');
@@ -221,6 +281,44 @@ public class ArrayCodePointSetTest {
     assertThat(set.contains(0x4E00 + 4999), is(true));
     assertThat(set.contains(0x4E00 + 5000), is(false));
     assertThat(set.containsAll(0x4E00, 0x4E00 + 5000), is(true));
+  }
+
+  @Test
+  public void add_touchingNeighborAcrossElevenBitBoundary_coalescesAndRechunks() {
+    // Regression coverage for addRange's merge-window absorbing a *touching* (not overlapping)
+    // neighbor and re-chunking across the 2048-entry boundary, now that there's no separate
+    // tryCoalesceAt pass -- add() has to fold the neighbor in and re-split it itself.
+    MutableCodePointSet set = create();
+    set.add(0, 1500); // one entry, [0, 1500)
+    set.add(1500, 3500); // touches the first entry's max exactly -- must merge into one run,
+    // [0, 3500), which no longer fits in a single 2048-wide entry.
+    assertThat(set.contains(0), is(true));
+    assertThat(set.contains(1499), is(true));
+    assertThat(set.contains(1500), is(true));
+    assertThat(set.contains(3499), is(true));
+    assertThat(set.contains(3500), is(false));
+    assertThat(set.containsAll(0, 3500), is(true));
+  }
+
+  @Test
+  public void add_refillingRemovedGap_shrinksChunkCountBelowWindowSize() {
+    // Regression coverage for addRange's delta < 0 path: remove() can leave one logical run
+    // represented as MORE (smaller) entries than the 2048-cap requires -- e.g. cutting a gap out
+    // of the middle of a single entry splits it into two small entries via insertSingle -- so a
+    // later add() re-filling that gap needs FEWER chunks than the window it's replacing.
+    MutableCodePointSet set = create();
+    set.add(0, 2000); // one entry, [0, 2000)
+    set.remove(900, 1100); // splits it into two entries: [0, 900) and [1100, 2000)
+    assertThat(set.contains(950), is(false));
+
+    set.add(900, 1100); // re-fills the gap; merged span [0, 2000) fits back in a single chunk, so
+    // this window (2 existing entries) shrinks to 1 -- exercising addRange's arraycopy-left path.
+    assertThat(set.containsAll(0, 2000), is(true));
+    assertThat(set.contains(2000), is(false));
+
+    MutableCodePointSet expected = create();
+    expected.add(0, 2000);
+    assertThat(set, equalTo(expected));
   }
 
   @Test

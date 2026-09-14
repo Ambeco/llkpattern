@@ -11,8 +11,10 @@ import java.util.Arrays;
  * are in the set" -- always mergeable, never a conflict -- so {@link #build} never throws.
  *
  * <p>Not itself a {@link CodePointSet} -- it has no query methods, only {@link #add}/{@link
- * #build}. Reusable for multiple {@link #build} calls (state isn't consumed), but there's normally
- * no reason to.
+ * #build}. Build-once: {@link #build} hands its packed {@code keys} array off to the {@link
+ * ArrayCodePointSet} it returns (no defensive copy), so calling it again would re-merge already-
+ * compacted {@code mins}/{@code maxs} into a second, aliased set instead of a fresh one -- create a
+ * new builder per {@link CodePointSet} instead of reusing one.
  */
 final class CodePointSetBuilder {
   private static final int INITIAL_CAPACITY = 4;
@@ -73,7 +75,26 @@ final class CodePointSetBuilder {
       maxs[outSize] = max;
       outSize++;
     }
-    return new ArrayCodePointSet(mins, maxs, outSize);
+    // Pack directly into ArrayCodePointSet's own key format here, into a single correctly-sized
+    // array computed up front -- so the constructor it's handed to just takes ownership, with no
+    // further allocation of its own. `mins`/`maxs` are left alone rather than reused as scratch --
+    // fine, since build-once (see class doc) means there's no second call to pay for it.
+    int chunkTotal = 0;
+    for (int i = 0; i < outSize; i++) {
+      chunkTotal += (maxs[i] - mins[i] + ArrayCodePointSet.MAX_COUNT) / (ArrayCodePointSet.MAX_COUNT + 1);
+    }
+    int[] keys = new int[chunkTotal];
+    int w = 0;
+    for (int i = 0; i < outSize; i++) {
+      int min = mins[i];
+      int max = maxs[i];
+      for (int chunkMin = min; chunkMin < max; chunkMin += ArrayCodePointSet.MAX_COUNT + 1) {
+        int chunkMax = Math.min(max, chunkMin + ArrayCodePointSet.MAX_COUNT + 1);
+        keys[w] = ArrayCodePointSet.packKey(chunkMin, chunkMax - chunkMin - 1);
+        w++;
+      }
+    }
+    return new ArrayCodePointSet(keys, w);
   }
 
   /**

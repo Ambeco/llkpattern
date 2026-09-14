@@ -84,6 +84,20 @@ public interface CodePointSet {
   /** Returns the portion of this set restricted to {@code [min, max)}. */
   CodePointSet intersection(int min, int max);
 
+  /**
+   * Whether this set and {@code other} share at least one code point -- a boolean-only,
+   * short-circuiting counterpart to {@link #intersection}, for callers (e.g. {@code
+   * PatternConstruct#checkDisjoint}'s ambiguity check) that only need "do these overlap at all"
+   * and shouldn't have to pay for materializing the overlap itself just to answer that. Default
+   * implementation is a nested short-circuiting {@link #first} scan -- correct for any
+   * implementation, since it only uses the public range-visiting contract, but quadratic in range
+   * count; {@link ArrayCodePointSet} overrides with an allocation-free, binary-search-per-range
+   * version.
+   */
+  default boolean intersects(CodePointSet other) {
+    return other.first((oMin, oMax) -> first((min, max) -> min < oMax && oMin < max));
+  }
+
   /** Returns the complement of this set: every code point NOT in this set, and vice versa. */
   CodePointSet complement();
 

@@ -26,7 +26,9 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 public final class ArrayCodePointSet implements MutableCodePointSet {
   // count occupies the low 11 bits (max 2047, i.e. entries span at most 2048 code points).
   private static final int COUNT_BITS = 11;
-  private static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
+  // Package-private (not private): CodePointSetBuilder.build() needs it for the same chunk-count
+  // math when packing its own keys array.
+  static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
 
   private static final int INITIAL_CAPACITY = 1;
 
@@ -52,29 +54,14 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   /**
-   * Builds a set directly from {@code count} already-sorted-by-min, pairwise-disjoint,
-   * coalesced-where-possible ranges -- the one packing/chunking pass any {@code appendSorted} loop
-   * would do, but into a single correctly-sized {@code keys} array computed up front, instead of
-   * growing via {@link #ensureCapacity} as it goes. Package-private -- reached only via {@link
-   * CodePointSetBuilder#build}, which has already done the sort/merge work this constructor's
-   * preconditions assume.
+   * Takes direct ownership of an already-packed, sorted, coalesced {@code keys} array (the first
+   * {@code count} entries are used) -- no copy, no allocation. Package-private -- reached only via
+   * {@link CodePointSetBuilder#build}, which builds {@code keys} itself (via {@link #packKey}) and
+   * hands it off, since a builder is only ever built once and so has no further use for the array.
    */
-  ArrayCodePointSet(int[] sortedMins, int[] sortedMaxs, int count) {
-    int chunkTotal = 0;
-    for (int i = 0; i < count; i++) {
-      chunkTotal += (sortedMaxs[i] - sortedMins[i] + MAX_COUNT) / (MAX_COUNT + 1); // ceil(/2048)
-    }
-    keys = new int[chunkTotal];
-    size = 0;
-    for (int i = 0; i < count; i++) {
-      int min = sortedMins[i];
-      int max = sortedMaxs[i];
-      for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
-        int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
-        keys[size] = packKey(chunkMin, chunkMax - chunkMin - 1);
-        size++;
-      }
-    }
+  ArrayCodePointSet(int[] keys, int count) {
+    this.keys = keys;
+    this.size = count;
   }
 
   /**
@@ -94,7 +81,9 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
     return result;
   }
 
-  private static int packKey(int min, int count) {
+  // Package-private (not private) so CodePointSetBuilder.build() can pack its own keys array
+  // directly, for the package-private (int[], int) constructor above.
+  static int packKey(int min, int count) {
     return (min << COUNT_BITS) | count;
   }
 
@@ -151,6 +140,59 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
   private int windowEnd(int start, int max) {
     int end = start;
     while (end < size && keyMin(keys[end]) < max) {
+      end++;
+    }
+    return end;
+  }
+
+  @Override
+  public boolean intersects(CodePointSet other) {
+    return other.first(this::overlapsRange);
+  }
+
+  /**
+   * Whether this set contains at least one code point in {@code [min, max)} -- the allocation-free
+   * half of {@link #intersects}: no new {@code CodePointSet} materialized, unlike {@code
+   * !intersection(min, max).isEmpty()}.
+   */
+  private boolean overlapsRange(int min, int max) {
+    if (!invert) {
+      int idx = windowStart(min);
+      return idx < size && keyMin(keys[idx]) < max;
+    }
+    // Inverted: members are the GAPS between entries (see the class doc) -- walk the window
+    // looking for either a gap before an entry or a trailing gap after the last one, same
+    // cursor-walk shape as forEachRange/intersection's own invert branches.
+    int start = windowStart(min);
+    int end = windowEnd(start, max);
+    int cursor = min;
+    for (int i = start; i < end; i++) {
+      int entryMin = Math.max(min, keyMin(keys[i]));
+      if (cursor < entryMin) {
+        return true;
+      }
+      cursor = Math.max(cursor, Math.min(max, keyMax(keys[i])));
+    }
+    return cursor < max;
+  }
+
+  /**
+   * Like {@link #windowStart}, but for {@link #add}/{@link #appendSorted}'s merge semantics: a
+   * merely-touching entry (its {@code max} exactly equal to {@code min}) counts too, since it's
+   * about to be fused into one run with the new range rather than left as a separate one.
+   */
+  private int addWindowStart(int min) {
+    int idx = floorIndex(keys, size, min);
+    if (idx < 0 || keyMax(keys[idx]) < min) {
+      idx++;
+    }
+    return idx;
+  }
+
+  /** The {@link #addWindowStart} counterpart of {@link #windowEnd} -- touching entries included. */
+  private int addWindowEnd(int start, int max) {
+    int end = start;
+    while (end < size && keyMin(keys[end]) <= max) {
       end++;
     }
     return end;
@@ -301,89 +343,54 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public void add(int min, int max) {
-    int start = windowStart(min);
-    int end = windowEnd(start, max);
-    // No value to disagree on (unlike a generic map's `put`) -- any existing entry this new range
-    // touches or overlaps just merges into one wider run.
-    int lo = (start < end) ? Math.min(min, keyMin(keys[start])) : min;
-    int hi = (start < end) ? Math.max(max, keyMax(keys[end - 1])) : max;
-    int chunkCount = (hi - lo + MAX_COUNT) / (MAX_COUNT + 1); // ceil((hi - lo) / 2048)
-    int[] replKeys = new int[chunkCount];
-    int w = 0;
-    for (int chunkMin = lo; chunkMin < hi; chunkMin += MAX_COUNT + 1) {
-      int chunkMax = Math.min(hi, chunkMin + MAX_COUNT + 1);
-      replKeys[w] = packKey(chunkMin, chunkMax - chunkMin - 1);
-      w++;
-    }
-    spliceWindow(start, end, replKeys);
-    tryCoalesceAt(start + chunkCount - 1);
-    tryCoalesceAt(start - 1);
+    int start = addWindowStart(min);
+    int end = addWindowEnd(start, max);
+    addRange(start, end, min, max);
   }
 
   /** Bulk-appends a single range; see {@link MutableCodePointSet#appendSorted}'s contract. */
   @Override
   public void appendSorted(int min, int max) {
-    if (size > 0) {
-      int lastIdx = size - 1;
-      int lastKey = keys[lastIdx];
-      if (keyMax(lastKey) == min) {
-        int mergeLen = Math.min(MAX_COUNT - keyCount(lastKey), max - min);
-        if (mergeLen > 0) {
-          keys[lastIdx] = packKey(keyMin(lastKey), keyCount(lastKey) + mergeLen);
-          min += mergeLen;
-        }
-      }
-    }
     if (min >= max) {
-      return;
+      return; // empty range -- guard needed since addRange treats an empty [start,end) touching
+              // the last entry as "shrink it away", not "no-op".
     }
-    int count = max - min - 1;
-    if (count <= MAX_COUNT) {
-      ensureCapacity(size + 1);
-      keys[size] = packKey(min, count);
-      size++;
-      return;
-    }
-    int chunkCount = (max - min + MAX_COUNT) / (MAX_COUNT + 1);
-    ensureCapacity(size + chunkCount);
-    for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
-      int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
-      keys[size] = packKey(chunkMin, chunkMax - chunkMin - 1);
-      size++;
-    }
+    // Sorted-append input can only ever touch/overlap the LAST existing entry (everything else is
+    // strictly before it), so the merge window is found by a plain check instead of the binary
+    // search add() needs.
+    int start = (size > 0 && keyMax(keys[size - 1]) >= min) ? size - 1 : size;
+    addRange(start, size, min, max);
   }
 
-  /** Replaces the entries at {@code [start, end)} with {@code replKeys}, shifting the tail as needed. */
-  private void spliceWindow(int start, int end, int[] replKeys) {
-    int delta = replKeys.length - (end - start);
-    int oldSize = size;
-    if (delta > 0) {
-      ensureCapacity(size + delta);
-    }
+  /**
+   * Replaces the entries at {@code [start, end)} -- which, on entry, touch or overlap {@code [min,
+   * max)} and nothing else does -- with however many packed chunks are needed to cover their union,
+   * shifting the tail as needed. No value to disagree on (unlike a generic map's {@code put}) -- any
+   * existing entry in the window just merges into one wider run with the new range, so this never
+   * needs a separate coalesce pass, and writes the chunks directly into {@code keys} with no
+   * intermediate array.
+   */
+  private void addRange(int start, int end, int min, int max) {
+    int lo = (start < end) ? Math.min(min, keyMin(keys[start])) : min;
+    int hi = (start < end) ? Math.max(max, keyMax(keys[end - 1])) : max;
+    int chunkCount = (hi - lo + MAX_COUNT) / (MAX_COUNT + 1); // ceil((hi - lo) / 2048)
+    int delta = chunkCount - (end - start);
     if (delta != 0) {
-      System.arraycopy(keys, end, keys, end + delta, oldSize - end);
+      // Growing needs room for the tail's new position BEFORE it's shifted; shrinking never needs
+      // more room than it already has, so ensureCapacity would be a guaranteed (harmless, but
+      // pointless) no-op -- skipped rather than called unconditionally.
+      if (delta > 0) {
+        ensureCapacity(size + delta);
+      }
+      System.arraycopy(keys, end, keys, end + delta, size - end);
+      size += delta;
     }
-    System.arraycopy(replKeys, 0, keys, start, replKeys.length);
-    size = oldSize + delta;
-  }
-
-  /** If the entries at {@code idx} and {@code idx + 1} are adjacent and merge within a single entry's capacity, merges them. */
-  private void tryCoalesceAt(int idx) {
-    if (idx < 0 || idx + 1 >= size) {
-      return;
+    int w = start;
+    for (int chunkMin = lo; chunkMin < hi; chunkMin += MAX_COUNT + 1) {
+      int chunkMax = Math.min(hi, chunkMin + MAX_COUNT + 1);
+      keys[w] = packKey(chunkMin, chunkMax - chunkMin - 1);
+      w++;
     }
-    int a = keys[idx];
-    int b = keys[idx + 1];
-    if (keyMax(a) != keyMin(b)) {
-      return;
-    }
-    int mergedCount = keyCount(a) + keyCount(b) + 1;
-    if (mergedCount > MAX_COUNT) {
-      return;
-    }
-    keys[idx] = packKey(keyMin(a), mergedCount);
-    System.arraycopy(keys, idx + 2, keys, idx + 1, size - idx - 2);
-    size--;
   }
 
   @Override

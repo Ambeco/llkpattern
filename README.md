@@ -87,21 +87,21 @@ below lead with.
 
 | | llk/regex ratio | regex (ms/pass) | llkpattern (ms/pass) |
 |---|---|---|---|
-| Intel-i7-9750H | 3.18x | 0.097 | 0.308 |
-| Pixel 3a | 0.90x | 7.07 | 6.40 |
+| Intel-i7-9750H | 3.04x | 0.099 | 0.302 |
+| Pixel 3a | 0.86x | 6.69 | 5.74 |
 
 **Corpus match time (each pass matches/finds/look_ats 406 patterns):**
 
 | | llk/regex ratio | regex (ms/pass) | llkpattern (ms/pass) |
 |---|---|---|---|
-| Intel-i7-9750H | 0.81x | 0.047 | 0.038 |
-| Pixel 3a | 0.20x | 3.68 | 0.75 |
+| Intel-i7-9750H | 0.69x | 0.057 | 0.040 |
+| Pixel 3a | 0.20x | 3.87 | 0.78 |
 
 **Corpus compile allocation (desktop only; JMH's `gc.alloc.rate.norm`, bytes per pass):**
 
 | | llk/regex ratio | regex (B/pass) | llkpattern (B/pass) |
 |---|---|---|---|
-| Intel-i7-9750H | 2.15x | 418,032 | 897,448 |
+| Intel-i7-9750H | 1.71x | 418,032 | 714,489 |
 
 **Corpus match allocation (desktop only):**
 

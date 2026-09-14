@@ -295,14 +295,19 @@ abstract class PatternConstruct {
 
 	/**
 	 * Throws the first ambiguity found among {@code candidates}, checked in priority (list) order:
-	 * two candidates whose entry ranges overlap. Walks forward, accumulating the union of every
-	 * range already claimed by an earlier (higher-priority) candidate into {@code claimed}, and
-	 * checks each later candidate's own entry point against that accumulated union via plain {@link
-	 * CodePointSet#intersection} -- no {@code CodePointMap<PatternConstruct>} tagging every
-	 * candidate's ranges with its own identity just to find a conflicting pair, unlike the old
-	 * {@code mergeEntryPointsRaw}/{@code CodePointMapBuilder} approach this replaces. Blames the
-	 * later (lower-priority) candidate of a conflicting pair, same as that old check did, since it's
-	 * the one redundantly claiming characters an earlier, higher-priority candidate already owns.
+	 * two candidates whose entry ranges overlap. For each candidate (in order), checks it pairwise
+	 * against every earlier candidate via the boolean-only, allocation-free {@link
+	 * CodePointSet#intersects} -- no accumulated "claimed so far" union, and no {@code
+	 * CodePointMap<PatternConstruct>} tagging every candidate's ranges with its own identity either,
+	 * unlike the old {@code mergeEntryPointsRaw}/{@code CodePointMapBuilder} approach this replaces.
+	 * The actual overlapping range is only ever computed (via real {@link CodePointSet#intersection})
+	 * on the rare path where a conflict is confirmed, purely to name it in the exception -- the
+	 * common (no-conflict) path never materializes an overlap set at all. Blames the later
+	 * (lower-priority) candidate of a conflicting pair, same as before, since it's the one
+	 * redundantly claiming characters an earlier, higher-priority candidate already owns; checking
+	 * each candidate against earlier ones in order (rather than each against later ones) is what
+	 * keeps that "first" the same first ambiguity the old accumulating version would have reported,
+	 * when more than one pair conflicts.
 	 *
 	 * <p>Deliberately never checks a candidate against anything outside {@code candidates} itself --
 	 * in particular, {@link #buildForkChainInternal}'s own {@code elseTarget} (this chain's
@@ -313,30 +318,43 @@ abstract class PatternConstruct {
 	 * reject every pattern that has one.
 	 */
 	private static void checkDisjoint(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
-		MutableCodePointSet claimed = new ArrayCodePointSet();
-		for (int i = 0; i < candidates.size(); i++) {
-			PatternConstruct candidate = candidates.get(i);
-			int candidateNumber = i + 1;
+		for (int j = 1; j < candidates.size(); j++) {
+			PatternConstruct candidate = candidates.get(j);
 			CodePointSet own = candidate.getEntryPointMap();
-			own.forEachRange((min, max) -> {
-				CodePointSet overlap = claimed.intersection(min, max);
-				if (!overlap.isEmpty()) {
-					overlap.forEachRange((overlapMin, overlapMax) -> {
-						throw PatternSyntaxException.throwWithReferences(
-								pattern,
-								candidate.startIndex,
-								candidateNounPlural, " #" + candidateNumber,
-								" starting at index ", candidate.startIndex,
-								" accepts character(s) ",
-								new PatternSyntaxException.CodePoint(overlapMin),
-								"-",
-								new PatternSyntaxException.CodePoint(overlapMax - 1),
-								", but a prior part of the same construct already claims those, which is not allowed");
-					});
+			for (int i = 0; i < j; i++) {
+				CodePointSet prior = candidates.get(i).getEntryPointMap();
+				if (own.intersects(prior)) {
+					throwOverlapError(pattern, candidate, j + 1, candidateNounPlural, own, prior);
 				}
-			});
-			claimed.addAll(own);
+			}
 		}
+	}
+
+	/**
+	 * Only reached once {@link #checkDisjoint} has already confirmed {@code own} and {@code prior}
+	 * overlap -- recomputes the actual overlapping range (an allocation {@link #checkDisjoint}'s own
+	 * pairwise {@link CodePointSet#intersects} scan otherwise avoids entirely) purely to name it in
+	 * the thrown exception.
+	 */
+	private static void throwOverlapError(String pattern, PatternConstruct candidate, int candidateNumber,
+			String candidateNounPlural, CodePointSet own, CodePointSet prior) {
+		own.forEachRange((min, max) -> {
+			CodePointSet overlap = prior.intersection(min, max);
+			if (!overlap.isEmpty()) {
+				overlap.forEachRange((overlapMin, overlapMax) -> {
+					throw PatternSyntaxException.throwWithReferences(
+							pattern,
+							candidate.startIndex,
+							candidateNounPlural, " #" + candidateNumber,
+							" starting at index ", candidate.startIndex,
+							" accepts character(s) ",
+							new PatternSyntaxException.CodePoint(overlapMin),
+							"-",
+							new PatternSyntaxException.CodePoint(overlapMax - 1),
+							", but a prior part of the same construct already claims those, which is not allowed");
+				});
+			}
+		});
 	}
 
 	/**

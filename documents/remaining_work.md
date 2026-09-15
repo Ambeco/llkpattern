@@ -273,7 +273,7 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
 
 - [ ] **Reluctant/possessive quantifiers' permanent semantics**: the parser currently accepts and no-ops `?`/`+` quantifier modifiers (per its own comment, "reluctant and possessive quantifiers are no-ops in this Pattern"). Confirm this is the intended permanent semantic (i.e., this engine has one matching behavior, and the reluctant/possessive distinction from `java.util.regex` doesn't apply here) and document it prominently for users migrating from `java.util.regex`, rather than leaving it as an implicit consequence of "no backtracking."
 
-## `PatternParser` codepoint-array indexing (proposed 2026-09-15, deferred)
+## `PatternParser` codepoint-array indexing (proposed 2026-09-15, tried 2026-09-14, reverted -- measured regression)
 
 - [ ] **Convert `PatternParser`'s internal `index` from a char index into `pattern` to a codepoint
       index into a decoded `int[]`**, to skip `Character.charCount`/surrogate-pair math throughout
@@ -297,6 +297,15 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
       `CharBuffer.wrap(pattern, ...)` call translates through `charOffsets[index]` first, so
       external-facing behavior (spans, substrings, exception positions, the zero-copy literal
       views) is unchanged.
+- **Tried exactly as specced above (2026-09-14), reverted -- see notes.md's entry.** Correctness
+  held (full test suite green, including char-accurate exception positions), but desktop
+  `llkCompile` regressed ~5-8% (0.229 -> 0.241-0.244 ms/op, reproduced across two runs, tight error
+  bars) with ~10% more allocation (667,200 -> ~735,000 B/op) -- the two per-compile `int[]`
+  allocations (`codePoints` + `charOffsets`) cost more than the `charCount`/surrogate-math this
+  corpus's short patterns ever needed skipped. Left as an open item in case a different corpus
+  (much longer patterns, where the per-character savings would actually accumulate) or a
+  single-array encoding (packing the char-offset into unused high bits of each codepoint slot,
+  avoiding the second array) changes the tradeoff -- not attempted this session.
 - [ ] Measure before keeping, same as everything else touched this session -- this project has
       twice already measured a plausible-sounding indexing/pre-sizing heuristic as a net
       regression (see notes.md's 2026-09-10 `CodePointMapBuilder` entries), and parsing happens

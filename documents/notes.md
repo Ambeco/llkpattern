@@ -2260,3 +2260,30 @@ Notes to self about how to work on this project, and other context that doesn't 
   desktop `llkMatch` 0.0343 ms/op (37,744 B/op) -- both back to their pre-regression baseline.
   `PatternParser.patternChars` kept (untouched by this revert, and never showed any downside).
   README updated with the final numbers.
+
+### `PatternParser` full codepoint-array indexing -- tried and reverted (2026-09-14)
+
+- The deferred item from remaining_work.md (full re-index of `PatternParser`'s `index` from a char
+  offset to a codepoint-array index, decoding `pattern` into a parallel `int[] codePoints` +
+  `int[] charOffsets` at construction) was implemented in a dedicated session/worktree, exactly as
+  specced there. Correctness held: full test suite green (1498 tests, 0 failures, matching the
+  pre-change baseline), including char-accurate `PatternSyntaxException` positions and the
+  zero-copy `CharBuffer.wrap` literal path, both routed through `charOffsets[index]`.
+- Desktop JMH (`:llkpattern:jmh`, JDK 17 daemon / JDK 25 fork per the toolchain note) showed a
+  reproducible **regression**, not the hoped-for win: `llkCompile` 0.2285 -> 0.241-0.244 ms/op
+  (two separate runs, tight error bars, both clearly above baseline), allocation 667,200 ->
+  ~735,000 B/op (+10%). `llkMatch`/`regexCompile`/`regexMatch` unchanged, as expected (this change
+  only touches parsing).
+- Root cause, by analogy to the `Matcher.input` regression above: the corpus's patterns are short,
+  so there's little `Character.charCount`/surrogate-pair math to actually save per compile, while
+  the new per-compile cost is now TWO `int[]` allocations (`codePoints` + `charOffsets`) instead of
+  the one `char[]` (`patternChars`) the prior, kept optimization already added -- the extra
+  allocation outweighs the saved math. Unlike `Matcher.input`, this one *is* the "parsed once per
+  compile, amortized" shape `patternChars` benefited from -- it just turned out the per-character
+  saving itself is too small to matter at this corpus's pattern lengths, not that the amortization
+  story was wrong.
+- Reverted (single `git revert` of the implementation commit); benchmark files restored to the
+  committed baseline (never regenerated numbers were left staged). See remaining_work.md's entry
+  for this item for the two follow-up ideas noted but not tried (longer-pattern corpus, or a
+  single-array encoding packing the char offset into the codepoint slot to avoid the second
+  array).

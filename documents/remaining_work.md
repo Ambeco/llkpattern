@@ -273,36 +273,6 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
 
 - [ ] **Reluctant/possessive quantifiers' permanent semantics**: the parser currently accepts and no-ops `?`/`+` quantifier modifiers (per its own comment, "reluctant and possessive quantifiers are no-ops in this Pattern"). Confirm this is the intended permanent semantic (i.e., this engine has one matching behavior, and the reluctant/possessive distinction from `java.util.regex` doesn't apply here) and document it prominently for users migrating from `java.util.regex`, rather than leaving it as an implicit consequence of "no backtracking."
 
-## `PatternParser` codepoint-array indexing (proposed 2026-09-15, deferred)
-
-- [ ] **Convert `PatternParser`'s internal `index` from a char index into `pattern` to a codepoint
-      index into a decoded `int[]`**, to skip `Character.charCount`/surrogate-pair math throughout
-      the per-character scan loop (proposed by the project owner, following the same reasoning as
-      `Matcher.peeked`/`PatternParser.patternChars`'s own char\[\]-vs-String win -- see notes.md's
-      2026-09-15 entries). Explicitly deferred to its own session rather than attempted
-      opportunistically: this isn't a small tweak, it's a full re-indexing of the file --
-      `index`/`startIndex`/`endIndex` are used well over 100 times, including every
-      `PatternSyntaxException`'s char-accurate error position (must keep matching
-      `java.util.regex`'s own char-offset contract), every `pattern.substring(...)` call (group/
-      char-class names), and the three `CharBuffer.wrap(pattern, ...)` zero-copy literal-text
-      sites added 2026-09-14.
-- [ ] To land this **without** losing the zero-copy literal optimization or breaking char-accurate
-      error positions: decode `pattern` into a codepoint `int[]` AND a parallel `int[] charOffsets`
-      (`charOffsets[codepointIndex]` = the char index that codepoint starts at, built in one pass
-      alongside the codepoint decode) at construction. `index` becomes a codepoint index used for
-      the hot scan loop (`advance`/`advanceCodePoint`/`peek` all collapse to simple `index++`/array
-      reads, no charCount distinction needed at all, since every codepoint occupies exactly one
-      array slot regardless of BMP/supplementary); every place that currently captures a
-      `startIndex`/`endIndex` for a `PatternConstruct`, a `pattern.substring(...)` call, or a
-      `CharBuffer.wrap(pattern, ...)` call translates through `charOffsets[index]` first, so
-      external-facing behavior (spans, substrings, exception positions, the zero-copy literal
-      views) is unchanged.
-- [ ] Measure before keeping, same as everything else touched this session -- this project has
-      twice already measured a plausible-sounding indexing/pre-sizing heuristic as a net
-      regression (see notes.md's 2026-09-10 `CodePointMapBuilder` entries), and parsing happens
-      once per compile on typically-short pattern strings, so the absolute win here may be small
-      even if real.
-
 ## `firstCharSet`/`lastCharSet` follow-ups (2026-09-08)
 
 - [ ] **`BackReference` aliasing its referenced group's own entry point directly**, instead of going through the separate `firstCharSet`/`lastCharSet` static-walk helpers -- proposed this session, NOT done: `firstCharSet(referencedGroup)` and `referencedGroup.getEntryPointMap()` diverge for a nullable referenced group (the latter folds in `next`'s entries via `buildLoopEntryMap`'s `min == 0` case, and can throw `EntryPointCycleException` on a pattern that compiles fine today), so this needs verifying against `(a?)\1` and `(a|b)?\1` before landing, not just assumed safe.

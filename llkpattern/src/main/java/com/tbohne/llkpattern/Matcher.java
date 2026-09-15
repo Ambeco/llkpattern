@@ -33,6 +33,14 @@ public class Matcher implements MatchResult {
 	int regionEnd;
 	int regionStart = 0;
 	int pos = 0;
+	// The code point at `pos` (or -1 at/past regionEnd) -- kept in sync by every method that moves
+	// `pos` (attemptMatch/consume1CodePoint/consumeCodeUnits/region/reset*, all via syncPeeked()),
+	// so peek() below is a plain field read instead of a fresh input.codePointAt(pos) call, and
+	// consume1CodePoint() no longer needs to call codePointAt(pos) once just to compute the
+	// consumed char's width before calling it again at the new position -- both real CPU cost per
+	// this project's own Android CPU sampling (String.codePointAt was 11.8% of matchLlk time,
+	// Matcher.consume1CodePoint's two internal calls to it 4.1%/1.9% of that on their own).
+	int peeked;
 	int[] quantifiableCounts;
 	// Two slots (start, end -- input code-unit indices) per capture-group construct in the
 	// pattern, indexed by captureConstructIndex*2. BeginCaptureMatcherConstruct overwrites the
@@ -79,6 +87,7 @@ public class Matcher implements MatchResult {
 		this.quantifiableCounts = new int[pattern.quantifiableCount];
 		this.captureGroups = new int[pattern.captureGroupCount * 2];
 		java.util.Arrays.fill(captureGroups, -1);
+		syncPeeked();
 	}
 
 	public Matcher appendReplacement(StringBuffer sb, String replacement) {
@@ -202,6 +211,7 @@ public class Matcher implements MatchResult {
 		this.regionEnd = end;
 		this.pos = start;
 		hasMatch = false;
+		syncPeeked();
 		return this;
 	}
 
@@ -229,6 +239,7 @@ public class Matcher implements MatchResult {
 		regionStart = 0;
 		regionEnd = input.length();
 		pos = 0;
+		syncPeeked();
 		resetMatchState();
 		return this;
 	}
@@ -238,6 +249,7 @@ public class Matcher implements MatchResult {
 		regionStart = 0;
 		regionEnd = input.length();
 		pos = 0;
+		syncPeeked();
 		resetMatchState();
 		return this;
 	}
@@ -308,6 +320,7 @@ public class Matcher implements MatchResult {
 	 */
 	private boolean attemptMatch(int from, boolean requireFullMatch) {
 		pos = from;
+		syncPeeked();
 		this.requireFullMatch = requireFullMatch;
 		// Bug fix (2026-09-07): quantifiableCounts/captureGroups used to only get reset by
 		// reset()/reset(String) -- never per attempt -- so a loop's iteration counter (incremented by
@@ -381,9 +394,18 @@ public class Matcher implements MatchResult {
 
 	// -1 is used throughout as the "no more input" sentinel passed to MatcherConstruct#match /
 	// #getNext: it can never equal a real code point, so it simply fails to match any dispatchMap
-	// range, which is exactly what should happen once the input is exhausted.
+	// range, which is exactly what should happen once the input is exhausted. Just returns the
+	// already-computed `peeked` -- see that field's own doc.
 	int peek() {
-		return pos < regionEnd ? input.codePointAt(pos) : -1;
+		return peeked;
+	}
+
+	/** Recomputes {@link #peeked} from the current {@link #pos}/{@link #regionEnd}/{@link #input}
+	 *  -- called by every method that sets any of those three directly (as opposed to
+	 *  consume1CodePoint()/consumeCodeUnits(), which advance {@code pos} by a width they already
+	 *  know and can update {@code peeked} more cheaply themselves). */
+	private void syncPeeked() {
+		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
 	}
 
 	// Used by WordBoundaryMatcherConstruct (\b/\B), which is the only construct that needs to look
@@ -410,14 +432,18 @@ public class Matcher implements MatchResult {
 		// The previous width computation (`codeunit <= 0xDFF || codeunit >= 0xE000 ? 1 : 2`) used
 		// the wrong bounds entirely -- 0xDFF isn't near the surrogate range (0xD800-0xDFFF) -- and
 		// neither version guarded against `pos` reaching the end of input, which crashed on the
-		// very common case of consuming the last character of a match.
-		pos += Character.charCount(input.codePointAt(pos));
-		return pos < regionEnd ? input.codePointAt(pos) : -1;
+		// very common case of consuming the last character of a match. Character.charCount(peeked)
+		// here, not a second input.codePointAt(pos) call, since `peeked` (about to be overwritten
+		// below) is already exactly the code point at the current `pos`.
+		pos += Character.charCount(peeked);
+		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
+		return peeked;
 	}
 
 	int consumeCodeUnits(int width) {
 		pos += width;
-		return pos < regionEnd ? input.codePointAt(pos) : -1;
+		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
+		return peeked;
 	}
 
 	int beginCapture(String name) {

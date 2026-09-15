@@ -211,15 +211,19 @@ abstract class MatcherConstruct {
 	 * ever needing to decode one).
 	 */
 	static final class LiteralMatcherConstruct extends SingleDispatchingMatcherConstruct {
-		// A CharSequence, not a String -- see LiteralString.value's own doc for why (a zero-copy
-		// CharBuffer view for the common case, rather than a materialized copy). This is also why
-		// match() below can't just delegate to String.regionMatches(...) the way it used to:
-		// String.regionMatches only accepts a String for the other side of the comparison, so every
-		// case here (exact, Unicode-case-insensitive, ASCII-fold-insensitive) is now a manual
-		// char-by-char loop instead.
-		final CharSequence value;
+		// A real String, not the CharSequence LiteralString.value itself may be (a zero-copy
+		// CharBuffer view, for a literal run PatternParser could read straight off the pattern
+		// text -- see that field's own doc): LiteralString.buildMatcher() calls value.toString()
+		// once per compile to get here, deliberately, so match() below -- called once per match
+		// *attempt*, not once per compile -- can use String#regionMatches, a real JIT intrinsic
+		// (vectorized comparison), plus String#charAt/length's direct field/array reads. A
+		// CharSequence-typed `value` here once meant a hand-written per-char loop instead (no
+		// intrinsic) for every case below, which measurably cost real match-time CPU on Android
+		// (java.nio.CharBuffer's own charAt/length aren't free either) for a win that only ever
+		// existed at compile time -- not worth paying for on every match attempt afterward.
+		final String value;
 
-		LiteralMatcherConstruct(PatternConstruct owner, CharSequence value) {
+		LiteralMatcherConstruct(PatternConstruct owner, String value) {
 			super(owner, owner.next.matcher);
 			this.value = value;
 		}
@@ -231,9 +235,9 @@ abstract class MatcherConstruct {
 			}
 			boolean matches;
 			if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-				matches = regionMatches(matcher.input, matcher.pos, value);
+				matches = matcher.input.regionMatches(matcher.pos, value, 0, value.length());
 			} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
-				matches = unicodeFoldRegionMatches(matcher.input, matcher.pos, value);
+				matches = matcher.input.regionMatches(true, matcher.pos, value, 0, value.length());
 			} else {
 				matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value);
 			}
@@ -255,64 +259,7 @@ abstract class MatcherConstruct {
 			return matchNext(matcher, matcher.consumeCodeUnits(value.length()));
 		}
 
-		private static boolean regionMatches(String input, int offset, CharSequence value) {
-			int len = value.length();
-			for (int i = 0; i < len; i++) {
-				if (input.charAt(offset + i) != value.charAt(i)) {
-					return false;
-				}
-			}
-			return true;
-		}
-
-		// Same algorithm java.lang.String#regionMatches(true, ...) itself uses (a plain == check,
-		// then upper-casing both sides, then also lower-casing the upper-cased pair) -- replicated
-		// here since that method only accepts a String for the other side, EXCEPT for one thing
-		// this per-char version can't just copy: java.lang.Character#toUpperCase(char)/toLowerCase(char)
-		// can't handle supplementary code points at all (see their own doc -- a lone surrogate isn't
-		// assigned any case mapping, so it folds to itself), yet String#regionMatches(true, ...)
-		// still correctly case-folds e.g. Deseret letters. Its real implementation
-		// (StringUTF16.compareCodePointCI, found while tracking down why a naive port of this
-		// algorithm failed Deseret specifically) special-cases a surrogate pair on both sides by
-		// combining it into one code point and folding that instead -- replicated below.
-		private static boolean unicodeFoldRegionMatches(String input, int offset, CharSequence value) {
-			int len = value.length();
-			for (int i = 0; i < len; i++) {
-				char a = input.charAt(offset + i);
-				char b = value.charAt(i);
-				if (Character.isHighSurrogate(b) && i + 1 < len && Character.isLowSurrogate(value.charAt(i + 1))
-						&& Character.isHighSurrogate(a) && offset + i + 1 < input.length()
-						&& Character.isLowSurrogate(input.charAt(offset + i + 1))) {
-					int codePointA = Character.toCodePoint(a, input.charAt(offset + i + 1));
-					int codePointB = Character.toCodePoint(b, value.charAt(i + 1));
-					i++; // consumed both units of this pair, not just one
-					if (codePointA == codePointB) {
-						continue;
-					}
-					int upperCpA = Character.toUpperCase(codePointA);
-					int upperCpB = Character.toUpperCase(codePointB);
-					if (upperCpA == upperCpB || Character.toLowerCase(upperCpA) == Character.toLowerCase(upperCpB)) {
-						continue;
-					}
-					return false;
-				}
-				if (a == b) {
-					continue;
-				}
-				char upperA = Character.toUpperCase(a);
-				char upperB = Character.toUpperCase(b);
-				if (upperA == upperB) {
-					continue;
-				}
-				if (Character.toLowerCase(upperA) == Character.toLowerCase(upperB)) {
-					continue;
-				}
-				return false;
-			}
-			return true;
-		}
-
-		private static boolean asciiFoldRegionMatches(String input, int offset, CharSequence value) {
+		private static boolean asciiFoldRegionMatches(String input, int offset, String value) {
 			int len = value.length();
 			for (int i = 0; i < len; i++) {
 				char a = input.charAt(offset + i);
@@ -449,11 +396,15 @@ abstract class MatcherConstruct {
 	 * "opaque bounds" stance -- see {@code Matcher#peekPrevious()}). Shared by {@link
 	 * BoundaryMatcherConstruct} ({@code \Z}) and {@link LineBoundaryMatcherConstruct} ({@code $}).
 	 */
-	private static int lineTerminatorLengthAt(String input, int index, int limit, int flags) {
-		if (index >= limit) {
+	private static int lineTerminatorLengthAt(Matcher matcher, int flags) {
+		if (matcher.pos >= matcher.regionEnd) {
 			return 0;
 		}
-		char c = input.charAt(index);
+		// matcher.peeked, not input.charAt(index): both call sites always pass matcher.pos as
+		// `index`, and every char this checks against is BMP, so the already-computed code point
+		// at that position (see Matcher.peeked's own doc) doubles as the char directly -- one
+		// fewer input.charAt/codePointAt call on this method's own hot path.
+		int c = matcher.peeked;
 		if (c == '\n') {
 			return 1;
 		}
@@ -461,7 +412,7 @@ abstract class MatcherConstruct {
 			return 0;
 		}
 		if (c == '\r') {
-			return (index + 1 < limit && input.charAt(index + 1) == '\n') ? 2 : 1;
+			return (matcher.pos + 1 < matcher.regionEnd && matcher.input.charAt(matcher.pos + 1) == '\n') ? 2 : 1;
 		}
 		return (c == '\u0085' || c == '\u2028' || c == '\u2029') ? 1 : 0;
 	}
@@ -510,7 +461,7 @@ abstract class MatcherConstruct {
 		if (matcher.pos == matcher.regionEnd) {
 			return true;
 		}
-		int len = lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags);
+		int len = lineTerminatorLengthAt(matcher, flags);
 		return len > 0 && matcher.pos + len == matcher.regionEnd;
 	}
 
@@ -571,7 +522,7 @@ abstract class MatcherConstruct {
 				matchesHere = (flags & Ll1Pattern.MULTILINE) == 0
 						? matchesEndExceptTerminator(matcher, flags)
 						: (matcher.pos == matcher.regionEnd
-								|| lineTerminatorLengthAt(matcher.input, matcher.pos, matcher.regionEnd, flags) > 0);
+								|| lineTerminatorLengthAt(matcher, flags) > 0);
 			}
 			return matchesHere && matchNext(matcher, peeked);
 		}

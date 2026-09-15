@@ -1165,7 +1165,17 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildMatcher() {
-			new LiteralMatcherConstruct(this, value);
+			// value.toString() here, not value directly: LiteralMatcherConstruct wants a real String
+			// (String#regionMatches is a JIT intrinsic -- real vectorized comparison -- and
+			// String#charAt/length are direct field/array reads; a CharBuffer's own versions of
+			// those are neither, measurably so per this project's own Android CPU sampling once
+			// tried -- see LiteralMatcherConstruct.value's own doc). This runs once per compile
+			// (same as buildMatcher() itself), not once per match attempt, so it's the same
+			// allocation this construct's value would have cost pre-CharBuffer if `value` is a
+			// CharBuffer view here (the "pure" case -- see parseUnion's own doc); if `value` is
+			// already a String (the "impure" case, escapes/COMMENTS-gaps), toString() is a free
+			// no-op (String#toString() returns `this`).
+			new LiteralMatcherConstruct(this, value.toString());
 		}
 	}
 

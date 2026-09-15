@@ -158,7 +158,11 @@ public class WordBoundaryTest {
   @Test
   public void peek_atEndOfInput_returnsSentinelInsteadOfReadingPastTheEnd() {
     Matcher m = Ll1Pattern.compile(".*").matcher("a");
-    m.pos = 1; // == input.length()
+    // consume1CodePoint(), not `m.pos = 1` directly: peek() now just returns Matcher's own cached
+    // `peeked` field (see its own doc) instead of recomputing from `pos` on every call, so
+    // advancing `pos` behind that cache's back (as a direct field assignment would) leaves peek()
+    // returning the stale value from construction instead of the new position's.
+    m.consume1CodePoint(); // pos == 1 == input.length()
     assertThat(m.peek(), is(-1));
   }
 

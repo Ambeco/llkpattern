@@ -2143,3 +2143,72 @@ Notes to self about how to work on this project, and other context that doesn't 
   (-6.7%); `llkMatch` flat. Pixel 3a `compileLlk` 5.17 -> 4.84 ms/pass (-6.2%), a real win this
   time (not device noise -- `compileRegex`, untouched, stayed flat at ~7.5-7.6 across both runs).
   README updated.
+
+### `Matcher`'s own `peeked` cache, and reverting `LiteralMatcherConstruct` to `String` (2026-09-15)
+
+- The project owner reviewed Pixel 3a `matchLlk` sampling and found `String.codePointAt` at
+  11.8% of total time, split across `Matcher.consume1CodePoint`'s own two internal calls to it
+  (4.1%/1.9% -- one just to compute the just-consumed character's width, thrown away, then another
+  for the real "what's next" answer) plus `Matcher.peek()`'s own call on every dispatch. Asked for
+  the same style of fix `PatternParser.parseUnion` already uses for its own lookahead: a cached
+  `peeked` field instead of recomputing on every call.
+- Added `Matcher.peeked` (an `int` -- `char` can't hold a supplementary code point, unlike the
+  literal wording of the ask), kept in sync by every method that moves `pos`/`regionEnd`/`input`:
+  `consume1CodePoint()`/`consumeCodeUnits()` update it cheaply as part of their own work (the
+  former now costs exactly one `codePointAt` call, not two, using `Character.charCount(peeked)`
+  for the width instead of a second lookup); `attemptMatch()`/`region()`/`reset()`/`reset(String)`
+  call a new private `syncPeeked()` after changing any of those three. `peek()` itself is now a
+  plain field read. `MatcherConstruct.lineTerminatorLengthAt` (used by `\Z` and `$`, both of which
+  always call it with `matcher.pos` as the index) was changed to take `Matcher` directly and read
+  `matcher.peeked` instead of a fresh `charAt` -- every line-terminator char it checks against is
+  BMP, so the code point IS the char. Its sibling `lineTerminatorLengthBefore` (`^`, looks
+  *backward* from `pos`) wasn't touched -- a different position than `peeked` caches, and per the
+  project owner's own call, `peekPrevious()` (which it parallels) isn't called often enough to be
+  worth the same treatment.
+  - **One test broke**: `WordBoundaryTest.peek_atEndOfInput_returnsSentinelInsteadOfReadingPastTheEnd`
+    set `m.pos` directly (a package-private field, legal from an in-package test) to fake being at
+    end-of-input, then asserted on `peek()`. That's now a real invariant violation, not just an odd
+    but harmless thing to do: `pos` moved without going through anything that updates `peeked`, so
+    `peek()` returned the stale value from construction. Fixed by calling `m.consume1CodePoint()`
+    instead of assigning `m.pos` directly -- arguably a better test regardless (exercises the real
+    API instead of reaching into an internal field). Audited every other direct `.pos =` write
+    across `src/` for the same risk -- the other two (`WordBoundaryTest`'s own
+    `peekPrevious`-only tests) are fine, since `peekPrevious()` still recomputes fresh from `input`
+    every call, untouched by any of this.
+- Separately, the project owner asked point-blank why `LiteralMatcherConstruct.match()` had gotten
+  so much more complicated (a hand-rolled per-char comparison loop, including a hand-replicated
+  supplementary-aware case-fold algorithm) since the CharBuffer change, and whether that CharBuffer
+  choice had actually paid off. Checked the Pixel 3a sampling rather than assuming: it hadn't --
+  `java.nio.StringCharBuffer.get`/`CharBuffer.charAt` under `LiteralMatcherConstruct.regionMatches`
+  cost ~9% of match time combined (`CharBuffer.length` a further few percent), work that simply
+  didn't exist before `LiteralString.value`/`LiteralMatcherConstruct.value` became `CharSequence`.
+  The CharBuffer win was real, but entirely at *compile* time (avoiding `rawText`'s per-character
+  `StringBuilder` accumulation during parsing) -- paying an ongoing *match*-time cost (a hand-
+  written loop instead of `String#regionMatches`'s real JIT intrinsic, plus `CharBuffer`'s own
+  slower `charAt`/`length`) for a win that only exists once, at compile time, was never the right
+  trade. Fixed by keeping `LiteralString.value` as `CharSequence` (parseUnion's own zero-copy win
+  intact) but having `LiteralString.buildMatcher()` call `value.toString()` once -- free when
+  `value` is already a `String` (the "impure" escape/COMMENTS-gap case: `String#toString()` just
+  returns `this`), a single clean copy when it's a `CharBuffer` view (the "pure" case) -- so
+  `LiteralMatcherConstruct.value` goes back to being a plain `String`, `match()` goes back to
+  `String#regionMatches` (and the hand-replicated Deseret-aware fold algorithm from the 2026-09-14
+  session is deleted entirely, since `String#regionMatches(true, ...)` already does that natively).
+  This does give back part of the compile-time allocation win (one `toString()` copy per pure
+  literal run, same frequency the pre-CharBuffer design always paid, just moved from parse-time to
+  build-time) -- worth it for restoring match-time speed, since a pattern is typically matched far
+  more times than it's compiled.
+- Benchmarks re-run. Android (this optimization's actual target, and the platform with the least
+  benchmark noise -- see the on-device methodology notes elsewhere in this file): `matchLlk` 0.739
+  -> 0.688 ms/pass (-6.9%), a real win (`matchRegex`, untouched, stayed flat at ~3.6-3.7 across
+  both runs); `compileLlk` roughly flat (5.17 -> 5.10, within this benchmark's own noise band).
+  Desktop: `llkCompile` roughly flat (0.222 -> 0.232 ms/op, 628,240 -> 642,544 B/op -- the expected
+  small allocation increase from `buildMatcher()`'s new `toString()` call, discussed above);
+  `llkMatch` looked WORSE on this machine (0.034 -> ~0.041-0.042 ms/op across two repeated runs),
+  but with a very wide error bar (±30% of the value itself) on an already-tiny (tens of
+  microseconds) benchmark, and `regexMatch`/`regexCompile` (untouched by any of this) staying at
+  their normal baseline (ruling out the "everything moved together, so it's the machine, not the
+  change" signature noted elsewhere in this file) -- inconclusive, not confirmed either way,
+  plausibly the field write/branch overhead `peeked` adds not paying for itself on desktop HotSpot
+  (which already inlines/optimizes `String#codePointAt` well) the way it clearly does on ART.
+  Worth a quieter re-run (Dropbox closed, per this file's own established tip) to settle, not done
+  this session. README updated with the numbers as measured.

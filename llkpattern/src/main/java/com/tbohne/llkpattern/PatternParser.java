@@ -86,25 +86,15 @@ final class PatternParser {
   // Block -> https://www.unicode.org/reports/tr44/#Blocks.txt //CharBlockCharacter
 
   private final String pattern;
-  // `pattern` decoded into one code point per array slot, plus a parallel `charOffsets` array
-  // (length codePoints.length + 1, with the final slot holding pattern.length() as a sentinel)
-  // mapping each code point index back to the char index it starts at in `pattern`. `index`
-  // below is a code point index into `codePoints`, not a char index into `pattern` -- every
-  // per-character scan loop (advance/advanceCodePoint/peek/peekAfter) is therefore a plain
-  // index++/array read, with no Character.charCount/surrogate-pair math anywhere in the hot
-  // path, since every code point (BMP or supplementary) occupies exactly one array slot
-  // regardless of how many chars it took in the original String. Anything that needs to talk to
-  // the outside world in char-index terms -- a PatternConstruct's startIndex/endIndex, a
-  // pattern.substring(...) call, a CharBuffer.wrap(pattern, ...) call, or a
-  // PatternSyntaxException's reported position -- translates through charOffsets[index] first,
-  // so none of that external-facing, char-accurate behavior (matching java.util.regex's own
-  // char-offset contract) changes. See documents/design.md and documents/notes.md's 2026-09-15
-  // entries for the full rationale (this supersedes the old `char[] patternChars` field, which
-  // existed only to give codePointAt(int) a way to skip String#codePointAt's isLatin1() check --
-  // codePoints[] makes that check unnecessary in the first place, since every slot already holds
-  // a decoded code point).
-  private final int[] codePoints;
-  private final int[] charOffsets;
+  // A char[] copy of `pattern`, used only for codePointAt(int) below: String#codePointAt checks
+  // isLatin1() (compact strings, JDK 9+) on every call to pick which internal byte layout to
+  // read, on top of the real surrogate-pair check; Character#codePointAt(char[], int) skips that
+  // first check entirely, since a char[] has no such dual representation to dispatch on -- see
+  // documents/notes.md for the decompiled bytecode confirming this difference (found investigating
+  // a suggestion that this project's own Android CPU sampling bore out for Matcher#peek's sibling
+  // optimization). One extra O(pattern.length()) copy per compile, worth it since codePointAt is
+  // called once per character while parsing.
+  private final char[] patternChars;
   private int flags;
   private int index;
   // Bug fix (2026-09-14): was `char`, which can't hold a supplementary code point at all -- every
@@ -115,8 +105,7 @@ final class PatternParser {
   // parseComplexEscape's `RegexCharacterClass.valueOf(Character.toString(peek))` invalid-escape-name
   // lookup (and its error message) genuinely used `peek`'s numeric value, and got the wrong one for
   // "\" followed directly by a supplementary character. See codePointAt()/advanceCodePoint()/
-  // advance() below -- every `peek` assignment now goes through codePointAt, which just reads
-  // `codePoints[index]` directly (see that field's own doc).
+  // advance() below -- every `peek` assignment now goes through pattern.codePointAt, never charAt.
   private int peek;
   private int quantifiableIndex;
   private int captureConstructIndex;
@@ -140,33 +129,7 @@ final class PatternParser {
 
   PatternParser(String pattern, int flags) {
     this.pattern = pattern;
-    int len = pattern.length();
-    // Upper bound: at most one code point per char. Trimmed to the real size below once the
-    // decode pass knows it (a supplementary character makes the real size smaller than `len`).
-    int[] cps = new int[len];
-    int[] offs = new int[len + 1];
-    int n = 0;
-    int i = 0;
-    while (i < len) {
-      char c = pattern.charAt(i);
-      offs[n] = i;
-      if (Character.isHighSurrogate(c)
-          && i + 1 < len
-          && Character.isLowSurrogate(pattern.charAt(i + 1))) {
-        cps[n] = Character.toCodePoint(c, pattern.charAt(i + 1));
-        i += 2;
-      } else {
-        // An unpaired surrogate (or any ordinary BMP char) decodes to its own char value as a
-        // "code point" -- matching Character.codePointAt's own documented behavior for a lone
-        // surrogate, so malformed patterns behave exactly as before this change.
-        cps[n] = c;
-        i += 1;
-      }
-      n++;
-    }
-    offs[n] = i; // sentinel: charOffsets[codePoints.length] == pattern.length()
-    this.codePoints = n == cps.length ? cps : Arrays.copyOf(cps, n);
-    this.charOffsets = n + 1 == offs.length ? offs : Arrays.copyOf(offs, n + 1);
+    this.patternChars = pattern.toCharArray();
     index = 0;
     peek = codePointAt(0);
     this.flags = flags;
@@ -196,17 +159,18 @@ final class PatternParser {
 
   // `'\0'` (rather than -1) is the sentinel for "past the end of the pattern" throughout this
   // class, matching every literal '\0' comparison/switch-case against `peek` below -- consistent
-  // with `advance`/`advanceCodePoint`'s own prior behavior, just centralized here. `i` is a code
-  // point index into `codePoints`, not a char index -- see that field's own doc.
+  // with `advance`/`advanceCodePoint`'s own prior behavior, just centralized here so every `peek`
+  // assignment goes through pattern.codePointAt, never charAt (see `peek`'s own field doc for why
+  // that distinction matters for a supplementary code point).
   private int codePointAt(int i) {
-    return i < codePoints.length ? codePoints[i] : '\0';
+    return i < patternChars.length ? Character.codePointAt(patternChars, i) : '\0';
   }
 
   private void advanceCodePoint() {
-    // `index` is a code point index now, so moving to the next code point is a plain
-    // increment -- no offsetByCodePoints/charCount math needed at all, unlike the old char-index
-    // scheme (see codePoints' own field doc).
-    index++;
+    // offsetByCodePoints(index, 1) already returns the new absolute index one code point past
+    // `index` -- it's not a delta to add to `index` (that was the bug: it double-advanced every
+    // call after the first, since index==0 made `index += offset` and `index = offset` coincide).
+    index = pattern.offsetByCodePoints(index, 1);
     peek = codePointAt(index);
   }
 
@@ -215,12 +179,13 @@ final class PatternParser {
     peek = codePointAt(index);
   }
 
-  // The code point right after `peek`. Every call site computes this immediately after
-  // confirming peek == '\\' (always exactly one array slot, like every other code point now),
-  // so this is simply the next slot -- no charCount distinction needed, unlike the old char-index
-  // scheme.
+  // The code point right after `peek` -- unlike `index + 1`, correctly skips a supplementary
+  // `peek` (2 code units) rather than landing on its low surrogate half. Every call site computes
+  // this immediately after confirming peek == '\\' (always 1 code unit), so this is equivalent to
+  // codePointAt(index + 1) in practice today -- but computed the fully-general way via
+  // Character.charCount(peek) rather than assuming that, consistent with `peek`'s own fix above.
   private int peekAfter() {
-    return codePointAt(index + 1);
+    return codePointAt(index + Character.charCount(peek));
   }
 
   /**
@@ -265,7 +230,7 @@ final class PatternParser {
     // was misread as "this is capturing group 0" by anything checking captureConstructIndex != -1.
     root.captureConstructIndex = -1;
     root = parseUnion(root);
-    if (index < codePoints.length) {
+    if (index < pattern.length()) {
       // This can trigger if the user has one too many ')'
       throw throwUnexpectedChar("Too many \")\". Check that the () parenthesis match");
     }
@@ -273,8 +238,8 @@ final class PatternParser {
   }
 
   private QuantifiedUnion parseUnion(QuantifiedUnion parent) {
-    Sequence sequence = new Sequence(charOffsets[index]);
-    int rawTextStartIndex = -1; // a char index into `pattern`, once set (see the field's callers)
+    Sequence sequence = new Sequence(index);
+    int rawTextStartIndex = -1;
     // While true, the run accumulating since rawTextStartIndex is a byte-for-byte copy of
     // `pattern` in that span -- no escape has been decoded into it, and no COMMENTS-mode
     // whitespace/comment has been silently skipped in the middle of it (skipComments() runs at
@@ -288,7 +253,7 @@ final class PatternParser {
     // copied into `rawText` once, and the run falls back to the old explicit per-character
     // accumulation from there.
     boolean rawTextIsPure = true;
-    int rawTextPureEnd = -1; // a char index; meaningful only while rawTextIsPure && rawTextStartIndex >= 0
+    int rawTextPureEnd = -1; // meaningful only while rawTextIsPure && rawTextStartIndex >= 0
     // Lazy, not eagerly `new`-allocated: with the pure-span handling above, most literal runs in
     // practice (plain ASCII, no escapes, no COMMENTS-mode gaps) never touch `rawText` at all now,
     // so allocating one unconditionally on every parseUnion() call -- this runs once per union
@@ -307,15 +272,14 @@ final class PatternParser {
       if (peek == '(' || peek == ')' || peek == '[' || peek == ']' || peek == '|' || peek == '.'
           || peek == '^' || peek == '$' || peek == '\0') {
         if (rawTextStartIndex >= 0) {
-          // rawTextPureEnd, not charOffsets[index]: this iteration's own skipComments() call just
-          // above may already have skipped a trailing comment/whitespace gap since the pure
-          // content last ended (e.g. a literal immediately followed by "# comment" to end of
-          // pattern) -- `index` now sits past that gap, which must not silently become part of
-          // the matched literal.
+          // rawTextPureEnd, not `index`: this iteration's own skipComments() call just above may
+          // already have skipped a trailing comment/whitespace gap since the pure content last
+          // ended (e.g. a literal immediately followed by "# comment" to end of pattern) -- `index`
+          // now sits past that gap, which must not silently become part of the matched literal.
           CharSequence literalValue = rawTextIsPure
               ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
               : rawText.toString();
-          LiteralString literal = new LiteralString(rawTextStartIndex, charOffsets[index], literalValue);
+          LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
           literal.flags = flags;
           sequence.patterns.add(literal);
           if (rawText != null) {
@@ -339,12 +303,12 @@ final class PatternParser {
               throw throwEmptySequence(sequence.startIndex, parent.startIndex);
             } else if (sequence.patterns.size() == 1) {
               parent.constructs.add(sequence.patterns.get(0));
-              sequence = new Sequence(charOffsets[index]);
+              sequence = new Sequence(index);
               advance(1);
             } else {
-              sequence.endIndex = charOffsets[index];
+              sequence.endIndex = index;
               parent.constructs.add(sequence);
-              sequence = new Sequence(charOffsets[index]);
+              sequence = new Sequence(index);
               advance(1);
             }
             break;
@@ -365,13 +329,13 @@ final class PatternParser {
               // than the mathematically-unbounded RangeSet Guava's complement() used to produce.
               MutableCodePointSet everything = new ArrayCodePointSet();
               everything.invert();
-              dot = new ComplexCharacter(charOffsets[index], everything);
+              dot = new ComplexCharacter(index, everything);
             } else {
               // Aliased directly, not copied: ComplexCharacter.ranges is effectively immutable
               // once constructed (see its own doc) -- nothing past this point ever mutates it, so
               // there's no risk of corrupting the shared RegexCharacterClass.DOT.unicode instance,
               // and no allocation is needed at all (unlike rebuilding "\n"'s complement fresh).
-              dot = new ComplexCharacter(charOffsets[index], RegexCharacterClass.DOT.unicode);
+              dot = new ComplexCharacter(index, RegexCharacterClass.DOT.unicode);
             }
             dot.flags = flags;
             // Bug fix (2026-09-07): parseQuantifiable(dot) used to be called BEFORE this advance(1),
@@ -388,15 +352,13 @@ final class PatternParser {
             sequence.patterns.add(parseQuantifiable(dot));
             break;
           case '^':
-            LineBoundaryConstruct lineBegin =
-                new LineBoundaryConstruct(charOffsets[index], charOffsets[index + 1], /* isLineBegin= */ true);
+            LineBoundaryConstruct lineBegin = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ true);
             lineBegin.flags = flags;
             sequence.patterns.add(lineBegin);
             advance(1);
             break;
           case '$':
-            LineBoundaryConstruct lineEnd =
-                new LineBoundaryConstruct(charOffsets[index], charOffsets[index + 1], /* isLineBegin= */ false);
+            LineBoundaryConstruct lineEnd = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ false);
             lineEnd.flags = flags;
             sequence.patterns.add(lineEnd);
             advance(1);
@@ -406,36 +368,36 @@ final class PatternParser {
             if (sequence.patterns.isEmpty()) {
               throw throwEmptySequence(sequence.startIndex, parent.startIndex);
             } else {
-              sequence.endIndex = charOffsets[index];
+              sequence.endIndex = index;
               parent.constructs.add(sequence);
-              parent.endIndex = charOffsets[index];
+              parent.endIndex = index;
               return parent;
             }
         }
       } else if (peek == '\\') {
-        int startIndex = index; // a code point index
+        int startIndex = index;
         int codePoint = tryParseSingleCharEscape();
         if (codePoint != -1) {
           if (rawTextStartIndex < 0) {
-            rawTextStartIndex = charOffsets[startIndex];
+            rawTextStartIndex = startIndex;
           } else if (rawTextIsPure) {
             // Back-fill the pure prefix seen so far (excluding any gap before it -- see
             // rawTextPureEnd's own doc) before switching to explicit accumulation: an escape's
             // decoded content never equals its own raw source text, so this run can't stay a pure
             // view of `pattern` from here on.
-            rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, charOffsets[startIndex]);
+            rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, startIndex);
             rawText.append(pattern, rawTextStartIndex, rawTextPureEnd);
           }
           rawTextIsPure = false;
-          rawText = ensureRawText(rawText, 0, charOffsets[startIndex]);
+          rawText = ensureRawText(rawText, 0, startIndex);
           appendCodePoint(rawText, codePoint);
         } else {
           if (rawTextStartIndex >= 0) {
-            // rawTextPureEnd, not charOffsets[index] -- same reasoning as the top-of-loop flush above.
+            // rawTextPureEnd, not `index` -- same reasoning as the top-of-loop flush above.
             CharSequence literalValue = rawTextIsPure
                 ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
                 : rawText.toString();
-            LiteralString literal = new LiteralString(rawTextStartIndex, charOffsets[index], literalValue);
+            LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             sequence.patterns.add(literal);
             if (rawText != null) {
@@ -444,7 +406,7 @@ final class PatternParser {
             rawTextStartIndex = -1;
             rawTextIsPure = true;
           }
-          if (peek == '\\' && peekAfter() == 'G') {
+          if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'G') {
             // \G doesn't match any specific position in the input, so it gets no PatternConstruct
             // at all -- see anchorsToPreviousMatchEnd's doc. It's only meaningful as the very
             // first thing in the whole pattern (i.e. this backslash must be at raw index 0);
@@ -475,30 +437,28 @@ final class PatternParser {
             // effectively immutable -- see its own doc), no defensive copy needed: unlike the
             // bracket-expression '\\' case above (which merges into an already-accumulating
             // ranges local via putAll), this escape is the construct's entire content.
-            int escapeStartIndex = index; // a code point index
+            int escapeStartIndex = index;
             CodePointSet escapeRanges = parseComplexEscape(); // advances past the escape
-            ComplexCharacter escapeChar =
-                new ComplexCharacter(charOffsets[escapeStartIndex], charOffsets[index], escapeRanges);
+            ComplexCharacter escapeChar = new ComplexCharacter(escapeStartIndex, index, escapeRanges);
             escapeChar.flags = flags;
             sequence.patterns.add(parseQuantifiable(escapeChar));
           }
         }
       } else {
-        int startIndex = index; // a code point index
-        int startIndexChars = charOffsets[startIndex];
+        int startIndex = index;
         if (rawTextStartIndex < 0) {
-          rawTextStartIndex = startIndexChars;
-          rawTextPureEnd = startIndexChars;
-        } else if (rawTextIsPure && startIndexChars != rawTextPureEnd) {
+          rawTextStartIndex = startIndex;
+          rawTextPureEnd = startIndex;
+        } else if (rawTextIsPure && startIndex != rawTextPureEnd) {
           // A COMMENTS-mode whitespace/comment run was skipped (skipComments() at the top of this
           // loop) since the pure prefix last ended -- that gap must not silently become part of
           // the matched literal, so back-fill the verbatim prefix seen so far and fall back to
           // explicit accumulation, same as an escape does above.
-          rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, startIndexChars);
+          rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, startIndex);
           rawText.append(pattern, rawTextStartIndex, rawTextPureEnd);
           rawTextIsPure = false;
         }
-        int fullChar = peek; // codePoints[index], i.e. peek itself
+        int fullChar = Character.codePointAt(patternChars, index);
         advanceCodePoint();
         // fullChar's own characters end here -- captured before the lookahead skipComments()
         // just below, which is about to move `index` past any whitespace/comment that follows
@@ -506,7 +466,7 @@ final class PatternParser {
         // something, rawTextPureEnd must stay at this pre-skip position, not wherever `index` ends
         // up, or the next char's own gap check (above) would never see the gap: it would find
         // `index` already sitting right where that next char starts, as if nothing were skipped.
-        int afterFullChar = index; // a code point index
+        int afterFullChar = index;
         // Under COMMENTS, a quantifier suffix can be separated from its atom by whitespace/a
         // comment ("a * b" means "a*b") -- skip past any before checking for one, same as
         // parseQuantifiable does for every other atom type (bracket classes, groups, ".").
@@ -525,21 +485,21 @@ final class PatternParser {
             CharSequence literalValue = rawTextIsPure
                 ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
                 : rawText.toString();
-            LiteralString literal = new LiteralString(rawTextStartIndex, charOffsets[index], literalValue);
+            LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             sequence.patterns.add(literal);
             if (rawText != null) {
               rawText.setLength(0);
             }
           }
-          ComplexCharacter complex = new ComplexCharacter(startIndexChars, fullChar);
+          ComplexCharacter complex = new ComplexCharacter(startIndex, fullChar);
           complex.flags = flags;
-          complex.endIndex = charOffsets[index];
+          complex.endIndex = index;
           sequence.patterns.add(parseQuantifiable(complex));
           rawTextStartIndex = -1;
           rawTextIsPure = true;
         } else if (rawTextIsPure) {
-          rawTextPureEnd = charOffsets[afterFullChar];
+          rawTextPureEnd = afterFullChar;
         } else {
           appendCodePoint(rawText, fullChar);
         }
@@ -574,7 +534,7 @@ final class PatternParser {
   /** How many chars remain in {@code pattern} from {@code fromIndex} up to (not including) the
    *  next character that would end a literal run -- an upper bound on how much more `rawText`
    *  might still need to hold for the run resuming at {@code fromIndex}, per {@link
-   *  #LITERAL_RUN_DELIMITERS}'s own doc. {@code fromIndex} is a char index into {@code pattern}. */
+   *  #LITERAL_RUN_DELIMITERS}'s own doc. */
   private int literalRunCapacityHint(int fromIndex) {
     int len = pattern.length();
     int i = fromIndex;
@@ -586,8 +546,7 @@ final class PatternParser {
 
   /** Lazily creates (or reuses) `rawText`, sized for {@code pureCharsCarriedOver} (a pure prefix
    *  about to be back-filled into it, if any) plus a capacity hint for the rest of the run
-   *  resuming at {@code fromIndex} -- see {@link #literalRunCapacityHint}. {@code fromIndex} is a
-   *  char index into {@code pattern}. */
+   *  resuming at {@code fromIndex} -- see {@link #literalRunCapacityHint}. */
   private StringBuilder ensureRawText(
       @Nullable StringBuilder rawText, int pureCharsCarriedOver, int fromIndex) {
     return rawText != null
@@ -613,7 +572,7 @@ final class PatternParser {
     if (peek != '(') {
       throw new IllegalStateException("entered parseGroup at illegal start point");
     }
-    QuantifiedUnion union = new QuantifiedUnion(pattern, charOffsets[index], flags);
+    QuantifiedUnion union = new QuantifiedUnion(pattern, index, flags);
     advance(1);
     if (peek == '?') {
       advance(1);
@@ -626,7 +585,7 @@ final class PatternParser {
             throw throwUnexpectedChar(
                 "lookbehind not supported because it cannot execute in linear time");
           }
-          int startName = index; // a code point index
+          int startName = index;
           while ((peek >= '0' && peek <= '9')
               || (peek >= 'a' && peek <= 'z')
               || (peek >= 'A' && peek <= 'Z')) {
@@ -635,12 +594,12 @@ final class PatternParser {
           if (peek != '>') {
             throw throwUnexpectedChar(
                 "Character not allowed in capture name. Expected '>' to match ",
-                new CodePointReference(charOffsets[startName]));
+                new CodePointReference(startName));
           }
-          if (codePoints[startName] >= '0' && codePoints[startName] <= '9') {
+          if (pattern.charAt(startName) >= '0' && pattern.charAt(startName) <= '9') {
             throw throwUnexpectedChar("First character of capture name must be an ASCII letter.");
           }
-          union.captureName = pattern.substring(charOffsets[startName], charOffsets[index]);
+          union.captureName = pattern.substring(startName, index);
           advance(1);
           break;
         case ':':
@@ -711,7 +670,7 @@ final class PatternParser {
             }
           }
           if (peek == ')') {
-            union.endIndex = charOffsets[index];
+            union.endIndex = index;
             advance(1);
             flags = flags | enableFlags & ~disableFlags;
             return union;
@@ -749,14 +708,14 @@ final class PatternParser {
       }
     }
     QuantifiedUnion ignored = parseUnion(union);
-    if (index == codePoints.length) {
+    if (index == pattern.length()) {
       throw throwUnexpectedChar(
           "expected \")\" to match ", new CodePointReference(union.startIndex));
     }
     if (peek != ')') {
       throw new IllegalStateException("compileBody returned but not at end of the group");
     }
-    union.endIndex = charOffsets[index];
+    union.endIndex = index;
     if (union.captureConstructIndex != -1) {
       closedGroupsByIndex.put(union.captureConstructIndex, union);
     }
@@ -779,10 +738,9 @@ final class PatternParser {
     if (peek != '[') {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
     }
-    int startIndex = index; // a code point index
+    int startIndex = index;
     CodePointSet finalRanges = parseComplexCharacterRanges(startIndex);
-    ComplexCharacter complex =
-        new ComplexCharacter(charOffsets[startIndex], charOffsets[index], finalRanges);
+    ComplexCharacter complex = new ComplexCharacter(startIndex, index, finalRanges);
     complex.flags = flags;
     return complex;
   }
@@ -794,9 +752,7 @@ final class PatternParser {
    * class (the {@code '['} case below, e.g. {@code "[a-c[p-z]]"}) can recurse straight into this
    * -- merging the result directly into the enclosing accumulator via {@link #mergeInto} -- rather
    * than building a whole separate {@code ComplexCharacter} object just to immediately discard
-   * everything but its {@code ranges}. {@code startIndex} is a code point index, used only to
-   * report a char-accurate position ({@code charOffsets[startIndex]}) if the closing "]" is
-   * missing.
+   * everything but its {@code ranges}.
    */
   private CodePointSet parseComplexCharacterRanges(int startIndex) {
     boolean negate = false;
@@ -826,8 +782,7 @@ final class PatternParser {
     for (; ; ) {
       switch (peek) {
         case '\0':
-          throw throwUnexpectedChar(
-              "expected \"]\" to match ", new CodePointReference(charOffsets[startIndex]));
+          throw throwUnexpectedChar("expected \"]\" to match ", new CodePointReference(startIndex));
         case ']':
           if (index > startIndex + 1) {
             advance(1); // consume the ']' -- callers expect peek to be past this construct
@@ -872,7 +827,7 @@ final class PatternParser {
           runUnion = runUnion == null ? nested : new UnionCodePointSet(runUnion, nested);
           break;
         case '&':
-          if (index + 1 < codePoints.length && codePoints[index + 1] == '&') {
+          if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
             // "&&" is always the intersection operator here -- unlike a lone "&", which is just a
             // literal character (handled by falling through to default below) -- regardless of
             // what comes right after it. The RHS is NOT required to be bracketed: [a-z&&aeiou] is
@@ -890,7 +845,7 @@ final class PatternParser {
           }
           // fallthrough
         default:
-          int codePoint = peek; // codePoints[index], i.e. peek itself
+          int codePoint = Character.codePointAt(patternChars, index);
           advanceCodePoint();
           if (peek == '-') {
             parseMaybeRangePredicate(ranges, codePoint);
@@ -1081,36 +1036,31 @@ final class PatternParser {
     switch (peek2) {
       case 'b': {
         advance(2);
-        WordBoundaryConstruct b =
-            new WordBoundaryConstruct(pattern, charOffsets[index - 2], charOffsets[index], /* isWordBoundary= */ true);
+        WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
         b.flags = flags;
         return b;
       }
       case 'B': {
         advance(2);
-        WordBoundaryConstruct b =
-            new WordBoundaryConstruct(pattern, charOffsets[index - 2], charOffsets[index], /* isWordBoundary= */ false);
+        WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ false);
         b.flags = flags;
         return b;
       }
       case 'A': {
         advance(2);
-        BoundaryConstruct b =
-            new BoundaryConstruct(charOffsets[index - 2], charOffsets[index], BoundaryEnum.InputBegin);
+        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputBegin);
         b.flags = flags;
         return b;
       }
       case 'Z': {
         advance(2);
-        BoundaryConstruct b =
-            new BoundaryConstruct(charOffsets[index - 2], charOffsets[index], BoundaryEnum.InputEndExceptTerminator);
+        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputEndExceptTerminator);
         b.flags = flags;
         return b;
       }
       case 'z': {
         advance(2);
-        BoundaryConstruct b =
-            new BoundaryConstruct(charOffsets[index - 2], charOffsets[index], BoundaryEnum.InputEnd);
+        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputEnd);
         b.flags = flags;
         return b;
       }
@@ -1136,32 +1086,31 @@ final class PatternParser {
     }
     int peek2 = peekAfter();
     if (peek2 >= '1' && peek2 <= '9') {
-      int startIndex = index; // a code point index
+      int startIndex = index;
       int groupNumber = peek2 - '0';
       int referencedIndex = groupNumber - 1;
       QuantifiedUnion referenced = closedGroupsByIndex.get(referencedIndex);
       if (referenced == null) {
         throw PatternSyntaxException.throwWithReferences(
             pattern,
-            charOffsets[startIndex],
+            startIndex,
             "backreference \\", groupNumber, " refers to a group that either doesn't exist or ",
             "hasn't been closed yet at this point in the pattern (forward references aren't ",
             "supported) -- ", captureConstructIndex, " capturing group(s) defined so far");
       }
       advance(2);
-      BackReference backReference =
-          new BackReference(charOffsets[startIndex], charOffsets[index], referencedIndex, referenced);
+      BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
       backReference.flags = flags;
       return backReference;
     }
     if (peek2 == 'k') {
-      int startIndex = index; // a code point index
+      int startIndex = index;
       advance(2);
       if (peek != '<') {
         throw throwUnexpectedChar("\\k must be followed by \"<name>\" naming a capturing group");
       }
       advance(1);
-      int startName = index; // a code point index
+      int startName = index;
       while ((peek >= '0' && peek <= '9')
           || (peek >= 'a' && peek <= 'z')
           || (peek >= 'A' && peek <= 'Z')) {
@@ -1170,22 +1119,21 @@ final class PatternParser {
       if (peek != '>') {
         throw throwUnexpectedChar(
             "Character not allowed in backreference name. Expected '>' to match ",
-            new CodePointReference(charOffsets[startName]));
+            new CodePointReference(startName));
       }
-      String name = pattern.substring(charOffsets[startName], charOffsets[index]);
+      String name = pattern.substring(startName, index);
       advance(1);
       Integer referencedIndex = namedGroups.get(name);
       if (referencedIndex == null) {
         throw PatternSyntaxException.throwWithReferences(
             pattern,
-            charOffsets[startIndex],
+            startIndex,
             "backreference \\k<", name, "> refers to a named group that either doesn't exist or ",
             "hasn't been closed yet at this point in the pattern (forward references aren't ",
             "supported)");
       }
       QuantifiedUnion referenced = closedGroupsByIndex.get(referencedIndex);
-      BackReference backReference =
-          new BackReference(charOffsets[startIndex], charOffsets[index], referencedIndex, referenced);
+      BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
       backReference.flags = flags;
       return backReference;
     }
@@ -1246,14 +1194,13 @@ final class PatternParser {
     // against the pre-increment convention's off-by-one empty-name marker. Found via
     // UnicodeClassTest. Restructured to check-then-advance so `end` always reflects the true
     // (0-or-more) length of the name actually scanned.
-    int end = index; // a code point index (the name is ASCII-only per the grammar below, so
-                      // scanning by code point index here is equivalent to scanning by char index)
+    int end = index;
     for (; ; ) {
-      if (end == codePoints.length) {
+      if (end == pattern.length()) {
         throw throwUnexpectedChar(
-            "character class ", new CodePointReference(charOffsets[index]), " is missing the closing }");
+            "character class ", new CodePointReference(index), " is missing the closing }");
       }
-      int c = codePoints[end];
+      char c = pattern.charAt(end);
       if (c == '}') {
         break;
       }
@@ -1264,14 +1211,14 @@ final class PatternParser {
       if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '=' && c != '_') {
         throw throwUnexpectedChar(
             "character classes \"\\p{...} must have names in [a-zA-Z_=]. Name started at ",
-            new CodePointReference(charOffsets[index]));
+            new CodePointReference(index));
       }
       end++;
     }
     if (end == index) {
       throw throwUnexpectedChar("escape character classes must have names");
     }
-    String charClassName = pattern.substring(charOffsets[index], charOffsets[end]);
+    String charClassName = pattern.substring(index, end);
     // Kept for error messages below -- charClassName itself gets its prefix stripped ("Is"/"In"/
     // "script="/etc.) before we're done, and a thrown message should always echo what the user
     // actually typed, not the stripped-down name used for the NamedCharClass.valueOf() lookup.
@@ -1347,7 +1294,7 @@ final class PatternParser {
       }
       ranges.add(startCodePoint, endCodePoint + 1);
     } else {
-      int endCodePoint = peek; // codePoints[index], i.e. peek itself
+      int endCodePoint = Character.codePointAt(patternChars, index);
       if (endCodePoint <= startCodePoint) {
         throw throwUnexpectedChar(
             "Maximum of range must be less than the minimum. Alternatively, if you didn't intend to have a range, "
@@ -1363,7 +1310,7 @@ final class PatternParser {
     // construct.flags is already set by whoever built it (every ComplexCharacter creation site
     // sets it directly, since it also needs the correct value for the never-quantified case, which
     // never reaches here at all).
-    return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, charOffsets[index], construct));
+    return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, index, construct));
   }
 
   private <T extends QuantifiableConstruct> T parseQuantifiable(T construct) {
@@ -1382,26 +1329,23 @@ final class PatternParser {
       // attempt (this was previously missing -- every other quantifier branch below assigns one).
       construct.quantifiableIndex = quantifiableIndex++;
       advance(1);
-      construct.endIndex = charOffsets[index];
+      construct.endIndex = index;
     } else if (peek == '*') {
       construct.min = 0;
       construct.max = Integer.MAX_VALUE;
       construct.quantifiableIndex = quantifiableIndex++;
       advance(1);
-      construct.endIndex = charOffsets[index];
+      construct.endIndex = index;
     } else if (peek == '+') {
       construct.max = Integer.MAX_VALUE;
       construct.quantifiableIndex = quantifiableIndex++;
       advance(1);
-      construct.endIndex = charOffsets[index];
+      construct.endIndex = index;
     } else if (peek == '{') {
       advance(1);
-      // `end`/`startQuantifierIndex` are code point indices -- the quantifier's numbers are
-      // ASCII-only per the grammar, so scanning them by code point index is equivalent to
-      // scanning by char index (each digit is exactly one code point and one char).
       int end = index;
       int startQuantifierIndex = index;
-      while (end < codePoints.length && codePoints[end] >= '0' && codePoints[end] <= '9') {
+      while (end < pattern.length() && pattern.charAt(end) >= '0' && pattern.charAt(end) <= '9') {
         ++end;
       }
       if (end == index) {
@@ -1410,9 +1354,8 @@ final class PatternParser {
       }
       try {
         // Integer.parseInt(CharSequence, int, int, int) (JDK 9+) parses the span directly, no
-        // substring() copy needed for a value used once and discarded. The bounds must be char
-        // indices into `pattern`, hence charOffsets[...] here.
-        construct.min = Integer.parseInt(pattern, charOffsets[index], charOffsets[end], 10);
+        // substring() copy needed for a value used once and discarded.
+        construct.min = Integer.parseInt(pattern, index, end, 10);
       } catch (NumberFormatException e) {
         throw throwUnexpectedChar(
             "first parameter of explicit quantifier '{' must be less than ", Integer.MAX_VALUE);
@@ -1423,14 +1366,14 @@ final class PatternParser {
       if (peek == ',') {
         advance(1);
         end = index;
-        while (end < codePoints.length && codePoints[end] >= '0' && codePoints[end] <= '9') {
+        while (end < pattern.length() && pattern.charAt(end) >= '0' && pattern.charAt(end) <= '9') {
           ++end;
         }
         if (end == index) {
           construct.max = Integer.MAX_VALUE;
         } else {
           try {
-            construct.max = Integer.parseInt(pattern, charOffsets[index], charOffsets[end], 10);
+            construct.max = Integer.parseInt(pattern, index, end, 10);
           } catch (NumberFormatException e) {
             throw throwUnexpectedChar(
                 "second parameter of explicit quantifier '{' must be less than ",
@@ -1441,7 +1384,7 @@ final class PatternParser {
         if (peek != '}') {
           throw throwUnexpectedChar(
               "Expected '}' to end quantifier started at ",
-              new CodePointReference(charOffsets[startQuantifierIndex]));
+              new CodePointReference(startQuantifierIndex));
         }
         advance(1);
       } else if (peek == '}') {
@@ -1454,9 +1397,9 @@ final class PatternParser {
       } else {
         throw throwUnexpectedChar(
             "Expected ',' or '}' to end quantifier started at ",
-            new CodePointReference(charOffsets[startQuantifierIndex]));
+            new CodePointReference(startQuantifierIndex));
       }
-      construct.endIndex = charOffsets[index];
+      construct.endIndex = index;
     }
     if (peek == '?' || peek == '+') {
       // Bug fix (2026-09-06): checked for a trailing '*' instead of '+' -- '*' is never a valid
@@ -1464,7 +1407,7 @@ final class PatternParser {
       // possessive suffix ("a*+", "a++", "a?+", "a{2,3}+") was never actually consumed, leaving a
       // stray literal '+' in the pattern that broke matching. See remaining_work.md.
       advance(1); // reluctant and possessive quantifers are no-ops in this Pattern
-      construct.endIndex = charOffsets[index];
+      construct.endIndex = index;
     }
     return construct;
   }
@@ -1476,13 +1419,13 @@ final class PatternParser {
   }
 
   private PatternSyntaxException throwGenericPatternSyntaxException(Object... expectations) {
-    throw PatternSyntaxException.throwWithReferences(pattern, charOffsets[index], expectations);
+    throw PatternSyntaxException.throwWithReferences(pattern, index, expectations);
   }
 
   private PatternSyntaxException throwUnexpectedChar(Object... expectations) {
     Object[] args =
         concatObjectArrays(new Object[] {"Unexpected ", new CodePoint(peek)}, expectations);
-    throw PatternSyntaxException.throwWithReferences(pattern, charOffsets[index], args);
+    throw PatternSyntaxException.throwWithReferences(pattern, index, args);
   }
 
   private PatternSyntaxException throwEmptySequence(int sequenceStartIndex, int unionStartIndex) {

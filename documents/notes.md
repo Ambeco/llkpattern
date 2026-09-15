@@ -2260,26 +2260,3 @@ Notes to self about how to work on this project, and other context that doesn't 
   desktop `llkMatch` 0.0343 ms/op (37,744 B/op) -- both back to their pre-regression baseline.
   `PatternParser.patternChars` kept (untouched by this revert, and never showed any downside).
   README updated with the final numbers.
-
-### `PatternParser` codepoint-array indexing, implemented (2026-09-15, follow-up session)
-
-- Implemented the codepoint-array indexing proposed the same day (see remaining_work.md's now-
-  removed section of the same name for the original writeup): `PatternParser`'s internal `index`
-  is now a codepoint index into a decoded `int[] codePoints`, with a parallel `int[] charOffsets`
-  (`charOffsets[codepointIndex]` = the char index that codepoint starts at in `pattern`, sentinel
-  `charOffsets[codePoints.length] == pattern.length()`) built in one decode pass in the
-  constructor, replacing the old `char[] patternChars` field entirely (confirmed via grep it had
-  no other users -- `Matcher.java` has an unrelated field of the same name).
-  `advance`/`advanceCodePoint`/`peek`/`peekAfter`/`codePointAt` all collapse to plain
-  `index++`/array reads now, with no `Character.charCount`/surrogate-pair math anywhere in the
-  scan loop. Every place that previously captured `index` for a `PatternConstruct`'s
-  `startIndex`/`endIndex`, a `pattern.substring(...)` call, a `CharBuffer.wrap(pattern, ...)`
-  call, or a thrown `PatternSyntaxException`/`CodePointReference` position now translates through
-  `charOffsets[index]` first -- `throwUnexpectedChar`/`throwGenericPatternSyntaxException` do this
-  once, centrally, so every one of their many call sites got the translation for free. An unpaired
-  surrogate decodes to its own char value as its own "code point" during the decode pass, matching
-  `Character.codePointAt`'s documented behavior for a lone surrogate and preserving prior behavior
-  for malformed patterns. Purely mechanical otherwise -- no behavior change intended, and none
-  found: full suite green after the change, matching the pre-change baseline exactly (1498 tests,
-  0 failing, 561 skipped). Per this task's own instructions, JMH benchmarking was deliberately left
-  to the parent session/a follow-up rather than run here.

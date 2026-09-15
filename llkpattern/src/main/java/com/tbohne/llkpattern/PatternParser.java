@@ -86,6 +86,15 @@ final class PatternParser {
   // Block -> https://www.unicode.org/reports/tr44/#Blocks.txt //CharBlockCharacter
 
   private final String pattern;
+  // A char[] copy of `pattern`, used only for codePointAt(int) below: String#codePointAt checks
+  // isLatin1() (compact strings, JDK 9+) on every call to pick which internal byte layout to
+  // read, on top of the real surrogate-pair check; Character#codePointAt(char[], int) skips that
+  // first check entirely, since a char[] has no such dual representation to dispatch on -- see
+  // documents/notes.md for the decompiled bytecode confirming this difference (found investigating
+  // a suggestion that this project's own Android CPU sampling bore out for Matcher#peek's sibling
+  // optimization). One extra O(pattern.length()) copy per compile, worth it since codePointAt is
+  // called once per character while parsing.
+  private final char[] patternChars;
   private int flags;
   private int index;
   // Bug fix (2026-09-14): was `char`, which can't hold a supplementary code point at all -- every
@@ -120,6 +129,7 @@ final class PatternParser {
 
   PatternParser(String pattern, int flags) {
     this.pattern = pattern;
+    this.patternChars = pattern.toCharArray();
     index = 0;
     peek = codePointAt(0);
     this.flags = flags;
@@ -153,7 +163,7 @@ final class PatternParser {
   // assignment goes through pattern.codePointAt, never charAt (see `peek`'s own field doc for why
   // that distinction matters for a supplementary code point).
   private int codePointAt(int i) {
-    return i < pattern.length() ? pattern.codePointAt(i) : '\0';
+    return i < patternChars.length ? Character.codePointAt(patternChars, i) : '\0';
   }
 
   private void advanceCodePoint() {
@@ -448,7 +458,7 @@ final class PatternParser {
           rawText.append(pattern, rawTextStartIndex, rawTextPureEnd);
           rawTextIsPure = false;
         }
-        int fullChar = pattern.codePointAt(index);
+        int fullChar = Character.codePointAt(patternChars, index);
         advanceCodePoint();
         // fullChar's own characters end here -- captured before the lookahead skipComments()
         // just below, which is about to move `index` past any whitespace/comment that follows
@@ -835,7 +845,7 @@ final class PatternParser {
           }
           // fallthrough
         default:
-          int codePoint = pattern.codePointAt(index);
+          int codePoint = Character.codePointAt(patternChars, index);
           advanceCodePoint();
           if (peek == '-') {
             parseMaybeRangePredicate(ranges, codePoint);
@@ -1284,7 +1294,7 @@ final class PatternParser {
       }
       ranges.add(startCodePoint, endCodePoint + 1);
     } else {
-      int endCodePoint = pattern.codePointAt(index);
+      int endCodePoint = Character.codePointAt(patternChars, index);
       if (endCodePoint <= startCodePoint) {
         throw throwUnexpectedChar(
             "Maximum of range must be less than the minimum. Alternatively, if you didn't intend to have a range, "

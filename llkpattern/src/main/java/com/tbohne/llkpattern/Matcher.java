@@ -29,6 +29,13 @@ public class Matcher implements MatchResult {
 	// case-insensitive matching (CASE_INSENSITIVE/UNICODE_CASE) -- see MatcherConstruct#getNext and
 	// LiteralMatcherConstruct#match.
 	Ll1Pattern pattern;
+	// NOT also cached as a char[] the way PatternParser.patternChars caches `pattern` (see that
+	// field's own doc for the codePointAt win a char[] gives): tried it, measured a clear
+	// regression instead -- toCharArray() is an O(input.length()) copy, and unlike a Pattern
+	// (compiled once, matched many times), a Matcher is typically constructed fresh per match
+	// operation, so that copy's cost is paid on close to every match rather than amortized.
+	// Confirmed via the Pixel 3a on-device benchmark: matchLlk 0.688 -> 1.117 ms/pass (+62%),
+	// matchLlk allocation 37,744 -> 52,752 B/op (+40%) -- reverted, not kept.
 	String input;
 	int regionEnd;
 	int regionStart = 0;

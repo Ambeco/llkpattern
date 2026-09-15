@@ -2212,3 +2212,51 @@ Notes to self about how to work on this project, and other context that doesn't 
   (which already inlines/optimizes `String#codePointAt` well) the way it clearly does on ART.
   Worth a quieter re-run (Dropbox closed, per this file's own established tip) to settle, not done
   this session. README updated with the numbers as measured.
+
+### `char[]`-caching `String#codePointAt`'s own `isLatin1()` check (2026-09-15, same session)
+
+- A suggestion relayed from Gemini: `String#codePointAt`/`codePointBefore` check `isLatin1()`
+  (compact strings, JDK 9+) on every call, on top of the real surrogate-pair logic, to pick which
+  internal byte layout to read; `Character#codePointAt(char[], int)`/`codePointBefore(char[], int)`
+  skip that first check entirely, since a `char[]` has no such dual representation. Confirmed via
+  `javap -c` on both (`String.codePointAt` calls `isLatin1()` then dispatches; `Character
+  .codePointAt(char[], int)` goes straight to `codePointAtImpl`) before trusting the claim.
+  Gemini's second suggestion -- decoding the *whole* input into a UTF-32-style `int[]` of code
+  points, eliminating `Character.charCount` and surrogate math entirely -- was scoped down for
+  `Matcher` specifically: the project owner pointed out `Matcher` exposes UTF-16 char indices
+  publicly (`start()`/`end()`/`region()`, matching `java.util.regex.Matcher`'s own contract), so a
+  codepoint-indexed internal representation there would need constant translation back to char
+  offsets for anything crossing that boundary -- not attempted for `Matcher`.
+- Landed for `PatternParser`: a `char[] patternChars` field (`pattern.toCharArray()`, once per
+  compile), with every `pattern.codePointAt(i)` call (there were 4, one already centralized behind
+  a private `codePointAt(int)` helper) switched to `Character.codePointAt(patternChars, i)`. Low
+  risk -- patterns are short and parsed once, so the one-time array copy is cheap and the
+  call-site change is mechanical.
+- Also tried the same thing for `Matcher.input` (a `char[] inputChars` field, `Character
+  .codePointAt`/`codePointBefore(inputChars, ...)` replacing the `String` calls in `peek`'s sync
+  path, `peekPrevious`, `find`'s surrogate-boundary check, and — extending the idea further —
+  `LiteralMatcherConstruct`'s own surrogate check, its ASCII-fold loop, and both
+  `lineTerminatorLengthAt`/`Before`) -- **measured as a clear regression, reverted entirely.**
+  Confirmed via the Pixel 3a on-device benchmark: `matchLlk` 0.688 -> 1.117 ms/pass (+62%),
+  allocation 37,744 -> 52,752 B/op (+40%). Root cause: `toCharArray()` is an O(`input.length()`)
+  copy, paid on every `Matcher` construction/`reset(String)` call -- fine for `PatternParser`
+  (parses once per compile), but a `Matcher` is typically constructed fresh per match operation
+  (exactly what `CorpusBenchmark.llkMatch`/`AndroidCorpusBenchmark`'s `matchLlk` do, once per
+  corpus row per pass), so the copy's cost lands on close to every match instead of being
+  amortized across many of them -- the opposite of `PatternParser.patternChars`'s situation.
+  Notably, desktop `llkMatch` had *already* drifted upward (0.034 -> ~0.041 ms/op) across the
+  `peeked`-cache reruns in the entry just above, which I read as inconclusive noise at the time
+  (wide error bars, `regexMatch` at baseline) since that change alone had no obvious reason to
+  regress match time. Adding this session's `inputChars` change on top pushed it slightly further
+  (0.044 ms/op) before the Android run made the real cause unambiguous. In hindsight the earlier
+  drift may have been a red herring (the `peeked` field itself never showed a plausible mechanism
+  for a desktop-specific regression) or may have been early noise that this session's real
+  regression rode on top of -- not disentangled, since both are gone now that `inputChars` is
+  reverted (back to 0.0343 ms/op, tight error bar, matching the original pre-`peeked`-cache
+  baseline too). Worth remembering regardless: a small, noisy, unexplained drift is worth
+  re-checking once a *second*, larger, better-explained regression shows up in the same place,
+  rather than assuming they're unrelated.
+- Benchmarks re-run once more after the revert to confirm: Pixel 3a `matchLlk` 0.6855 ms/pass,
+  desktop `llkMatch` 0.0343 ms/op (37,744 B/op) -- both back to their pre-regression baseline.
+  `PatternParser.patternChars` kept (untouched by this revert, and never showed any downside).
+  README updated with the final numbers.

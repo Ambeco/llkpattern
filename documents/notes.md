@@ -2327,3 +2327,35 @@ Notes to self about how to work on this project, and other context that doesn't 
   stayed stable across all three runs (~2.4x compile, ~0.73-0.78x match), matching this file's
   existing guidance to track the ratio instead of absolute ms/pass. README's table reflects the
   final of these three re-runs.
+
+### `CodePointSetBuilder`'s eager `mins`/`maxs` arrays made lazy (2026-09-18)
+
+- Follow-up investigation after the `ComplexQuantifiedCharacter` fix above: re-ran
+  `:llkpattern:jmhAllocSampling` (JFR allocation-stack sampling, distinct from the CPU-time
+  `jmhSampling` task -- see `benchmarks/*_alloc_sampling.txt`) to see what took
+  `parseQuantifiable:1313`'s place at the top. New #1: `CodePointSetBuilder`'s two `int[4]`
+  (`mins`/`maxs`) constructor arrays, 13.3% + 3.1% (two separate sample lines for the same
+  two-array constructor, split by which array's allocation happened to land the sample) -- ~16%
+  combined, newly visible now that eliminating `parseQuantifiable`'s allocation let this one's
+  relative share grow (not that it got worse in absolute terms).
+- Root cause: `PatternParser#mergeRun` calls `literals.build()` unconditionally on the
+  `CodePointSetBuilder` accumulating a bracket expression's individual members, even when that
+  operand run turns out to be ENTIRELY named-escape/nested-class content (e.g. `[\d]`, `[\p{L}]`)
+  that never called `#add` at all -- `mergeRun` then discards the resulting (empty) `literalSet`
+  and returns `runUnion` alone. The two `int[4]` arrays the constructor always allocated were pure
+  waste in that case.
+- Fix: made `mins`/`maxs` lazy (`null` until the first `#add`), matching the class's own existing
+  amortized-growth philosophy. `#build`/`#sortInPlaceByMin`'s loops are already bounded by `size`
+  (which stays 0 whenever the arrays are never allocated), so no other change was needed. Full test
+  suite stayed green (1498 tests, 0 failures).
+- Result: `CodePointSetBuilder` no longer appears in the top-10 allocation leaders at all. Desktop
+  JMH `llkCompile` allocation: 662,027 -> 649,312 B/op (-1.9% on top of the prior fix's -1.1%,
+  ~2.7% cumulative vs. the original pre-both-fixes baseline of 667,200). Pixel 3a `compileLlk`:
+  5.60 -> 5.51 ms/pass. README's table now reflects both fixes together.
+- New top allocation leaders after this fix, for reference (see
+  `benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt`): `PatternParser.<init>`'s
+  `patternChars` copy (~12%, already a deliberate, documented tradeoff -- see its own doc comment),
+  `ArrayList.grow` from `Sequence`/`QuantifiedUnion`'s default-capacity `patterns`/`constructs`
+  lists (~7%), and `ArrayCodePointSet`'s own eager `keys`-array constructor (~6%, the same
+  "allocated even when nothing is ever added" shape as `CodePointSetBuilder` had -- see
+  remaining_work.md for why this one wasn't also fixed in this session).

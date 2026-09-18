@@ -317,6 +317,33 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
 - [ ] **`BackReference` aliasing its referenced group's own entry point directly**, instead of going through the separate `firstCharSet`/`lastCharSet` static-walk helpers -- proposed this session, NOT done: `firstCharSet(referencedGroup)` and `referencedGroup.getEntryPointMap()` diverge for a nullable referenced group (the latter folds in `next`'s entries via `buildLoopEntryMap`'s `min == 0` case, and can throw `EntryPointCycleException` on a pattern that compiles fine today), so this needs verifying against `(a?)\1` and `(a|b)?\1` before landing, not just assumed safe.
 - [ ] **`lastCharSet`/`WordBoundaryConstruct.priorCharSet` should NOT be removed** -- raised and rejected this session. `lastCharSet` isn't dead now that sequences link `next` pointers directly; it's the compile-time `\b`/`\B` static-wordness optimization (`WordBoundaryConstruct.classify`'s subset/disjoint checks need an actual queryable `CodePointSet`, which a push-only API can't give it). Removing it wouldn't fail any test, just silently push every `\b` onto the runtime-check path -- noted here so it isn't attempted again without realizing that.
 - [ ] `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`, and stale-named -- it's a `CodePointSet` now, not a `CodePointMap`) and the `QuantifiedUnion`-branch-union temporary sets inside those two methods are still real, un-eliminated small allocations -- left alone this session per the item above (converting `lastCharSet`'s callers to a push model isn't viable; `firstCharSet`'s one call site might be, see above, but wasn't converted). Worth renaming `singletonCodePointMap` to `singletonCodePointSet` while touching this.
+
+## Remaining desktop-allocation-sampling leaders (2026-09-18)
+
+Found via `:llkpattern:jmhAllocSampling` after `CodePointSetBuilder`'s own eager-array fix (see
+notes.md's entry) knocked it out of the top 10. Neither item below was attempted this session --
+both have a materially bigger blast radius than `CodePointSetBuilder` (a throwaway per-bracket-
+expression builder) for a similar-sized win, so they need their own dedicated look rather than
+being folded in opportunistically:
+
+- [ ] **`ArrayCodePointSet`'s own eager `keys` array** (~6% of sampled allocation weight) has the
+      same "allocated even when the set ends up empty" shape `CodePointSetBuilder` had, but
+      `ArrayCodePointSet` is a much more central, widely-used class -- implements the shared
+      `CodePointSet`/`MutableCodePointSet` interfaces, used at match time as well as parse time,
+      and has many more call sites (`add`/`addRange`/`complement`/`forEachRange`/`size`/`invert`/
+      the shared static `EMPTY_ENTRY_MAP` instance in `PatternConstruct`). Making `keys` lazy would
+      need every reader path to handle a null/absent array correctly, not just the two methods
+      `CodePointSetBuilder` needed -- worth doing, but as its own careful pass with full
+      before/after benchmarking, not bundled in with a smaller, throwaway-class fix.
+- [ ] **`Sequence`/`QuantifiedUnion`'s default-capacity `patterns`/`constructs` `ArrayList`s**
+      (`ArrayList.grow`, ~7% of sampled allocation weight) -- both are plain `new ArrayList<>()`,
+      so the first `#add` grows to Java's default capacity of 10 regardless of how many elements
+      the sequence/union actually ends up holding (often far fewer for typical corpus patterns).
+      Pre-sizing to a smaller initial capacity (e.g. 4, matching `CodePointSetBuilder`'s own
+      `INITIAL_CAPACITY`) would shrink the allocated array without eliminating the allocation
+      itself -- measure whether that's worth doing before implementing, per this file's existing
+      "measure before keeping" guidance a few sections up (a plausible-sounding pre-sizing
+      heuristic has already twice measured as a net regression in this project).
 ## Fork-chain dispatch (2026-09-11/12) -- the performance plan
 
 Step 1 (2026-09-11): `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the

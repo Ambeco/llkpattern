@@ -1,6 +1,7 @@
 package com.tbohne.llkpattern;
 
 import java.util.Arrays;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Accumulates code point ranges from possibly many sources without maintaining sort order or
@@ -19,18 +20,21 @@ import java.util.Arrays;
 final class CodePointSetBuilder {
   private static final int INITIAL_CAPACITY = 4;
 
-  private int[] mins;
-  private int[] maxs;
+  // Left null until the first #add -- a bracket expression's operand run is often entirely
+  // named-escape/nested-class members (e.g. "[\d]", "[\p{L}]"), which never call #add at all
+  // (see PatternParser#mergeRun, which calls #build unconditionally and discards its -- empty --
+  // result whenever runUnion alone already covers the run); allocating these two arrays up front
+  // wasted them in exactly that case.
+  private int @Nullable [] mins;
+  private int @Nullable [] maxs;
   private int size = 0;
-
-  CodePointSetBuilder() {
-    mins = new int[INITIAL_CAPACITY];
-    maxs = new int[INITIAL_CAPACITY];
-  }
 
   /** Records that {@code [min, max)} is in the set. Order doesn't matter -- see class doc. */
   void add(int min, int max) {
-    if (mins.length == size) {
+    if (mins == null) {
+      mins = new int[INITIAL_CAPACITY];
+      maxs = new int[INITIAL_CAPACITY];
+    } else if (mins.length == size) {
       int newCapacity = mins.length + (mins.length >> 1) + 1;
       mins = Arrays.copyOf(mins, newCapacity);
       maxs = Arrays.copyOf(maxs, newCapacity);

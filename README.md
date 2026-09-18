@@ -88,16 +88,26 @@ over time.
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
 | Intel-i7-9750H | 0.095 | 0.243 | 2.57x |
-| Pixel 3a | 6.21 | 5.76 | 0.93x |
+| Pixel 3a | 7.68 | 5.55 | 0.72x |
 
 **Corpus match time (each pass matches/finds/look_ats 406 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
 | Intel-i7-9750H | 0.047 | 0.034 | 0.73x |
-| Pixel 3a | 3.79 | 0.77 | 0.20x |
+| Pixel 3a | 3.89 | 0.76 | 0.20x |
 
 llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch, and further after later sessions removed the map-based ambiguity-check allocation (`entryMap`'s `CodePointMap` -> `CodePointSet` migration, then `checkDisjoint`'s allocation-free overlap check) — see notes.md for the compile-time performance history. On the Pixel 3a the two compile times currently land close to each other and vary run-to-run (see notes.md), so don't read that ratio as settled. Match time is faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
+
+**flatten-matcher-dispatch experiment branch (2026-09-18):** the Intel-i7-9750H row above is NOT
+re-measured this session — a concurrent session and an open browser made desktop timing too noisy
+to trust (allocation sampling, which isn't timing-sensitive, showed the change as a wash — see
+notes.md). The Pixel 3a row above IS from this experiment, and shows a real (if modest) compile
+and match speedup over the pre-experiment baseline (compile: 5.76 -> 5.55ms/pass; match: 0.77 ->
+0.76ms/pass) — though `compileRegex`'s own unchanged-code number also moved between runs (6.21 ->
+7.68ms/pass), confirming real run-to-run device noise even here, so treat this as a promising
+early read, not a settled result. A quiet-desktop re-run of the Intel row is still needed before
+deciding whether this experiment merges to main.
 
 ## 5. Authorship
 

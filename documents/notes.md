@@ -2544,3 +2544,13 @@ Notes to self about how to work on this project, and other context that doesn't 
     amortized-growth array, regardless of exact array format/capacity/inheritance strategy) cheaper
     than `ArrayCodePointSet`'s own direct sorted-insert-with-shift mutation. Not attempting a fifth
     variant without a fundamentally different idea, not just another tuning knob on the same one.
+
+- **Flattened-dispatch experiment first measurement (2026-09-18, branch `flatten-matcher-dispatch`)**:
+  desktop allocation sampling (timing was too noisy to trust this session -- concurrent session +
+  open browser) showed the change as a wash on this corpus: total sampled weight moved <0.5% for
+  both `llkCompile` and `llkMatch`, with `llkMatch`'s own profile unchanged in shape (still
+  dominated by `Matcher.<init>`, since the matcher graph is compile-once and match-time never
+  touches it). Pixel 3a showed a real if modest speedup (compile 5.76->5.55ms/pass, match
+  0.77->0.76ms/pass), but `compileRegex`'s own unchanged-code number moved 6.21->7.68ms/pass
+  between runs, confirming real device noise even there -- read this as promising, not settled.
+  A quiet desktop re-run is the next step before deciding whether this experiment merges.

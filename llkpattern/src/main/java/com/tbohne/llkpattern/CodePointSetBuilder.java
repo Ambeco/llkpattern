@@ -12,29 +12,26 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * are in the set" -- always mergeable, never a conflict -- so {@link #build} never throws.
  *
  * <p>Not itself a {@link CodePointSet} -- it has no query methods, only {@link #add}/{@link
- * #build}. Build-once: {@link #build} hands its packed {@code keys} array off to the {@link
- * ArrayCodePointSet} it returns (no defensive copy), so calling it again would re-merge already-
- * compacted {@code ranges} into a second, aliased set instead of a fresh one -- create a new
- * builder per {@link CodePointSet} instead of reusing one.
+ * #build}. Build-once: {@link #build} hands its own {@code keys} array off to the {@link
+ * ArrayCodePointSet} it returns (no copy, no separate final array -- the same array {@link #add}
+ * appended into is sorted and compacted in place, then given away), nulling this builder's own
+ * reference to it so a second {@link #build}/{@link #add} call can't silently corrupt an
+ * already-returned, supposedly-immutable set instead of just failing loudly.
  */
 final class CodePointSetBuilder {
   private static final int INITIAL_CAPACITY = 4;
 
-  // One packed-long array (min in the high 32 bits, max in the low 32 bits) instead of two int[]
-  // arrays -- half the array objects (and half the object-header overhead) for the same content,
-  // same reasoning that makes ArrayCodePointSet itself a single array rather than parallel ones.
-  // Unlike ArrayCodePointSet's own packed format, min/max here are NOT chunked to a MAX_COUNT-wide
-  // span -- each holds a full 32-bit value, so an arbitrarily wide range never needs splitting
-  // into multiple entries just to be stored (that would force #build's merge pass to re-chunk
-  // combined runs into different boundaries than either original entry had, real complexity this
-  // class's only real-world caller, a bracket expression's own literal members, never needs: those
-  // are always individual characters or small explicit ranges, never spans over MAX_COUNT code
-  // points). Left null until the first #add -- see the field's own former doc, preserved by the
-  // lazy-init pattern: a bracket expression's operand run is often entirely named-escape/nested-
-  // class members (e.g. "[\d]", "[\p{L}]"), which never call #add at all (see
-  // PatternParser#mergeRun, which calls #build unconditionally and discards its -- empty -- result
-  // whenever runUnion alone already covers the run).
-  private long @Nullable [] ranges;
+  // Packed (min<<11)|count entries -- the exact same compact format ArrayCodePointSet itself
+  // uses, not a separate raw-pair representation later packed in #build: #add chunks any range
+  // wider than ArrayCodePointSet#MAX_COUNT into multiple packed entries immediately, the same way
+  // ArrayCodePointSet#addRange does for an incremental insert. #build's merge pass can then hand
+  // its own array straight to ArrayCodePointSet with no further packing/allocation needed -- one
+  // array total, not one to accumulate into plus a second, separately-sized one to pack into.
+  // Left null until the first #add -- a bracket expression's operand run is often entirely
+  // named-escape/nested-class members (e.g. "[\d]", "[\p{L}]"), which never call #add at all (see
+  // PatternParser#mergeRun, which calls #build unconditionally and discards its -- empty --
+  // result whenever runUnion alone already covers the run).
+  private int @Nullable [] keys;
   private int size = 0;
   // Same meaning as ArrayCodePointSet#invert: whether the ranges added so far ARE the built set
   // (false, the default) or are EXCLUDED from it. Flipping this is just a boolean, exactly as
@@ -42,36 +39,35 @@ final class CodePointSetBuilder {
   // the ArrayCodePointSet it constructs, rather than making the caller build a normal set and then
   // pay a separate ArrayCodePointSet#complement array copy to invert it afterward.
   private boolean invert = false;
-
-  private static long pack(int min, int max) {
-    return ((long) min << 32) | (max & 0xFFFFFFFFL);
-  }
-
-  private static int packedMin(long range) {
-    return (int) (range >>> 32);
-  }
-
-  private static int packedMax(long range) {
-    return (int) range;
-  }
+  private boolean built = false;
 
   /** Records that {@code [min, max)} is in the set. Order doesn't matter -- see class doc. */
   void add(int min, int max) {
-    if (ranges == null) {
-      ranges = new long[INITIAL_CAPACITY];
-    } else if (ranges.length == size) {
-      ranges = Arrays.copyOf(ranges, ranges.length + (ranges.length >> 1) + 1);
+    checkNotBuilt();
+    // Chunked immediately, not deferred to #build -- see the `keys` field's own doc.
+    for (int chunkMin = min; chunkMin < max; chunkMin += ArrayCodePointSet.MAX_COUNT + 1) {
+      int chunkMax = Math.min(max, chunkMin + ArrayCodePointSet.MAX_COUNT + 1);
+      appendKey(ArrayCodePointSet.packKey(chunkMin, chunkMax - chunkMin - 1));
     }
-    ranges[size] = pack(min, max);
-    size++;
   }
 
   void add(int codePoint) {
     add(codePoint, codePoint + 1);
   }
 
+  private void appendKey(int key) {
+    if (keys == null) {
+      keys = new int[INITIAL_CAPACITY];
+    } else if (keys.length == size) {
+      keys = Arrays.copyOf(keys, keys.length + (keys.length >> 1) + 1);
+    }
+    keys[size] = key;
+    size++;
+  }
+
   /** Flips whether the built set means "these ranges" or "everything but these ranges". */
   void invert() {
+    checkNotBuilt();
     invert = !invert;
   }
 
@@ -86,74 +82,70 @@ final class CodePointSetBuilder {
   /**
    * Sorts and coalesces every range added so far into a single {@link CodePointSet}. Overlapping or
    * touching ranges always merge (see class doc -- there's no value to disagree on), so this never
-   * throws.
+   * throws. Build-once -- see class doc.
    */
   CodePointSet.MutableCodePointSet build() {
+    checkNotBuilt();
+    built = true;
+    if (keys == null) {
+      return new ArrayCodePointSet(new int[0], 0, invert);
+    }
     sortInPlaceByMin();
-    // Merge pass, compacting forward over the SAME ranges array.
+    // Single forward pass: for each maximal run of touching/overlapping entries (by real extent,
+    // not by their individual pre-chunked boundaries), re-chunk the run's own full span into
+    // however many packed entries it actually needs, writing them back into the SAME array. The
+    // write cursor (`outSize`) can never run ahead of the read cursor (`i`): a run built from N
+    // input entries can never need MORE than N output chunks (each input entry already covers up
+    // to MAX_COUNT+1 code points, so covering the same combined span can't take more chunks than
+    // that), so this is safe to compact in place.
     int outSize = 0;
-    for (int i = 0; i < size; i++) {
-      int min = packedMin(ranges[i]);
-      int max = packedMax(ranges[i]);
-      if (outSize > 0) {
-        int lastIdx = outSize - 1;
-        int lastMax = packedMax(ranges[lastIdx]);
-        if (min <= lastMax) { // overlaps or touches the last accepted range
-          if (max > lastMax) {
-            ranges[lastIdx] = pack(packedMin(ranges[lastIdx]), max);
-          }
-          continue;
-        }
+    int i = 0;
+    while (i < size) {
+      int runMin = ArrayCodePointSet.keyMin(keys[i]);
+      int runMax = ArrayCodePointSet.keyMax(keys[i]);
+      i++;
+      while (i < size && ArrayCodePointSet.keyMin(keys[i]) <= runMax) {
+        runMax = Math.max(runMax, ArrayCodePointSet.keyMax(keys[i]));
+        i++;
       }
-      ranges[outSize] = pack(min, max);
-      outSize++;
-    }
-    // Pack directly into ArrayCodePointSet's own chunked key format here, into a single
-    // correctly-sized array computed up front -- so the constructor it's handed to just takes
-    // ownership, with no further allocation of its own. `ranges` is left alone rather than reused
-    // as scratch -- fine, since build-once (see class doc) means there's no second call to pay for
-    // it. Each merged entry here may span more than ArrayCodePointSet's own MAX_COUNT-wide limit
-    // (see this class's own field doc), unlike during accumulation above -- so, unlike #add, this
-    // chunks each one into as many packed keys as it needs.
-    int chunkTotal = 0;
-    for (int i = 0; i < outSize; i++) {
-      int min = packedMin(ranges[i]);
-      int max = packedMax(ranges[i]);
-      chunkTotal += (max - min + ArrayCodePointSet.MAX_COUNT) / (ArrayCodePointSet.MAX_COUNT + 1);
-    }
-    int[] keys = new int[chunkTotal];
-    int w = 0;
-    for (int i = 0; i < outSize; i++) {
-      int min = packedMin(ranges[i]);
-      int max = packedMax(ranges[i]);
-      for (int chunkMin = min; chunkMin < max; chunkMin += ArrayCodePointSet.MAX_COUNT + 1) {
-        int chunkMax = Math.min(max, chunkMin + ArrayCodePointSet.MAX_COUNT + 1);
-        keys[w] = ArrayCodePointSet.packKey(chunkMin, chunkMax - chunkMin - 1);
-        w++;
+      for (int chunkMin = runMin; chunkMin < runMax; chunkMin += ArrayCodePointSet.MAX_COUNT + 1) {
+        int chunkMax = Math.min(runMax, chunkMin + ArrayCodePointSet.MAX_COUNT + 1);
+        keys[outSize] = ArrayCodePointSet.packKey(chunkMin, chunkMax - chunkMin - 1);
+        outSize++;
       }
     }
-    return new ArrayCodePointSet(keys, w, invert);
+    int[] result = keys;
+    keys = null;
+    return new ArrayCodePointSet(result, outSize, invert);
+  }
+
+  private void checkNotBuilt() {
+    if (built) {
+      throw new IllegalStateException(
+          "CodePointSetBuilder already built -- create a new builder per CodePointSet instead of "
+              + "reusing one (see class doc)");
+    }
   }
 
   /**
-   * Insertion sort of {@code ranges[0..size)} by each entry's packed-in min -- worth it over {@code
-   * Arrays.sort} despite its worse worst-case complexity, since every real call site's input is
-   * small and near-sorted already, where insertion sort's low constant factor wins. Compares
-   * extracted min, not the raw packed {@code long}s directly -- min occupies the packed value's
-   * high bits, but a max near the top of the domain can still flip the sign of a lower entry's own
-   * packed value, so raw numeric order isn't reliable (same reasoning as
-   * ArrayCodePointSet#floorIndex's own comparisons, which never compare raw packed keys either).
+   * Insertion sort of {@code keys[0..size)} by each entry's real (unpacked) min -- worth it over
+   * {@code Arrays.sort} despite its worse worst-case complexity, since every real call site's
+   * input is small and near-sorted already, where insertion sort's low constant factor wins.
+   * Compares extracted min, not the raw packed {@code int}s directly -- {@code min << 11} can
+   * overflow into the sign bit well within the Unicode domain (as low as code point 0x100000), so
+   * raw numeric order isn't reliable (same reasoning as {@code ArrayCodePointSet#floorIndex}'s own
+   * comparisons, which never compare raw packed keys either).
    */
   private void sortInPlaceByMin() {
     for (int i = 1; i < size; i++) {
-      long range = ranges[i];
-      int min = packedMin(range);
+      int key = keys[i];
+      int min = ArrayCodePointSet.keyMin(key);
       int j = i - 1;
-      while (j >= 0 && packedMin(ranges[j]) > min) {
-        ranges[j + 1] = ranges[j];
+      while (j >= 0 && ArrayCodePointSet.keyMin(keys[j]) > min) {
+        keys[j + 1] = keys[j];
         j--;
       }
-      ranges[j + 1] = range;
+      keys[j + 1] = key;
     }
   }
 }

@@ -345,21 +345,28 @@ being folded in opportunistically:
       "measure before keeping" guidance a few sections up (a plausible-sounding pre-sizing
       heuristic has already twice measured as a net regression in this project).
 
-**Both items above now have one more caution attached, learned 2026-09-18** (see notes.md's entry
-that session): `CodePointSetBuilder` itself got a one-array (`long[]`, packing `(min,max)` per
-entry) rewrite that session, replacing its earlier two-`int[]` design and measurably improving its
-one real caller (`parseComplexCharacterRanges`'s literal members). But converting three OTHER
-allocation-sampling leaders that looked like ideal `CodePointSetBuilder` candidates (`PatternParser
-#intersect`, `#mergeRun`'s combine branch, `PatternConstruct#mergeEntryPoints`'s main loop) to use
-it -- even the improved one-array version -- measurably REGRESSED allocation back near the original
-baseline, because `CodePointSetBuilder#build` always allocates a second, separately-packed array on
-top of whatever it accumulated into, a fixed cost that only pays for itself when there are enough
-elements to make `ArrayCodePointSet`'s own per-insert sorted-insert-with-shift cost worse in
-comparison. All three of those call sites merge only a handful of ranges per call, so they didn't
-qualify -- and neither would the `Sequence`/`Union` `ArrayList`s' typical small element counts,
-`CodePointSetBuilder`'s own two-allocation shape doesn't obviously help there either. Don't reach
-for `CodePointSetBuilder` as a general "any small MutableCodePointSet accumulation" replacement
-without measuring first.
+**Both items above now have one more caution attached, learned 2026-09-18** (see notes.md's two
+entries that session): `CodePointSetBuilder` went through two further rewrites that session -- one
+array (`long[]`, packing `(min,max)` per entry), then a fully packed single `int[]` matching
+`ArrayCodePointSet`'s own `(min<<11)|count` format exactly -- each measurably improving its one
+real caller (`parseComplexCharacterRanges`'s literal members) a little further. But converting
+three OTHER allocation-sampling leaders that looked like ideal `CodePointSetBuilder` candidates
+(`PatternParser#intersect`, `#mergeRun`'s combine branch, `PatternConstruct#mergeEntryPoints`'s
+main loop) to use it regressed allocation EVERY time this was tried -- three times, against three
+successively-more-optimized versions of the builder, each attempt on the theory that the specific
+array inefficiency just fixed was what had sunk the previous attempt. It wasn't array format at
+all: `CodePointSetBuilder` is itself a heap object, allocated separately from whatever
+`ArrayCodePointSet` its own `#build` eventually hands off -- using a builder at all means paying
+for TWO object allocations (the builder + the final `ArrayCodePointSet`) where mutating an
+`ArrayCodePointSet` directly (the original code at all three sites) pays for exactly ONE. That
+fixed extra-object cost only pays for itself once the array-growth algorithm savings exceed it --
+true for `parseComplexCharacterRanges`'s own real use (often many literal members per bracket
+expression), never true for a handful-of-ranges accumulation. This also rules out
+`CodePointSetBuilder` for the `Sequence`/`Union` `ArrayList` item below it (also typically few
+elements) for the same reason -- not an array-format question there either. Don't reach for
+`CodePointSetBuilder` as a general "any small accumulation" replacement without measuring first,
+and don't re-attempt converting these three specific call sites again without some other change to
+their own shape first (e.g. an accumulation genuinely merging many candidates, not a handful).
 
 - [ ] **`PatternParser#parseComplexCharacterRanges`'s `negate` handling** calls a separate
       `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a bracket

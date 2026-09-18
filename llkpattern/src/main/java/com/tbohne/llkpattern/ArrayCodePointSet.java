@@ -91,7 +91,9 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
     return (min << COUNT_BITS) | count;
   }
 
-  private static int keyMin(int key) {
+  // Package-private (not private) so CodePointSetBuilder.build() can sort/merge its own packed
+  // entries by their real (min, max) extent without duplicating this bit-unpacking logic.
+  static int keyMin(int key) {
     return key >>> COUNT_BITS;
   }
 
@@ -99,7 +101,7 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
     return key & MAX_COUNT;
   }
 
-  private static int keyMax(int key) { // exclusive
+  static int keyMax(int key) { // exclusive
     return keyMin(key) + keyCount(key) + 1;
   }
 

@@ -2425,3 +2425,48 @@ Notes to self about how to work on this project, and other context that doesn't 
   `entryMap` materialization `addCodePointsTo` existed to avoid -- but `addCodePointsTo` was ALSO
   removed in that same refactor, so that objection may no longer hold. Not investigated further this
   session -- a real candidate for a future look.
+
+### `CodePointSetBuilder`: one packed `int[]` array, same format as `ArrayCodePointSet` (2026-09-18, same session)
+
+- Project owner pushed further on the `long[]` fix immediately above: why not match
+  `ArrayCodePointSet`'s own packed `(min<<11)|count` format exactly, for the same memory density
+  (4 bytes/entry) instead of `long[]`'s 8? Implemented it: `#add` now chunks any range wider than
+  `ArrayCodePointSet.MAX_COUNT` into multiple packed entries immediately (mirroring
+  `ArrayCodePointSet#addRange`'s own chunking), appending unsorted, uncoalesced. `#build` sorts
+  in place (comparing each entry's extracted min via a newly package-private
+  `ArrayCodePointSet#keyMin`/`#keyMax`, not raw packed-int order -- `min << 11` can overflow the
+  sign bit as low as code point 0x100000, so raw numeric order isn't reliable, same reasoning as
+  `ArrayCodePointSet#floorIndex`'s own comparisons), then does ONE forward pass: for each maximal
+  run of touching/overlapping entries (by real extent, not their individual pre-chunked
+  boundaries), re-chunks the run's own full span and writes the result back into the SAME array.
+  Proved the write cursor can never outrun the read cursor before implementing (a run built from N
+  input entries can never need more than N output chunks, since each input entry already covers up
+  to `MAX_COUNT+1` code points) -- confirmed safe to compact in place, avoiding the "would need a
+  separate, differently-chunked final array" complexity that ruled this design out when first
+  considered a few entries above. `#build` then hands its own (now-compacted) array straight to
+  `ArrayCodePointSet` -- ONE array total, not one to accumulate into plus a second, separately-
+  packed one -- and nulls its own field reference to it, adding a `built` flag so a second
+  `#add`/`#build` call after that throws loudly instead of silently corrupting an already-returned,
+  supposedly-immutable set (per this project's own error-handling preference: fail loud, not
+  silent).
+- Full test suite green throughout (1498 tests, 0 failures). Desktop JMH: `llkCompile` allocation
+  ~641,000 -> ~637,000-639,000 B/op (reproduced across two runs, a further small win, ~4.5%
+  cumulative vs. the original 667,200 baseline before any of this session's `CodePointSetBuilder`
+  work). Pixel 3a `compileLlk` 5.69 ms/pass this run -- within known device noise of the
+  `long[]` version's 5.60 and 5.51 before that, not read as a further real change on-device.
+- **Re-tried the same three rejected conversions a THIRD time** (`intersect`/`mergeRun`/
+  `mergeEntryPoints`) on top of this now-maximally-compact builder, on the theory that matching
+  `ArrayCodePointSet`'s own array format exactly (not just "fewer arrays") might finally rescue
+  them. It didn't -- allocation came back to 689,496 B/op, WORSE than either prior attempt. This
+  finally pinned down the real, format-independent reason, which no amount of array tuning could
+  ever have fixed: `CodePointSetBuilder` is itself a heap object, allocated SEPARATELY from
+  whatever `ArrayCodePointSet` it eventually hands off in `#build` -- using a builder at all means
+  paying for TWO object allocations (the builder + the final `ArrayCodePointSet`) where mutating an
+  `ArrayCodePointSet` directly (the original code at all three sites) pays for exactly ONE (the
+  same object serves as both accumulator and final result). That fixed extra-object cost only pays
+  for itself once the array-growth algorithm savings exceed it -- true for
+  `parseComplexCharacterRanges`'s own real use (often many literal members per bracket expression),
+  never true for these three call sites (a handful of ranges each). Reverted the three conversions
+  a third and final time; the underlying object-allocation reasoning here should rule out a fourth
+  attempt without some other call site's shape changing first (e.g. an accumulation genuinely
+  merging many candidates, not a handful).

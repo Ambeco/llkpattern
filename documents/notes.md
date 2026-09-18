@@ -2560,3 +2560,26 @@ Notes to self about how to work on this project, and other context that doesn't 
   within this run's own ~11% error bar -- CPU/allocation sampling both show match-time unchanged
   in shape, so not treating this as a real regression). Net: a small real compile-time win, a wash
   on match time -- see README's own benchmark section for the updated tables.
+
+- **`CodePointSetBuilderImpl` given its own starting capacity of 4 (2026-09-18)**: prompted by
+  desktop CPU sampling on the Pixel 3a showing plain constructor `<init>` frames (allocation cost,
+  not field-assignment cost -- ART doesn't inline these away the way desktop HotSpot does)
+  comparable to `System.arraycopy`, which in turn prompted a look at desktop allocation sampling,
+  where `CodePointSetBuilder$Impl.appendKey` (the builder's own array-growth path) was 6.3% of
+  `llkCompile`'s sampled allocation weight -- its `keys` array was inheriting `ArrayCodePointSet`'s
+  own `INITIAL_CAPACITY` (1, tuned for that class's typical single-character case), so the
+  builder's own typical few-range accumulation (its real caller: a bracket expression's literal
+  members) needed one or two `Arrays.copyOf` regrows almost every time. Gave `ArrayCodePointSet` a
+  package-private `(int initialCapacity)` constructor and had the builder (renamed
+  `CodePointSetBuilderImpl`, moved from `CodePointSetBuilder.java` into `ArrayCodePointSet.java`
+  since the two are tightly-coupled implementation details of each other) start at 4 instead.
+  Measured: `appendKey`'s share dropped 6.3% -> 2.9%, and `llkCompile`'s total sampled allocation
+  weight dropped ~1.4% (31.45B -> 31.01B extrapolated bytes); `llkMatch` unaffected (compile-time-only
+  code). Full test suite green throughout. Note this LOOKS like the same "give the builder a
+  bigger starting capacity" idea this file's earlier `CodePointSetBuilder` history (see above) tried
+  and reverted as a regression -- but that attempt was for three OTHER call sites
+  (`PatternParser#intersect`, `#mergeRun`, `PatternConstruct#mergeEntryPoints`) whose real
+  accumulations are typically 1-2 entries, where ANY builder-shaped overhead loses to
+  `ArrayCodePointSet`'s own direct mutation regardless of capacity; this builder's own actual
+  caller (bracket-expression literal members) has a genuinely bigger typical accumulation, so the
+  same idea helps here where it hurt there -- not a contradiction, just a different call site.

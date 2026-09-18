@@ -2287,3 +2287,43 @@ Notes to self about how to work on this project, and other context that doesn't 
   for this item for the two follow-up ideas noted but not tried (longer-pattern corpus, or a
   single-array encoding packing the char offset into the codepoint slot to avoid the second
   array).
+
+### Skipping the always-allocated `ComplexQuantifiedCharacter` wrapper when unquantified (2026-09-18)
+
+- Found via Pixel 3a CPU/allocation sampling: `PatternParser.parseQuantifiable:1313` (the
+  single-`ComplexCharacter`-arg overload) was the #3 allocation site by weight (~6.1%).
+  `parseQuantifiable(ComplexCharacter)` unconditionally allocated a `ComplexQuantifiedCharacter`
+  wrapper around every bracket class/`.`/ escape atom, even when nothing after it was actually a
+  quantifier (`?`/`*`/`+`/`{`) -- the overwhelmingly common case. The plain-literal-character call
+  site already avoided this (it peeks for a quantifier char before ever calling
+  `parseQuantifiable`), but the three call sites going through the `ComplexCharacter` overload
+  didn't.
+- Fix: peek for a quantifier char first (after `skipComments()`, so COMMENTS-mode whitespace
+  between the atom and its quantifier is still honored), and return `construct` itself unwrapped
+  when there isn't one. Confirmed safe by tracing the generic `parseQuantifiable(T)` overload: when
+  none of `?`/`*`/`+`/`{` follow, its body is a complete no-op (the trailing reluctant/possessive
+  check can only see a `?`/`+` there if an earlier branch already consumed a real quantifier
+  first), so skipping straight past it loses no behavior.
+- While making the change, found `PatternParser.parseComplexQuantifiedCharacter()` had zero
+  callers anywhere in the codebase (dead code, presumably left over from an earlier refactor) --
+  deleted it rather than updating its now-mismatched return type.
+- Full test suite stayed green (1498 tests, 0 failures, 561 skipped) -- purely an allocation
+  change, no parsing/matching behavior affected.
+- Desktop JMH: `llkCompile` allocation 667,200 -> ~659,500-662,000 B/op (-0.8% to -1.1%, varied
+  slightly across repeat runs -- see below), timing flat/noise-level (0.2285 -> 0.234-0.254 ms/op,
+  within this corpus's normal run-to-run error bars -- see the codepoint-array-indexing entry above
+  for how noisy short desktop patterns make per-character savings). Pixel 3a: `compileLlk` 5.65 ->
+  5.60 ms/pass, a small but real win in the direction expected, consistent with allocation
+  mattering far more on-device than on desktop for this benchmark (same pattern noted throughout
+  this file's compile-time performance history).
+- Re-ran desktop JMH twice more after noticing Android Studio's power-saver mode was on (project
+  owner had two instances open); each re-run's absolute numbers moved (0.234 -> 0.275 -> 0.254
+  ms/op), including `regexCompile` -- a benchmark this change never touches -- moving by a similar
+  proportion each time (0.096 -> 0.116 -> 0.105 ms/op). Since Android Studio's power-saver setting
+  throttles its own background indexing/tasks rather than the OS CPU power plan (confirmed with the
+  project owner: Windows itself was never in power saver), this is ordinary JMH run-to-run noise
+  from the short warmup/measurement windows this project already uses (1 warmup + 10 measurement
+  iterations @ 1s each), not a real effect of the IDE's power setting. The llk/regex **ratio**
+  stayed stable across all three runs (~2.4x compile, ~0.73-0.78x match), matching this file's
+  existing guidance to track the ratio instead of absolute ms/pass. README's table reflects the
+  final of these three re-runs.

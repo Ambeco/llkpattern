@@ -87,15 +87,15 @@ over time.
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.095 | 0.229 | 2.42x |
-| Pixel 3a | 8.25 | 5.65 | 0.68x |
+| Intel-i7-9750H | 0.105 | 0.254 | 2.43x |
+| Pixel 3a | 7.21 | 5.60 | 0.78x |
 
 **Corpus match time (each pass matches/finds/look_ats 406 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.047 | 0.034 | 0.74x |
-| Pixel 3a | 3.81 | 0.69 | 0.18x |
+| Intel-i7-9750H | 0.049 | 0.038 | 0.78x |
+| Pixel 3a | 3.81 | 0.67 | 0.18x |
 
 llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch, and further after later sessions removed the map-based ambiguity-check allocation (`entryMap`'s `CodePointMap` -> `CodePointSet` migration, then `checkDisjoint`'s allocation-free overlap check) — see notes.md for the compile-time performance history. On the Pixel 3a the two compile times currently land close to each other and vary run-to-run (see notes.md), so don't read that ratio as settled. Match time is faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
 

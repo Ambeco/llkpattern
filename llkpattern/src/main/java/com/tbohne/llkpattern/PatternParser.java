@@ -727,13 +727,6 @@ final class PatternParser {
     return union;
   }
 
-  private ComplexQuantifiedCharacter parseComplexQuantifiedCharacter() {
-    if (peek != '[') {
-      throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
-    }
-    return parseQuantifiable(parseComplexCharacter());
-  }
-
   private ComplexCharacter parseComplexCharacter() {
     if (peek != '[') {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
@@ -1306,10 +1299,24 @@ final class PatternParser {
     }
   }
 
-  private ComplexQuantifiedCharacter parseQuantifiable(ComplexCharacter construct) {
+  private PatternConstruct parseQuantifiable(ComplexCharacter construct) {
     // construct.flags is already set by whoever built it (every ComplexCharacter creation site
     // sets it directly, since it also needs the correct value for the never-quantified case, which
     // never reaches here at all).
+    //
+    // skipComments() first, then peek for an actual quantifier suffix, so the overwhelmingly
+    // common unquantified case (a lone bracket class/"."/ escape with nothing after it) can return
+    // `construct` itself unwrapped instead of always allocating a ComplexQuantifiedCharacter just
+    // to immediately discover there's nothing to quantify -- this was PatternParser's #3
+    // allocation site by CPU-sampling weight (~6% of Pattern.compile's allocations; see notes.md).
+    // Safe to skip the generic parseQuantifiable(T) overload entirely here: when none of
+    // '?'/'*'/'+'/'{' follow, that overload's own body is a no-op (its trailing reluctant/
+    // possessive check can only see a '?'/'+' here if one of those branches already consumed a
+    // real quantifier first).
+    skipComments();
+    if (peek != '?' && peek != '*' && peek != '+' && peek != '{') {
+      return construct;
+    }
     return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, index, construct));
   }
 

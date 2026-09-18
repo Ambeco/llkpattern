@@ -57,19 +57,23 @@ single-character constructs, and a loop's continue/exit nodes carry `entrySet=nu
       wired up (e.g. for a DOTALL-variant `.`), this needs fixing first: give the else-candidate a
       `PassThroughMatcherConstruct` gated on its own explicit entry set at its natural chain
       position, in addition to (not instead of) the ungated node used as the tail fallback.
-- [ ] Re-run the JMH corpus benchmark (see the project's CLAUDE.md "After a performance-affecting
-      change" section) to see whether this actually beats the old fork-chain design (see this
-      file's "Fork-chain dispatch" section below for that baseline) before deciding whether to
-      merge to main. Also update design.md's "Quantifier/loop compilation"/"Opcode set" sections
-      and this file's "Fork-chain dispatch" section below, which both still describe the design
-      this replaced.
+- [x] Benchmarked (2026-09-18): desktop JMH on a quiet machine (no concurrent session/browser) --
+      `llkCompile` 0.243->0.235ms/op (~3% faster), `llkMatch` 0.034->0.036ms/op (~6% slower, within
+      this run's own ~11% error bar; allocation/CPU sampling both show match time unchanged in
+      shape). Pixel 3a -- compile 5.76->5.55ms/pass, match 0.77->0.76ms/pass (both modestly
+      faster). Net: a small real compile-time win, a wash on match time -- see README's benchmark
+      section and notes.md for the full numbers. design.md's "Quantifier/loop compilation"/"Opcode
+      set" sections and this file's "Fork-chain dispatch" section below are now updated to
+      describe the current design.
+- [ ] Decide whether to merge this branch to `main` now that implementation and benchmarking are
+      both done (see the two "Known cost"/"Known gap" items above for the remaining loose ends).
 
 ## Entry-set-conflict-detection-without-allocation experiment (separate branch, not yet created)
 
 Once the flattened-dispatch experiment above is settled, try replacing `PatternConstruct`'s
 current entry-point-map machinery (`entryMap`, `entryElse`, `getEntryPointMap`, `getEntryElse`,
 `ensureEntryPointBuilt`, `claimsEntryElse`, `buildEntryMap`, `needsEntryPointBeforeMatcher`,
-`mergeEntryPoints`, `mergeOneEntryPoint`, `checkDisjoint`, `validateDisjointness`) with two new
+`mergeEntryPoints`, `mergeOneEntryPoint`, `checkDisjoint`) with two new
 methods, `reportEntrySetConflict(CodePointSet, ...)` and `reportEntrySetConflict(int codepoint,
 ...)`, that each `PatternConstruct` with a `CodePointSet` or literal calls on "downstream"
 constructs directly, instead of building and unioning `CodePointSet`s/`List`s up front.
@@ -458,18 +462,25 @@ without a fundamentally different idea, not just another tuning knob on the same
 
 ## Fork-chain dispatch (2026-09-11/12) -- the performance plan
 
+**Superseded 2026-09-18** (branch `flatten-matcher-dispatch`): step 1's `ForkingMatcherConstruct`
+node and `LoopMatcherConstruct`'s own `memberSet`/`exitSet` fields (referenced below) no longer
+exist -- the fork is now folded into every node via an `entrySet`/`failedEntry` pair instead of a
+separate wrapping node. See design.md's "Opcode set" section for the current design and its
+"Alternatives Considered" section for `ForkingMatcherConstruct`'s own pros/cons relative to it.
+Steps 2 and 3 below (the `CodePointMap<Boolean>` -> `CodePointSet` migration, and
+`UnionCodePointSet`) are unaffected by this and remain accurate.
+
 Step 1 (2026-09-11): `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
 `CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) is gone, replaced by chains of a
 new `ForkingMatcherConstruct` (a plain 2-way fork on set membership) for unions and a quantified
 construct's own entry point, plus a related but separate `LoopMatcherConstruct` for a loop's own
-continue-vs-exit choice -- see design.md's "Quantifier/loop compilation" and "Opcode set" sections,
-and notes.md's 2026-09-11 entry for the case-insensitive priority bug this surfaced and fixed along
-the way.
+continue-vs-exit choice -- see notes.md's 2026-09-11 entry for the case-insensitive priority bug
+this surfaced and fixed along the way.
 
 Step 2 (2026-09-12): every `CodePointMap<Boolean>` production use (`PatternConstruct.entryMap`,
-`ComplexCharacter.ranges`, `ForkingMatcherConstruct.memberSet`/`LoopMatcherConstruct.memberSet`/
-`exitSet`, `WordBoundaryConstruct`'s word-set classification, every `NamedCharClass`/
-`UnicodePredicates` constant) is now a plain `CodePointSet`/`ArrayCodePointSet` -- no `V[] values`
+`ComplexCharacter.ranges`, a dispatch node's own membership set(s), `WordBoundaryConstruct`'s
+word-set classification, every `NamedCharClass`/`UnicodePredicates` constant) is now a plain
+`CodePointSet`/`ArrayCodePointSet` -- no `V[] values`
 array, and `complement()` is a flag flip (`invert`) instead of a real rebuild. `UnicodeAnalyzer`
 (the `unicodeanalyzer` module's generator) updated to emit `CodePointSet` fields directly;
 `UnicodePredicates.java` regenerated. `ArrayCodePointMap<V>`/`CodePointMap<V>` remain in use only

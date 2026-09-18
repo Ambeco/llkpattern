@@ -10,7 +10,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
 abstract class PatternConstruct {
 	final int startIndex;
@@ -27,6 +26,16 @@ abstract class PatternConstruct {
 	int flags = 0;
 
 	@MonotonicNonNull MatcherConstruct matcher;
+
+	// Set by a chain builder (see #buildFlattenedChain, QuantifiableConstruct#buildLoopMatcher) just
+	// before calling compile() on this construct as one candidate among several -- read by
+	// MatcherConstruct's owner-based constructor to become that node's own entrySet/failedEntry
+	// (see MatcherConstruct's "Flattened dispatch" class doc). Null for the overwhelming majority
+	// of constructs, which are never a chain candidate at all. Since MatcherConstruct construction
+	// happens exactly once per construct (compile() memoizes on `matcher != null`), these must be
+	// set BEFORE the first compile() call, never after.
+	@Nullable CodePointSet dispatchEntrySet;
+	@Nullable MatcherConstruct dispatchFailedEntry;
 
 	// The construct that comes after this one -- i.e. what compile() was last called with.
 	// Recorded so that, once this construct appears as a value in some ancestor's entryMap, that
@@ -245,15 +254,14 @@ abstract class PatternConstruct {
 
 	/**
 	 * {@code candidates} with {@code extra} (or nothing, if {@code null}) logically appended as one
-	 * more element, addressed by plain index arithmetic -- no wrapper object, no copy. {@code
-	 * validateDisjointness}/{@code checkDisjoint}/{@code buildForkChain}/{@code
-	 * buildForkChainInternal} all sometimes need a loop's body list plus its own {@code next} as
-	 * one candidate list (via their own {@code extra} parameter); this is how each reads "index i
-	 * of that logical list" without ever materializing it -- a real copy would have been an {@code
-	 * arraycopy} this project's own on-device CPU sampling (Pixel 3a) flagged as real cost. {@link
+	 * more element, addressed by plain index arithmetic -- no wrapper object, no copy. {@link
+	 * #checkDisjoint} sometimes needs a loop's body list plus its own {@code next} as one candidate
+	 * list (via its own {@code extra} parameter); this is how it reads "index i of that logical
+	 * list" without ever materializing it -- a real copy would have been an {@code arraycopy} this
+	 * project's own on-device CPU sampling (Pixel 3a) flagged as real cost. {@link
 	 * #mergeEntryPoints}'s own {@code extra} parameter doesn't go through this: it needs to treat
 	 * {@code extra} specially anyway (the {@code candidates.isEmpty()} fast path), and never
-	 * indexes into the combined list positionally the way these four do.
+	 * indexes into the combined list positionally the way this does.
 	 */
 	private static PatternConstruct candidateAt(
 			List<PatternConstruct> candidates, @Nullable PatternConstruct extra, int index) {
@@ -272,17 +280,17 @@ abstract class PatternConstruct {
 	 * ({@code candidates} = a union's branches, by way of {@code QuantifiedUnion.buildEntryMap}) and
 	 * for a quantified construct's own entry point ({@code candidates} = a loop's body parts, plus
 	 * its own {@code next} when the loop can match zero times, by way of {@code
-	 * QuantifiableConstruct.buildLoopEntryMap}). See {@link #validateDisjointness} for the sibling
-	 * case that needs the same ambiguity check but not the merged ranges themselves.
+	 * QuantifiableConstruct.buildLoopEntryMap}). See {@link #checkDisjoint} for the sibling case
+	 * that needs the same ambiguity check but not the merged ranges themselves.
 	 */
 	/**
 	 * Unions {@code candidates}' own entry points and picks out whichever one (at most one is
 	 * allowed to) claims the any-other-character catch-all -- no ambiguity/overlap check here any
-	 * more: that's now {@link #checkDisjoint}'s job, run later against real {@code
-	 * MatcherConstruct}s as {@link #buildForkChainInternal} builds its chain (see that method's own
-	 * doc), not here against {@code PatternConstruct}s while just computing this construct's own
-	 * entry point. This is what lets this method union plain {@code CodePointSet}s directly instead
-	 * of tagging every candidate's ranges into a {@code CodePointMap<PatternConstruct>} purely to
+	 * more: that's now {@link #checkDisjoint}'s job, run separately against entry points alone
+	 * (see {@link #buildFlattenedChain}/{@code QuantifiableConstruct#buildLoopMatcher}, its own
+	 * call sites), not here against {@code PatternConstruct}s while just computing this
+	 * construct's own entry point. This is what lets this method union plain {@code CodePointSet}s
+	 * directly instead of tagging every candidate's ranges into a {@code CodePointMap<PatternConstruct>} purely to
 	 * find a conflicting pair -- see {@link #checkDisjoint}'s own doc for why that map is gone.
 	 */
 	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
@@ -368,10 +376,10 @@ abstract class PatternConstruct {
 	 * when more than one pair conflicts.
 	 *
 	 * <p>Deliberately never checks a candidate against anything outside {@code candidates} itself --
-	 * in particular, {@link #buildForkChainInternal}'s own {@code elseTarget} (this chain's
-	 * catch-all fallback, already resolved to a single {@code MatcherConstruct} by the time this
-	 * runs, by construction of {@link #mergeEntryPoints}'s own {@code elseCandidate} tracking above)
-	 * is passed separately and is never one of {@code candidates} -- it's expected to overlap every
+	 * in particular, {@link #buildFlattenedChain}'s own {@code elseTarget} (this chain's catch-all
+	 * fallback, already resolved to a single {@code MatcherConstruct} by the time this runs, by
+	 * construction of {@link #mergeEntryPoints}'s own {@code elseCandidate} tracking above) is
+	 * passed separately and is never one of {@code candidates} -- it's expected to overlap every
 	 * other candidate (that's the whole point of a fallback bucket), so checking it here would
 	 * reject every pattern that has one.
 	 */
@@ -419,146 +427,77 @@ abstract class PatternConstruct {
 	}
 
 	/**
-	 * Compiles each of {@code candidates} against {@code compileTarget} (harmless/idempotent if a
-	 * candidate is already compiled -- e.g. {@code compileTarget} itself, when it's included as one
-	 * of the candidates), then runs the same {@link #checkDisjoint} ambiguity check {@link
-	 * #buildForkChainInternal} does -- needed here too (unlike a construct's own {@code
-	 * buildEntryMap}, which no longer checks at all -- see {@link #mergeEntryPoints}'s own doc)
-	 * because this validates a runtime dispatch decision (a loop's continue-vs-exit choice) that a
-	 * real fork chain is never actually built over: {@code candidates} here is a loop's body PLUS
-	 * its own {@code next} (see {@code QuantifiableConstruct.buildLoopMatcher}'s own doc), but the
-	 * fork chain actually built for the loop's "continue" dispatch only ever walks the body, not
-	 * {@code next} -- so nothing else would ever check body-vs-{@code next} disjointness.
+	 * Union of every one of {@code candidates}' own (unquantified) entry points, plus {@code extra}
+	 * if given -- used only to correct CASE_INSENSITIVE fold priority (see {@code
+	 * MatcherConstruct#effectiveEntrySet}'s own doc): a candidate's folded claim on a code point
+	 * must not pre-empt whichever candidate exactly owns it. Returns {@code null} (and is never
+	 * even called) when the chain isn't CASE_INSENSITIVE, since {@code effectiveEntrySet} is then a
+	 * no-op anyway -- see each call site.
 	 */
-	static void validateDisjointness(
-			String pattern, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
-			PatternConstruct compileTarget, String candidateNounPlural) {
+	private static CodePointSet unionEntryPointsForFoldExclusion(
+			List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
+		MutableCodePointSet union = new ArrayCodePointSet();
 		for (PatternConstruct candidate : candidates) {
-			candidate.compile(compileTarget);
+			union.addAll(candidate.getEntryPointMap());
 		}
 		if (extra != null) {
-			extra.compile(compileTarget);
+			union.addAll(extra.getEntryPointMap());
 		}
-		checkDisjoint(pattern, candidates, extra, candidateNounPlural);
+		return union;
 	}
 
 	/**
-	 * Builds a chain of {@link MatcherConstruct.ForkingMatcherConstruct} nodes over {@code
-	 * candidates} (never empty -- this is only ever called where there's at least one real
-	 * candidate to dispatch among), tried in list order, each fork's membership test being that
-	 * candidate's own already-computed {@link #getEntryPointMap()}. See {@code
-	 * ForkingMatcherConstruct}'s own doc for the shape this builds and why the chain's last
-	 * candidate never gets its own wrapping fork -- with a real {@code elseTarget}, that candidate
-	 * becomes the second-to-last fork's {@code otherwise} directly; without one, the last
-	 * candidate's own compiled matcher is the unconditional final link, since (not claiming a
-	 * catch-all) it already re-verifies membership as its own first action.
+	 * Builds a flattened dispatch chain over {@code candidates} (never empty), tried in list order
+	 * -- see {@code MatcherConstruct}'s own "Flattened dispatch" class doc for the shape this
+	 * builds: each candidate's own compiled {@code MatcherConstruct} becomes a fork itself, via
+	 * {@code dispatchEntrySet}/{@code dispatchFailedEntry} (set here, immediately before that
+	 * candidate is compiled -- compiling memoizes on {@link #matcher}, so these MUST be set before
+	 * a candidate's first {@link #compile}), rather than a separate {@code
+	 * ForkingMatcherConstruct} node wrapping it. Compiled tail-to-front, so each candidate's
+	 * {@code dispatchFailedEntry} can point at the next one's already-resolved matcher.
 	 *
-	 * <p>Ambiguity between candidates IS checked here now (via {@link #checkDisjoint}, back when
-	 * {@link #buildForkChainInternal} fetches each candidate's own entry point to build its fork --
-	 * see that method's own doc): each candidate's entry set must not intersect any
-	 * higher-priority (earlier) candidate's, except the chain's own {@code elseTarget} fallback
-	 * (never one of {@code candidates} itself), which is expected to overlap everything.
+	 * <p>Ambiguity between candidates is checked exactly as before (via {@link #checkDisjoint}, on
+	 * entry points alone, no compiling) -- this experiment changes how the matcher graph is built,
+	 * not whether an ambiguous pattern is still rejected (that machinery is a separate, later
+	 * experiment -- see remaining_work.md's "Entry-set-conflict-detection-without-allocation"
+	 * section).
 	 *
-	 * <p>When {@code owner} is non-null, the chain's head self-registers onto it (as an ordinary
-	 * construct's own matcher) -- including the degenerate case of a single candidate with no
-	 * catch-all, where "the chain" is just that one candidate's own matcher, aliased in directly
-	 * with no fork node at all.
+	 * <p>{@code elseTarget} is this chain's final fallback, or {@code null} for none, in which case
+	 * the last candidate is left entirely ungated (no {@code dispatchEntrySet}/{@code
+	 * dispatchFailedEntry} at all) -- its own compiled matcher already re-verifies membership
+	 * (folded or not) as its own first action, same reasoning the old fork-chain design relied on.
+	 *
+	 * <p>When {@code owner} is non-null, the chain's head becomes {@code owner}'s own matcher (via
+	 * {@link MatcherConstruct#aliasOrPassThrough}, so {@code owner}'s own dispatch fields --  set
+	 * if {@code owner} is itself a candidate in some OUTER chain -- aren't silently dropped).
 	 */
-	static MatcherConstruct buildForkChain(
+	static MatcherConstruct buildFlattenedChain(
 			@Nullable PatternConstruct owner,
 			int flags,
 			String pattern,
 			List<PatternConstruct> candidates,
 			String candidateNounPlural,
-			Function<PatternConstruct, MatcherConstruct> targetResolver,
+			PatternConstruct compileTarget,
 			@Nullable MatcherConstruct elseTarget) {
-		return buildForkChain(owner, flags, pattern, candidates, null, candidateNounPlural, targetResolver, elseTarget);
-	}
-
-	/** Same as {@link #buildForkChain(PatternConstruct, int, String, List, String, Function,
-	 *  MatcherConstruct)}, plus one more candidate ({@code extra}, or {@code null} for none) --
-	 *  see {@link #mergeEntryPoints(String, List, PatternConstruct, String)}'s own doc for the
-	 *  shared reasoning (this is {@code QuantifiableConstruct.buildLoopMatcher}'s own entry-chain
-	 *  call, which needs its own {@code next} included exactly when {@code min == 0}). */
-	static MatcherConstruct buildForkChain(
-			@Nullable PatternConstruct owner,
-			int flags,
-			String pattern,
-			List<PatternConstruct> candidates,
-			@Nullable PatternConstruct extra,
-			String candidateNounPlural,
-			Function<PatternConstruct, MatcherConstruct> targetResolver,
-			@Nullable MatcherConstruct elseTarget) {
-		if (candidateCount(candidates, extra) == 1 && elseTarget == null) {
-			// Nothing to disambiguate between -- see this method's own doc for why a lone candidate
-			// with no catch-all needs no fork node, CASE_INSENSITIVE or not: its own compiled matcher
-			// already re-verifies membership (folded or not) as its first action.
-			MatcherConstruct target = targetResolver.apply(candidateAt(candidates, extra, 0));
-			if (owner != null) {
-				owner.matcher = target;
-			}
-			return target;
+		checkDisjoint(pattern, candidates, null, candidateNounPlural);
+		CodePointSet allExact = (flags & Ll1Pattern.CASE_INSENSITIVE) != 0
+				? unionEntryPointsForFoldExclusion(candidates, null)
+				: null;
+		int count = candidates.size();
+		MatcherConstruct tail = elseTarget;
+		for (int i = count - 1; i >= 0; i--) {
+			PatternConstruct candidate = candidates.get(i);
+			boolean lastUngated = (i == count - 1 && elseTarget == null);
+			candidate.dispatchEntrySet = lastUngated
+					? null
+					: MatcherConstruct.effectiveEntrySet(candidate.getEntryPointMap(), allExact, flags);
+			candidate.dispatchFailedEntry = lastUngated ? null : tail;
+			tail = candidate.compile(compileTarget);
 		}
-		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-			return buildForkChainInternal(owner, flags, pattern, candidates, extra, candidateNounPlural, targetResolver, elseTarget);
-		}
-		// Under CASE_INSENSITIVE, exact (unfolded) membership on ANY candidate must win over a
-		// folded match on an earlier one in the chain -- e.g. `(?i:[a-z]*)X` against "ABCX": the
-		// trailing literal `X` (an entry candidate here, since min == 0) is an exact match for the
-		// input `X`, but `[a-z]`'s own set would ALSO fold-match it (`X` folds to `x`, which IS in
-		// `[a-z]`) if folding were tried candidate-by-candidate in list order instead of only after
-		// every candidate's exact claim has already failed. Mirrors the old merged-dispatch-table
-		// design's single flat lookup, which checked every candidate's real (unfolded) keys before
-		// ever trying a folded retry -- see LoopMatcherConstruct's own doc for the same fix applied
-		// to a loop's continue-vs-exit decision specifically. Built as two chained passes over the
-		// same candidates: an exact-only chain (CASE_INSENSITIVE stripped, so each fork's own
-		// containsFolded call never folds) falling through, only once every candidate's exact claim
-		// has failed, to a fold-only chain (real flags, so folding applies) which itself falls
-		// through to the real (possibly absent) fallback. (This means checkDisjoint below runs twice
-		// -- once per buildForkChainInternal call -- but that's compile-time-error-path-only work,
-		// not worth special-casing away.)
-		MatcherConstruct foldFallback = buildForkChainInternal(null, flags, pattern, candidates, extra, candidateNounPlural, targetResolver, elseTarget);
-		return buildForkChainInternal(owner, flags & ~Ll1Pattern.CASE_INSENSITIVE, pattern, candidates, extra, candidateNounPlural, targetResolver, foldFallback);
-	}
-
-	/** {@code candidateCount(candidates, extra) >= 2}, guaranteed by {@link #buildForkChain}'s own
-	 *  singleton short-circuit. */
-	private static MatcherConstruct buildForkChainInternal(
-			@Nullable PatternConstruct owner,
-			int flags,
-			String pattern,
-			List<PatternConstruct> candidates,
-			@Nullable PatternConstruct extra,
-			String candidateNounPlural,
-			Function<PatternConstruct, MatcherConstruct> targetResolver,
-			@Nullable MatcherConstruct elseTarget) {
-		// Fetch each candidate's own entryCodePointSet and make sure it doesn't intersect any
-		// higher-priority (earlier) candidate's -- see checkDisjoint's own doc for why this no
-		// longer needs a CodePointMap allocation. The chain itself is then built back to front,
-		// below.
-		checkDisjoint(pattern, candidates, extra, candidateNounPlural);
-		int count = candidateCount(candidates, extra);
-		int lastForkIndex; // last candidate index that still gets its own wrapping fork.
-		MatcherConstruct chain;
-		if (elseTarget != null) {
-			chain = elseTarget;
-			lastForkIndex = count - 1;
-		} else {
-			// No catch-all -- the last candidate is the unconditional final link (see this method's
-			// class-level doc for why that's safe): dispatch straight into its own compiled matcher,
-			// no fork wrapping it.
-			chain = targetResolver.apply(candidateAt(candidates, extra, count - 1));
-			lastForkIndex = count - 2;
-		}
-		for (int i = lastForkIndex; i >= 1; i--) {
-			PatternConstruct candidate = candidateAt(candidates, extra, i);
-			chain = new ForkingMatcherConstruct(flags, candidate.getEntryPointMap(), targetResolver.apply(candidate), chain);
-		}
-		PatternConstruct head = candidateAt(candidates, extra, 0);
 		if (owner != null) {
-			return new ForkingMatcherConstruct(owner, head.getEntryPointMap(), targetResolver.apply(head), chain);
+			MatcherConstruct.aliasOrPassThrough(owner, tail);
 		}
-		return new ForkingMatcherConstruct(flags, head.getEntryPointMap(), targetResolver.apply(head), chain);
+		return tail;
 	}
 
 	static abstract class QuantifiableConstruct extends PatternConstruct {
@@ -566,14 +505,6 @@ abstract class PatternConstruct {
 		int min = 1;
 		int max = 1;
 		int quantifiableIndex = -1;
-
-		// The real (non-identity-rewritten) catch-all candidate this construct's OWN entry chain
-		// falls back to in buildLoopMatcher() -- computed once here in buildLoopEntryMap() and reused
-		// there, same reasoning as QuantifiedUnion.rawEntryElse: the inherited entryElse field is
-		// re-keyed onto `this` (see entryMap's own doc), so the actual candidate identity
-		// buildLoopMatcher() needs to resolve a real MatcherConstruct target from would otherwise be
-		// lost.
-		@Nullable PatternConstruct rawEntryElse;
 
 		QuantifiableConstruct(String pattern, int startIndex) {
 			super(startIndex);
@@ -608,78 +539,70 @@ abstract class PatternConstruct {
 			// parameter instead of first being copied into a new ArrayList<>(body) just to append it
 			// -- see that overload's own doc.
 			MergedEntries result = mergeEntryPoints(pattern, body, min == 0 ? next : null, "loop part");
-			rawEntryElse = result.entryElse();
 			entryMap = result.ranges; // already Boolean-valued -- see mergeEntryPoints' own doc.
-			entryElse = rawEntryElse != null ? this : null;
+			entryElse = result.entryElse() != null ? this : null;
 		}
 
 		/**
-		 * Builds the actual loop matcher graph -- see design.md's opcode section. Two distinct nodes
-		 * are involved, built in this order:
+		 * Builds the actual loop matcher graph -- see design.md's "Quantifier/loop compilation"
+		 * section (flattened-dispatch experiment, 2026-09-18: see {@code MatcherConstruct}'s own
+		 * class doc for the overall design this replaced). Three nodes are involved:
 		 *
 		 * <ol>
-		 *   <li>A {@link LoopBackMarker}, self-registering the {@link
-		 *       MatcherConstruct.LoopMatcherConstruct} onto itself FIRST, before {@code body}
-		 *       compiles against it -- exactly the self-registration-first trick {@code
-		 *       MatcherConstruct}'s class doc describes, just via this marker instead of {@code this}:
-		 *       every ordinary loop body's own compiled matcher needs to see a non-null "loop back
-		 *       here" target already in place, since it loops back to whatever {@code body} was
-		 *       compiled against, not to {@code this} directly. {@code LoopMatcherConstruct}'s {@code
-		 *       memberSet} is {@code FIRST(body)} (known immediately -- computed during {@link
-		 *       #buildLoopEntryMap}, well before matcher compilation -- see design.md's "Entry-point
-		 *       computation vs. matcher compilation" section) and its {@code otherwise} is {@code
-		 *       next.matcher} (also already known, by tail-to-front compile order); only its
-		 *       "continue" successor (the body-part-selection chain built below) isn't resolvable
-		 *       yet, hence the separate {@link LoopContinueMarker} indirection (see that class's doc,
-		 *       and {@code LoopMatcherConstruct}'s own, for why this needs no mutable field at all).
-		 *   <li>{@code this}'s own entry point -- a {@link MatcherConstruct.ForkingMatcherConstruct}
-		 *       chain self-registered onto {@code this}, built only once every body candidate is
-		 *       compiled (so their real {@code MatcherConstruct}s are resolvable) by walking body's
-		 *       own candidates (plus {@code next} itself when {@code min == 0}, per {@code
-		 *       rawEntryElse}, computed earlier by {@link #buildLoopEntryMap}). This is a DIFFERENT
-		 *       node from the marker's {@code LoopMatcherConstruct} above -- the very first attempt
-		 *       never needs a bound check, only every re-check after a completed iteration does.
+		 *   <li>The body's own dispatch chain (one node per {@code body} element, built via the same
+		 *       {@code dispatchEntrySet}/{@code dispatchFailedEntry} mechanism {@link
+		 *       #buildFlattenedChain} uses for a plain union -- see {@code MatcherConstruct}'s own
+		 *       "Flattened dispatch" doc) -- its head IS both this construct's own externally-visible
+		 *       entry point AND the loop-back target for a completed iteration, with no separate
+		 *       chain needed for either any more: a body part's own {@code failedEntry} naturally
+		 *       falls through to {@code exitNode} on a genuine non-match, at ANY position -- the very
+		 *       first attempt (where a {@code min == 0} loop skipping itself entirely is just
+		 *       {@code exitNode} immediately allowing that, since its own {@code min} check doesn't
+		 *       care how it was reached) exactly as much as a later re-check.
+		 *   <li>{@link MatcherConstruct.LoopMatcherConstruct}, reached only as a completed body
+		 *       iteration's own continuation (via a {@link LoopBackMarker} self-registered onto it
+		 *       BEFORE the body compiles against it, breaking the construction-time cycle every loop
+		 *       body creates -- the same self-registration-first trick {@code MatcherConstruct}'s
+		 *       class doc describes). Its whole job is now just enforcing {@code max}: dispatch back
+		 *       to the body's own head (another attempt) if under it, or straight to {@code exitNode}
+		 *       (forcing a stop) if not -- no code-point membership test of its own at all.
+		 *   <li>{@link MatcherConstruct.LoopMatcherExit}, this loop's "stop iterating" node --
+		 *       enforces {@code min} and, on success, dispatches to {@code next}'s own matcher.
 		 * </ol>
 		 *
 		 * <p>When {@code captureConstructIndex != -1} (the construct is <i>also</i> a capturing group,
 		 * e.g. {@code (a)*}), the capture must re-fire every iteration -- last iteration wins, per real
 		 * regex semantics -- and must fire identically whether this is the very first attempt or a
-		 * re-check. Since {@link MatcherConstruct.BeginCaptureMatcherConstruct} is a pure
-		 * single-successor opcode (it can't itself branch among body parts), that's implemented by
-		 * composing existing opcodes instead of adding a new one: both the entry chain and {@code
-		 * LoopMatcherConstruct}'s "continue" successor route to the SAME shared {@code
-		 * BeginCaptureMatcherConstruct}, whose one successor is {@code bodyChain} -- an internal
-		 * (non-self-registering) {@link MatcherConstruct.ForkingMatcherConstruct} chain doing the
-		 * actual per-character routing among body parts. Each body part is compiled against a {@link
-		 * CaptureEndMarker} standing in for the marker above, so finishing one iteration records the
-		 * captured substring (via {@code EndCaptureMatcherConstruct}) before looping back, rather than
-		 * looping back directly.
+		 * re-check; since both now share the exact same body-chain head node, that's just a single
+		 * shared {@link MatcherConstruct.BeginCaptureMatcherConstruct} wrapping it. Each body part is
+		 * compiled against a {@link CaptureEndMarker} standing in for the {@link LoopBackMarker}
+		 * above, so finishing one iteration records the captured substring before looping back rather
+		 * than looping back directly.
 		 */
 		void buildLoopMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
 			boolean capturing = captureConstructIndex != -1;
 
+			// Ambiguity check only, on entry points alone -- no compiling. Unlike the old
+			// ForkingMatcherConstruct-based design, dispatch fields must be set on each body part
+			// BEFORE it's ever compiled (compile() memoizes on first call), so this can't reuse a
+			// helper that compiles as a side effect. `next` is included as `extra` so this also
+			// validates that no body part is ambiguous with `next` itself, needed on every re-check,
+			// not just the min==0 entry case buildLoopEntryMap already validated.
+			checkDisjoint(pattern, body, next, "loop part");
+
 			LoopBackMarker marker = new LoopBackMarker(startIndex, this);
 			marker.flags = flags;
-			// Whether `body` ITSELF (not `next`) claims a catchall -- e.g. a loop body that's a lone
-			// "." -- decides whether an unclaimed character should default to "exit" (see below); a
-			// single-element body (the overwhelmingly common case: any `x+`/`x*`/`x{n,m}` on one
-			// character/class compiles with `body = List.of(delegate)`) skips `mergeEntryPoints`'s
-			// whole `CodePointMapBuilder`-sort-coalesce-conflict-check pipeline entirely, same as
-			// before: there's nothing to conflict with when there's only one candidate.
-			MergedEntries bodyOnlyResult = body.size() == 1
-					? new MergedEntries(new ArrayCodePointSet(), body.get(0).claimsEntryElse() ? body.get(0) : null)
-					: mergeEntryPoints(pattern, body, "loop part");
+			LoopMatcherExit exitNode = new LoopMatcherExit(flags, quantifiableIndex, min, next.matcher);
+
 			// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
 			// `loopNode` itself; this one's `.matcher` is where LoopMatcherConstruct's "continue"
-			// successor (the body-part-selection chain, not resolvable until after the body compiles)
-			// ends up, resolved via ordinary self-registration/direct assignment further down, exactly
-			// like every other forward reference in this file -- no bespoke mutable field needed on
+			// successor (the body chain's own head, not resolvable until after the body compiles)
+			// ends up, resolved via ordinary direct assignment further down, exactly like every other
+			// forward reference in this file -- no bespoke mutable field needed on
 			// LoopMatcherConstruct itself (see its own class doc).
 			LoopContinueMarker continueMarker = new LoopContinueMarker(startIndex);
 			continueMarker.flags = flags;
-			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(
-					marker, quantifiableIndex, min, max, bodyMemberSet(body, bodyOnlyResult), continueMarker,
-					next.matcher, next.getEntryPointMap());
+			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(marker, quantifiableIndex, max, continueMarker, exitNode);
 
 			PatternConstruct bodyCompileTarget = marker;
 			if (capturing) {
@@ -688,81 +611,75 @@ abstract class PatternConstruct {
 				bodyCompileTarget.compile(marker);
 			}
 
-			// `next` is included purely so this also validates that no body part is ambiguous with
-			// `next` itself (needed every re-check, not just the min==0 entry case buildLoopEntryMap
-			// already validated) -- its own compiled matcher (already built, tail-to-front) is
-			// otherwise untouched here now that the loop-back node no longer builds a combined
-			// dispatch table from this merge's result.
-			validateDisjointness(pattern, body, next, bodyCompileTarget, "loop part");
+			// Fold-priority correction (see MatcherConstruct#effectiveEntrySet's own doc) needs every
+			// OTHER candidate's own exact entry set, `next` included -- an exact match immediately
+			// after the loop must always beat a folded match inside it (the historical
+			// `(?i:[a-z]+)X` bug this class used to guard against directly -- see notes.md). Only
+			// actually built under CASE_INSENSITIVE; effectiveEntrySet is a no-op otherwise.
+			CodePointSet allExact = (flags & Ll1Pattern.CASE_INSENSITIVE) != 0
+					? unionEntryPointsForFoldExclusion(body, next)
+					: null;
 
-			// The body-part-selection chain, shared between LoopMatcherConstruct's "continue" successor
-			// (directly, when not capturing) and the shared BeginCaptureMatcherConstruct's own successor
-			// (when capturing) -- see the class doc above.
-			MatcherConstruct bodyChain = buildForkChain(
-					null, flags, pattern, body, "loop part", part -> part.matcher,
-					bodyOnlyResult.elseCandidate != null ? bodyOnlyResult.elseCandidate.matcher : null);
-			// When capturing, every continuing attempt -- whichever body branch ends up matching --
-			// must begin the capture exactly once before that branch's own matcher runs. Shared by both
-			// LoopMatcherConstruct's own "continue" successor (just below) and this construct's own
-			// entry chain (further down), so the very first attempt captures exactly like every
-			// re-check does.
-			@Nullable MatcherConstruct continueTarget =
-					capturing ? new BeginCaptureMatcherConstruct(captureConstructIndex, flags, bodyChain) : null;
-			continueMarker.matcher = capturing ? continueTarget : bodyChain;
-
-			// This construct's own externally-visible entry point, built AFTER every body candidate is
-			// compiled above (so their .matcher fields are resolvable) -- walking `body`'s own
-			// candidates, plus `next` itself (via buildForkChain's own `extra` parameter) when
-			// min == 0, and falling back per `rawEntryElse` (computed earlier by
-			// buildLoopEntryMap()). Reuses the same shared `continueTarget` computed above, so a
-			// capturing loop's very first attempt captures exactly like every re-check does.
-			@Nullable PatternConstruct entryExtra = min == 0 ? next : null;
-			MatcherConstruct entryElseValue;
-			if (min == 0 && bodyOnlyResult.elseCandidate == null) {
-				// Same reasoning as LoopMatcherConstruct's own "exit is the default" fallback: a
-				// character neither `body` nor `next` explicitly claims still has to go SOMEWHERE, since
-				// a real code point is never actually present as a -1 ("no more input") entry in
-				// anyone's entry map -- an absent/optional body (min == 0) always has "skip it entirely"
-				// as a structurally valid first move, so default to that rather than rejecting outright.
-				// Only valid when min == 0: otherwise `next` isn't even a legitimate entry candidate.
-				entryElseValue = next.matcher;
-			} else if (rawEntryElse != null) {
-				entryElseValue = resolveTarget(rawEntryElse, next, continueTarget);
-			} else {
-				entryElseValue = null;
+			// Body parts chain to each other tail-to-front, same mechanism as buildFlattenedChain --
+			// but unlike a plain union's own final candidate, a loop body part can never be left
+			// ungated: "doesn't match" always has somewhere real to go (exitNode, which itself
+			// enforces `min` and may allow an immediate min==0 skip), never just "the whole match
+			// fails" the way a truly catch-all-less union's last branch can rely on.
+			//
+			// When capturing, each part's OWN entry gate must be checked BEFORE the capture's start
+			// index is recorded -- not after, the way a single shared BeginCaptureMatcherConstruct
+			// wrapping the whole body chain's head would do it (tried first, reverted: it recorded a
+			// capture start even on a min==0 loop's very first, ultimately-zero-iteration attempt,
+			// since the shared wrapper ran unconditionally before the body's own gate ever got a say
+			// -- see notes.md's entry on this). So each part gets its own throwaway {@link
+			// LoopBodyPartGateMarker} carrying the gate instead, with the capture wrapped INSIDE it
+			// (compiled ungated, since gating already happened by the time it runs).
+			MatcherConstruct bodyTail = exitNode;
+			for (int i = body.size() - 1; i >= 0; i--) {
+				PatternConstruct part = body.get(i);
+				CodePointSet partEntrySet = MatcherConstruct.effectiveEntrySet(part.getEntryPointMap(), allExact, flags);
+				if (capturing) {
+					MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
+					LoopBodyPartGateMarker gateMarker = new LoopBodyPartGateMarker(startIndex);
+					gateMarker.flags = flags;
+					gateMarker.dispatchEntrySet = partEntrySet;
+					gateMarker.dispatchFailedEntry = bodyTail;
+					bodyTail = new BeginCaptureMatcherConstruct(gateMarker, captureConstructIndex, rawPartMatcher);
+				} else {
+					part.dispatchEntrySet = partEntrySet;
+					part.dispatchFailedEntry = bodyTail;
+					bodyTail = part.compile(bodyCompileTarget);
+				}
 			}
-			buildForkChain(this, flags, pattern, body, entryExtra, "loop part", candidate -> resolveTarget(candidate, next, continueTarget), entryElseValue);
+			MatcherConstruct bodyHead = bodyTail;
+			continueMarker.matcher = bodyHead;
+
+			// This construct's own externally-visible entry point is exactly the same node used for a
+			// loop-back -- see the class doc above for why no separate entry-only chain is needed any
+			// more.
+			MatcherConstruct.aliasOrPassThrough(this, bodyHead);
+		}
+	}
+
+	/**
+	 * A zero-width vehicle for a single capturing loop body part's own entry gating -- see
+	 * {@code QuantifiableConstruct.buildLoopMatcher}'s own doc for why the gate has to live here,
+	 * one level above the {@code BeginCaptureMatcherConstruct} it owns, rather than on the body
+	 * part itself (which is compiled ungated and wrapped INSIDE the capture instead).
+	 */
+	static final class LoopBodyPartGateMarker extends PatternConstruct {
+		LoopBodyPartGateMarker(int startIndex) {
+			super(startIndex);
 		}
 
-		/**
-		 * {@code FIRST(body)} as a plain {@link CodePointSet} -- {@link LoopMatcherConstruct}'s own
-		 * membership test for "does the next code point belong to the loop body at all?" (as opposed
-		 * to {@code next}, i.e. exit). Both cases alias an already-built set with no copy: a
-		 * single-element body aliases that element's own already-cached entry point directly; a
-		 * multi-element body aliases {@code bodyOnlyResult.ranges} (see {@link #mergeEntryPoints}'s
-		 * own doc).
-		 */
-		private static CodePointSet bodyMemberSet(List<PatternConstruct> body, MergedEntries bodyOnlyResult) {
-			if (body.size() == 1) {
-				return body.get(0).getEntryPointMap();
-			}
-			return bodyOnlyResult.ranges;
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			throw new AssertionError("LoopBodyPartGateMarker's entry point is never queried");
 		}
 
-		/**
-		 * The real {@link MatcherConstruct} a merged candidate resolves to, for this construct's own
-		 * entry chain (see {@link #buildLoopMatcher}'s doc): {@code next} itself always means "exit"
-		 * ({@code next.matcher}); any other candidate means "continue" -- which, when {@code
-		 * continueTarget} is non-null (a capturing loop), is always that single shared node regardless
-		 * of which specific body candidate matched, so the capture fires exactly once per iteration no
-		 * matter which branch it turns out to be.
-		 */
-		private static MatcherConstruct resolveTarget(
-				PatternConstruct candidate, PatternConstruct next, @Nullable MatcherConstruct continueTarget) {
-			if (candidate == next) {
-				return next.matcher;
-			}
-			return continueTarget != null ? continueTarget : candidate.matcher;
+		@Override
+		void buildMatcher() {
+			throw new AssertionError("LoopBodyPartGateMarker's own matcher is built directly, not via buildMatcher()");
 		}
 	}
 
@@ -945,7 +862,7 @@ abstract class PatternConstruct {
 			if (constructs.isEmpty()) {
 				// Bare flags-only group -- see buildEntryMap()'s matching case. `next` is guaranteed
 				// compiled by now (tail-to-front compile order), unlike when buildEntryMap() ran.
-				matcher = next.matcher;
+				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
 				return;
 			}
 			if (isCapturing()) {
@@ -954,21 +871,33 @@ abstract class PatternConstruct {
 				// available now (unlike when buildEntryMap() computed compileTarget's entry point).
 				compileTarget.compile(next);
 			}
-			for (PatternConstruct part : constructs) {
-				part.compile(compileTarget);
-			}
-			// Uses `constructs` (each branch's own already-compiled matcher) and rawEntryElse, not the
+			// Uses rawEntryElse (the real, non-identity-rewritten candidate), not the
 			// (rekeyed-to-`this`) entryMap/entryElse fields -- see rawEntryElse's doc: for the capturing
-			// case, `this.matcher` isn't set yet at this point; for the non-capturing case, this fork
+			// case, `this.matcher` isn't set yet at this point; for the non-capturing case, the flattened
 			// chain's head node itself becomes `this.matcher`, so resolving branches through the
 			// rekeyed-to-`this` entryMap would resolve every entry back to this very node (an infinite
-			// self-dispatch loop) instead of to the actual branch matchers.
-			MatcherConstruct elseTarget = rawEntryElse != null ? rawEntryElse.matcher : null;
+			// self-dispatch loop) instead of to the actual branch matchers. Compiled here, deliberately
+			// with no dispatch gating of its own (dispatchEntrySet/dispatchFailedEntry left null), and
+			// EXCLUDED from the ordinary candidate list handed to buildFlattenedChain below -- unlike the
+			// old fork-chain design (which could cheaply wrap the SAME already-compiled, ungated
+			// candidate.matcher in two different fork nodes -- one at its own list position, one as the
+			// tail fallback -- since gating lived in the separate fork objects, not the node itself), this
+			// flattened design bakes gating into the candidate's own single compiled node, so the same
+			// node can't simultaneously be "gated at its natural position" and "the ungated final
+			// fallback". Dropping it from the ordinary list is only a behavior change when rawEntryElse
+			// ALSO claims real (non-empty) explicit ranges of its own -- rare in practice (its own explicit
+			// ranges, if any, were already required to be disjoint from every sibling's by buildEntryMap's
+			// own mergeEntryPoints call, so nothing here goes unvalidated) and not exercised by this
+			// project's own test suite; flagged in remaining_work.md if it ever needs revisiting.
+			MatcherConstruct elseTarget = rawEntryElse != null ? rawEntryElse.compile(compileTarget) : null;
+			List<PatternConstruct> chainCandidates = rawEntryElse == null
+					? constructs
+					: constructs.stream().filter(c -> c != rawEntryElse).collect(java.util.stream.Collectors.toList());
 			if (isCapturing()) {
-				MatcherConstruct dispatch = buildForkChain(null, flags, pattern, constructs, "union subpattern", part -> part.matcher, elseTarget);
+				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
 			} else {
-				buildForkChain(this, flags, pattern, constructs, "union subpattern", part -> part.matcher, elseTarget);
+				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
 			}
 		}
 	}
@@ -1112,10 +1041,16 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildMatcher() {
+			// A Sequence has no matching behavior of its own -- it's exactly whatever its first
+			// element compiled to, so any dispatch gating of our own (if this sequence is itself a
+			// chain candidate) belongs on that first element's own node instead; safe to propagate
+			// directly (no aliasOrPassThrough wrapper needed) since `patterns.get(0)` is exclusively
+			// owned by this Sequence and hasn't been compiled by anyone else yet.
+			patterns.get(0).dispatchEntrySet = dispatchEntrySet;
+			patterns.get(0).dispatchFailedEntry = dispatchFailedEntry;
 			// Compile tail-to-front: the last element's next is this sequence's own next, and each
 			// earlier element's next is the element right after it (already compiled by the time we
-			// get to it). A Sequence has no matching behavior of its own -- it's exactly whatever its
-			// first element compiled to.
+			// get to it).
 			PatternConstruct tail = next;
 			for (int i = patterns.size() - 1; i >= 0; i--) {
 				PatternConstruct part = patterns.get(i);
@@ -1329,7 +1264,12 @@ abstract class PatternConstruct {
 				return;
 			}
 			// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
-			// delegate ComplexCharacter.
+			// delegate ComplexCharacter -- propagate our own dispatch fields (if we're ourselves a
+			// chain candidate) onto `delegate` BEFORE compiling it, so its own compiled node ends up
+			// with the right gating; safe because `delegate` is exclusively owned by this construct
+			// (created together, never independently compiled from anywhere else).
+			delegate.dispatchEntrySet = dispatchEntrySet;
+			delegate.dispatchFailedEntry = dispatchFailedEntry;
 			delegate.compile(next);
 			matcher = delegate.matcher;
 		}
@@ -1479,7 +1419,10 @@ abstract class PatternConstruct {
 							" requires");
 				}
 				// Statically always satisfied: a zero-width no-op, so just pass straight through.
-				matcher = next.matcher;
+				// `next` is shared/likely already compiled, so any dispatch gating of our own (if this
+				// construct is itself a chain candidate) can't be retrofitted onto it directly -- see
+				// MatcherConstruct#aliasOrPassThrough's own doc.
+				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
 				return;
 			}
 

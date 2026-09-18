@@ -19,6 +19,71 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
       just `NamedCharClass` wiring.
 
+## Flattened matcher dispatch experiment (branch `flatten-matcher-dispatch`)
+
+Experimenting with folding `ForkingMatcherConstruct`'s fork into every `MatcherConstruct` itself
+(a `final @Nullable CodePointSet entrySet` + `final @Nullable MatcherConstruct failedEntry`,
+checked *before* a node's own matching logic runs, falling through to `failedEntry` on a miss and
+failing the match outright when `failedEntry` is null) instead of `SingleDispatchingMatcherConstruct`
+always advancing to `next` and a separate `ForkingMatcherConstruct` doing the membership check
+after. Goal: unions and 0-pass-allowing loops no longer need a merged `entrySet` (avoids the
+existing `CodePointSet`-union cost) or an extra fork construct -- a union becomes a plain chain of
+single-character constructs, and a loop's continue/exit nodes carry `entrySet=null`.
+
+- [x] Implemented (2026-09-18): `MatcherConstruct.entrySet`/`failedEntry` fold the old
+      `ForkingMatcherConstruct` into every node; `PatternConstruct.buildFlattenedChain` replaces
+      `buildForkChain`; loops are now `LoopMatcherConstruct` (max-bound + continue/exit choice,
+      no membership test) + `LoopMatcherExit` (min-bound + reset), with the body chain doubling as
+      both the loop's own entry point and its loop-back target. CASE_INSENSITIVE folding is baked
+      into each chain candidate's `entrySet` at compile time (`MatcherConstruct#effectiveEntrySet`,
+      excluding codepoints any OTHER candidate claims exactly, preserving the old "exact beats
+      fold anywhere in the chain" priority) rather than re-folded at match time. Full suite green
+      (1498 tests, 0 failing, 561 skipped -- same as before); one `openjdk_supplementary.tsv` row
+      regenerated (a `{n,m}`-bounded-quantifier row that was a documented divergence from
+      `java.util.regex` now agrees with it -- a genuine fix, not a hidden regression).
+- [ ] **Known cost**: `effectiveEntrySet`'s fold expansion is O(set size) per chain candidate under
+      CASE_INSENSITIVE -- `(?iu)\p{L}+9` (a ~130k-codepoint class, quantified, under
+      CASE_INSENSITIVE+UNICODE_CASE) measured ~60ms just to compile. Rare pattern shape (huge class
+      + case-insensitivity combined), not exercised by the scraped corpus, but worth a targeted
+      look (e.g. skip fold-expanding a class above some size and fall back to a runtime-folded
+      check for just that candidate) if a real pattern like this ever shows up in profiling.
+- [ ] **Known gap, not currently reachable**: `buildFlattenedChain`'s handling of a chain
+      candidate that is BOTH the "any other character" catch-all (`rawEntryElse`) AND separately
+      claims real, non-empty explicit ranges of its own would mis-order dispatch (its own explicit
+      range's priority relative to siblings would be lost -- see the exclusion comment in
+      `QuantifiedUnion.buildMatcher`). Not reachable today: the only field that could produce this
+      shape, `ComplexCharacter.dotElse`, is never actually assigned anywhere in the codebase
+      (confirmed via `grep -n "dotElse\s*="` -- always null in practice). If `dotElse` is ever
+      wired up (e.g. for a DOTALL-variant `.`), this needs fixing first: give the else-candidate a
+      `PassThroughMatcherConstruct` gated on its own explicit entry set at its natural chain
+      position, in addition to (not instead of) the ungated node used as the tail fallback.
+- [ ] Re-run the JMH corpus benchmark (see the project's CLAUDE.md "After a performance-affecting
+      change" section) to see whether this actually beats the old fork-chain design (see this
+      file's "Fork-chain dispatch" section below for that baseline) before deciding whether to
+      merge to main. Also update design.md's "Quantifier/loop compilation"/"Opcode set" sections
+      and this file's "Fork-chain dispatch" section below, which both still describe the design
+      this replaced.
+
+## Entry-set-conflict-detection-without-allocation experiment (separate branch, not yet created)
+
+Once the flattened-dispatch experiment above is settled, try replacing `PatternConstruct`'s
+current entry-point-map machinery (`entryMap`, `entryElse`, `getEntryPointMap`, `getEntryElse`,
+`ensureEntryPointBuilt`, `claimsEntryElse`, `buildEntryMap`, `needsEntryPointBeforeMatcher`,
+`mergeEntryPoints`, `mergeOneEntryPoint`, `checkDisjoint`, `validateDisjointness`) with two new
+methods, `reportEntrySetConflict(CodePointSet, ...)` and `reportEntrySetConflict(int codepoint,
+...)`, that each `PatternConstruct` with a `CodePointSet` or literal calls on "downstream"
+constructs directly, instead of building and unioning `CodePointSet`s/`List`s up front.
+
+- [ ] Compile first without any conflict checking, then have each construct with a `CodePointSet`
+      or literal call `reportEntrySetConflict` on downstream constructs, which check for a
+      conflict and may further delegate to inner/downstream constructs as needed.
+- [ ] Reuse the same recursion-guard-flag approach compilation already uses, but unlike
+      compilation, recursion should simply make `hasEntrySetConflict` return `false` rather than
+      throwing.
+- [ ] Worst case is O(n^2) calls (expected far smaller in practice) in exchange for eliminating
+      the `List`/`CodePointSet`-aggregation allocations the current entry-map machinery needs --
+      measure whether that tradeoff actually wins before committing to it.
+
 ## Also remember for later (currently-unimplemented/deferred features)
 
 - [ ] Once implemented, add the same depth of test coverage for: quotation (`\Q...\E`),

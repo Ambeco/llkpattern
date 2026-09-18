@@ -436,6 +436,19 @@ builder-shaped approach -- extra object, extra array-growth bookkeeping, whateve
 -- costs more than `ArrayCodePointSet`'s own direct sorted-insert-with-shift mutation, which has
 no fixed overhead to amortize in the first place. This also rules out `CodePointSetBuilder` for the
 `Sequence`/`Union` `ArrayList` item below it (also typically few elements) for the same reason.
+
+- [ ] **`PatternParser.parse`'s own `PatternConstruct` allocation is ~18% of sampled allocation
+      weight** -- every `QuantifiedUnion`/`Sequence` node gets allocated eagerly as the parser
+      descends, even for AST shapes that could plausibly be deferred or elided (e.g. a `Sequence`
+      wrapping a single element, or a `QuantifiedUnion` that turns out to be unquantified with
+      exactly one branch and no capture -- both common). Worth investigating whether some of these
+      can be built lazily (only materialized if something downstream actually needs the wrapper,
+      rather than unconditionally on the way down) or elided entirely for the trivial-wrapper case.
+      Not attempted yet -- this is parse-time AST structure, not the compiled matcher graph the
+      `flatten-matcher-dispatch` experiment touches, so it's an independent effort; likely large
+      enough in surface area (`PatternParser`'s whole recursive-descent structure assumes eager
+      construction) to warrant its own dedicated session per this file's usual guidance, not a
+      quick opportunistic change.
 Don't reach for `CodePointSetBuilder` as a general "any small accumulation" replacement without
 measuring first, and don't re-attempt converting these three specific call sites a FIFTH time
 without a fundamentally different idea, not just another tuning knob on the same "builder" concept

@@ -344,6 +344,42 @@ being folded in opportunistically:
       itself -- measure whether that's worth doing before implementing, per this file's existing
       "measure before keeping" guidance a few sections up (a plausible-sounding pre-sizing
       heuristic has already twice measured as a net regression in this project).
+
+**Both items above now have one more caution attached, learned 2026-09-18** (see notes.md's entry
+that session): `CodePointSetBuilder` itself got a one-array (`long[]`, packing `(min,max)` per
+entry) rewrite that session, replacing its earlier two-`int[]` design and measurably improving its
+one real caller (`parseComplexCharacterRanges`'s literal members). But converting three OTHER
+allocation-sampling leaders that looked like ideal `CodePointSetBuilder` candidates (`PatternParser
+#intersect`, `#mergeRun`'s combine branch, `PatternConstruct#mergeEntryPoints`'s main loop) to use
+it -- even the improved one-array version -- measurably REGRESSED allocation back near the original
+baseline, because `CodePointSetBuilder#build` always allocates a second, separately-packed array on
+top of whatever it accumulated into, a fixed cost that only pays for itself when there are enough
+elements to make `ArrayCodePointSet`'s own per-insert sorted-insert-with-shift cost worse in
+comparison. All three of those call sites merge only a handful of ranges per call, so they didn't
+qualify -- and neither would the `Sequence`/`Union` `ArrayList`s' typical small element counts,
+`CodePointSetBuilder`'s own two-allocation shape doesn't obviously help there either. Don't reach
+for `CodePointSetBuilder` as a general "any small MutableCodePointSet accumulation" replacement
+without measuring first.
+
+- [ ] **`PatternParser#parseComplexCharacterRanges`'s `negate` handling** calls a separate
+      `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a bracket
+      expression starts with `^`. `CodePointSetBuilder` gained an `#invert` method (2026-09-18,
+      currently uncalled) specifically so a builder could bake inversion in directly instead --
+      would need `negate` threaded through `intersect`/`mergeRun`'s own call chain first. Not
+      attempted yet.
+- [ ] **`PatternConstruct#mergeEntryPoints` restoring its old pre-sizing** -- it used to
+      `ensureCapacity` its result from a known entry count (`mergeEntryPointsRaw`'s
+      `CodePointMapBuilder`) before that source was deleted as an unrelated side effect of the
+      `checkDisjoint`/ambiguity-check refactor (see notes.md's 2026-09-14 entries), leaving today's
+      version unsized. A prior attempt at restoring this (summing each candidate's own entry-set
+      size) was rejected specifically because it would have forced an `entryMap` materialization
+      `addCodePointsTo` existed to avoid -- but `addCodePointsTo` was ALSO removed in that same
+      refactor, so that objection may no longer hold. Worth a fresh look, with the "measure before
+      keeping" caution above firmly in mind (`mergeEntryPoints` is likely a small-N call site same
+      as the three rejected `CodePointSetBuilder` conversions, so a `CodePointSetBuilder`-based fix
+      specifically is NOT the presumed answer here -- a pre-sized `ArrayCodePointSet` is more likely
+      the right shape, same as before the `mergeEntryPointsRaw` deletion).
+
 ## Fork-chain dispatch (2026-09-11/12) -- the performance plan
 
 Step 1 (2026-09-11): `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the

@@ -58,10 +58,14 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
    * {@code count} entries are used) -- no copy, no allocation. Package-private -- reached only via
    * {@link CodePointSetBuilder#build}, which builds {@code keys} itself (via {@link #packKey}) and
    * hands it off, since a builder is only ever built once and so has no further use for the array.
+   * {@code invert} lets a builder's own {@link CodePointSetBuilder#invert} take effect directly
+   * here, instead of the caller building a normal (non-inverted) set and then paying a separate
+   * {@link #complement} array copy to invert it afterward.
    */
-  ArrayCodePointSet(int[] keys, int count) {
+  ArrayCodePointSet(int[] keys, int count, boolean invert) {
     this.keys = keys;
     this.size = count;
+    this.invert = invert;
   }
 
   /**

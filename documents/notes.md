@@ -2359,3 +2359,69 @@ Notes to self about how to work on this project, and other context that doesn't 
   lists (~7%), and `ArrayCodePointSet`'s own eager `keys`-array constructor (~6%, the same
   "allocated even when nothing is ever added" shape as `CodePointSetBuilder` had -- see
   remaining_work.md for why this one wasn't also fixed in this session).
+
+### `CodePointSetBuilder`: two `int[]` arrays -> one packed `long[]` array (2026-09-18, same session)
+
+- Project owner questioned why `CodePointSetBuilder` (the fix above) needed two parallel `int[]`
+  arrays (`mins`/`maxs`) at all, when `ArrayCodePointSet` gets away with one packed array. Tried
+  literally copying `ArrayCodePointSet`'s own `(min<<11)|count` chunked format -- rejected before
+  implementing: that format caps each entry at `MAX_COUNT` (2047) code points, so an incoming
+  range wider than that needs splitting into multiple packed entries immediately, and `#build`'s
+  merge pass would then sometimes need to RE-chunk a combined run into different boundaries than
+  either original piece had (`ArrayCodePointSet#addRange` already handles this fine for
+  incremental inserts by re-deriving chunk boundaries fresh on every merge, but replicating that in
+  a two-phase "accumulate then merge" builder is real added complexity for a case this builder's
+  only real caller -- a bracket expression's literal members -- essentially never hits).
+- Landed on a simpler middle ground instead: one `long[]` array, packing each raw (unchunked)
+  `(min, max)` pair into a single `long` (min in the high 32 bits, max in the low 32 bits, both
+  given a full 32 bits -- no `MAX_COUNT` cap, so the merge logic stays exactly as simple as the
+  two-`int[]` version). Halves the array-object count (and one array-header's worth of overhead)
+  for the same content. Comparisons during the insertion sort extract `packedMin` first rather than
+  comparing raw packed `long`s -- same reasoning as `ArrayCodePointSet#floorIndex`'s own
+  comparisons: a max near the top of the domain can flip the sign of a lower entry's packed value,
+  so raw numeric order isn't reliable.
+- Full test suite green throughout (1498 tests, 0 failures). Desktop JMH: `llkCompile` allocation
+  649,312 -> ~641,000 B/op (reproduced across two runs, -1.2%, ~3.8% cumulative vs. the original
+  667,200 baseline before any of this session's three `CodePointSetBuilder`-related fixes). Pixel
+  3a `compileLlk` landed at 5.60 ms/pass this run (vs. 5.51 previously) -- within this device's
+  known run-to-run noise (see this file's many other notes on that), not read as a regression.
+- **Then re-tried yesterday's three rejected conversions** (`PatternParser#intersect`, `#mergeRun`'s
+  combine branch, `PatternConstruct#mergeEntryPoints`'s main loop) on top of this improved builder,
+  on the theory that fixing the "two arrays" problem might rescue them. It didn't:
+  `llkCompile` allocation came back up to 667,400 B/op -- right back near the original
+  pre-everything baseline, wiping out this fix's own gain. Root cause, once measured rather than
+  assumed: `CodePointSetBuilder#build` *always* allocates a SECOND array (the final packed `keys`
+  array `ArrayCodePointSet` takes ownership of), on top of whatever `ranges` array accumulation
+  needed -- two allocations total, no matter how few elements were added. A bare `ArrayCodePointSet`
+  growing via `ensureCapacity` only ever ends up with ONE array as its final state (reallocated a
+  few times while growing, but each old array is simply garbage, not a second live allocation paid
+  for at the end). For a LARGE accumulation (`parseComplexCharacterRanges`'s literal members, this
+  builder's one legitimate caller) avoiding per-insert `O(n)` sorted-insert-with-shift is worth that
+  fixed second-array cost. For the three SMALL-N candidates (a handful of ranges combined per call),
+  it isn't -- the fixed cost of a second array dominates, not the algorithmic insert cost. Reverted
+  the three conversions again; kept the one-array `CodePointSetBuilder` rewrite itself, which is a
+  clean, reproduced win for its actual existing use.
+- Also added `CodePointSetBuilder#invert` (a boolean flip, threaded through to a new
+  `ArrayCodePointSet(keys, count, invert)` package-private constructor overload), matching
+  `ArrayCodePointSet#invert`'s own semantics -- per the project owner's request, kept even though it
+  currently has no caller (none of the three reverted conversions needed it). Candidate future
+  caller: `PatternParser#parseComplexCharacterRanges`'s own `negate` handling currently calls a
+  separate `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a
+  bracket expression starts with `^` -- threading `negate` into whichever builder produced that
+  result instead, so `build()` bakes the inversion in directly, would avoid that copy. Not attempted
+  this session (would need `negate` threaded through `intersect`/`mergeRun`'s call chain first).
+- **Confirmed `mergeEntryPoints`/`mergeRun` are both still very much live**, in response to the
+  project owner wondering if a past refactor (replacing ambiguity-checking's old
+  `mergeEntryPointsRaw`/`CodePointMapBuilder` with today's `checkDisjoint`/`validateDisjointness`,
+  see the 2026-09-14 entries above) had made them dead. It didn't -- that refactor only touched the
+  disjointness/ambiguity CHECK; `mergeEntryPoints` has a separate, still-necessary job (computing a
+  construct's actual entry-point union, which the compiled matcher's dispatch table needs), called
+  from `buildLoopEntryMap` (every `x*`/`x+`/`x{n,m}`) and `QuantifiedUnion.buildEntryMap` (every
+  `a|b`). Worth noting for later, though: `mergeEntryPoints` used to pre-size its result via
+  `ensureCapacity(raw.merged.size())` before that same refactor deleted `raw.merged`'s source
+  (`mergeEntryPointsRaw`) as an unrelated side effect, and was rewritten to today's unsized
+  `addAll`-per-candidate loop. The project owner's first attempt at restoring pre-sizing (summing
+  each candidate's own entry-set size) was rejected at the time because it would have forced an
+  `entryMap` materialization `addCodePointsTo` existed to avoid -- but `addCodePointsTo` was ALSO
+  removed in that same refactor, so that objection may no longer hold. Not investigated further this
+  session -- a real candidate for a future look.

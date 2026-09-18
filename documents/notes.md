@@ -2583,3 +2583,14 @@ Notes to self about how to work on this project, and other context that doesn't 
   `ArrayCodePointSet`'s own direct mutation regardless of capacity; this builder's own actual
   caller (bracket-expression literal members) has a genuinely bigger typical accumulation, so the
   same idea helps here where it hurt there -- not a contradiction, just a different call site.
+
+- **2026-09-18: "entry-set-conflict-detection-without-allocation" experiment closed without being
+  implemented.** Premise (written before flatten-matcher-dispatch merged) was that
+  `PatternConstruct`'s entry-map aggregation existed mainly to support conflict checking, and could
+  be replaced with on-demand `reportEntrySetConflict` calls to avoid `CodePointSet`/`List`
+  allocation. After flatten-matcher-dispatch merged, that's no longer true: `checkDisjoint` (the
+  actual conflict check) is already allocation-free (pairwise `intersects`, no accumulated union),
+  and the two remaining `entryMap`-aggregation sites (`mergeEntryPoints`,
+  `unionEntryPointsForFoldExclusion`) exist to produce `dispatchEntrySet` values for the compiled
+  matcher graph and CASE_INSENSITIVE fold-priority data, not to support conflict detection -- so
+  there's no allocation left for a conflict-check-only replacement to eliminate.

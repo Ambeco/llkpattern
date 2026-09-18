@@ -2470,3 +2470,77 @@ Notes to self about how to work on this project, and other context that doesn't 
   a third and final time; the underlying object-allocation reasoning here should rule out a fourth
   attempt without some other call site's shape changing first (e.g. an accumulation genuinely
   merging many candidates, not a handful).
+
+### `CodePointSetBuilder`: an interface, implemented by a class that IS-A `ArrayCodePointSet` (2026-09-18, same session)
+
+- Project owner's response to the "two allocations" root cause diagnosed immediately above: what if
+  the builder literally WAS the `ArrayCodePointSet` it eventually returns -- `#build` just finishes
+  sorting/coalescing `this` in place and returns `this`, so there's only ever one object, full stop.
+  Callers would still only see `add`/`addAll`/`invert`/`build` -- not `contains`/`forEachRange`/etc.
+  -- because `CodePointSetBuilder` became an INTERFACE declaring only those four methods; the
+  concrete implementation (`Impl`, extending `ArrayCodePointSet`) has all of `ArrayCodePointSet`'s
+  other methods too, but nothing reachable through the narrow interface type exposes them, so an
+  in-progress (still-unsorted) accumulation can't be queried and silently return a wrong answer by
+  ordinary typed use.
+- Implementation: `ArrayCodePointSet` lost its `final` (a real, if narrow, design loosening -- its
+  `keys`/`size`/`invert` fields went from `private` to package-private for `Impl` to reach
+  directly), and its `equals`/no other method uses `getClass()` (checked first -- all use
+  `instanceof`, so subclassing doesn't silently break equality). `Impl.add(int,int)` overrides
+  `ArrayCodePointSet#add`'s sorted-insert-with-shift with the same unsorted-append-then-chunk
+  approach as the immediately-preceding non-inheriting rewrite; `Impl.build()` sorts/re-chunks its
+  own (inherited) `keys` array in place -- same algorithm as before, but no separate final array,
+  and returns `this` typed as {@code CodePointSet} (not even `MutableCodePointSet`), so `add`/etc.
+  aren't reachable post-build through ordinary typed use either. Added a `built` flag so a second
+  `add`/`addAll`/`invert`/`build` call throws loudly instead of silently mutating an
+  already-returned, supposedly-finished set IN PLACE -- a real risk this design introduces that the
+  earlier (separate-final-array) design didn't have, since here the SAME object keeps existing
+  after `build()`, not a copy.
+- One extra risk considered and accepted: since `build()` no longer copies into a fresh
+  `ArrayCodePointSet`, every bracket-expression-derived `CodePointSet` embedded in a compiled
+  `Pattern` is now an `Impl` instance for its entire lifetime, including at MATCH time (`contains`/
+  `intersects`/etc., not just during parsing) -- a genuinely new consideration the earlier,
+  throwaway-parse-time-only builder never had, since call sites that see both plain
+  `ArrayCodePointSet` and `Impl` instances are now polymorphic where they used to be monomorphic.
+  Measured `llkMatch` specifically because of this (not just `llkCompile`) -- no measurable
+  regression in either timing or allocation (allocation is flat regardless, since matching doesn't
+  allocate new sets, only queries pre-built ones).
+- Full test suite green throughout (1498 tests, 0 failures) -- including the existing
+  `CodePointSetBuilderTest`, whose 4 call sites needed only `new CodePointSetBuilder()` ->
+  `CodePointSetBuilder.create()` (a static factory on the new interface; can't `new` an interface).
+- **Result for the one real caller** (`parseComplexCharacterRanges`'s literal members): desktop JMH
+  `llkCompile` allocation 637,000-639,000 (packed-single-array, non-inheriting version) -> 632,792
+  B/op, reproduced bit-for-bit across two separate runs (632,792.0961969391 and
+  632,792.099650441) -- about as clean a confirmation as this project's benchmarking noise ever
+  allows. ~5.1% cumulative reduction vs. the original 667,200 baseline before any of this session's
+  three `CodePointSetBuilder` rewrites. Pixel 3a and `llkMatch` numbers moved within this project's
+  already-documented normal run-to-run noise, not read as further real signal either way.
+- **Re-tried the three rejected conversions a FOURTH time**, now against a design that should have
+  fully solved the "two objects" problem. It didn't: 672,568 B/op, still a clear regression vs. the
+  632,792 no-conversions baseline. Chased it further via fresh allocation sampling (not more
+  guessing) and found TWO additional, previously-invisible costs specific to inheriting from
+  `ArrayCodePointSet`, tried fixing each in turn:
+  - Suspected `ArrayCodePointSet#addAll`'s own fast path (a plain array copy when the target starts
+    empty) was double-paying -- discarding whatever `Impl`'s own constructor had already allocated
+    just to replace it with a copy. Overrode `#addAll` to always go through `#add` per range
+    instead, bypassing that fast path entirely. Made it WORSE (678,024 B/op) -- wrong theory.
+  - Sampling then showed `Arrays.copyOf` inside `Impl#appendKey` newly prominent (12% of sampled
+    weight) -- traced to `Impl` inheriting `ArrayCodePointSet`'s own `INITIAL_CAPACITY` (1, tuned
+    for ArrayCodePointSet's own typical single-character case) instead of the non-inheriting
+    design's `4`, so even a 2-3-entry accumulation now needed multiple regrow steps it wouldn't
+    have otherwise. Gave `Impl` its own constructor starting at capacity 4. Made it WORSE AGAIN
+    (690,096 B/op) -- most of these three call sites' real accumulations are apparently small
+    enough (often 1 entry) that guaranteeing a bigger array up front costs more than the occasional
+    cheap regrow it was meant to avoid.
+  - Reverted both of those "fixes" (back to plain inherited `addAll` and inherited capacity-1
+    start) and reverted the three conversions themselves a fourth and, at this point, truly final
+    time. Five independently-measured variants (two-array standalone, `long[]` standalone, packed
+    single-array standalone, inheritance-based default, inheritance-based with each of the two
+    "fixes" above) ALL regressed these three call sites, every single time, by comparable amounts
+    (roughly 667,000-690,000 B/op, vs. 632,792-641,728 without conversion depending on which
+    `CodePointSetBuilder` version was current). At this point the conclusion is about as
+    measurement-backed as this project's benchmarking gets: these three call sites' own real
+    accumulation sizes (typically a small handful of ranges, sometimes just one) are simply below
+    whatever threshold makes ANY builder-shaped accumulation (object allocation plus
+    amortized-growth array, regardless of exact array format/capacity/inheritance strategy) cheaper
+    than `ArrayCodePointSet`'s own direct sorted-insert-with-shift mutation. Not attempting a fifth
+    variant without a fundamentally different idea, not just another tuning knob on the same one.

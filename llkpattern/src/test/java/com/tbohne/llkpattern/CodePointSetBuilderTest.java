@@ -10,7 +10,7 @@ public class CodePointSetBuilderTest {
 
   @Test
   public void build_singleRange_isMember() {
-    CodePointSetBuilder builder = new CodePointSetBuilder();
+    CodePointSetBuilder builder = CodePointSetBuilder.create();
     builder.add('a', 'd');
     CodePointSet set = builder.build();
     assertThat(set.contains('a'), is(true));
@@ -20,7 +20,7 @@ public class CodePointSetBuilderTest {
 
   @Test
   public void build_outOfOrderRanges_areSortedAndCoalesced() {
-    CodePointSetBuilder builder = new CodePointSetBuilder();
+    CodePointSetBuilder builder = CodePointSetBuilder.create();
     builder.add('c');
     builder.add('a');
     builder.add('b');
@@ -33,7 +33,7 @@ public class CodePointSetBuilderTest {
 
   @Test
   public void build_overlappingRangesFromDifferentSources_merge() {
-    CodePointSetBuilder builder = new CodePointSetBuilder();
+    CodePointSetBuilder builder = CodePointSetBuilder.create();
     builder.add('a', 'c'); // 'a', 'b'
     builder.add('b', 'd'); // 'b', 'c' -- overlaps, never a conflict for a plain set
     CodePointSet set = builder.build();
@@ -45,7 +45,7 @@ public class CodePointSetBuilderTest {
 
   @Test
   public void addAll_pushesSourceSetsRanges() {
-    CodePointSetBuilder builder = new CodePointSetBuilder();
+    CodePointSetBuilder builder = CodePointSetBuilder.create();
     MutableCodePointSet source = new ArrayCodePointSet();
     source.add('x', 'z' + 1);
     builder.addAll(source);

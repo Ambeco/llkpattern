@@ -23,25 +23,33 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * {@link #add}/{@link #appendSorted}: two overlapping or touching entries always merge
  * unconditionally, with no value-equality check needed anywhere.
  */
-public final class ArrayCodePointSet implements MutableCodePointSet {
+public class ArrayCodePointSet implements MutableCodePointSet {
   // count occupies the low 11 bits (max 2047, i.e. entries span at most 2048 code points).
   private static final int COUNT_BITS = 11;
-  // Package-private (not private): CodePointSetBuilder.build() needs it for the same chunk-count
-  // math when packing its own keys array.
+  // Package-private (not private): CodePointSetBuilder's own Impl needs it for the same
+  // chunk-count math when packing its own keys array.
   static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
 
   private static final int INITIAL_CAPACITY = 1;
 
+  // Package-private, not private: CodePointSetBuilder's own Impl subclasses this class directly
+  // (rather than composing a separate builder object that hands a finished array off to a fresh
+  // ArrayCodePointSet -- see that class's own doc for why) and needs to read/write these fields
+  // itself, both while accumulating (unsorted, via its own overridden #add) and in its own #build
+  // (sorting/coalescing this same array in place before handing `this` back as the finished set).
+  //
   // Kept sorted by min (equivalently, by key, since min occupies the packed key's high bits --
   // every comparison here extracts min via floorIndex/keyMin rather than comparing packed keys as
-  // raw ints, purely for readability, not correctness). `size` is the logical entry count;
-  // `keys.length` is capacity, which can run ahead of `size` -- see ensureCapacity.
-  private int[] keys;
-  private int size;
+  // raw ints, purely for readability, not correctness) ONCE an instance is a real, finished
+  // CodePointSet -- every method below this point assumes that invariant already holds. `size` is
+  // the logical entry count; `keys.length` is capacity, which can run ahead of `size` -- see
+  // ensureCapacity.
+  int[] keys;
+  int size;
 
   // Whether `keys`' recorded runs ARE this set (false, the common/default case) or are EXCLUDED
   // from it (true, i.e. this set is everything else) -- see the class doc.
-  private boolean invert;
+  boolean invert;
 
   public ArrayCodePointSet() {
     keys = new int[INITIAL_CAPACITY];
@@ -51,21 +59,6 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
   public ArrayCodePointSet(CodePointSet other) {
     this();
     addAll(other);
-  }
-
-  /**
-   * Takes direct ownership of an already-packed, sorted, coalesced {@code keys} array (the first
-   * {@code count} entries are used) -- no copy, no allocation. Package-private -- reached only via
-   * {@link CodePointSetBuilder#build}, which builds {@code keys} itself (via {@link #packKey}) and
-   * hands it off, since a builder is only ever built once and so has no further use for the array.
-   * {@code invert} lets a builder's own {@link CodePointSetBuilder#invert} take effect directly
-   * here, instead of the caller building a normal (non-inverted) set and then paying a separate
-   * {@link #complement} array copy to invert it afterward.
-   */
-  ArrayCodePointSet(int[] keys, int count, boolean invert) {
-    this.keys = keys;
-    this.size = count;
-    this.invert = invert;
   }
 
   /**
@@ -85,14 +78,16 @@ public final class ArrayCodePointSet implements MutableCodePointSet {
     return result;
   }
 
-  // Package-private (not private) so CodePointSetBuilder.build() can pack its own keys array
-  // directly, for the package-private (int[], int) constructor above.
+  // Package-private (not private): CodePointSetBuilder's own Impl (a direct subclass) packs its
+  // own accumulated entries with this, both while appending and while re-chunking merged runs in
+  // its own #build.
   static int packKey(int min, int count) {
     return (min << COUNT_BITS) | count;
   }
 
-  // Package-private (not private) so CodePointSetBuilder.build() can sort/merge its own packed
-  // entries by their real (min, max) extent without duplicating this bit-unpacking logic.
+  // Package-private (not private): CodePointSetBuilder's own Impl sorts/merges its own packed
+  // entries by their real (min, max) extent in its own #build, without duplicating this
+  // bit-unpacking logic.
   static int keyMin(int key) {
     return key >>> COUNT_BITS;
   }

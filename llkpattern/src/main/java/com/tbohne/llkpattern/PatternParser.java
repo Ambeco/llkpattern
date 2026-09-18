@@ -754,7 +754,7 @@ final class PatternParser {
       negate = true;
       advance(1);
     }
-    CodePointSetBuilder ranges = new CodePointSetBuilder();
+    CodePointSetBuilder ranges = CodePointSetBuilder.create();
     // Large sets unioned into the current operand run (a NamedCharClass-backed escape, or a nested
     // "[...]" class) are kept HERE by reference, not copied into `ranges` -- see UnionCodePointSet's
     // own doc for why (avoids copying e.g. \p{L}'s hundreds of ranges just to combine it with a
@@ -832,7 +832,7 @@ final class PatternParser {
                 intersectionSoFar == null
                     ? completedRun
                     : intersect(intersectionSoFar, completedRun);
-            ranges = new CodePointSetBuilder();
+            ranges = CodePointSetBuilder.create();
             runUnion = null;
             break;
           }

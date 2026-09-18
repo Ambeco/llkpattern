@@ -19,6 +19,75 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
       just `NamedCharClass` wiring.
 
+## Flattened matcher dispatch experiment (branch `flatten-matcher-dispatch`)
+
+Experimenting with folding `ForkingMatcherConstruct`'s fork into every `MatcherConstruct` itself
+(a `final @Nullable CodePointSet entrySet` + `final @Nullable MatcherConstruct failedEntry`,
+checked *before* a node's own matching logic runs, falling through to `failedEntry` on a miss and
+failing the match outright when `failedEntry` is null) instead of `SingleDispatchingMatcherConstruct`
+always advancing to `next` and a separate `ForkingMatcherConstruct` doing the membership check
+after. Goal: unions and 0-pass-allowing loops no longer need a merged `entrySet` (avoids the
+existing `CodePointSet`-union cost) or an extra fork construct -- a union becomes a plain chain of
+single-character constructs, and a loop's continue/exit nodes carry `entrySet=null`.
+
+- [x] Implemented (2026-09-18): `MatcherConstruct.entrySet`/`failedEntry` fold the old
+      `ForkingMatcherConstruct` into every node; `PatternConstruct.buildFlattenedChain` replaces
+      `buildForkChain`; loops are now `LoopMatcherConstruct` (max-bound + continue/exit choice,
+      no membership test) + `LoopMatcherExit` (min-bound + reset), with the body chain doubling as
+      both the loop's own entry point and its loop-back target. CASE_INSENSITIVE folding is baked
+      into each chain candidate's `entrySet` at compile time (`MatcherConstruct#effectiveEntrySet`,
+      excluding codepoints any OTHER candidate claims exactly, preserving the old "exact beats
+      fold anywhere in the chain" priority) rather than re-folded at match time. Full suite green
+      (1498 tests, 0 failing, 561 skipped -- same as before); one `openjdk_supplementary.tsv` row
+      regenerated (a `{n,m}`-bounded-quantifier row that was a documented divergence from
+      `java.util.regex` now agrees with it -- a genuine fix, not a hidden regression).
+- [ ] **Known cost**: `effectiveEntrySet`'s fold expansion is O(set size) per chain candidate under
+      CASE_INSENSITIVE -- `(?iu)\p{L}+9` (a ~130k-codepoint class, quantified, under
+      CASE_INSENSITIVE+UNICODE_CASE) measured ~60ms just to compile. Rare pattern shape (huge class
+      + case-insensitivity combined), not exercised by the scraped corpus, but worth a targeted
+      look (e.g. skip fold-expanding a class above some size and fall back to a runtime-folded
+      check for just that candidate) if a real pattern like this ever shows up in profiling.
+- [ ] **Known gap, not currently reachable**: `buildFlattenedChain`'s handling of a chain
+      candidate that is BOTH the "any other character" catch-all (`rawEntryElse`) AND separately
+      claims real, non-empty explicit ranges of its own would mis-order dispatch (its own explicit
+      range's priority relative to siblings would be lost -- see the exclusion comment in
+      `QuantifiedUnion.buildMatcher`). Not reachable today: the only field that could produce this
+      shape, `ComplexCharacter.dotElse`, is never actually assigned anywhere in the codebase
+      (confirmed via `grep -n "dotElse\s*="` -- always null in practice). If `dotElse` is ever
+      wired up (e.g. for a DOTALL-variant `.`), this needs fixing first: give the else-candidate a
+      `PassThroughMatcherConstruct` gated on its own explicit entry set at its natural chain
+      position, in addition to (not instead of) the ungated node used as the tail fallback.
+- [x] Benchmarked (2026-09-18): desktop JMH on a quiet machine (no concurrent session/browser) --
+      `llkCompile` 0.243->0.235ms/op (~3% faster), `llkMatch` 0.034->0.036ms/op (~6% slower, within
+      this run's own ~11% error bar; allocation/CPU sampling both show match time unchanged in
+      shape). Pixel 3a -- compile 5.76->5.55ms/pass, match 0.77->0.76ms/pass (both modestly
+      faster). Net: a small real compile-time win, a wash on match time -- see README's benchmark
+      section and notes.md for the full numbers. design.md's "Quantifier/loop compilation"/"Opcode
+      set" sections and this file's "Fork-chain dispatch" section below are now updated to
+      describe the current design.
+- [ ] Decide whether to merge this branch to `main` now that implementation and benchmarking are
+      both done (see the two "Known cost"/"Known gap" items above for the remaining loose ends).
+
+## Entry-set-conflict-detection-without-allocation experiment (separate branch, not yet created)
+
+Once the flattened-dispatch experiment above is settled, try replacing `PatternConstruct`'s
+current entry-point-map machinery (`entryMap`, `entryElse`, `getEntryPointMap`, `getEntryElse`,
+`ensureEntryPointBuilt`, `claimsEntryElse`, `buildEntryMap`, `needsEntryPointBeforeMatcher`,
+`mergeEntryPoints`, `mergeOneEntryPoint`, `checkDisjoint`) with two new
+methods, `reportEntrySetConflict(CodePointSet, ...)` and `reportEntrySetConflict(int codepoint,
+...)`, that each `PatternConstruct` with a `CodePointSet` or literal calls on "downstream"
+constructs directly, instead of building and unioning `CodePointSet`s/`List`s up front.
+
+- [ ] Compile first without any conflict checking, then have each construct with a `CodePointSet`
+      or literal call `reportEntrySetConflict` on downstream constructs, which check for a
+      conflict and may further delegate to inner/downstream constructs as needed.
+- [ ] Reuse the same recursion-guard-flag approach compilation already uses, but unlike
+      compilation, recursion should simply make `hasEntrySetConflict` return `false` rather than
+      throwing.
+- [ ] Worst case is O(n^2) calls (expected far smaller in practice) in exchange for eliminating
+      the `List`/`CodePointSet`-aggregation allocations the current entry-map machinery needs --
+      measure whether that tradeoff actually wins before committing to it.
+
 ## Also remember for later (currently-unimplemented/deferred features)
 
 - [ ] Once implemented, add the same depth of test coverage for: quotation (`\Q...\E`),
@@ -367,6 +436,19 @@ builder-shaped approach -- extra object, extra array-growth bookkeeping, whateve
 -- costs more than `ArrayCodePointSet`'s own direct sorted-insert-with-shift mutation, which has
 no fixed overhead to amortize in the first place. This also rules out `CodePointSetBuilder` for the
 `Sequence`/`Union` `ArrayList` item below it (also typically few elements) for the same reason.
+
+- [ ] **`PatternParser.parse`'s own `PatternConstruct` allocation is ~18% of sampled allocation
+      weight** -- every `QuantifiedUnion`/`Sequence` node gets allocated eagerly as the parser
+      descends, even for AST shapes that could plausibly be deferred or elided (e.g. a `Sequence`
+      wrapping a single element, or a `QuantifiedUnion` that turns out to be unquantified with
+      exactly one branch and no capture -- both common). Worth investigating whether some of these
+      can be built lazily (only materialized if something downstream actually needs the wrapper,
+      rather than unconditionally on the way down) or elided entirely for the trivial-wrapper case.
+      Not attempted yet -- this is parse-time AST structure, not the compiled matcher graph the
+      `flatten-matcher-dispatch` experiment touches, so it's an independent effort; likely large
+      enough in surface area (`PatternParser`'s whole recursive-descent structure assumes eager
+      construction) to warrant its own dedicated session per this file's usual guidance, not a
+      quick opportunistic change.
 Don't reach for `CodePointSetBuilder` as a general "any small accumulation" replacement without
 measuring first, and don't re-attempt converting these three specific call sites a FIFTH time
 without a fundamentally different idea, not just another tuning knob on the same "builder" concept
@@ -393,18 +475,25 @@ without a fundamentally different idea, not just another tuning knob on the same
 
 ## Fork-chain dispatch (2026-09-11/12) -- the performance plan
 
+**Superseded 2026-09-18** (branch `flatten-matcher-dispatch`): step 1's `ForkingMatcherConstruct`
+node and `LoopMatcherConstruct`'s own `memberSet`/`exitSet` fields (referenced below) no longer
+exist -- the fork is now folded into every node via an `entrySet`/`failedEntry` pair instead of a
+separate wrapping node. See design.md's "Opcode set" section for the current design and its
+"Alternatives Considered" section for `ForkingMatcherConstruct`'s own pros/cons relative to it.
+Steps 2 and 3 below (the `CodePointMap<Boolean>` -> `CodePointSet` migration, and
+`UnionCodePointSet`) are unaffected by this and remain accurate.
+
 Step 1 (2026-09-11): `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
 `CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) is gone, replaced by chains of a
 new `ForkingMatcherConstruct` (a plain 2-way fork on set membership) for unions and a quantified
 construct's own entry point, plus a related but separate `LoopMatcherConstruct` for a loop's own
-continue-vs-exit choice -- see design.md's "Quantifier/loop compilation" and "Opcode set" sections,
-and notes.md's 2026-09-11 entry for the case-insensitive priority bug this surfaced and fixed along
-the way.
+continue-vs-exit choice -- see notes.md's 2026-09-11 entry for the case-insensitive priority bug
+this surfaced and fixed along the way.
 
 Step 2 (2026-09-12): every `CodePointMap<Boolean>` production use (`PatternConstruct.entryMap`,
-`ComplexCharacter.ranges`, `ForkingMatcherConstruct.memberSet`/`LoopMatcherConstruct.memberSet`/
-`exitSet`, `WordBoundaryConstruct`'s word-set classification, every `NamedCharClass`/
-`UnicodePredicates` constant) is now a plain `CodePointSet`/`ArrayCodePointSet` -- no `V[] values`
+`ComplexCharacter.ranges`, a dispatch node's own membership set(s), `WordBoundaryConstruct`'s
+word-set classification, every `NamedCharClass`/`UnicodePredicates` constant) is now a plain
+`CodePointSet`/`ArrayCodePointSet` -- no `V[] values`
 array, and `complement()` is a flag flip (`invert`) instead of a real rebuild. `UnicodeAnalyzer`
 (the `unicodeanalyzer` module's generator) updated to emit `CodePointSet` fields directly;
 `UnicodePredicates.java` regenerated. `ArrayCodePointMap<V>`/`CodePointMap<V>` remain in use only

@@ -87,17 +87,29 @@ over time.
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.095 | 0.243 | 2.57x |
-| Pixel 3a | 6.21 | 5.76 | 0.93x |
+| Intel-i7-9750H | 0.092 | 0.235 | 2.55x |
+| Pixel 3a | 7.68 | 5.55 | 0.72x |
 
 **Corpus match time (each pass matches/finds/look_ats 406 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.047 | 0.034 | 0.73x |
-| Pixel 3a | 3.79 | 0.77 | 0.20x |
+| Intel-i7-9750H | 0.045 | 0.036 | 0.80x |
+| Pixel 3a | 3.89 | 0.76 | 0.20x |
 
 llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch, and further after later sessions removed the map-based ambiguity-check allocation (`entryMap`'s `CodePointMap` -> `CodePointSet` migration, then `checkDisjoint`'s allocation-free overlap check) — see notes.md for the compile-time performance history. On the Pixel 3a the two compile times currently land close to each other and vary run-to-run (see notes.md), so don't read that ratio as settled. Match time is faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
+
+**flatten-matcher-dispatch experiment branch (2026-09-18):** both rows above are from this
+experiment (Intel re-measured on a quiet desktop once a concurrent session and browser tabs were
+closed; Pixel 3a from the same session as the code change). Desktop compile time improved slightly
+(0.243 -> 0.235ms/pass, ~3% faster) and desktop match time moved from 0.034 to 0.036ms/pass (~6%
+slower, within this measurement's own ~11% error bar, so not clearly a real regression) —
+allocation sampling (not timing-sensitive) showed match-time allocation completely unchanged in
+shape, still dominated by `Matcher.<init>`, consistent with "no real change" for match time. Pixel
+3a showed a real if modest speedup for both (compile 5.76->5.55ms/pass, match 0.77->0.76ms/pass).
+Net read: a small, real compile-time win, a wash on match time, achieved with fewer allocated node
+objects per union/loop -- see notes.md for the full numbers and remaining_work.md for what's still
+open (design.md's "Quantifier/loop compilation" section rewrite) before this merges to main.
 
 ## 5. Authorship
 

@@ -2,12 +2,12 @@ package com.tbohne.llkpattern;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertThrows;
 
 import com.tbohne.llkpattern.MatcherConstruct.EndMatcherConstruct;
-import com.tbohne.llkpattern.MatcherConstruct.ForkingMatcherConstruct;
 import com.tbohne.llkpattern.MatcherConstruct.LiteralMatcherConstruct;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -87,16 +87,20 @@ public class PatternParserTest {
 
 	@Test
 	public void compile_alternation_dispatchesToEachBranch() {
-		// "A|B" (no catch-all branch) compiles to just ONE fork: on A -> literal A, else -> the
-		// literal B matcher directly, unconditionally -- the second (last, catch-all-less) branch
-		// needs no wrapping fork of its own, since its own compiled matcher already re-verifies
-		// membership as its first action -- see MatcherConstruct.ForkingMatcherConstruct's own doc.
+		// "A|B" (no catch-all branch) compiles to the first branch's own LiteralMatcherConstruct,
+		// gated on A, falling through (via failedEntry) to the second branch's own
+		// LiteralMatcherConstruct -- which, being the chain's last candidate with no catch-all, is
+		// left entirely ungated: its own compiled matcher already re-verifies membership as its
+		// first action -- see MatcherConstruct's "Flattened dispatch" class doc.
 		MatcherConstruct compiled = compile(A + "|" + B);
 
-		assertThat(compiled, instanceOf(ForkingMatcherConstruct.class));
-		ForkingMatcherConstruct firstFork = (ForkingMatcherConstruct) compiled;
-		assertThat(firstFork.getNext(), instanceOf(LiteralMatcherConstruct.class));
-		assertThat(firstFork.getOtherwise(), instanceOf(LiteralMatcherConstruct.class));
+		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
+		assertThat(compiled.entrySet, notNullValue());
+		assertThat(compiled.entrySet.contains(A.codePointAt(0)), is(true));
+		MatcherConstruct second = compiled.failedEntry;
+		assertThat(second, instanceOf(LiteralMatcherConstruct.class));
+		assertThat(second.entrySet, nullValue());
+		assertThat(((LiteralMatcherConstruct) second).getNext(), instanceOf(EndMatcherConstruct.class));
 	}
 
 	@Test

@@ -52,7 +52,18 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   boolean invert;
 
   public ArrayCodePointSet() {
-    keys = new int[INITIAL_CAPACITY];
+    this(INITIAL_CAPACITY);
+  }
+
+  /**
+   * Same as the no-arg constructor, but starting {@code keys} at {@code initialCapacity} instead
+   * of {@link #INITIAL_CAPACITY} -- for a subclass (namely {@link CodePointSetBuilderImpl}) whose
+   * typical real accumulation is known to be bigger than this class's own single-character common
+   * case, so it's worth avoiding the first one or two {@code Arrays.copyOf} regrows rather than
+   * inheriting a capacity tuned for a different usage pattern.
+   */
+  ArrayCodePointSet(int initialCapacity) {
+    keys = new int[initialCapacity];
     size = 0;
   }
 
@@ -530,5 +541,138 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     int[] hash = {0};
     forEachRange((min, max) -> hash[0] += new Range(min, max).hashCode());
     return hash[0];
+  }
+
+  /**
+   * A {@link CodePointSetBuilder} that IS an {@link ArrayCodePointSet} -- see that interface's own
+   * doc for why. Overrides {@link #add}, the one method whose semantics genuinely differ while
+   * accumulating (unsorted append here, vs. {@link ArrayCodePointSet}'s own sorted-insert-with-shift);
+   * {@link #addAll}/{@link #invert} are overridden only to add the build-once guard, then delegate
+   * straight to the inherited implementation -- {@link ArrayCodePointSet#addAll}'s own fast path (a
+   * plain array copy when this is still empty) and general path (one {@link #add} per source range)
+   * both keep working unmodified, the latter correctly reaching THIS class's overridden {@link #add}
+   * via ordinary virtual dispatch. Lives here (nested in {@link ArrayCodePointSet}, package-private,
+   * not in {@code CodePointSetBuilder.java}) since the two are tightly intertwined implementation
+   * details of each other -- this class reaches into {@code ArrayCodePointSet}'s own package-private
+   * {@code keys}/{@code size}/{@code packKey}/{@code keyMin}/{@code keyMax}/{@code MAX_COUNT}
+   * directly, and {@link ArrayCodePointSet}'s own {@code (int initialCapacity)} constructor exists
+   * purely for this class's benefit.
+   */
+  static final class CodePointSetBuilderImpl extends ArrayCodePointSet implements CodePointSetBuilder {
+    // Bigger than ArrayCodePointSet's own INITIAL_CAPACITY (1, tuned for that class's typical
+    // single-character common case): this builder's real caller (a bracket expression's literal
+    // members) typically accumulates a small handful of ranges, not one, so starting bigger avoids
+    // the first one or two Arrays.copyOf regrows -- see notes.md for the measurement history behind
+    // this number (4 was the value the original, non-inheriting design used; this restores it after
+    // an inheritance-based rewrite temporarily lost it).
+    private static final int BUILDER_INITIAL_CAPACITY = 4;
+
+    private boolean built = false;
+
+    CodePointSetBuilderImpl() {
+      super(BUILDER_INITIAL_CAPACITY);
+    }
+
+    // Explicit override needed: CodePointSetBuilder#add(int) and MutableCodePointSet#add(int) (via
+    // ArrayCodePointSet) both provide unrelated default implementations of the same signature --
+    // javac can't pick one on its own. Both just forward to #add(int,int) anyway.
+    @Override
+    public void add(int codePoint) {
+      add(codePoint, codePoint + 1);
+    }
+
+    @Override
+    public void add(int min, int max) {
+      checkNotBuilt();
+      // Packed immediately in ArrayCodePointSet's own compact key format -- not deferred to
+      // #build -- chunking any range wider than MAX_COUNT into multiple entries here, the same way
+      // ArrayCodePointSet#addRange does for an incremental insert.
+      for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
+        int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
+        appendKey(packKey(chunkMin, chunkMax - chunkMin - 1));
+      }
+    }
+
+    private void appendKey(int key) {
+      if (size == keys.length) {
+        keys = Arrays.copyOf(keys, keys.length + (keys.length >> 1) + 1);
+      }
+      keys[size] = key;
+      size++;
+    }
+
+    @Override
+    public void addAll(CodePointSet source) {
+      checkNotBuilt();
+      super.addAll(source);
+    }
+
+    @Override
+    public void invert() {
+      checkNotBuilt();
+      super.invert();
+    }
+
+    @Override
+    public CodePointSet build() {
+      checkNotBuilt();
+      built = true;
+      sortInPlaceByMin();
+      // Single forward pass: for each maximal run of touching/overlapping entries (by real
+      // extent, not by their individual pre-chunked boundaries), re-chunk the run's own full span
+      // into however many packed entries it actually needs, writing them back into the SAME
+      // array. The write cursor can never run ahead of the read cursor: a run built from N input
+      // entries can never need MORE than N output chunks (each input entry already covers up to
+      // MAX_COUNT+1 code points, so covering the same combined span can't take more chunks than
+      // that), so this is safe to compact in place.
+      int outSize = 0;
+      int i = 0;
+      while (i < size) {
+        int runMin = keyMin(keys[i]);
+        int runMax = keyMax(keys[i]);
+        i++;
+        while (i < size && keyMin(keys[i]) <= runMax) {
+          runMax = Math.max(runMax, keyMax(keys[i]));
+          i++;
+        }
+        for (int chunkMin = runMin; chunkMin < runMax; chunkMin += MAX_COUNT + 1) {
+          int chunkMax = Math.min(runMax, chunkMin + MAX_COUNT + 1);
+          keys[outSize] = packKey(chunkMin, chunkMax - chunkMin - 1);
+          outSize++;
+        }
+      }
+      size = outSize;
+      return this;
+    }
+
+    private void checkNotBuilt() {
+      if (built) {
+        throw new IllegalStateException(
+            "CodePointSetBuilder already built -- create a new builder per CodePointSet instead "
+                + "of reusing one (see class doc)");
+      }
+    }
+
+    /**
+     * Insertion sort of {@code keys[0..size)} by each entry's real (unpacked) min -- worth it over
+     * {@code Arrays.sort} despite its worse worst-case complexity, since every real call site's
+     * input is small and near-sorted already, where insertion sort's low constant factor wins.
+     * Compares extracted min, not the raw packed {@code int}s directly -- {@code min << 11} can
+     * overflow the sign bit as low as code point 0x100000, so raw numeric order isn't reliable
+     * (same reasoning as {@code ArrayCodePointSet#floorIndex}'s own comparisons, which never
+     * compare raw packed keys either).
+     */
+    private void sortInPlaceByMin() {
+      for (int i = 1; i < size; i++) {
+        int key = keys[i];
+        int min = keyMin(key);
+        int j = i - 1;
+        while (j >= 0 && keyMin(keys[j]) > min) {
+          keys[j + 1] = keys[j];
+          j--;
+        }
+        keys[j + 1] = key;
+      }
+    }
   }
 }

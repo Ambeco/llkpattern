@@ -25,6 +25,16 @@ performance, once the test suite is green:
    the work on it -- but once everything else is done, remind the user to plug in and unlock the
    Pixel 3a so this step can be run.
 
+**While iterating on a narrow hypothesis** (e.g. "does data structure X beat Y for an N-element
+accumulation?", not yet the final design), don't run the full corpus benchmark cycle above per
+variant -- it exercises the entire parse/compile pipeline, not just the operation in question, so
+each round trip costs a full JMH run's wall-clock and a large JSON to re-read for a narrow answer.
+Write a tiny throwaway JMH benchmark (or even a plain loop counting allocations) isolating just the
+operation being compared instead; reserve the full corpus + allocation-sampling + Pixel 3a cycle for
+confirming the final chosen design once the narrow question is settled. When reading
+`benchmarks/*_corpus_benchmark_results.json` (700+ lines) for a specific number, grep for the
+`"score"`/`"benchmark"` lines rather than reading the whole file.
+
 ## `MatcherConstruct` fields must be `final`
 
 Every field on a `MatcherConstruct` (`MatcherConstruct.java`) and its subclasses must be `final` --

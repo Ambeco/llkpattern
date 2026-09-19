@@ -1255,6 +1255,18 @@ final class PatternParser {
           "unknown Unicode prefix in character class \"", charClassName, "\"");
     }
 
+    // \p{script=Latin} always means a script; \p{IsXxx} tries the named classes/binary properties
+    // first and falls back to a script (\p{IsLatin}), same order as java.util.regex.
+    if (prefix == NamedCharClass.CharacterClassPrefix.script
+        || prefix == NamedCharClass.CharacterClassPrefix.is
+            && !NamedCharClass.isNamedClass(charClassName)) {
+      CodePointSet scriptRanges = NamedCharClass.scriptByName(charClassName);
+      if (scriptRanges == null) {
+        throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
+      }
+      return positive ? scriptRanges : scriptRanges.complement();
+    }
+
     try {
       NamedCharClass namedClass = NamedCharClass.valueOf(charClassName);
       CodePointSet namedRanges = namedClass.get(prefix, flags);

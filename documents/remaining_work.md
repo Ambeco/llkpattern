@@ -4,17 +4,7 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 ## HIGHEST PRIORITY
 
-- [ ] **Implement Unicode scripts** (`\p{IsScript}`/`\p{script=Script}`) — no `NamedCharClass` entry
-      uses `Source.Script` at all, so every such reference throws (covered, as throwing, by
-      `UnicodeClassTest`). The underlying data already exists: `unicodeanalyzer` already generated
-      one range set per script in `UnicodePredicates.java` (`LATIN`, `GREEK`, `CYRILLIC`, `HAN`,
-      `KHITAN_SMALL_SCRIPT`, ~160 total) -- confirmed 2026-09-07, this was previously assumed
-      unimplemented from scratch. What's missing is purely the `NamedCharClass` wiring, but at
-      ~160 entries, adding one enum constant per script (the pattern every other named class here
-      uses) is a lot of boilerplate for one feature -- worth restructuring `NamedCharClass` away
-      from one-Java-constant-per-name to a runtime `Map<String, NamedCharClass>`-style lookup
-      while doing this, rather than 160 more enum constants. Large enough to be its own session.
-- [ ] **Implement Unicode blocks** (`\p{InBlock}`/`\p{block=Block}`) -- unlike scripts, no
+- [ ] **Implement Unicode blocks** (`\p{InBlock}`/`\p{block=Block}`) -- no
       generator support exists for this at all (confirmed 2026-09-07: no block-named constant like
       `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
       just `NamedCharClass` wiring.

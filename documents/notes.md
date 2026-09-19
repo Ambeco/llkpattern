@@ -2648,3 +2648,10 @@ Notes to self about how to work on this project, and other context that doesn't 
   reuse as dispatch gates; `effectiveEntrySet`/`unionEntryPointsForFoldExclusion` deleted.
   `(?i:[a-z]+)X` and `(?i:a|A)` are now `PatternSyntaxException`s (documented divergence from
   `java.util.regex`); no scraped-corpus rows changed. Not re-benchmarked (CASE_INSENSITIVE-only path).
+
+- **2026-09-19: Unicode scripts implemented** (`\p{IsLatin}`, `\p{script=Latin}`/`sc=`, aliases like
+  `Latn`, case-insensitive). No enum constants: `NamedCharClass#scriptByName` maps
+  `Character.UnicodeScript.forName(name)` to the same-named generated `UnicodePredicates` field via
+  reflection. `\p{IsX}` tries named classes/binary properties first, then script (java.util.regex's
+  order). Gotchas: a script the running JDK knows but the checked-in `UnicodePredicates` predates is
+  reported unknown; reflection would break under R8/ProGuard field stripping (untested on Android).

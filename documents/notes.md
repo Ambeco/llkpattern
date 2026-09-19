@@ -2593,4 +2593,52 @@ Notes to self about how to work on this project, and other context that doesn't 
   and the two remaining `entryMap`-aggregation sites (`mergeEntryPoints`,
   `unionEntryPointsForFoldExclusion`) exist to produce `dispatchEntrySet` values for the compiled
   matcher graph and CASE_INSENSITIVE fold-priority data, not to support conflict detection -- so
-  there's no allocation left for a conflict-check-only replacement to eliminate.
+  there's no allocation left for a conflict-check-only replacement to eliminate. (Superseded by the
+  broader 2026-09-18 finding below: `entryMap`'s aggregation turns out to be load-bearing for
+  dispatch correctness too, not just an allocation to optimize away.)
+
+- **2026-09-18: eliminating `entrySet`/`dispatchEntrySet` entirely (inline per-node comparison
+  instead of a precomputed gate) tried and reverted -- a real regression, not just a missed
+  optimization.** The idea: drop `MatcherConstruct.entrySet` and `PatternConstruct.entryMap`
+  altogether: each node compares itself against `peeked` inline and, on rejection (before
+  consuming), defers to `failedEntry`; on acceptance, commits and delegates to `next`, with no node
+  ever branching on a delegated call's return value (modeled on a CPU opcode chain -- see the
+  discussion that arrived at this). Implemented fully, including a `Matcher#startedGroups` /
+  `captureGroups` split (a capture's start is stamped speculatively by a dedicated
+  `StartCaptureMatcherConstruct` and only promoted to the real, externally-visible slot by
+  `EndCaptureMatcherConstruct` on genuine completion -- this cleanly solved a `(a+b)+`-shaped bug
+  where a failed, zero-consumption re-entry attempt left a dangling capture start with no end,
+  crashing `group(1)`).
+  - The fatal case: `((a?b)c)?` against `""` returned `false` instead of `true`. Root cause: a
+    `Sequence`'s `dispatchFailedEntry` was only ever propagated onto its FIRST element
+    (`patterns.get(0)`) -- correct as long as only that element could be reached with zero prior
+    consumption. But when element 0 is itself nullable (`a?`), element 1 (`b`) can ALSO be reached
+    with zero consumption, and needs the SAME outer fallback threaded onto it too -- and if further
+    elements are nullable, potentially onto element 2, 3, etc. This isn't a one-off gap: it's
+    exactly what the OLD `entrySet` design got for free, since a sequence's precomputed `entryMap`
+    already folds a nullable leading element's own entry point together with whatever follows it
+    (`buildLoopEntryMap`'s `mergeEntryPoints(..., min == 0 ? next : null, ...)`) -- one aggregate
+    "can anything in this whole subtree start here" answer, computed once, rather than something
+    reconstructible from per-leaf checks chained by `failedEntry` alone.
+  - Three ways to fix properly, all rejected: (1) compile TWO matchers for a nullable-prefixed
+    sequence tail (accept-path and reject-path versions) -- combinatorial in the number of
+    consecutive nullable elements; (2) give every node a separate "would I accept this codepoint"
+    query, independent of actually matching -- re-adds a per-attempt CodePointSet-membership check
+    this design specifically existed to precompute once instead; (3) have a node signal "did I
+    commit" back up the call chain (a boolean or non-final `next`) -- breaks the `final`-fields
+    invariant `MatcherConstruct` subclasses are required to have (see this project's CLAUDE.md).
+  - Reverted (`git checkout --` on `Matcher.java`/`MatcherConstruct.java`/`PatternConstruct.java`
+    and the two test files it touched) back to the `entrySet`-gated design; full suite still green
+    (1498/0/561). The fold-ambiguity finding from the same investigation survives independently,
+    though, and is NOT reverted -- see the next entry.
+
+- **2026-09-18: `(a|A)` and `(?i:[a-z]+)X` are real compile-time ambiguities under
+  CASE_INSENSITIVE, not cases for fold-priority chain ordering to resolve.** Confirmed with the
+  project owner: the only "low priority"/catch-all candidate this engine should ever have is a
+  literal `.`-style wildcard -- everything else that folds into another candidate's claimed range
+  is a genuine LL(1) ambiguity and should be a `PatternSyntaxException`, the same as any other
+  overlap. `(?i:[a-z]+)X` against `"ABCX"` currently still compiles and matches (via
+  `effectiveEntrySet`'s fold-priority exclusion) -- that's the bug to fix, standalone from the
+  `entrySet`-elimination attempt above: make `checkDisjoint` fold each candidate's entry ranges
+  (under CASE_INSENSITIVE) before comparing, and delete the now-unneeded `effectiveEntrySet`/
+  `unionEntryPointsForFoldExclusion` fold-priority machinery entirely. Worth its own small branch.

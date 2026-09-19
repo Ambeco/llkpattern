@@ -2,13 +2,6 @@
 
 Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) to check the current state of the suite; see notes.md for dated pass/fail history rather than this file.
 
-## HIGHEST PRIORITY
-
-- [ ] **Implement Unicode blocks** (`\p{InBlock}`/`\p{block=Block}`) -- no
-      generator support exists for this at all (confirmed 2026-09-07: no block-named constant like
-      `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
-      just `NamedCharClass` wiring.
-
 ## Flattened matcher dispatch (merged to `main`)
 
 `MatcherConstruct.entrySet`/`failedEntry` fold the old `ForkingMatcherConstruct` into every node

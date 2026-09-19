@@ -2668,3 +2668,15 @@ Notes to self about how to work on this project, and other context that doesn't 
   the library would prefer when present.** Too much work (format, loader, discovery, validation), likely
   slower than compiled-in sets, and little value since regenerating `UnicodePredicates.java` is cheap.
   Reasoning is in design.md's "Alternatives Considered".
+
+- **2026-09-19: Unicode blocks implemented**, mirroring scripts (`NamedCharClass#blockByName` +
+  generated `blockByEnumName` switch; `In` and `block=`/`blk=` prefixes always mean a block). Fixed
+  `UnicodeAnalyzer#blocks` (it never `put` its ranges, and NPE'd on unassigned code points where
+  `UnicodeBlock.of` is null); fields are `BLOCK_`-prefixed to avoid script-name collisions. Also
+  fixed `PatternParser`'s `\p{...}` name scanner rejecting digits/`-` (`\p{InLatin_1_Supplement}`).
+  The 42 golden corpus rows using `\p{InGreek}`-style blocks flipped UNIMPLEMENTED -> AGREES vs
+  `java.util.regex`; refreshed just those rows (re-running `CorpusGenerator#generateRow` on them)
+  rather than regenerating whole golden files, to keep hand-triaged tags on other rows.
+  Cost of the extra 338 eagerly-built block sets in `UnicodePredicates`' static init (measured on JDK 17,
+  cold): ~10.5 -> ~14.5 ms one-time class init, heap ~90 -> ~109 KB. Compile/match paths unchanged, so no
+  JMH re-run. If startup ever matters (Android), lazily building block/script sets is the lever.

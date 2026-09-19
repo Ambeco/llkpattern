@@ -404,6 +404,23 @@ enum NamedCharClass {
     return UnicodePredicates.scriptByEnumName(script.name());
   }
 
+  /**
+   * The Unicode block named {@code name} (whatever {@link Character.UnicodeBlock#forName} accepts:
+   * e.g. {@code BasicLatin}, {@code Basic_Latin}, case-insensitive), or {@code null} if it names no
+   * block. Same shape as {@link #scriptByName}: a generated string switch, not reflection or enum
+   * constants. A block the running JDK knows but the checked-in {@code UnicodePredicates} predates
+   * is reported unknown.
+   */
+  static @Nullable CodePointSet blockByName(String name) {
+    Character.UnicodeBlock block;
+    try {
+      block = Character.UnicodeBlock.forName(name);
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+    return UnicodePredicates.blockByEnumName(block.toString());
+  }
+
   /** True if {@code name} is a named class that may be looked up under the {@code Is} prefix. */
   static boolean isNamedClass(String name) {
     try {

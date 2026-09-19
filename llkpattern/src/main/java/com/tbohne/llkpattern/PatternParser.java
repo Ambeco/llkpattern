@@ -1201,9 +1201,11 @@ final class PatternParser {
       // "Join_Control", "Noncharacter_Code_Point", and the "general_category=" prefix itself --
       // without it, \p{IsWhite_Space} (and friends) couldn't even reach the name-lookup logic
       // below, always failing here first. Found via UnicodeClassTest. See remaining_work.md.
-      if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '=' && c != '_') {
+      // Digits and '-' are needed for block names like "Latin-1Supplement"/"Latin_1_Supplement".
+      if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9')
+          && c != '=' && c != '_' && c != '-') {
         throw throwUnexpectedChar(
-            "character classes \"\\p{...} must have names in [a-zA-Z_=]. Name started at ",
+            "character classes \"\\p{...} must have names in [a-zA-Z0-9_=-]. Name started at ",
             new CodePointReference(index));
       }
       end++;
@@ -1265,6 +1267,16 @@ final class PatternParser {
         throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
       }
       return positive ? scriptRanges : scriptRanges.complement();
+    }
+
+    // \p{InGreek}/\p{block=Greek} are always blocks.
+    if (prefix == NamedCharClass.CharacterClassPrefix.in
+        || prefix == NamedCharClass.CharacterClassPrefix.block) {
+      CodePointSet blockRanges = NamedCharClass.blockByName(charClassName);
+      if (blockRanges == null) {
+        throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
+      }
+      return positive ? blockRanges : blockRanges.complement();
     }
 
     try {

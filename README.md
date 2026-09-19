@@ -58,7 +58,6 @@ Ll1Pattern.compile("a|ab"); // throws PatternSyntaxException: both branches star
 
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
-- **Unicode blocks** (`\p{InBlock}`/`\p{block=Block}`) — not implemented yet; needs generator work first (scripts are done).
 - **Lookahead/lookaround, quotation (`\Q...\E`), atomic groups (`(?>X)`)** — not implemented; lookahead/lookbehind are currently rejected outright at parse time, since they can't be guaranteed to run in linear time.
 - **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch; `UNIX_LINES` is only partially honored (affects `^`/`$`/`\Z` but not yet `.`/`\s`/etc.'s line-terminator handling).
 - **Multi-digit backreferences** (`\12`+) — only `\1`-`\9` are supported today.

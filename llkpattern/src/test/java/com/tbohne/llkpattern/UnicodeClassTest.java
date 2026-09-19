@@ -10,9 +10,8 @@ import org.junit.runners.JUnit4;
 /**
  * Unicode general categories (\p{Lu} etc, NamedCharClass's Source.Category entries) and binary
  * properties (\p{IsAlphabetic} etc, Source.UProperty entries), \P{...} negation, and
- * Unicode-qualified names used inside a character class. Scripts (\p{IsScript}) are
- * implemented via NamedCharClass#scriptByName; blocks (\p{InBlock}) are NOT implemented -- see
- * remaining_work.md -- so those are tested for their actual (throwing) behavior, not skipped.
+ * Unicode-qualified names used inside a character class. Scripts (\p{IsScript}) and
+ * blocks (\p{InBlock}) resolve via NamedCharClass#scriptByName/#blockByName.
  */
 @RunWith(JUnit4.class)
 public class UnicodeClassTest {
@@ -124,9 +123,7 @@ public class UnicodeClassTest {
     assertThat(p.matcher("5").matches(), is(false));
   }
 
-  // --- Scripts/blocks: confirmed NOT implemented (no Source.Script/Source.Block enum entries
-  // exist in NamedCharClass.java at all) -- see remaining_work.md. Document the actual (throwing)
-  // behavior rather than skip or assert something false.
+  // --- Scripts (NamedCharClass#scriptByName) ---
 
   private static boolean m(String pattern, String input) {
     return Ll1Pattern.compile(pattern).matcher(input).matches();
@@ -205,16 +202,66 @@ public class UnicodeClassTest {
         PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{script=Lu}"));
   }
 
+  // --- Blocks ---
+
   @Test
-  public void block_isNotImplemented_throwsUnknownClass() {
-    org.junit.Assert.assertThrows(
-        PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{InGreek}"));
+  public void block_inForm() {
+    assertThat(m("\\p{InGreek}", "α"), is(true));
+    assertThat(m("\\p{InGreek}", "a"), is(false));
+    assertThat(m("\\p{InBasicLatin}+", "abc"), is(true));
+    assertThat(m("\\p{InBasicLatin}", "é"), is(false));
   }
 
   @Test
-  public void block_equalsForm_isNotImplemented_throwsUnknownClass() {
+  public void block_equalsForms() {
+    assertThat(m("\\p{block=Greek}", "α"), is(true));
+    assertThat(m("\\p{blk=Cyrillic}", "д"), is(true));
+    assertThat(m("\\p{blk=Cyrillic}", "d"), is(false));
+  }
+
+  @Test
+  public void block_nameVariantsAndCase() {
+    assertThat(m("\\p{InBasic_Latin}", "a"), is(true));
+    assertThat(m("\\p{InBASICLATIN}", "a"), is(true));
+    assertThat(m("\\p{InLatin_1_Supplement}", "é"), is(true));
+  }
+
+  @Test
+  public void block_isExactlyOneContiguousRange() {
+    assertThat(m("\\p{InBasicLatin}", ""), is(true));
+    assertThat(m("\\p{InBasicLatin}", ""), is(false));
+    assertThat(m("\\p{InBasicLatin}", " "), is(true));
+  }
+
+  @Test
+  public void block_negationAndBracket() {
+    assertThat(m("\\P{InGreek}", "a"), is(true));
+    assertThat(m("\\P{InGreek}", "α"), is(false));
+    assertThat(m("[\\p{InGreek}\\d]+", "α1"), is(true));
+    assertThat(m("[^\\p{InGreek}]", "α"), is(false));
+  }
+
+  @Test
+  public void block_supplementaryCodePoint() {
+    assertThat(m("\\p{InGothic}", "𐌰"), is(true));
+  }
+
+  @Test
+  public void block_isDistinctFromScript() {
+    // Greek script includes U+1F00 (Greek Extended block), which the Greek block does not.
+    assertThat(m("\\p{IsGreek}", "ἀ"), is(true));
+    assertThat(m("\\p{InGreek}", "ἀ"), is(false));
+    // Common script covers ASCII digits; the Basic Latin block covers letters too.
+    assertThat(m("\\p{InBasicLatin}", "a"), is(true));
+    assertThat(m("\\p{IsCommon}", "a"), is(false));
+  }
+
+  @Test
+  public void block_unknownName_throws() {
     org.junit.Assert.assertThrows(
-        PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{block=Greek}"));
+        PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{InNotABlock}"));
+    org.junit.Assert.assertThrows(
+        PatternSyntaxException.class, () -> Ll1Pattern.compile("\\p{block=NotABlock}"));
   }
 
   @Test

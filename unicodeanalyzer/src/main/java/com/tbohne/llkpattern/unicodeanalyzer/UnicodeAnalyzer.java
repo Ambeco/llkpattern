@@ -163,7 +163,8 @@ public class UnicodeAnalyzer {
 		}
 
 	public static void blocks() {
-		Map<Character.UnicodeBlock, Set<Range<Integer>>> ranges = new HashMap<>(700);
+		// LinkedHashMap: blocks come out in ascending code point order, so the output is deterministic.
+		Map<Character.UnicodeBlock, Set<Range<Integer>>> ranges = new java.util.LinkedHashMap<>();
 		int i=0;
 		while (i<=0x10FFFF) {
 			int min = i;
@@ -172,11 +173,25 @@ public class UnicodeAnalyzer {
 			while (i<=0x10FFFF && Character.UnicodeBlock.of(i) == block)
 				++i;
 			int max = i;
-			ranges.getOrDefault(block, new HashSet<>()).add(Range.closedOpen(min, max));
+			// of() returns null for code points in no block; those are simply not a block.
+			if (block != null) {
+				ranges.computeIfAbsent(block, b -> new HashSet<>()).add(Range.closedOpen(min, max));
+			}
 		}
+		// Block field names are prefixed: several collide with script names (GREEK, ARABIC, ...).
 		for (Map.Entry<Character.UnicodeBlock, Set<Range<Integer>>> entry : ranges.entrySet()) {
-			printRanges(entry.getKey().toString(), entry.getValue());
+			printRanges("BLOCK_" + entry.getKey().toString(), entry.getValue());
 		}
+		// Same shrinker-safe string switch as scriptByEnumName, keyed by UnicodeBlock#toString().
+		System.out.print("/** The set for {@code Character.UnicodeBlock#toString()} {@code enumName}, or {@code null} if unknown. */\n");
+		System.out.print("static CodePointSet blockByEnumName(String enumName) {\n");
+		System.out.print("\tswitch (enumName) {\n");
+		for (Character.UnicodeBlock block : ranges.keySet()) {
+			System.out.printf("\t\tcase \"%s\": return BLOCK_%s;\n", block, block);
+		}
+		System.out.print("\t\tdefault: return null;\n");
+		System.out.print("\t}\n");
+		System.out.print("}\n\n");
 	}
 
 	public static void printRanges(String name, Set<Range<Integer>> rangeSet) {

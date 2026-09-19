@@ -15053,4 +15053,3053 @@ static CodePointSet scriptByEnumName(String enumName) {
 	}
 }
 
+private static CodePointSet init_BLOCK_BASIC_LATIN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x0, 0x80);
+	return result;
+}
+static final CodePointSet BLOCK_BASIC_LATIN = init_BLOCK_BASIC_LATIN();
+
+private static CodePointSet init_BLOCK_LATIN_1_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x80, 0x100);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_1_SUPPLEMENT = init_BLOCK_LATIN_1_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x100, 0x180);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_A = init_BLOCK_LATIN_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x180, 0x250);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_B = init_BLOCK_LATIN_EXTENDED_B();
+
+private static CodePointSet init_BLOCK_IPA_EXTENSIONS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x250, 0x2b0);
+	return result;
+}
+static final CodePointSet BLOCK_IPA_EXTENSIONS = init_BLOCK_IPA_EXTENSIONS();
+
+private static CodePointSet init_BLOCK_SPACING_MODIFIER_LETTERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2b0, 0x300);
+	return result;
+}
+static final CodePointSet BLOCK_SPACING_MODIFIER_LETTERS = init_BLOCK_SPACING_MODIFIER_LETTERS();
+
+private static CodePointSet init_BLOCK_COMBINING_DIACRITICAL_MARKS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x300, 0x370);
+	return result;
+}
+static final CodePointSet BLOCK_COMBINING_DIACRITICAL_MARKS = init_BLOCK_COMBINING_DIACRITICAL_MARKS();
+
+private static CodePointSet init_BLOCK_GREEK() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x370, 0x400);
+	return result;
+}
+static final CodePointSet BLOCK_GREEK = init_BLOCK_GREEK();
+
+private static CodePointSet init_BLOCK_CYRILLIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x400, 0x500);
+	return result;
+}
+static final CodePointSet BLOCK_CYRILLIC = init_BLOCK_CYRILLIC();
+
+private static CodePointSet init_BLOCK_CYRILLIC_SUPPLEMENTARY() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x500, 0x530);
+	return result;
+}
+static final CodePointSet BLOCK_CYRILLIC_SUPPLEMENTARY = init_BLOCK_CYRILLIC_SUPPLEMENTARY();
+
+private static CodePointSet init_BLOCK_ARMENIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x530, 0x590);
+	return result;
+}
+static final CodePointSet BLOCK_ARMENIAN = init_BLOCK_ARMENIAN();
+
+private static CodePointSet init_BLOCK_HEBREW() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x590, 0x600);
+	return result;
+}
+static final CodePointSet BLOCK_HEBREW = init_BLOCK_HEBREW();
+
+private static CodePointSet init_BLOCK_ARABIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x600, 0x700);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC = init_BLOCK_ARABIC();
+
+private static CodePointSet init_BLOCK_SYRIAC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x700, 0x750);
+	return result;
+}
+static final CodePointSet BLOCK_SYRIAC = init_BLOCK_SYRIAC();
+
+private static CodePointSet init_BLOCK_ARABIC_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x750, 0x780);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC_SUPPLEMENT = init_BLOCK_ARABIC_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_THAANA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x780, 0x7c0);
+	return result;
+}
+static final CodePointSet BLOCK_THAANA = init_BLOCK_THAANA();
+
+private static CodePointSet init_BLOCK_NKO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x7c0, 0x800);
+	return result;
+}
+static final CodePointSet BLOCK_NKO = init_BLOCK_NKO();
+
+private static CodePointSet init_BLOCK_SAMARITAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x800, 0x840);
+	return result;
+}
+static final CodePointSet BLOCK_SAMARITAN = init_BLOCK_SAMARITAN();
+
+private static CodePointSet init_BLOCK_MANDAIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x840, 0x860);
+	return result;
+}
+static final CodePointSet BLOCK_MANDAIC = init_BLOCK_MANDAIC();
+
+private static CodePointSet init_BLOCK_SYRIAC_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x860, 0x870);
+	return result;
+}
+static final CodePointSet BLOCK_SYRIAC_SUPPLEMENT = init_BLOCK_SYRIAC_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_ARABIC_EXTENDED_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x870, 0x8a0);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC_EXTENDED_B = init_BLOCK_ARABIC_EXTENDED_B();
+
+private static CodePointSet init_BLOCK_ARABIC_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x8a0, 0x900);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC_EXTENDED_A = init_BLOCK_ARABIC_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_DEVANAGARI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x900, 0x980);
+	return result;
+}
+static final CodePointSet BLOCK_DEVANAGARI = init_BLOCK_DEVANAGARI();
+
+private static CodePointSet init_BLOCK_BENGALI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x980, 0xa00);
+	return result;
+}
+static final CodePointSet BLOCK_BENGALI = init_BLOCK_BENGALI();
+
+private static CodePointSet init_BLOCK_GURMUKHI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa00, 0xa80);
+	return result;
+}
+static final CodePointSet BLOCK_GURMUKHI = init_BLOCK_GURMUKHI();
+
+private static CodePointSet init_BLOCK_GUJARATI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa80, 0xb00);
+	return result;
+}
+static final CodePointSet BLOCK_GUJARATI = init_BLOCK_GUJARATI();
+
+private static CodePointSet init_BLOCK_ORIYA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xb00, 0xb80);
+	return result;
+}
+static final CodePointSet BLOCK_ORIYA = init_BLOCK_ORIYA();
+
+private static CodePointSet init_BLOCK_TAMIL() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xb80, 0xc00);
+	return result;
+}
+static final CodePointSet BLOCK_TAMIL = init_BLOCK_TAMIL();
+
+private static CodePointSet init_BLOCK_TELUGU() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xc00, 0xc80);
+	return result;
+}
+static final CodePointSet BLOCK_TELUGU = init_BLOCK_TELUGU();
+
+private static CodePointSet init_BLOCK_KANNADA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xc80, 0xd00);
+	return result;
+}
+static final CodePointSet BLOCK_KANNADA = init_BLOCK_KANNADA();
+
+private static CodePointSet init_BLOCK_MALAYALAM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xd00, 0xd80);
+	return result;
+}
+static final CodePointSet BLOCK_MALAYALAM = init_BLOCK_MALAYALAM();
+
+private static CodePointSet init_BLOCK_SINHALA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xd80, 0xe00);
+	return result;
+}
+static final CodePointSet BLOCK_SINHALA = init_BLOCK_SINHALA();
+
+private static CodePointSet init_BLOCK_THAI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xe00, 0xe80);
+	return result;
+}
+static final CodePointSet BLOCK_THAI = init_BLOCK_THAI();
+
+private static CodePointSet init_BLOCK_LAO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xe80, 0xf00);
+	return result;
+}
+static final CodePointSet BLOCK_LAO = init_BLOCK_LAO();
+
+private static CodePointSet init_BLOCK_TIBETAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xf00, 0x1000);
+	return result;
+}
+static final CodePointSet BLOCK_TIBETAN = init_BLOCK_TIBETAN();
+
+private static CodePointSet init_BLOCK_MYANMAR() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1000, 0x10a0);
+	return result;
+}
+static final CodePointSet BLOCK_MYANMAR = init_BLOCK_MYANMAR();
+
+private static CodePointSet init_BLOCK_GEORGIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10a0, 0x1100);
+	return result;
+}
+static final CodePointSet BLOCK_GEORGIAN = init_BLOCK_GEORGIAN();
+
+private static CodePointSet init_BLOCK_HANGUL_JAMO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1100, 0x1200);
+	return result;
+}
+static final CodePointSet BLOCK_HANGUL_JAMO = init_BLOCK_HANGUL_JAMO();
+
+private static CodePointSet init_BLOCK_ETHIOPIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1200, 0x1380);
+	return result;
+}
+static final CodePointSet BLOCK_ETHIOPIC = init_BLOCK_ETHIOPIC();
+
+private static CodePointSet init_BLOCK_ETHIOPIC_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1380, 0x13a0);
+	return result;
+}
+static final CodePointSet BLOCK_ETHIOPIC_SUPPLEMENT = init_BLOCK_ETHIOPIC_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_CHEROKEE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x13a0, 0x1400);
+	return result;
+}
+static final CodePointSet BLOCK_CHEROKEE = init_BLOCK_CHEROKEE();
+
+private static CodePointSet init_BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1400, 0x1680);
+	return result;
+}
+static final CodePointSet BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS = init_BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS();
+
+private static CodePointSet init_BLOCK_OGHAM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1680, 0x16a0);
+	return result;
+}
+static final CodePointSet BLOCK_OGHAM = init_BLOCK_OGHAM();
+
+private static CodePointSet init_BLOCK_RUNIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16a0, 0x1700);
+	return result;
+}
+static final CodePointSet BLOCK_RUNIC = init_BLOCK_RUNIC();
+
+private static CodePointSet init_BLOCK_TAGALOG() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1700, 0x1720);
+	return result;
+}
+static final CodePointSet BLOCK_TAGALOG = init_BLOCK_TAGALOG();
+
+private static CodePointSet init_BLOCK_HANUNOO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1720, 0x1740);
+	return result;
+}
+static final CodePointSet BLOCK_HANUNOO = init_BLOCK_HANUNOO();
+
+private static CodePointSet init_BLOCK_BUHID() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1740, 0x1760);
+	return result;
+}
+static final CodePointSet BLOCK_BUHID = init_BLOCK_BUHID();
+
+private static CodePointSet init_BLOCK_TAGBANWA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1760, 0x1780);
+	return result;
+}
+static final CodePointSet BLOCK_TAGBANWA = init_BLOCK_TAGBANWA();
+
+private static CodePointSet init_BLOCK_KHMER() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1780, 0x1800);
+	return result;
+}
+static final CodePointSet BLOCK_KHMER = init_BLOCK_KHMER();
+
+private static CodePointSet init_BLOCK_MONGOLIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1800, 0x18b0);
+	return result;
+}
+static final CodePointSet BLOCK_MONGOLIAN = init_BLOCK_MONGOLIAN();
+
+private static CodePointSet init_BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x18b0, 0x1900);
+	return result;
+}
+static final CodePointSet BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED = init_BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED();
+
+private static CodePointSet init_BLOCK_LIMBU() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1900, 0x1950);
+	return result;
+}
+static final CodePointSet BLOCK_LIMBU = init_BLOCK_LIMBU();
+
+private static CodePointSet init_BLOCK_TAI_LE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1950, 0x1980);
+	return result;
+}
+static final CodePointSet BLOCK_TAI_LE = init_BLOCK_TAI_LE();
+
+private static CodePointSet init_BLOCK_NEW_TAI_LUE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1980, 0x19e0);
+	return result;
+}
+static final CodePointSet BLOCK_NEW_TAI_LUE = init_BLOCK_NEW_TAI_LUE();
+
+private static CodePointSet init_BLOCK_KHMER_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x19e0, 0x1a00);
+	return result;
+}
+static final CodePointSet BLOCK_KHMER_SYMBOLS = init_BLOCK_KHMER_SYMBOLS();
+
+private static CodePointSet init_BLOCK_BUGINESE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1a00, 0x1a20);
+	return result;
+}
+static final CodePointSet BLOCK_BUGINESE = init_BLOCK_BUGINESE();
+
+private static CodePointSet init_BLOCK_TAI_THAM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1a20, 0x1ab0);
+	return result;
+}
+static final CodePointSet BLOCK_TAI_THAM = init_BLOCK_TAI_THAM();
+
+private static CodePointSet init_BLOCK_COMBINING_DIACRITICAL_MARKS_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1ab0, 0x1b00);
+	return result;
+}
+static final CodePointSet BLOCK_COMBINING_DIACRITICAL_MARKS_EXTENDED = init_BLOCK_COMBINING_DIACRITICAL_MARKS_EXTENDED();
+
+private static CodePointSet init_BLOCK_BALINESE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1b00, 0x1b80);
+	return result;
+}
+static final CodePointSet BLOCK_BALINESE = init_BLOCK_BALINESE();
+
+private static CodePointSet init_BLOCK_SUNDANESE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1b80, 0x1bc0);
+	return result;
+}
+static final CodePointSet BLOCK_SUNDANESE = init_BLOCK_SUNDANESE();
+
+private static CodePointSet init_BLOCK_BATAK() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1bc0, 0x1c00);
+	return result;
+}
+static final CodePointSet BLOCK_BATAK = init_BLOCK_BATAK();
+
+private static CodePointSet init_BLOCK_LEPCHA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1c00, 0x1c50);
+	return result;
+}
+static final CodePointSet BLOCK_LEPCHA = init_BLOCK_LEPCHA();
+
+private static CodePointSet init_BLOCK_OL_CHIKI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1c50, 0x1c80);
+	return result;
+}
+static final CodePointSet BLOCK_OL_CHIKI = init_BLOCK_OL_CHIKI();
+
+private static CodePointSet init_BLOCK_CYRILLIC_EXTENDED_C() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1c80, 0x1c90);
+	return result;
+}
+static final CodePointSet BLOCK_CYRILLIC_EXTENDED_C = init_BLOCK_CYRILLIC_EXTENDED_C();
+
+private static CodePointSet init_BLOCK_GEORGIAN_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1c90, 0x1cc0);
+	return result;
+}
+static final CodePointSet BLOCK_GEORGIAN_EXTENDED = init_BLOCK_GEORGIAN_EXTENDED();
+
+private static CodePointSet init_BLOCK_SUNDANESE_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1cc0, 0x1cd0);
+	return result;
+}
+static final CodePointSet BLOCK_SUNDANESE_SUPPLEMENT = init_BLOCK_SUNDANESE_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_VEDIC_EXTENSIONS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1cd0, 0x1d00);
+	return result;
+}
+static final CodePointSet BLOCK_VEDIC_EXTENSIONS = init_BLOCK_VEDIC_EXTENSIONS();
+
+private static CodePointSet init_BLOCK_PHONETIC_EXTENSIONS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d00, 0x1d80);
+	return result;
+}
+static final CodePointSet BLOCK_PHONETIC_EXTENSIONS = init_BLOCK_PHONETIC_EXTENSIONS();
+
+private static CodePointSet init_BLOCK_PHONETIC_EXTENSIONS_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d80, 0x1dc0);
+	return result;
+}
+static final CodePointSet BLOCK_PHONETIC_EXTENSIONS_SUPPLEMENT = init_BLOCK_PHONETIC_EXTENSIONS_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_COMBINING_DIACRITICAL_MARKS_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1dc0, 0x1e00);
+	return result;
+}
+static final CodePointSet BLOCK_COMBINING_DIACRITICAL_MARKS_SUPPLEMENT = init_BLOCK_COMBINING_DIACRITICAL_MARKS_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_ADDITIONAL() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e00, 0x1f00);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_ADDITIONAL = init_BLOCK_LATIN_EXTENDED_ADDITIONAL();
+
+private static CodePointSet init_BLOCK_GREEK_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f00, 0x2000);
+	return result;
+}
+static final CodePointSet BLOCK_GREEK_EXTENDED = init_BLOCK_GREEK_EXTENDED();
+
+private static CodePointSet init_BLOCK_GENERAL_PUNCTUATION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2000, 0x2070);
+	return result;
+}
+static final CodePointSet BLOCK_GENERAL_PUNCTUATION = init_BLOCK_GENERAL_PUNCTUATION();
+
+private static CodePointSet init_BLOCK_SUPERSCRIPTS_AND_SUBSCRIPTS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2070, 0x20a0);
+	return result;
+}
+static final CodePointSet BLOCK_SUPERSCRIPTS_AND_SUBSCRIPTS = init_BLOCK_SUPERSCRIPTS_AND_SUBSCRIPTS();
+
+private static CodePointSet init_BLOCK_CURRENCY_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x20a0, 0x20d0);
+	return result;
+}
+static final CodePointSet BLOCK_CURRENCY_SYMBOLS = init_BLOCK_CURRENCY_SYMBOLS();
+
+private static CodePointSet init_BLOCK_COMBINING_MARKS_FOR_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x20d0, 0x2100);
+	return result;
+}
+static final CodePointSet BLOCK_COMBINING_MARKS_FOR_SYMBOLS = init_BLOCK_COMBINING_MARKS_FOR_SYMBOLS();
+
+private static CodePointSet init_BLOCK_LETTERLIKE_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2100, 0x2150);
+	return result;
+}
+static final CodePointSet BLOCK_LETTERLIKE_SYMBOLS = init_BLOCK_LETTERLIKE_SYMBOLS();
+
+private static CodePointSet init_BLOCK_NUMBER_FORMS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2150, 0x2190);
+	return result;
+}
+static final CodePointSet BLOCK_NUMBER_FORMS = init_BLOCK_NUMBER_FORMS();
+
+private static CodePointSet init_BLOCK_ARROWS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2190, 0x2200);
+	return result;
+}
+static final CodePointSet BLOCK_ARROWS = init_BLOCK_ARROWS();
+
+private static CodePointSet init_BLOCK_MATHEMATICAL_OPERATORS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2200, 0x2300);
+	return result;
+}
+static final CodePointSet BLOCK_MATHEMATICAL_OPERATORS = init_BLOCK_MATHEMATICAL_OPERATORS();
+
+private static CodePointSet init_BLOCK_MISCELLANEOUS_TECHNICAL() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2300, 0x2400);
+	return result;
+}
+static final CodePointSet BLOCK_MISCELLANEOUS_TECHNICAL = init_BLOCK_MISCELLANEOUS_TECHNICAL();
+
+private static CodePointSet init_BLOCK_CONTROL_PICTURES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2400, 0x2440);
+	return result;
+}
+static final CodePointSet BLOCK_CONTROL_PICTURES = init_BLOCK_CONTROL_PICTURES();
+
+private static CodePointSet init_BLOCK_OPTICAL_CHARACTER_RECOGNITION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2440, 0x2460);
+	return result;
+}
+static final CodePointSet BLOCK_OPTICAL_CHARACTER_RECOGNITION = init_BLOCK_OPTICAL_CHARACTER_RECOGNITION();
+
+private static CodePointSet init_BLOCK_ENCLOSED_ALPHANUMERICS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2460, 0x2500);
+	return result;
+}
+static final CodePointSet BLOCK_ENCLOSED_ALPHANUMERICS = init_BLOCK_ENCLOSED_ALPHANUMERICS();
+
+private static CodePointSet init_BLOCK_BOX_DRAWING() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2500, 0x2580);
+	return result;
+}
+static final CodePointSet BLOCK_BOX_DRAWING = init_BLOCK_BOX_DRAWING();
+
+private static CodePointSet init_BLOCK_BLOCK_ELEMENTS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2580, 0x25a0);
+	return result;
+}
+static final CodePointSet BLOCK_BLOCK_ELEMENTS = init_BLOCK_BLOCK_ELEMENTS();
+
+private static CodePointSet init_BLOCK_GEOMETRIC_SHAPES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x25a0, 0x2600);
+	return result;
+}
+static final CodePointSet BLOCK_GEOMETRIC_SHAPES = init_BLOCK_GEOMETRIC_SHAPES();
+
+private static CodePointSet init_BLOCK_MISCELLANEOUS_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2600, 0x2700);
+	return result;
+}
+static final CodePointSet BLOCK_MISCELLANEOUS_SYMBOLS = init_BLOCK_MISCELLANEOUS_SYMBOLS();
+
+private static CodePointSet init_BLOCK_DINGBATS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2700, 0x27c0);
+	return result;
+}
+static final CodePointSet BLOCK_DINGBATS = init_BLOCK_DINGBATS();
+
+private static CodePointSet init_BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x27c0, 0x27f0);
+	return result;
+}
+static final CodePointSet BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A = init_BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTAL_ARROWS_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x27f0, 0x2800);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTAL_ARROWS_A = init_BLOCK_SUPPLEMENTAL_ARROWS_A();
+
+private static CodePointSet init_BLOCK_BRAILLE_PATTERNS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2800, 0x2900);
+	return result;
+}
+static final CodePointSet BLOCK_BRAILLE_PATTERNS = init_BLOCK_BRAILLE_PATTERNS();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTAL_ARROWS_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2900, 0x2980);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTAL_ARROWS_B = init_BLOCK_SUPPLEMENTAL_ARROWS_B();
+
+private static CodePointSet init_BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2980, 0x2a00);
+	return result;
+}
+static final CodePointSet BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B = init_BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTAL_MATHEMATICAL_OPERATORS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2a00, 0x2b00);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTAL_MATHEMATICAL_OPERATORS = init_BLOCK_SUPPLEMENTAL_MATHEMATICAL_OPERATORS();
+
+private static CodePointSet init_BLOCK_MISCELLANEOUS_SYMBOLS_AND_ARROWS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2b00, 0x2c00);
+	return result;
+}
+static final CodePointSet BLOCK_MISCELLANEOUS_SYMBOLS_AND_ARROWS = init_BLOCK_MISCELLANEOUS_SYMBOLS_AND_ARROWS();
+
+private static CodePointSet init_BLOCK_GLAGOLITIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2c00, 0x2c60);
+	return result;
+}
+static final CodePointSet BLOCK_GLAGOLITIC = init_BLOCK_GLAGOLITIC();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_C() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2c60, 0x2c80);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_C = init_BLOCK_LATIN_EXTENDED_C();
+
+private static CodePointSet init_BLOCK_COPTIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2c80, 0x2d00);
+	return result;
+}
+static final CodePointSet BLOCK_COPTIC = init_BLOCK_COPTIC();
+
+private static CodePointSet init_BLOCK_GEORGIAN_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2d00, 0x2d30);
+	return result;
+}
+static final CodePointSet BLOCK_GEORGIAN_SUPPLEMENT = init_BLOCK_GEORGIAN_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_TIFINAGH() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2d30, 0x2d80);
+	return result;
+}
+static final CodePointSet BLOCK_TIFINAGH = init_BLOCK_TIFINAGH();
+
+private static CodePointSet init_BLOCK_ETHIOPIC_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2d80, 0x2de0);
+	return result;
+}
+static final CodePointSet BLOCK_ETHIOPIC_EXTENDED = init_BLOCK_ETHIOPIC_EXTENDED();
+
+private static CodePointSet init_BLOCK_CYRILLIC_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2de0, 0x2e00);
+	return result;
+}
+static final CodePointSet BLOCK_CYRILLIC_EXTENDED_A = init_BLOCK_CYRILLIC_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTAL_PUNCTUATION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2e00, 0x2e80);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTAL_PUNCTUATION = init_BLOCK_SUPPLEMENTAL_PUNCTUATION();
+
+private static CodePointSet init_BLOCK_CJK_RADICALS_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2e80, 0x2f00);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_RADICALS_SUPPLEMENT = init_BLOCK_CJK_RADICALS_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_KANGXI_RADICALS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2f00, 0x2fe0);
+	return result;
+}
+static final CodePointSet BLOCK_KANGXI_RADICALS = init_BLOCK_KANGXI_RADICALS();
+
+private static CodePointSet init_BLOCK_IDEOGRAPHIC_DESCRIPTION_CHARACTERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2ff0, 0x3000);
+	return result;
+}
+static final CodePointSet BLOCK_IDEOGRAPHIC_DESCRIPTION_CHARACTERS = init_BLOCK_IDEOGRAPHIC_DESCRIPTION_CHARACTERS();
+
+private static CodePointSet init_BLOCK_CJK_SYMBOLS_AND_PUNCTUATION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3000, 0x3040);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_SYMBOLS_AND_PUNCTUATION = init_BLOCK_CJK_SYMBOLS_AND_PUNCTUATION();
+
+private static CodePointSet init_BLOCK_HIRAGANA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3040, 0x30a0);
+	return result;
+}
+static final CodePointSet BLOCK_HIRAGANA = init_BLOCK_HIRAGANA();
+
+private static CodePointSet init_BLOCK_KATAKANA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x30a0, 0x3100);
+	return result;
+}
+static final CodePointSet BLOCK_KATAKANA = init_BLOCK_KATAKANA();
+
+private static CodePointSet init_BLOCK_BOPOMOFO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3100, 0x3130);
+	return result;
+}
+static final CodePointSet BLOCK_BOPOMOFO = init_BLOCK_BOPOMOFO();
+
+private static CodePointSet init_BLOCK_HANGUL_COMPATIBILITY_JAMO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3130, 0x3190);
+	return result;
+}
+static final CodePointSet BLOCK_HANGUL_COMPATIBILITY_JAMO = init_BLOCK_HANGUL_COMPATIBILITY_JAMO();
+
+private static CodePointSet init_BLOCK_KANBUN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3190, 0x31a0);
+	return result;
+}
+static final CodePointSet BLOCK_KANBUN = init_BLOCK_KANBUN();
+
+private static CodePointSet init_BLOCK_BOPOMOFO_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x31a0, 0x31c0);
+	return result;
+}
+static final CodePointSet BLOCK_BOPOMOFO_EXTENDED = init_BLOCK_BOPOMOFO_EXTENDED();
+
+private static CodePointSet init_BLOCK_CJK_STROKES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x31c0, 0x31f0);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_STROKES = init_BLOCK_CJK_STROKES();
+
+private static CodePointSet init_BLOCK_KATAKANA_PHONETIC_EXTENSIONS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x31f0, 0x3200);
+	return result;
+}
+static final CodePointSet BLOCK_KATAKANA_PHONETIC_EXTENSIONS = init_BLOCK_KATAKANA_PHONETIC_EXTENSIONS();
+
+private static CodePointSet init_BLOCK_ENCLOSED_CJK_LETTERS_AND_MONTHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3200, 0x3300);
+	return result;
+}
+static final CodePointSet BLOCK_ENCLOSED_CJK_LETTERS_AND_MONTHS = init_BLOCK_ENCLOSED_CJK_LETTERS_AND_MONTHS();
+
+private static CodePointSet init_BLOCK_CJK_COMPATIBILITY() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3300, 0x3400);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_COMPATIBILITY = init_BLOCK_CJK_COMPATIBILITY();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x3400, 0x4dc0);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A();
+
+private static CodePointSet init_BLOCK_YIJING_HEXAGRAM_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x4dc0, 0x4e00);
+	return result;
+}
+static final CodePointSet BLOCK_YIJING_HEXAGRAM_SYMBOLS = init_BLOCK_YIJING_HEXAGRAM_SYMBOLS();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x4e00, 0xa000);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS();
+
+private static CodePointSet init_BLOCK_YI_SYLLABLES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa000, 0xa490);
+	return result;
+}
+static final CodePointSet BLOCK_YI_SYLLABLES = init_BLOCK_YI_SYLLABLES();
+
+private static CodePointSet init_BLOCK_YI_RADICALS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa490, 0xa4d0);
+	return result;
+}
+static final CodePointSet BLOCK_YI_RADICALS = init_BLOCK_YI_RADICALS();
+
+private static CodePointSet init_BLOCK_LISU() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa4d0, 0xa500);
+	return result;
+}
+static final CodePointSet BLOCK_LISU = init_BLOCK_LISU();
+
+private static CodePointSet init_BLOCK_VAI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa500, 0xa640);
+	return result;
+}
+static final CodePointSet BLOCK_VAI = init_BLOCK_VAI();
+
+private static CodePointSet init_BLOCK_CYRILLIC_EXTENDED_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa640, 0xa6a0);
+	return result;
+}
+static final CodePointSet BLOCK_CYRILLIC_EXTENDED_B = init_BLOCK_CYRILLIC_EXTENDED_B();
+
+private static CodePointSet init_BLOCK_BAMUM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa6a0, 0xa700);
+	return result;
+}
+static final CodePointSet BLOCK_BAMUM = init_BLOCK_BAMUM();
+
+private static CodePointSet init_BLOCK_MODIFIER_TONE_LETTERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa700, 0xa720);
+	return result;
+}
+static final CodePointSet BLOCK_MODIFIER_TONE_LETTERS = init_BLOCK_MODIFIER_TONE_LETTERS();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_D() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa720, 0xa800);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_D = init_BLOCK_LATIN_EXTENDED_D();
+
+private static CodePointSet init_BLOCK_SYLOTI_NAGRI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa800, 0xa830);
+	return result;
+}
+static final CodePointSet BLOCK_SYLOTI_NAGRI = init_BLOCK_SYLOTI_NAGRI();
+
+private static CodePointSet init_BLOCK_COMMON_INDIC_NUMBER_FORMS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa830, 0xa840);
+	return result;
+}
+static final CodePointSet BLOCK_COMMON_INDIC_NUMBER_FORMS = init_BLOCK_COMMON_INDIC_NUMBER_FORMS();
+
+private static CodePointSet init_BLOCK_PHAGS_PA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa840, 0xa880);
+	return result;
+}
+static final CodePointSet BLOCK_PHAGS_PA = init_BLOCK_PHAGS_PA();
+
+private static CodePointSet init_BLOCK_SAURASHTRA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa880, 0xa8e0);
+	return result;
+}
+static final CodePointSet BLOCK_SAURASHTRA = init_BLOCK_SAURASHTRA();
+
+private static CodePointSet init_BLOCK_DEVANAGARI_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa8e0, 0xa900);
+	return result;
+}
+static final CodePointSet BLOCK_DEVANAGARI_EXTENDED = init_BLOCK_DEVANAGARI_EXTENDED();
+
+private static CodePointSet init_BLOCK_KAYAH_LI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa900, 0xa930);
+	return result;
+}
+static final CodePointSet BLOCK_KAYAH_LI = init_BLOCK_KAYAH_LI();
+
+private static CodePointSet init_BLOCK_REJANG() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa930, 0xa960);
+	return result;
+}
+static final CodePointSet BLOCK_REJANG = init_BLOCK_REJANG();
+
+private static CodePointSet init_BLOCK_HANGUL_JAMO_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa960, 0xa980);
+	return result;
+}
+static final CodePointSet BLOCK_HANGUL_JAMO_EXTENDED_A = init_BLOCK_HANGUL_JAMO_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_JAVANESE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa980, 0xa9e0);
+	return result;
+}
+static final CodePointSet BLOCK_JAVANESE = init_BLOCK_JAVANESE();
+
+private static CodePointSet init_BLOCK_MYANMAR_EXTENDED_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xa9e0, 0xaa00);
+	return result;
+}
+static final CodePointSet BLOCK_MYANMAR_EXTENDED_B = init_BLOCK_MYANMAR_EXTENDED_B();
+
+private static CodePointSet init_BLOCK_CHAM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xaa00, 0xaa60);
+	return result;
+}
+static final CodePointSet BLOCK_CHAM = init_BLOCK_CHAM();
+
+private static CodePointSet init_BLOCK_MYANMAR_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xaa60, 0xaa80);
+	return result;
+}
+static final CodePointSet BLOCK_MYANMAR_EXTENDED_A = init_BLOCK_MYANMAR_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_TAI_VIET() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xaa80, 0xaae0);
+	return result;
+}
+static final CodePointSet BLOCK_TAI_VIET = init_BLOCK_TAI_VIET();
+
+private static CodePointSet init_BLOCK_MEETEI_MAYEK_EXTENSIONS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xaae0, 0xab00);
+	return result;
+}
+static final CodePointSet BLOCK_MEETEI_MAYEK_EXTENSIONS = init_BLOCK_MEETEI_MAYEK_EXTENSIONS();
+
+private static CodePointSet init_BLOCK_ETHIOPIC_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xab00, 0xab30);
+	return result;
+}
+static final CodePointSet BLOCK_ETHIOPIC_EXTENDED_A = init_BLOCK_ETHIOPIC_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_E() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xab30, 0xab70);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_E = init_BLOCK_LATIN_EXTENDED_E();
+
+private static CodePointSet init_BLOCK_CHEROKEE_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xab70, 0xabc0);
+	return result;
+}
+static final CodePointSet BLOCK_CHEROKEE_SUPPLEMENT = init_BLOCK_CHEROKEE_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_MEETEI_MAYEK() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xabc0, 0xac00);
+	return result;
+}
+static final CodePointSet BLOCK_MEETEI_MAYEK = init_BLOCK_MEETEI_MAYEK();
+
+private static CodePointSet init_BLOCK_HANGUL_SYLLABLES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xac00, 0xd7b0);
+	return result;
+}
+static final CodePointSet BLOCK_HANGUL_SYLLABLES = init_BLOCK_HANGUL_SYLLABLES();
+
+private static CodePointSet init_BLOCK_HANGUL_JAMO_EXTENDED_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xd7b0, 0xd800);
+	return result;
+}
+static final CodePointSet BLOCK_HANGUL_JAMO_EXTENDED_B = init_BLOCK_HANGUL_JAMO_EXTENDED_B();
+
+private static CodePointSet init_BLOCK_HIGH_SURROGATES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xd800, 0xdb80);
+	return result;
+}
+static final CodePointSet BLOCK_HIGH_SURROGATES = init_BLOCK_HIGH_SURROGATES();
+
+private static CodePointSet init_BLOCK_HIGH_PRIVATE_USE_SURROGATES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xdb80, 0xdc00);
+	return result;
+}
+static final CodePointSet BLOCK_HIGH_PRIVATE_USE_SURROGATES = init_BLOCK_HIGH_PRIVATE_USE_SURROGATES();
+
+private static CodePointSet init_BLOCK_LOW_SURROGATES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xdc00, 0xe000);
+	return result;
+}
+static final CodePointSet BLOCK_LOW_SURROGATES = init_BLOCK_LOW_SURROGATES();
+
+private static CodePointSet init_BLOCK_PRIVATE_USE_AREA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xe000, 0xf900);
+	return result;
+}
+static final CodePointSet BLOCK_PRIVATE_USE_AREA = init_BLOCK_PRIVATE_USE_AREA();
+
+private static CodePointSet init_BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xf900, 0xfb00);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS = init_BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS();
+
+private static CodePointSet init_BLOCK_ALPHABETIC_PRESENTATION_FORMS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfb00, 0xfb50);
+	return result;
+}
+static final CodePointSet BLOCK_ALPHABETIC_PRESENTATION_FORMS = init_BLOCK_ALPHABETIC_PRESENTATION_FORMS();
+
+private static CodePointSet init_BLOCK_ARABIC_PRESENTATION_FORMS_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfb50, 0xfe00);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC_PRESENTATION_FORMS_A = init_BLOCK_ARABIC_PRESENTATION_FORMS_A();
+
+private static CodePointSet init_BLOCK_VARIATION_SELECTORS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfe00, 0xfe10);
+	return result;
+}
+static final CodePointSet BLOCK_VARIATION_SELECTORS = init_BLOCK_VARIATION_SELECTORS();
+
+private static CodePointSet init_BLOCK_VERTICAL_FORMS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfe10, 0xfe20);
+	return result;
+}
+static final CodePointSet BLOCK_VERTICAL_FORMS = init_BLOCK_VERTICAL_FORMS();
+
+private static CodePointSet init_BLOCK_COMBINING_HALF_MARKS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfe20, 0xfe30);
+	return result;
+}
+static final CodePointSet BLOCK_COMBINING_HALF_MARKS = init_BLOCK_COMBINING_HALF_MARKS();
+
+private static CodePointSet init_BLOCK_CJK_COMPATIBILITY_FORMS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfe30, 0xfe50);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_COMPATIBILITY_FORMS = init_BLOCK_CJK_COMPATIBILITY_FORMS();
+
+private static CodePointSet init_BLOCK_SMALL_FORM_VARIANTS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfe50, 0xfe70);
+	return result;
+}
+static final CodePointSet BLOCK_SMALL_FORM_VARIANTS = init_BLOCK_SMALL_FORM_VARIANTS();
+
+private static CodePointSet init_BLOCK_ARABIC_PRESENTATION_FORMS_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfe70, 0xff00);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC_PRESENTATION_FORMS_B = init_BLOCK_ARABIC_PRESENTATION_FORMS_B();
+
+private static CodePointSet init_BLOCK_HALFWIDTH_AND_FULLWIDTH_FORMS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xff00, 0xfff0);
+	return result;
+}
+static final CodePointSet BLOCK_HALFWIDTH_AND_FULLWIDTH_FORMS = init_BLOCK_HALFWIDTH_AND_FULLWIDTH_FORMS();
+
+private static CodePointSet init_BLOCK_SPECIALS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xfff0, 0x10000);
+	return result;
+}
+static final CodePointSet BLOCK_SPECIALS = init_BLOCK_SPECIALS();
+
+private static CodePointSet init_BLOCK_LINEAR_B_SYLLABARY() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10000, 0x10080);
+	return result;
+}
+static final CodePointSet BLOCK_LINEAR_B_SYLLABARY = init_BLOCK_LINEAR_B_SYLLABARY();
+
+private static CodePointSet init_BLOCK_LINEAR_B_IDEOGRAMS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10080, 0x10100);
+	return result;
+}
+static final CodePointSet BLOCK_LINEAR_B_IDEOGRAMS = init_BLOCK_LINEAR_B_IDEOGRAMS();
+
+private static CodePointSet init_BLOCK_AEGEAN_NUMBERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10100, 0x10140);
+	return result;
+}
+static final CodePointSet BLOCK_AEGEAN_NUMBERS = init_BLOCK_AEGEAN_NUMBERS();
+
+private static CodePointSet init_BLOCK_ANCIENT_GREEK_NUMBERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10140, 0x10190);
+	return result;
+}
+static final CodePointSet BLOCK_ANCIENT_GREEK_NUMBERS = init_BLOCK_ANCIENT_GREEK_NUMBERS();
+
+private static CodePointSet init_BLOCK_ANCIENT_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10190, 0x101d0);
+	return result;
+}
+static final CodePointSet BLOCK_ANCIENT_SYMBOLS = init_BLOCK_ANCIENT_SYMBOLS();
+
+private static CodePointSet init_BLOCK_PHAISTOS_DISC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x101d0, 0x10200);
+	return result;
+}
+static final CodePointSet BLOCK_PHAISTOS_DISC = init_BLOCK_PHAISTOS_DISC();
+
+private static CodePointSet init_BLOCK_LYCIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10280, 0x102a0);
+	return result;
+}
+static final CodePointSet BLOCK_LYCIAN = init_BLOCK_LYCIAN();
+
+private static CodePointSet init_BLOCK_CARIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x102a0, 0x102e0);
+	return result;
+}
+static final CodePointSet BLOCK_CARIAN = init_BLOCK_CARIAN();
+
+private static CodePointSet init_BLOCK_COPTIC_EPACT_NUMBERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x102e0, 0x10300);
+	return result;
+}
+static final CodePointSet BLOCK_COPTIC_EPACT_NUMBERS = init_BLOCK_COPTIC_EPACT_NUMBERS();
+
+private static CodePointSet init_BLOCK_OLD_ITALIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10300, 0x10330);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_ITALIC = init_BLOCK_OLD_ITALIC();
+
+private static CodePointSet init_BLOCK_GOTHIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10330, 0x10350);
+	return result;
+}
+static final CodePointSet BLOCK_GOTHIC = init_BLOCK_GOTHIC();
+
+private static CodePointSet init_BLOCK_OLD_PERMIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10350, 0x10380);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_PERMIC = init_BLOCK_OLD_PERMIC();
+
+private static CodePointSet init_BLOCK_UGARITIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10380, 0x103a0);
+	return result;
+}
+static final CodePointSet BLOCK_UGARITIC = init_BLOCK_UGARITIC();
+
+private static CodePointSet init_BLOCK_OLD_PERSIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x103a0, 0x103e0);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_PERSIAN = init_BLOCK_OLD_PERSIAN();
+
+private static CodePointSet init_BLOCK_DESERET() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10400, 0x10450);
+	return result;
+}
+static final CodePointSet BLOCK_DESERET = init_BLOCK_DESERET();
+
+private static CodePointSet init_BLOCK_SHAVIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10450, 0x10480);
+	return result;
+}
+static final CodePointSet BLOCK_SHAVIAN = init_BLOCK_SHAVIAN();
+
+private static CodePointSet init_BLOCK_OSMANYA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10480, 0x104b0);
+	return result;
+}
+static final CodePointSet BLOCK_OSMANYA = init_BLOCK_OSMANYA();
+
+private static CodePointSet init_BLOCK_OSAGE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x104b0, 0x10500);
+	return result;
+}
+static final CodePointSet BLOCK_OSAGE = init_BLOCK_OSAGE();
+
+private static CodePointSet init_BLOCK_ELBASAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10500, 0x10530);
+	return result;
+}
+static final CodePointSet BLOCK_ELBASAN = init_BLOCK_ELBASAN();
+
+private static CodePointSet init_BLOCK_CAUCASIAN_ALBANIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10530, 0x10570);
+	return result;
+}
+static final CodePointSet BLOCK_CAUCASIAN_ALBANIAN = init_BLOCK_CAUCASIAN_ALBANIAN();
+
+private static CodePointSet init_BLOCK_VITHKUQI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10570, 0x105c0);
+	return result;
+}
+static final CodePointSet BLOCK_VITHKUQI = init_BLOCK_VITHKUQI();
+
+private static CodePointSet init_BLOCK_TODHRI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x105c0, 0x10600);
+	return result;
+}
+static final CodePointSet BLOCK_TODHRI = init_BLOCK_TODHRI();
+
+private static CodePointSet init_BLOCK_LINEAR_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10600, 0x10780);
+	return result;
+}
+static final CodePointSet BLOCK_LINEAR_A = init_BLOCK_LINEAR_A();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_F() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10780, 0x107c0);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_F = init_BLOCK_LATIN_EXTENDED_F();
+
+private static CodePointSet init_BLOCK_CYPRIOT_SYLLABARY() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10800, 0x10840);
+	return result;
+}
+static final CodePointSet BLOCK_CYPRIOT_SYLLABARY = init_BLOCK_CYPRIOT_SYLLABARY();
+
+private static CodePointSet init_BLOCK_IMPERIAL_ARAMAIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10840, 0x10860);
+	return result;
+}
+static final CodePointSet BLOCK_IMPERIAL_ARAMAIC = init_BLOCK_IMPERIAL_ARAMAIC();
+
+private static CodePointSet init_BLOCK_PALMYRENE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10860, 0x10880);
+	return result;
+}
+static final CodePointSet BLOCK_PALMYRENE = init_BLOCK_PALMYRENE();
+
+private static CodePointSet init_BLOCK_NABATAEAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10880, 0x108b0);
+	return result;
+}
+static final CodePointSet BLOCK_NABATAEAN = init_BLOCK_NABATAEAN();
+
+private static CodePointSet init_BLOCK_HATRAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x108e0, 0x10900);
+	return result;
+}
+static final CodePointSet BLOCK_HATRAN = init_BLOCK_HATRAN();
+
+private static CodePointSet init_BLOCK_PHOENICIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10900, 0x10920);
+	return result;
+}
+static final CodePointSet BLOCK_PHOENICIAN = init_BLOCK_PHOENICIAN();
+
+private static CodePointSet init_BLOCK_LYDIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10920, 0x10940);
+	return result;
+}
+static final CodePointSet BLOCK_LYDIAN = init_BLOCK_LYDIAN();
+
+private static CodePointSet init_BLOCK_MEROITIC_HIEROGLYPHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10980, 0x109a0);
+	return result;
+}
+static final CodePointSet BLOCK_MEROITIC_HIEROGLYPHS = init_BLOCK_MEROITIC_HIEROGLYPHS();
+
+private static CodePointSet init_BLOCK_MEROITIC_CURSIVE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x109a0, 0x10a00);
+	return result;
+}
+static final CodePointSet BLOCK_MEROITIC_CURSIVE = init_BLOCK_MEROITIC_CURSIVE();
+
+private static CodePointSet init_BLOCK_KHAROSHTHI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10a00, 0x10a60);
+	return result;
+}
+static final CodePointSet BLOCK_KHAROSHTHI = init_BLOCK_KHAROSHTHI();
+
+private static CodePointSet init_BLOCK_OLD_SOUTH_ARABIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10a60, 0x10a80);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_SOUTH_ARABIAN = init_BLOCK_OLD_SOUTH_ARABIAN();
+
+private static CodePointSet init_BLOCK_OLD_NORTH_ARABIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10a80, 0x10aa0);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_NORTH_ARABIAN = init_BLOCK_OLD_NORTH_ARABIAN();
+
+private static CodePointSet init_BLOCK_MANICHAEAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10ac0, 0x10b00);
+	return result;
+}
+static final CodePointSet BLOCK_MANICHAEAN = init_BLOCK_MANICHAEAN();
+
+private static CodePointSet init_BLOCK_AVESTAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10b00, 0x10b40);
+	return result;
+}
+static final CodePointSet BLOCK_AVESTAN = init_BLOCK_AVESTAN();
+
+private static CodePointSet init_BLOCK_INSCRIPTIONAL_PARTHIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10b40, 0x10b60);
+	return result;
+}
+static final CodePointSet BLOCK_INSCRIPTIONAL_PARTHIAN = init_BLOCK_INSCRIPTIONAL_PARTHIAN();
+
+private static CodePointSet init_BLOCK_INSCRIPTIONAL_PAHLAVI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10b60, 0x10b80);
+	return result;
+}
+static final CodePointSet BLOCK_INSCRIPTIONAL_PAHLAVI = init_BLOCK_INSCRIPTIONAL_PAHLAVI();
+
+private static CodePointSet init_BLOCK_PSALTER_PAHLAVI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10b80, 0x10bb0);
+	return result;
+}
+static final CodePointSet BLOCK_PSALTER_PAHLAVI = init_BLOCK_PSALTER_PAHLAVI();
+
+private static CodePointSet init_BLOCK_OLD_TURKIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10c00, 0x10c50);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_TURKIC = init_BLOCK_OLD_TURKIC();
+
+private static CodePointSet init_BLOCK_OLD_HUNGARIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10c80, 0x10d00);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_HUNGARIAN = init_BLOCK_OLD_HUNGARIAN();
+
+private static CodePointSet init_BLOCK_HANIFI_ROHINGYA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10d00, 0x10d40);
+	return result;
+}
+static final CodePointSet BLOCK_HANIFI_ROHINGYA = init_BLOCK_HANIFI_ROHINGYA();
+
+private static CodePointSet init_BLOCK_GARAY() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10d40, 0x10d90);
+	return result;
+}
+static final CodePointSet BLOCK_GARAY = init_BLOCK_GARAY();
+
+private static CodePointSet init_BLOCK_RUMI_NUMERAL_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10e60, 0x10e80);
+	return result;
+}
+static final CodePointSet BLOCK_RUMI_NUMERAL_SYMBOLS = init_BLOCK_RUMI_NUMERAL_SYMBOLS();
+
+private static CodePointSet init_BLOCK_YEZIDI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10e80, 0x10ec0);
+	return result;
+}
+static final CodePointSet BLOCK_YEZIDI = init_BLOCK_YEZIDI();
+
+private static CodePointSet init_BLOCK_ARABIC_EXTENDED_C() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10ec0, 0x10f00);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC_EXTENDED_C = init_BLOCK_ARABIC_EXTENDED_C();
+
+private static CodePointSet init_BLOCK_OLD_SOGDIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10f00, 0x10f30);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_SOGDIAN = init_BLOCK_OLD_SOGDIAN();
+
+private static CodePointSet init_BLOCK_SOGDIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10f30, 0x10f70);
+	return result;
+}
+static final CodePointSet BLOCK_SOGDIAN = init_BLOCK_SOGDIAN();
+
+private static CodePointSet init_BLOCK_OLD_UYGHUR() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10f70, 0x10fb0);
+	return result;
+}
+static final CodePointSet BLOCK_OLD_UYGHUR = init_BLOCK_OLD_UYGHUR();
+
+private static CodePointSet init_BLOCK_CHORASMIAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10fb0, 0x10fe0);
+	return result;
+}
+static final CodePointSet BLOCK_CHORASMIAN = init_BLOCK_CHORASMIAN();
+
+private static CodePointSet init_BLOCK_ELYMAIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10fe0, 0x11000);
+	return result;
+}
+static final CodePointSet BLOCK_ELYMAIC = init_BLOCK_ELYMAIC();
+
+private static CodePointSet init_BLOCK_BRAHMI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11000, 0x11080);
+	return result;
+}
+static final CodePointSet BLOCK_BRAHMI = init_BLOCK_BRAHMI();
+
+private static CodePointSet init_BLOCK_KAITHI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11080, 0x110d0);
+	return result;
+}
+static final CodePointSet BLOCK_KAITHI = init_BLOCK_KAITHI();
+
+private static CodePointSet init_BLOCK_SORA_SOMPENG() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x110d0, 0x11100);
+	return result;
+}
+static final CodePointSet BLOCK_SORA_SOMPENG = init_BLOCK_SORA_SOMPENG();
+
+private static CodePointSet init_BLOCK_CHAKMA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11100, 0x11150);
+	return result;
+}
+static final CodePointSet BLOCK_CHAKMA = init_BLOCK_CHAKMA();
+
+private static CodePointSet init_BLOCK_MAHAJANI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11150, 0x11180);
+	return result;
+}
+static final CodePointSet BLOCK_MAHAJANI = init_BLOCK_MAHAJANI();
+
+private static CodePointSet init_BLOCK_SHARADA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11180, 0x111e0);
+	return result;
+}
+static final CodePointSet BLOCK_SHARADA = init_BLOCK_SHARADA();
+
+private static CodePointSet init_BLOCK_SINHALA_ARCHAIC_NUMBERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x111e0, 0x11200);
+	return result;
+}
+static final CodePointSet BLOCK_SINHALA_ARCHAIC_NUMBERS = init_BLOCK_SINHALA_ARCHAIC_NUMBERS();
+
+private static CodePointSet init_BLOCK_KHOJKI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11200, 0x11250);
+	return result;
+}
+static final CodePointSet BLOCK_KHOJKI = init_BLOCK_KHOJKI();
+
+private static CodePointSet init_BLOCK_MULTANI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11280, 0x112b0);
+	return result;
+}
+static final CodePointSet BLOCK_MULTANI = init_BLOCK_MULTANI();
+
+private static CodePointSet init_BLOCK_KHUDAWADI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x112b0, 0x11300);
+	return result;
+}
+static final CodePointSet BLOCK_KHUDAWADI = init_BLOCK_KHUDAWADI();
+
+private static CodePointSet init_BLOCK_GRANTHA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11300, 0x11380);
+	return result;
+}
+static final CodePointSet BLOCK_GRANTHA = init_BLOCK_GRANTHA();
+
+private static CodePointSet init_BLOCK_TULU_TIGALARI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11380, 0x11400);
+	return result;
+}
+static final CodePointSet BLOCK_TULU_TIGALARI = init_BLOCK_TULU_TIGALARI();
+
+private static CodePointSet init_BLOCK_NEWA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11400, 0x11480);
+	return result;
+}
+static final CodePointSet BLOCK_NEWA = init_BLOCK_NEWA();
+
+private static CodePointSet init_BLOCK_TIRHUTA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11480, 0x114e0);
+	return result;
+}
+static final CodePointSet BLOCK_TIRHUTA = init_BLOCK_TIRHUTA();
+
+private static CodePointSet init_BLOCK_SIDDHAM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11580, 0x11600);
+	return result;
+}
+static final CodePointSet BLOCK_SIDDHAM = init_BLOCK_SIDDHAM();
+
+private static CodePointSet init_BLOCK_MODI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11600, 0x11660);
+	return result;
+}
+static final CodePointSet BLOCK_MODI = init_BLOCK_MODI();
+
+private static CodePointSet init_BLOCK_MONGOLIAN_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11660, 0x11680);
+	return result;
+}
+static final CodePointSet BLOCK_MONGOLIAN_SUPPLEMENT = init_BLOCK_MONGOLIAN_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_TAKRI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11680, 0x116d0);
+	return result;
+}
+static final CodePointSet BLOCK_TAKRI = init_BLOCK_TAKRI();
+
+private static CodePointSet init_BLOCK_MYANMAR_EXTENDED_C() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x116d0, 0x11700);
+	return result;
+}
+static final CodePointSet BLOCK_MYANMAR_EXTENDED_C = init_BLOCK_MYANMAR_EXTENDED_C();
+
+private static CodePointSet init_BLOCK_AHOM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11700, 0x11750);
+	return result;
+}
+static final CodePointSet BLOCK_AHOM = init_BLOCK_AHOM();
+
+private static CodePointSet init_BLOCK_DOGRA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11800, 0x11850);
+	return result;
+}
+static final CodePointSet BLOCK_DOGRA = init_BLOCK_DOGRA();
+
+private static CodePointSet init_BLOCK_WARANG_CITI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x118a0, 0x11900);
+	return result;
+}
+static final CodePointSet BLOCK_WARANG_CITI = init_BLOCK_WARANG_CITI();
+
+private static CodePointSet init_BLOCK_DIVES_AKURU() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11900, 0x11960);
+	return result;
+}
+static final CodePointSet BLOCK_DIVES_AKURU = init_BLOCK_DIVES_AKURU();
+
+private static CodePointSet init_BLOCK_NANDINAGARI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x119a0, 0x11a00);
+	return result;
+}
+static final CodePointSet BLOCK_NANDINAGARI = init_BLOCK_NANDINAGARI();
+
+private static CodePointSet init_BLOCK_ZANABAZAR_SQUARE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11a00, 0x11a50);
+	return result;
+}
+static final CodePointSet BLOCK_ZANABAZAR_SQUARE = init_BLOCK_ZANABAZAR_SQUARE();
+
+private static CodePointSet init_BLOCK_SOYOMBO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11a50, 0x11ab0);
+	return result;
+}
+static final CodePointSet BLOCK_SOYOMBO = init_BLOCK_SOYOMBO();
+
+private static CodePointSet init_BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11ab0, 0x11ac0);
+	return result;
+}
+static final CodePointSet BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED_A = init_BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_PAU_CIN_HAU() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11ac0, 0x11b00);
+	return result;
+}
+static final CodePointSet BLOCK_PAU_CIN_HAU = init_BLOCK_PAU_CIN_HAU();
+
+private static CodePointSet init_BLOCK_DEVANAGARI_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11b00, 0x11b60);
+	return result;
+}
+static final CodePointSet BLOCK_DEVANAGARI_EXTENDED_A = init_BLOCK_DEVANAGARI_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_SUNUWAR() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11bc0, 0x11c00);
+	return result;
+}
+static final CodePointSet BLOCK_SUNUWAR = init_BLOCK_SUNUWAR();
+
+private static CodePointSet init_BLOCK_BHAIKSUKI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11c00, 0x11c70);
+	return result;
+}
+static final CodePointSet BLOCK_BHAIKSUKI = init_BLOCK_BHAIKSUKI();
+
+private static CodePointSet init_BLOCK_MARCHEN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11c70, 0x11cc0);
+	return result;
+}
+static final CodePointSet BLOCK_MARCHEN = init_BLOCK_MARCHEN();
+
+private static CodePointSet init_BLOCK_MASARAM_GONDI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11d00, 0x11d60);
+	return result;
+}
+static final CodePointSet BLOCK_MASARAM_GONDI = init_BLOCK_MASARAM_GONDI();
+
+private static CodePointSet init_BLOCK_GUNJALA_GONDI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11d60, 0x11db0);
+	return result;
+}
+static final CodePointSet BLOCK_GUNJALA_GONDI = init_BLOCK_GUNJALA_GONDI();
+
+private static CodePointSet init_BLOCK_MAKASAR() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11ee0, 0x11f00);
+	return result;
+}
+static final CodePointSet BLOCK_MAKASAR = init_BLOCK_MAKASAR();
+
+private static CodePointSet init_BLOCK_KAWI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11f00, 0x11f60);
+	return result;
+}
+static final CodePointSet BLOCK_KAWI = init_BLOCK_KAWI();
+
+private static CodePointSet init_BLOCK_LISU_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11fb0, 0x11fc0);
+	return result;
+}
+static final CodePointSet BLOCK_LISU_SUPPLEMENT = init_BLOCK_LISU_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_TAMIL_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11fc0, 0x12000);
+	return result;
+}
+static final CodePointSet BLOCK_TAMIL_SUPPLEMENT = init_BLOCK_TAMIL_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_CUNEIFORM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x12000, 0x12400);
+	return result;
+}
+static final CodePointSet BLOCK_CUNEIFORM = init_BLOCK_CUNEIFORM();
+
+private static CodePointSet init_BLOCK_CUNEIFORM_NUMBERS_AND_PUNCTUATION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x12400, 0x12480);
+	return result;
+}
+static final CodePointSet BLOCK_CUNEIFORM_NUMBERS_AND_PUNCTUATION = init_BLOCK_CUNEIFORM_NUMBERS_AND_PUNCTUATION();
+
+private static CodePointSet init_BLOCK_EARLY_DYNASTIC_CUNEIFORM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x12480, 0x12550);
+	return result;
+}
+static final CodePointSet BLOCK_EARLY_DYNASTIC_CUNEIFORM = init_BLOCK_EARLY_DYNASTIC_CUNEIFORM();
+
+private static CodePointSet init_BLOCK_CYPRO_MINOAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x12f90, 0x13000);
+	return result;
+}
+static final CodePointSet BLOCK_CYPRO_MINOAN = init_BLOCK_CYPRO_MINOAN();
+
+private static CodePointSet init_BLOCK_EGYPTIAN_HIEROGLYPHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x13000, 0x13430);
+	return result;
+}
+static final CodePointSet BLOCK_EGYPTIAN_HIEROGLYPHS = init_BLOCK_EGYPTIAN_HIEROGLYPHS();
+
+private static CodePointSet init_BLOCK_EGYPTIAN_HIEROGLYPH_FORMAT_CONTROLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x13430, 0x13460);
+	return result;
+}
+static final CodePointSet BLOCK_EGYPTIAN_HIEROGLYPH_FORMAT_CONTROLS = init_BLOCK_EGYPTIAN_HIEROGLYPH_FORMAT_CONTROLS();
+
+private static CodePointSet init_BLOCK_EGYPTIAN_HIEROGLYPHS_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x13460, 0x14400);
+	return result;
+}
+static final CodePointSet BLOCK_EGYPTIAN_HIEROGLYPHS_EXTENDED_A = init_BLOCK_EGYPTIAN_HIEROGLYPHS_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_ANATOLIAN_HIEROGLYPHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x14400, 0x14680);
+	return result;
+}
+static final CodePointSet BLOCK_ANATOLIAN_HIEROGLYPHS = init_BLOCK_ANATOLIAN_HIEROGLYPHS();
+
+private static CodePointSet init_BLOCK_GURUNG_KHEMA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16100, 0x16140);
+	return result;
+}
+static final CodePointSet BLOCK_GURUNG_KHEMA = init_BLOCK_GURUNG_KHEMA();
+
+private static CodePointSet init_BLOCK_BAMUM_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16800, 0x16a40);
+	return result;
+}
+static final CodePointSet BLOCK_BAMUM_SUPPLEMENT = init_BLOCK_BAMUM_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_MRO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16a40, 0x16a70);
+	return result;
+}
+static final CodePointSet BLOCK_MRO = init_BLOCK_MRO();
+
+private static CodePointSet init_BLOCK_TANGSA() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16a70, 0x16ad0);
+	return result;
+}
+static final CodePointSet BLOCK_TANGSA = init_BLOCK_TANGSA();
+
+private static CodePointSet init_BLOCK_BASSA_VAH() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16ad0, 0x16b00);
+	return result;
+}
+static final CodePointSet BLOCK_BASSA_VAH = init_BLOCK_BASSA_VAH();
+
+private static CodePointSet init_BLOCK_PAHAWH_HMONG() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16b00, 0x16b90);
+	return result;
+}
+static final CodePointSet BLOCK_PAHAWH_HMONG = init_BLOCK_PAHAWH_HMONG();
+
+private static CodePointSet init_BLOCK_KIRAT_RAI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16d40, 0x16d80);
+	return result;
+}
+static final CodePointSet BLOCK_KIRAT_RAI = init_BLOCK_KIRAT_RAI();
+
+private static CodePointSet init_BLOCK_MEDEFAIDRIN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16e40, 0x16ea0);
+	return result;
+}
+static final CodePointSet BLOCK_MEDEFAIDRIN = init_BLOCK_MEDEFAIDRIN();
+
+private static CodePointSet init_BLOCK_MIAO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16f00, 0x16fa0);
+	return result;
+}
+static final CodePointSet BLOCK_MIAO = init_BLOCK_MIAO();
+
+private static CodePointSet init_BLOCK_IDEOGRAPHIC_SYMBOLS_AND_PUNCTUATION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16fe0, 0x17000);
+	return result;
+}
+static final CodePointSet BLOCK_IDEOGRAPHIC_SYMBOLS_AND_PUNCTUATION = init_BLOCK_IDEOGRAPHIC_SYMBOLS_AND_PUNCTUATION();
+
+private static CodePointSet init_BLOCK_TANGUT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x17000, 0x18800);
+	return result;
+}
+static final CodePointSet BLOCK_TANGUT = init_BLOCK_TANGUT();
+
+private static CodePointSet init_BLOCK_TANGUT_COMPONENTS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x18800, 0x18b00);
+	return result;
+}
+static final CodePointSet BLOCK_TANGUT_COMPONENTS = init_BLOCK_TANGUT_COMPONENTS();
+
+private static CodePointSet init_BLOCK_KHITAN_SMALL_SCRIPT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x18b00, 0x18d00);
+	return result;
+}
+static final CodePointSet BLOCK_KHITAN_SMALL_SCRIPT = init_BLOCK_KHITAN_SMALL_SCRIPT();
+
+private static CodePointSet init_BLOCK_TANGUT_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x18d00, 0x18d80);
+	return result;
+}
+static final CodePointSet BLOCK_TANGUT_SUPPLEMENT = init_BLOCK_TANGUT_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_KANA_EXTENDED_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1aff0, 0x1b000);
+	return result;
+}
+static final CodePointSet BLOCK_KANA_EXTENDED_B = init_BLOCK_KANA_EXTENDED_B();
+
+private static CodePointSet init_BLOCK_KANA_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1b000, 0x1b100);
+	return result;
+}
+static final CodePointSet BLOCK_KANA_SUPPLEMENT = init_BLOCK_KANA_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_KANA_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1b100, 0x1b130);
+	return result;
+}
+static final CodePointSet BLOCK_KANA_EXTENDED_A = init_BLOCK_KANA_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_SMALL_KANA_EXTENSION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1b130, 0x1b170);
+	return result;
+}
+static final CodePointSet BLOCK_SMALL_KANA_EXTENSION = init_BLOCK_SMALL_KANA_EXTENSION();
+
+private static CodePointSet init_BLOCK_NUSHU() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1b170, 0x1b300);
+	return result;
+}
+static final CodePointSet BLOCK_NUSHU = init_BLOCK_NUSHU();
+
+private static CodePointSet init_BLOCK_DUPLOYAN() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1bc00, 0x1bca0);
+	return result;
+}
+static final CodePointSet BLOCK_DUPLOYAN = init_BLOCK_DUPLOYAN();
+
+private static CodePointSet init_BLOCK_SHORTHAND_FORMAT_CONTROLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1bca0, 0x1bcb0);
+	return result;
+}
+static final CodePointSet BLOCK_SHORTHAND_FORMAT_CONTROLS = init_BLOCK_SHORTHAND_FORMAT_CONTROLS();
+
+private static CodePointSet init_BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1cc00, 0x1cec0);
+	return result;
+}
+static final CodePointSet BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT = init_BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_ZNAMENNY_MUSICAL_NOTATION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1cf00, 0x1cfd0);
+	return result;
+}
+static final CodePointSet BLOCK_ZNAMENNY_MUSICAL_NOTATION = init_BLOCK_ZNAMENNY_MUSICAL_NOTATION();
+
+private static CodePointSet init_BLOCK_BYZANTINE_MUSICAL_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d000, 0x1d100);
+	return result;
+}
+static final CodePointSet BLOCK_BYZANTINE_MUSICAL_SYMBOLS = init_BLOCK_BYZANTINE_MUSICAL_SYMBOLS();
+
+private static CodePointSet init_BLOCK_MUSICAL_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d100, 0x1d200);
+	return result;
+}
+static final CodePointSet BLOCK_MUSICAL_SYMBOLS = init_BLOCK_MUSICAL_SYMBOLS();
+
+private static CodePointSet init_BLOCK_ANCIENT_GREEK_MUSICAL_NOTATION() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d200, 0x1d250);
+	return result;
+}
+static final CodePointSet BLOCK_ANCIENT_GREEK_MUSICAL_NOTATION = init_BLOCK_ANCIENT_GREEK_MUSICAL_NOTATION();
+
+private static CodePointSet init_BLOCK_KAKTOVIK_NUMERALS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d2c0, 0x1d2e0);
+	return result;
+}
+static final CodePointSet BLOCK_KAKTOVIK_NUMERALS = init_BLOCK_KAKTOVIK_NUMERALS();
+
+private static CodePointSet init_BLOCK_MAYAN_NUMERALS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d2e0, 0x1d300);
+	return result;
+}
+static final CodePointSet BLOCK_MAYAN_NUMERALS = init_BLOCK_MAYAN_NUMERALS();
+
+private static CodePointSet init_BLOCK_TAI_XUAN_JING_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d300, 0x1d360);
+	return result;
+}
+static final CodePointSet BLOCK_TAI_XUAN_JING_SYMBOLS = init_BLOCK_TAI_XUAN_JING_SYMBOLS();
+
+private static CodePointSet init_BLOCK_COUNTING_ROD_NUMERALS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d360, 0x1d380);
+	return result;
+}
+static final CodePointSet BLOCK_COUNTING_ROD_NUMERALS = init_BLOCK_COUNTING_ROD_NUMERALS();
+
+private static CodePointSet init_BLOCK_MATHEMATICAL_ALPHANUMERIC_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d400, 0x1d800);
+	return result;
+}
+static final CodePointSet BLOCK_MATHEMATICAL_ALPHANUMERIC_SYMBOLS = init_BLOCK_MATHEMATICAL_ALPHANUMERIC_SYMBOLS();
+
+private static CodePointSet init_BLOCK_SUTTON_SIGNWRITING() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1d800, 0x1dab0);
+	return result;
+}
+static final CodePointSet BLOCK_SUTTON_SIGNWRITING = init_BLOCK_SUTTON_SIGNWRITING();
+
+private static CodePointSet init_BLOCK_LATIN_EXTENDED_G() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1df00, 0x1e000);
+	return result;
+}
+static final CodePointSet BLOCK_LATIN_EXTENDED_G = init_BLOCK_LATIN_EXTENDED_G();
+
+private static CodePointSet init_BLOCK_GLAGOLITIC_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e000, 0x1e030);
+	return result;
+}
+static final CodePointSet BLOCK_GLAGOLITIC_SUPPLEMENT = init_BLOCK_GLAGOLITIC_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_CYRILLIC_EXTENDED_D() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e030, 0x1e090);
+	return result;
+}
+static final CodePointSet BLOCK_CYRILLIC_EXTENDED_D = init_BLOCK_CYRILLIC_EXTENDED_D();
+
+private static CodePointSet init_BLOCK_NYIAKENG_PUACHUE_HMONG() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e100, 0x1e150);
+	return result;
+}
+static final CodePointSet BLOCK_NYIAKENG_PUACHUE_HMONG = init_BLOCK_NYIAKENG_PUACHUE_HMONG();
+
+private static CodePointSet init_BLOCK_TOTO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e290, 0x1e2c0);
+	return result;
+}
+static final CodePointSet BLOCK_TOTO = init_BLOCK_TOTO();
+
+private static CodePointSet init_BLOCK_WANCHO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e2c0, 0x1e300);
+	return result;
+}
+static final CodePointSet BLOCK_WANCHO = init_BLOCK_WANCHO();
+
+private static CodePointSet init_BLOCK_NAG_MUNDARI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e4d0, 0x1e500);
+	return result;
+}
+static final CodePointSet BLOCK_NAG_MUNDARI = init_BLOCK_NAG_MUNDARI();
+
+private static CodePointSet init_BLOCK_OL_ONAL() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e5d0, 0x1e600);
+	return result;
+}
+static final CodePointSet BLOCK_OL_ONAL = init_BLOCK_OL_ONAL();
+
+private static CodePointSet init_BLOCK_ETHIOPIC_EXTENDED_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e7e0, 0x1e800);
+	return result;
+}
+static final CodePointSet BLOCK_ETHIOPIC_EXTENDED_B = init_BLOCK_ETHIOPIC_EXTENDED_B();
+
+private static CodePointSet init_BLOCK_MENDE_KIKAKUI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e800, 0x1e8e0);
+	return result;
+}
+static final CodePointSet BLOCK_MENDE_KIKAKUI = init_BLOCK_MENDE_KIKAKUI();
+
+private static CodePointSet init_BLOCK_ADLAM() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e900, 0x1e960);
+	return result;
+}
+static final CodePointSet BLOCK_ADLAM = init_BLOCK_ADLAM();
+
+private static CodePointSet init_BLOCK_INDIC_SIYAQ_NUMBERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1ec70, 0x1ecc0);
+	return result;
+}
+static final CodePointSet BLOCK_INDIC_SIYAQ_NUMBERS = init_BLOCK_INDIC_SIYAQ_NUMBERS();
+
+private static CodePointSet init_BLOCK_OTTOMAN_SIYAQ_NUMBERS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1ed00, 0x1ed50);
+	return result;
+}
+static final CodePointSet BLOCK_OTTOMAN_SIYAQ_NUMBERS = init_BLOCK_OTTOMAN_SIYAQ_NUMBERS();
+
+private static CodePointSet init_BLOCK_ARABIC_MATHEMATICAL_ALPHABETIC_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1ee00, 0x1ef00);
+	return result;
+}
+static final CodePointSet BLOCK_ARABIC_MATHEMATICAL_ALPHABETIC_SYMBOLS = init_BLOCK_ARABIC_MATHEMATICAL_ALPHABETIC_SYMBOLS();
+
+private static CodePointSet init_BLOCK_MAHJONG_TILES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f000, 0x1f030);
+	return result;
+}
+static final CodePointSet BLOCK_MAHJONG_TILES = init_BLOCK_MAHJONG_TILES();
+
+private static CodePointSet init_BLOCK_DOMINO_TILES() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f030, 0x1f0a0);
+	return result;
+}
+static final CodePointSet BLOCK_DOMINO_TILES = init_BLOCK_DOMINO_TILES();
+
+private static CodePointSet init_BLOCK_PLAYING_CARDS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f0a0, 0x1f100);
+	return result;
+}
+static final CodePointSet BLOCK_PLAYING_CARDS = init_BLOCK_PLAYING_CARDS();
+
+private static CodePointSet init_BLOCK_ENCLOSED_ALPHANUMERIC_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f100, 0x1f200);
+	return result;
+}
+static final CodePointSet BLOCK_ENCLOSED_ALPHANUMERIC_SUPPLEMENT = init_BLOCK_ENCLOSED_ALPHANUMERIC_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_ENCLOSED_IDEOGRAPHIC_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f200, 0x1f300);
+	return result;
+}
+static final CodePointSet BLOCK_ENCLOSED_IDEOGRAPHIC_SUPPLEMENT = init_BLOCK_ENCLOSED_IDEOGRAPHIC_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f300, 0x1f600);
+	return result;
+}
+static final CodePointSet BLOCK_MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS = init_BLOCK_MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS();
+
+private static CodePointSet init_BLOCK_EMOTICONS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f600, 0x1f650);
+	return result;
+}
+static final CodePointSet BLOCK_EMOTICONS = init_BLOCK_EMOTICONS();
+
+private static CodePointSet init_BLOCK_ORNAMENTAL_DINGBATS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f650, 0x1f680);
+	return result;
+}
+static final CodePointSet BLOCK_ORNAMENTAL_DINGBATS = init_BLOCK_ORNAMENTAL_DINGBATS();
+
+private static CodePointSet init_BLOCK_TRANSPORT_AND_MAP_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f680, 0x1f700);
+	return result;
+}
+static final CodePointSet BLOCK_TRANSPORT_AND_MAP_SYMBOLS = init_BLOCK_TRANSPORT_AND_MAP_SYMBOLS();
+
+private static CodePointSet init_BLOCK_ALCHEMICAL_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f700, 0x1f780);
+	return result;
+}
+static final CodePointSet BLOCK_ALCHEMICAL_SYMBOLS = init_BLOCK_ALCHEMICAL_SYMBOLS();
+
+private static CodePointSet init_BLOCK_GEOMETRIC_SHAPES_EXTENDED() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f780, 0x1f800);
+	return result;
+}
+static final CodePointSet BLOCK_GEOMETRIC_SHAPES_EXTENDED = init_BLOCK_GEOMETRIC_SHAPES_EXTENDED();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTAL_ARROWS_C() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f800, 0x1f900);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTAL_ARROWS_C = init_BLOCK_SUPPLEMENTAL_ARROWS_C();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1f900, 0x1fa00);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS = init_BLOCK_SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS();
+
+private static CodePointSet init_BLOCK_CHESS_SYMBOLS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1fa00, 0x1fa70);
+	return result;
+}
+static final CodePointSet BLOCK_CHESS_SYMBOLS = init_BLOCK_CHESS_SYMBOLS();
+
+private static CodePointSet init_BLOCK_SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1fa70, 0x1fb00);
+	return result;
+}
+static final CodePointSet BLOCK_SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A = init_BLOCK_SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A();
+
+private static CodePointSet init_BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1fb00, 0x1fc00);
+	return result;
+}
+static final CodePointSet BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING = init_BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x20000, 0x2a6e0);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2a700, 0x2b740);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2b740, 0x2b820);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_E() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2b820, 0x2ceb0);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_E = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_E();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_F() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2ceb0, 0x2ebf0);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_F = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_F();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_I() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2ebf0, 0x2ee60);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_I = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_I();
+
+private static CodePointSet init_BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x2f800, 0x2fa20);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT = init_BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x30000, 0x31350);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G();
+
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x31350, 0x323b0);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H();
+
+private static CodePointSet init_BLOCK_TAGS() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xe0000, 0xe0080);
+	return result;
+}
+static final CodePointSet BLOCK_TAGS = init_BLOCK_TAGS();
+
+private static CodePointSet init_BLOCK_VARIATION_SELECTORS_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xe0100, 0xe01f0);
+	return result;
+}
+static final CodePointSet BLOCK_VARIATION_SELECTORS_SUPPLEMENT = init_BLOCK_VARIATION_SELECTORS_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_A() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0xf0000, 0x100000);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_A = init_BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_A();
+
+private static CodePointSet init_BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_B() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x100000, 0x110000);
+	return result;
+}
+static final CodePointSet BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_B = init_BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_B();
+
+/** The set for {@code Character.UnicodeBlock#toString()} {@code enumName}, or {@code null} if unknown. */
+static CodePointSet blockByEnumName(String enumName) {
+	switch (enumName) {
+		case "BASIC_LATIN": return BLOCK_BASIC_LATIN;
+		case "LATIN_1_SUPPLEMENT": return BLOCK_LATIN_1_SUPPLEMENT;
+		case "LATIN_EXTENDED_A": return BLOCK_LATIN_EXTENDED_A;
+		case "LATIN_EXTENDED_B": return BLOCK_LATIN_EXTENDED_B;
+		case "IPA_EXTENSIONS": return BLOCK_IPA_EXTENSIONS;
+		case "SPACING_MODIFIER_LETTERS": return BLOCK_SPACING_MODIFIER_LETTERS;
+		case "COMBINING_DIACRITICAL_MARKS": return BLOCK_COMBINING_DIACRITICAL_MARKS;
+		case "GREEK": return BLOCK_GREEK;
+		case "CYRILLIC": return BLOCK_CYRILLIC;
+		case "CYRILLIC_SUPPLEMENTARY": return BLOCK_CYRILLIC_SUPPLEMENTARY;
+		case "ARMENIAN": return BLOCK_ARMENIAN;
+		case "HEBREW": return BLOCK_HEBREW;
+		case "ARABIC": return BLOCK_ARABIC;
+		case "SYRIAC": return BLOCK_SYRIAC;
+		case "ARABIC_SUPPLEMENT": return BLOCK_ARABIC_SUPPLEMENT;
+		case "THAANA": return BLOCK_THAANA;
+		case "NKO": return BLOCK_NKO;
+		case "SAMARITAN": return BLOCK_SAMARITAN;
+		case "MANDAIC": return BLOCK_MANDAIC;
+		case "SYRIAC_SUPPLEMENT": return BLOCK_SYRIAC_SUPPLEMENT;
+		case "ARABIC_EXTENDED_B": return BLOCK_ARABIC_EXTENDED_B;
+		case "ARABIC_EXTENDED_A": return BLOCK_ARABIC_EXTENDED_A;
+		case "DEVANAGARI": return BLOCK_DEVANAGARI;
+		case "BENGALI": return BLOCK_BENGALI;
+		case "GURMUKHI": return BLOCK_GURMUKHI;
+		case "GUJARATI": return BLOCK_GUJARATI;
+		case "ORIYA": return BLOCK_ORIYA;
+		case "TAMIL": return BLOCK_TAMIL;
+		case "TELUGU": return BLOCK_TELUGU;
+		case "KANNADA": return BLOCK_KANNADA;
+		case "MALAYALAM": return BLOCK_MALAYALAM;
+		case "SINHALA": return BLOCK_SINHALA;
+		case "THAI": return BLOCK_THAI;
+		case "LAO": return BLOCK_LAO;
+		case "TIBETAN": return BLOCK_TIBETAN;
+		case "MYANMAR": return BLOCK_MYANMAR;
+		case "GEORGIAN": return BLOCK_GEORGIAN;
+		case "HANGUL_JAMO": return BLOCK_HANGUL_JAMO;
+		case "ETHIOPIC": return BLOCK_ETHIOPIC;
+		case "ETHIOPIC_SUPPLEMENT": return BLOCK_ETHIOPIC_SUPPLEMENT;
+		case "CHEROKEE": return BLOCK_CHEROKEE;
+		case "UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS": return BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS;
+		case "OGHAM": return BLOCK_OGHAM;
+		case "RUNIC": return BLOCK_RUNIC;
+		case "TAGALOG": return BLOCK_TAGALOG;
+		case "HANUNOO": return BLOCK_HANUNOO;
+		case "BUHID": return BLOCK_BUHID;
+		case "TAGBANWA": return BLOCK_TAGBANWA;
+		case "KHMER": return BLOCK_KHMER;
+		case "MONGOLIAN": return BLOCK_MONGOLIAN;
+		case "UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED": return BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED;
+		case "LIMBU": return BLOCK_LIMBU;
+		case "TAI_LE": return BLOCK_TAI_LE;
+		case "NEW_TAI_LUE": return BLOCK_NEW_TAI_LUE;
+		case "KHMER_SYMBOLS": return BLOCK_KHMER_SYMBOLS;
+		case "BUGINESE": return BLOCK_BUGINESE;
+		case "TAI_THAM": return BLOCK_TAI_THAM;
+		case "COMBINING_DIACRITICAL_MARKS_EXTENDED": return BLOCK_COMBINING_DIACRITICAL_MARKS_EXTENDED;
+		case "BALINESE": return BLOCK_BALINESE;
+		case "SUNDANESE": return BLOCK_SUNDANESE;
+		case "BATAK": return BLOCK_BATAK;
+		case "LEPCHA": return BLOCK_LEPCHA;
+		case "OL_CHIKI": return BLOCK_OL_CHIKI;
+		case "CYRILLIC_EXTENDED_C": return BLOCK_CYRILLIC_EXTENDED_C;
+		case "GEORGIAN_EXTENDED": return BLOCK_GEORGIAN_EXTENDED;
+		case "SUNDANESE_SUPPLEMENT": return BLOCK_SUNDANESE_SUPPLEMENT;
+		case "VEDIC_EXTENSIONS": return BLOCK_VEDIC_EXTENSIONS;
+		case "PHONETIC_EXTENSIONS": return BLOCK_PHONETIC_EXTENSIONS;
+		case "PHONETIC_EXTENSIONS_SUPPLEMENT": return BLOCK_PHONETIC_EXTENSIONS_SUPPLEMENT;
+		case "COMBINING_DIACRITICAL_MARKS_SUPPLEMENT": return BLOCK_COMBINING_DIACRITICAL_MARKS_SUPPLEMENT;
+		case "LATIN_EXTENDED_ADDITIONAL": return BLOCK_LATIN_EXTENDED_ADDITIONAL;
+		case "GREEK_EXTENDED": return BLOCK_GREEK_EXTENDED;
+		case "GENERAL_PUNCTUATION": return BLOCK_GENERAL_PUNCTUATION;
+		case "SUPERSCRIPTS_AND_SUBSCRIPTS": return BLOCK_SUPERSCRIPTS_AND_SUBSCRIPTS;
+		case "CURRENCY_SYMBOLS": return BLOCK_CURRENCY_SYMBOLS;
+		case "COMBINING_MARKS_FOR_SYMBOLS": return BLOCK_COMBINING_MARKS_FOR_SYMBOLS;
+		case "LETTERLIKE_SYMBOLS": return BLOCK_LETTERLIKE_SYMBOLS;
+		case "NUMBER_FORMS": return BLOCK_NUMBER_FORMS;
+		case "ARROWS": return BLOCK_ARROWS;
+		case "MATHEMATICAL_OPERATORS": return BLOCK_MATHEMATICAL_OPERATORS;
+		case "MISCELLANEOUS_TECHNICAL": return BLOCK_MISCELLANEOUS_TECHNICAL;
+		case "CONTROL_PICTURES": return BLOCK_CONTROL_PICTURES;
+		case "OPTICAL_CHARACTER_RECOGNITION": return BLOCK_OPTICAL_CHARACTER_RECOGNITION;
+		case "ENCLOSED_ALPHANUMERICS": return BLOCK_ENCLOSED_ALPHANUMERICS;
+		case "BOX_DRAWING": return BLOCK_BOX_DRAWING;
+		case "BLOCK_ELEMENTS": return BLOCK_BLOCK_ELEMENTS;
+		case "GEOMETRIC_SHAPES": return BLOCK_GEOMETRIC_SHAPES;
+		case "MISCELLANEOUS_SYMBOLS": return BLOCK_MISCELLANEOUS_SYMBOLS;
+		case "DINGBATS": return BLOCK_DINGBATS;
+		case "MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A": return BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A;
+		case "SUPPLEMENTAL_ARROWS_A": return BLOCK_SUPPLEMENTAL_ARROWS_A;
+		case "BRAILLE_PATTERNS": return BLOCK_BRAILLE_PATTERNS;
+		case "SUPPLEMENTAL_ARROWS_B": return BLOCK_SUPPLEMENTAL_ARROWS_B;
+		case "MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B": return BLOCK_MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B;
+		case "SUPPLEMENTAL_MATHEMATICAL_OPERATORS": return BLOCK_SUPPLEMENTAL_MATHEMATICAL_OPERATORS;
+		case "MISCELLANEOUS_SYMBOLS_AND_ARROWS": return BLOCK_MISCELLANEOUS_SYMBOLS_AND_ARROWS;
+		case "GLAGOLITIC": return BLOCK_GLAGOLITIC;
+		case "LATIN_EXTENDED_C": return BLOCK_LATIN_EXTENDED_C;
+		case "COPTIC": return BLOCK_COPTIC;
+		case "GEORGIAN_SUPPLEMENT": return BLOCK_GEORGIAN_SUPPLEMENT;
+		case "TIFINAGH": return BLOCK_TIFINAGH;
+		case "ETHIOPIC_EXTENDED": return BLOCK_ETHIOPIC_EXTENDED;
+		case "CYRILLIC_EXTENDED_A": return BLOCK_CYRILLIC_EXTENDED_A;
+		case "SUPPLEMENTAL_PUNCTUATION": return BLOCK_SUPPLEMENTAL_PUNCTUATION;
+		case "CJK_RADICALS_SUPPLEMENT": return BLOCK_CJK_RADICALS_SUPPLEMENT;
+		case "KANGXI_RADICALS": return BLOCK_KANGXI_RADICALS;
+		case "IDEOGRAPHIC_DESCRIPTION_CHARACTERS": return BLOCK_IDEOGRAPHIC_DESCRIPTION_CHARACTERS;
+		case "CJK_SYMBOLS_AND_PUNCTUATION": return BLOCK_CJK_SYMBOLS_AND_PUNCTUATION;
+		case "HIRAGANA": return BLOCK_HIRAGANA;
+		case "KATAKANA": return BLOCK_KATAKANA;
+		case "BOPOMOFO": return BLOCK_BOPOMOFO;
+		case "HANGUL_COMPATIBILITY_JAMO": return BLOCK_HANGUL_COMPATIBILITY_JAMO;
+		case "KANBUN": return BLOCK_KANBUN;
+		case "BOPOMOFO_EXTENDED": return BLOCK_BOPOMOFO_EXTENDED;
+		case "CJK_STROKES": return BLOCK_CJK_STROKES;
+		case "KATAKANA_PHONETIC_EXTENSIONS": return BLOCK_KATAKANA_PHONETIC_EXTENSIONS;
+		case "ENCLOSED_CJK_LETTERS_AND_MONTHS": return BLOCK_ENCLOSED_CJK_LETTERS_AND_MONTHS;
+		case "CJK_COMPATIBILITY": return BLOCK_CJK_COMPATIBILITY;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A;
+		case "YIJING_HEXAGRAM_SYMBOLS": return BLOCK_YIJING_HEXAGRAM_SYMBOLS;
+		case "CJK_UNIFIED_IDEOGRAPHS": return BLOCK_CJK_UNIFIED_IDEOGRAPHS;
+		case "YI_SYLLABLES": return BLOCK_YI_SYLLABLES;
+		case "YI_RADICALS": return BLOCK_YI_RADICALS;
+		case "LISU": return BLOCK_LISU;
+		case "VAI": return BLOCK_VAI;
+		case "CYRILLIC_EXTENDED_B": return BLOCK_CYRILLIC_EXTENDED_B;
+		case "BAMUM": return BLOCK_BAMUM;
+		case "MODIFIER_TONE_LETTERS": return BLOCK_MODIFIER_TONE_LETTERS;
+		case "LATIN_EXTENDED_D": return BLOCK_LATIN_EXTENDED_D;
+		case "SYLOTI_NAGRI": return BLOCK_SYLOTI_NAGRI;
+		case "COMMON_INDIC_NUMBER_FORMS": return BLOCK_COMMON_INDIC_NUMBER_FORMS;
+		case "PHAGS_PA": return BLOCK_PHAGS_PA;
+		case "SAURASHTRA": return BLOCK_SAURASHTRA;
+		case "DEVANAGARI_EXTENDED": return BLOCK_DEVANAGARI_EXTENDED;
+		case "KAYAH_LI": return BLOCK_KAYAH_LI;
+		case "REJANG": return BLOCK_REJANG;
+		case "HANGUL_JAMO_EXTENDED_A": return BLOCK_HANGUL_JAMO_EXTENDED_A;
+		case "JAVANESE": return BLOCK_JAVANESE;
+		case "MYANMAR_EXTENDED_B": return BLOCK_MYANMAR_EXTENDED_B;
+		case "CHAM": return BLOCK_CHAM;
+		case "MYANMAR_EXTENDED_A": return BLOCK_MYANMAR_EXTENDED_A;
+		case "TAI_VIET": return BLOCK_TAI_VIET;
+		case "MEETEI_MAYEK_EXTENSIONS": return BLOCK_MEETEI_MAYEK_EXTENSIONS;
+		case "ETHIOPIC_EXTENDED_A": return BLOCK_ETHIOPIC_EXTENDED_A;
+		case "LATIN_EXTENDED_E": return BLOCK_LATIN_EXTENDED_E;
+		case "CHEROKEE_SUPPLEMENT": return BLOCK_CHEROKEE_SUPPLEMENT;
+		case "MEETEI_MAYEK": return BLOCK_MEETEI_MAYEK;
+		case "HANGUL_SYLLABLES": return BLOCK_HANGUL_SYLLABLES;
+		case "HANGUL_JAMO_EXTENDED_B": return BLOCK_HANGUL_JAMO_EXTENDED_B;
+		case "HIGH_SURROGATES": return BLOCK_HIGH_SURROGATES;
+		case "HIGH_PRIVATE_USE_SURROGATES": return BLOCK_HIGH_PRIVATE_USE_SURROGATES;
+		case "LOW_SURROGATES": return BLOCK_LOW_SURROGATES;
+		case "PRIVATE_USE_AREA": return BLOCK_PRIVATE_USE_AREA;
+		case "CJK_COMPATIBILITY_IDEOGRAPHS": return BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS;
+		case "ALPHABETIC_PRESENTATION_FORMS": return BLOCK_ALPHABETIC_PRESENTATION_FORMS;
+		case "ARABIC_PRESENTATION_FORMS_A": return BLOCK_ARABIC_PRESENTATION_FORMS_A;
+		case "VARIATION_SELECTORS": return BLOCK_VARIATION_SELECTORS;
+		case "VERTICAL_FORMS": return BLOCK_VERTICAL_FORMS;
+		case "COMBINING_HALF_MARKS": return BLOCK_COMBINING_HALF_MARKS;
+		case "CJK_COMPATIBILITY_FORMS": return BLOCK_CJK_COMPATIBILITY_FORMS;
+		case "SMALL_FORM_VARIANTS": return BLOCK_SMALL_FORM_VARIANTS;
+		case "ARABIC_PRESENTATION_FORMS_B": return BLOCK_ARABIC_PRESENTATION_FORMS_B;
+		case "HALFWIDTH_AND_FULLWIDTH_FORMS": return BLOCK_HALFWIDTH_AND_FULLWIDTH_FORMS;
+		case "SPECIALS": return BLOCK_SPECIALS;
+		case "LINEAR_B_SYLLABARY": return BLOCK_LINEAR_B_SYLLABARY;
+		case "LINEAR_B_IDEOGRAMS": return BLOCK_LINEAR_B_IDEOGRAMS;
+		case "AEGEAN_NUMBERS": return BLOCK_AEGEAN_NUMBERS;
+		case "ANCIENT_GREEK_NUMBERS": return BLOCK_ANCIENT_GREEK_NUMBERS;
+		case "ANCIENT_SYMBOLS": return BLOCK_ANCIENT_SYMBOLS;
+		case "PHAISTOS_DISC": return BLOCK_PHAISTOS_DISC;
+		case "LYCIAN": return BLOCK_LYCIAN;
+		case "CARIAN": return BLOCK_CARIAN;
+		case "COPTIC_EPACT_NUMBERS": return BLOCK_COPTIC_EPACT_NUMBERS;
+		case "OLD_ITALIC": return BLOCK_OLD_ITALIC;
+		case "GOTHIC": return BLOCK_GOTHIC;
+		case "OLD_PERMIC": return BLOCK_OLD_PERMIC;
+		case "UGARITIC": return BLOCK_UGARITIC;
+		case "OLD_PERSIAN": return BLOCK_OLD_PERSIAN;
+		case "DESERET": return BLOCK_DESERET;
+		case "SHAVIAN": return BLOCK_SHAVIAN;
+		case "OSMANYA": return BLOCK_OSMANYA;
+		case "OSAGE": return BLOCK_OSAGE;
+		case "ELBASAN": return BLOCK_ELBASAN;
+		case "CAUCASIAN_ALBANIAN": return BLOCK_CAUCASIAN_ALBANIAN;
+		case "VITHKUQI": return BLOCK_VITHKUQI;
+		case "TODHRI": return BLOCK_TODHRI;
+		case "LINEAR_A": return BLOCK_LINEAR_A;
+		case "LATIN_EXTENDED_F": return BLOCK_LATIN_EXTENDED_F;
+		case "CYPRIOT_SYLLABARY": return BLOCK_CYPRIOT_SYLLABARY;
+		case "IMPERIAL_ARAMAIC": return BLOCK_IMPERIAL_ARAMAIC;
+		case "PALMYRENE": return BLOCK_PALMYRENE;
+		case "NABATAEAN": return BLOCK_NABATAEAN;
+		case "HATRAN": return BLOCK_HATRAN;
+		case "PHOENICIAN": return BLOCK_PHOENICIAN;
+		case "LYDIAN": return BLOCK_LYDIAN;
+		case "MEROITIC_HIEROGLYPHS": return BLOCK_MEROITIC_HIEROGLYPHS;
+		case "MEROITIC_CURSIVE": return BLOCK_MEROITIC_CURSIVE;
+		case "KHAROSHTHI": return BLOCK_KHAROSHTHI;
+		case "OLD_SOUTH_ARABIAN": return BLOCK_OLD_SOUTH_ARABIAN;
+		case "OLD_NORTH_ARABIAN": return BLOCK_OLD_NORTH_ARABIAN;
+		case "MANICHAEAN": return BLOCK_MANICHAEAN;
+		case "AVESTAN": return BLOCK_AVESTAN;
+		case "INSCRIPTIONAL_PARTHIAN": return BLOCK_INSCRIPTIONAL_PARTHIAN;
+		case "INSCRIPTIONAL_PAHLAVI": return BLOCK_INSCRIPTIONAL_PAHLAVI;
+		case "PSALTER_PAHLAVI": return BLOCK_PSALTER_PAHLAVI;
+		case "OLD_TURKIC": return BLOCK_OLD_TURKIC;
+		case "OLD_HUNGARIAN": return BLOCK_OLD_HUNGARIAN;
+		case "HANIFI_ROHINGYA": return BLOCK_HANIFI_ROHINGYA;
+		case "GARAY": return BLOCK_GARAY;
+		case "RUMI_NUMERAL_SYMBOLS": return BLOCK_RUMI_NUMERAL_SYMBOLS;
+		case "YEZIDI": return BLOCK_YEZIDI;
+		case "ARABIC_EXTENDED_C": return BLOCK_ARABIC_EXTENDED_C;
+		case "OLD_SOGDIAN": return BLOCK_OLD_SOGDIAN;
+		case "SOGDIAN": return BLOCK_SOGDIAN;
+		case "OLD_UYGHUR": return BLOCK_OLD_UYGHUR;
+		case "CHORASMIAN": return BLOCK_CHORASMIAN;
+		case "ELYMAIC": return BLOCK_ELYMAIC;
+		case "BRAHMI": return BLOCK_BRAHMI;
+		case "KAITHI": return BLOCK_KAITHI;
+		case "SORA_SOMPENG": return BLOCK_SORA_SOMPENG;
+		case "CHAKMA": return BLOCK_CHAKMA;
+		case "MAHAJANI": return BLOCK_MAHAJANI;
+		case "SHARADA": return BLOCK_SHARADA;
+		case "SINHALA_ARCHAIC_NUMBERS": return BLOCK_SINHALA_ARCHAIC_NUMBERS;
+		case "KHOJKI": return BLOCK_KHOJKI;
+		case "MULTANI": return BLOCK_MULTANI;
+		case "KHUDAWADI": return BLOCK_KHUDAWADI;
+		case "GRANTHA": return BLOCK_GRANTHA;
+		case "TULU_TIGALARI": return BLOCK_TULU_TIGALARI;
+		case "NEWA": return BLOCK_NEWA;
+		case "TIRHUTA": return BLOCK_TIRHUTA;
+		case "SIDDHAM": return BLOCK_SIDDHAM;
+		case "MODI": return BLOCK_MODI;
+		case "MONGOLIAN_SUPPLEMENT": return BLOCK_MONGOLIAN_SUPPLEMENT;
+		case "TAKRI": return BLOCK_TAKRI;
+		case "MYANMAR_EXTENDED_C": return BLOCK_MYANMAR_EXTENDED_C;
+		case "AHOM": return BLOCK_AHOM;
+		case "DOGRA": return BLOCK_DOGRA;
+		case "WARANG_CITI": return BLOCK_WARANG_CITI;
+		case "DIVES_AKURU": return BLOCK_DIVES_AKURU;
+		case "NANDINAGARI": return BLOCK_NANDINAGARI;
+		case "ZANABAZAR_SQUARE": return BLOCK_ZANABAZAR_SQUARE;
+		case "SOYOMBO": return BLOCK_SOYOMBO;
+		case "UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED_A": return BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED_A;
+		case "PAU_CIN_HAU": return BLOCK_PAU_CIN_HAU;
+		case "DEVANAGARI_EXTENDED_A": return BLOCK_DEVANAGARI_EXTENDED_A;
+		case "SUNUWAR": return BLOCK_SUNUWAR;
+		case "BHAIKSUKI": return BLOCK_BHAIKSUKI;
+		case "MARCHEN": return BLOCK_MARCHEN;
+		case "MASARAM_GONDI": return BLOCK_MASARAM_GONDI;
+		case "GUNJALA_GONDI": return BLOCK_GUNJALA_GONDI;
+		case "MAKASAR": return BLOCK_MAKASAR;
+		case "KAWI": return BLOCK_KAWI;
+		case "LISU_SUPPLEMENT": return BLOCK_LISU_SUPPLEMENT;
+		case "TAMIL_SUPPLEMENT": return BLOCK_TAMIL_SUPPLEMENT;
+		case "CUNEIFORM": return BLOCK_CUNEIFORM;
+		case "CUNEIFORM_NUMBERS_AND_PUNCTUATION": return BLOCK_CUNEIFORM_NUMBERS_AND_PUNCTUATION;
+		case "EARLY_DYNASTIC_CUNEIFORM": return BLOCK_EARLY_DYNASTIC_CUNEIFORM;
+		case "CYPRO_MINOAN": return BLOCK_CYPRO_MINOAN;
+		case "EGYPTIAN_HIEROGLYPHS": return BLOCK_EGYPTIAN_HIEROGLYPHS;
+		case "EGYPTIAN_HIEROGLYPH_FORMAT_CONTROLS": return BLOCK_EGYPTIAN_HIEROGLYPH_FORMAT_CONTROLS;
+		case "EGYPTIAN_HIEROGLYPHS_EXTENDED_A": return BLOCK_EGYPTIAN_HIEROGLYPHS_EXTENDED_A;
+		case "ANATOLIAN_HIEROGLYPHS": return BLOCK_ANATOLIAN_HIEROGLYPHS;
+		case "GURUNG_KHEMA": return BLOCK_GURUNG_KHEMA;
+		case "BAMUM_SUPPLEMENT": return BLOCK_BAMUM_SUPPLEMENT;
+		case "MRO": return BLOCK_MRO;
+		case "TANGSA": return BLOCK_TANGSA;
+		case "BASSA_VAH": return BLOCK_BASSA_VAH;
+		case "PAHAWH_HMONG": return BLOCK_PAHAWH_HMONG;
+		case "KIRAT_RAI": return BLOCK_KIRAT_RAI;
+		case "MEDEFAIDRIN": return BLOCK_MEDEFAIDRIN;
+		case "MIAO": return BLOCK_MIAO;
+		case "IDEOGRAPHIC_SYMBOLS_AND_PUNCTUATION": return BLOCK_IDEOGRAPHIC_SYMBOLS_AND_PUNCTUATION;
+		case "TANGUT": return BLOCK_TANGUT;
+		case "TANGUT_COMPONENTS": return BLOCK_TANGUT_COMPONENTS;
+		case "KHITAN_SMALL_SCRIPT": return BLOCK_KHITAN_SMALL_SCRIPT;
+		case "TANGUT_SUPPLEMENT": return BLOCK_TANGUT_SUPPLEMENT;
+		case "KANA_EXTENDED_B": return BLOCK_KANA_EXTENDED_B;
+		case "KANA_SUPPLEMENT": return BLOCK_KANA_SUPPLEMENT;
+		case "KANA_EXTENDED_A": return BLOCK_KANA_EXTENDED_A;
+		case "SMALL_KANA_EXTENSION": return BLOCK_SMALL_KANA_EXTENSION;
+		case "NUSHU": return BLOCK_NUSHU;
+		case "DUPLOYAN": return BLOCK_DUPLOYAN;
+		case "SHORTHAND_FORMAT_CONTROLS": return BLOCK_SHORTHAND_FORMAT_CONTROLS;
+		case "SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT": return BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT;
+		case "ZNAMENNY_MUSICAL_NOTATION": return BLOCK_ZNAMENNY_MUSICAL_NOTATION;
+		case "BYZANTINE_MUSICAL_SYMBOLS": return BLOCK_BYZANTINE_MUSICAL_SYMBOLS;
+		case "MUSICAL_SYMBOLS": return BLOCK_MUSICAL_SYMBOLS;
+		case "ANCIENT_GREEK_MUSICAL_NOTATION": return BLOCK_ANCIENT_GREEK_MUSICAL_NOTATION;
+		case "KAKTOVIK_NUMERALS": return BLOCK_KAKTOVIK_NUMERALS;
+		case "MAYAN_NUMERALS": return BLOCK_MAYAN_NUMERALS;
+		case "TAI_XUAN_JING_SYMBOLS": return BLOCK_TAI_XUAN_JING_SYMBOLS;
+		case "COUNTING_ROD_NUMERALS": return BLOCK_COUNTING_ROD_NUMERALS;
+		case "MATHEMATICAL_ALPHANUMERIC_SYMBOLS": return BLOCK_MATHEMATICAL_ALPHANUMERIC_SYMBOLS;
+		case "SUTTON_SIGNWRITING": return BLOCK_SUTTON_SIGNWRITING;
+		case "LATIN_EXTENDED_G": return BLOCK_LATIN_EXTENDED_G;
+		case "GLAGOLITIC_SUPPLEMENT": return BLOCK_GLAGOLITIC_SUPPLEMENT;
+		case "CYRILLIC_EXTENDED_D": return BLOCK_CYRILLIC_EXTENDED_D;
+		case "NYIAKENG_PUACHUE_HMONG": return BLOCK_NYIAKENG_PUACHUE_HMONG;
+		case "TOTO": return BLOCK_TOTO;
+		case "WANCHO": return BLOCK_WANCHO;
+		case "NAG_MUNDARI": return BLOCK_NAG_MUNDARI;
+		case "OL_ONAL": return BLOCK_OL_ONAL;
+		case "ETHIOPIC_EXTENDED_B": return BLOCK_ETHIOPIC_EXTENDED_B;
+		case "MENDE_KIKAKUI": return BLOCK_MENDE_KIKAKUI;
+		case "ADLAM": return BLOCK_ADLAM;
+		case "INDIC_SIYAQ_NUMBERS": return BLOCK_INDIC_SIYAQ_NUMBERS;
+		case "OTTOMAN_SIYAQ_NUMBERS": return BLOCK_OTTOMAN_SIYAQ_NUMBERS;
+		case "ARABIC_MATHEMATICAL_ALPHABETIC_SYMBOLS": return BLOCK_ARABIC_MATHEMATICAL_ALPHABETIC_SYMBOLS;
+		case "MAHJONG_TILES": return BLOCK_MAHJONG_TILES;
+		case "DOMINO_TILES": return BLOCK_DOMINO_TILES;
+		case "PLAYING_CARDS": return BLOCK_PLAYING_CARDS;
+		case "ENCLOSED_ALPHANUMERIC_SUPPLEMENT": return BLOCK_ENCLOSED_ALPHANUMERIC_SUPPLEMENT;
+		case "ENCLOSED_IDEOGRAPHIC_SUPPLEMENT": return BLOCK_ENCLOSED_IDEOGRAPHIC_SUPPLEMENT;
+		case "MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS": return BLOCK_MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS;
+		case "EMOTICONS": return BLOCK_EMOTICONS;
+		case "ORNAMENTAL_DINGBATS": return BLOCK_ORNAMENTAL_DINGBATS;
+		case "TRANSPORT_AND_MAP_SYMBOLS": return BLOCK_TRANSPORT_AND_MAP_SYMBOLS;
+		case "ALCHEMICAL_SYMBOLS": return BLOCK_ALCHEMICAL_SYMBOLS;
+		case "GEOMETRIC_SHAPES_EXTENDED": return BLOCK_GEOMETRIC_SHAPES_EXTENDED;
+		case "SUPPLEMENTAL_ARROWS_C": return BLOCK_SUPPLEMENTAL_ARROWS_C;
+		case "SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS": return BLOCK_SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS;
+		case "CHESS_SYMBOLS": return BLOCK_CHESS_SYMBOLS;
+		case "SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A": return BLOCK_SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A;
+		case "SYMBOLS_FOR_LEGACY_COMPUTING": return BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_E": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_E;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_F": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_F;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_I": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_I;
+		case "CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT": return BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H;
+		case "TAGS": return BLOCK_TAGS;
+		case "VARIATION_SELECTORS_SUPPLEMENT": return BLOCK_VARIATION_SELECTORS_SUPPLEMENT;
+		case "SUPPLEMENTARY_PRIVATE_USE_AREA_A": return BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_A;
+		case "SUPPLEMENTARY_PRIVATE_USE_AREA_B": return BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_B;
+		default: return null;
+	}
+}
+
 }

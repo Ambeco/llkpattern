@@ -278,13 +278,23 @@ to keep it "vaguely reasonable" and the jar/dex small.
       pieces since a class-file string constant is capped at 65,535 modified-UTF-8 bytes). Each
       predicate becomes a thin set built on demand from its slice. Should collapse the class file,
       verification, and static-init cost, since there'd be no per-set bytecode at all.
-      Design questions to settle before building: (a) lookup speed matters more than init speed --
-      `contains`/`containsAll`/`forEachRange` on a set that reads through an `IntBuffer`/offset would
-      be slower than `ArrayCodePointSet`'s plain `int[]` indexing, so likely copy the slice into a real
-      `ArrayCodePointSet` on first use and cache it (a small per-set cost paid only by sets actually
-      used) rather than adding a new view-backed `CodePointSet`; (b) resource loading via
-      `getResourceAsStream` needs checking on the Pixel 3a / APK packaging, and its failure mode should
-      be a loud, detailed exception per this project's error-message conventions.
+      Design questions to settle before building: (a) lookup speed matters more than init speed, and
+      it is UNMEASURED whether a slice view would be slower than `ArrayCodePointSet`'s plain `int[]`
+      indexing -- the bounds check is about the same (a heap `IntBuffer.get` also checks `limit`), but
+      `IntBuffer` adds `offset`/`hb` field loads and an abstract-class call the JIT may not inline
+      (ART, on Android, inlines less than HotSpot's C2, so the Pixel 3a is where a gap is likelier),
+      and a `ByteBuffer.asIntBuffer()` view over a byte blob adds byte-order handling on top. Options,
+      cheapest first: (i) one shared `int[]` blob with each thin set holding `(offset, length)` and
+      indexing `blob[offset + i]` -- plain array indexing, no buffer abstraction, but needs a small new
+      `CodePointSet` implementation (or making `ArrayCodePointSet`'s search work over array+offset)
+      and keeps the whole ~55KB blob alive; (ii) an `IntBuffer` slice per set; (iii) copy the slice
+      into a real `ArrayCodePointSet` on first use and cache it (zero match-time cost, small
+      per-used-set init cost). Settle it with a throwaway JMH microbenchmark (per the "narrow
+      hypothesis" guidance in CLAUDE.md), not the full corpus cycle: `contains` on the current
+      `ArrayCodePointSet` vs (i) vs (ii) on a large set such as `isDefined`, on the desktop AND the
+      Pixel 3a; (b) resource loading via `getResourceAsStream` needs checking on the Pixel 3a / APK
+      packaging, and its failure mode should be a loud, detailed exception per this project's
+      error-message conventions.
 - [ ] **Step 2 (after step 1): replace the 561 members with an enum** (or an ordinal-indexed table) and
       one method that materializes the set for a given value on the fly. Fits the existing name lookups
       (`NamedCharClass#scriptByName`/`#blockByName`, currently generated string switches) and lets

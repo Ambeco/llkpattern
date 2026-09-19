@@ -50,11 +50,15 @@ if (matcher.find()) {
 Ll1Pattern.compile("a|ab"); // throws PatternSyntaxException: both branches start with 'a'
 ```
 
+### Considered and deliberately not added
+
+- **A client-runnable Unicode generator + external data file.** Letting a client run the Unicode generator themselves and having the library prefer that data file over its built-in ranges. Rejected: substantial work and likely slower compile/match, for very little value, since the built-in data is regenerated from a newer JDK when needed. See [documents/design.md](documents/design.md)'s "Alternatives Considered".
+
 ## 3. Remaining Work
 
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
-- **Unicode scripts/blocks** (`\p{IsScript}`/`\p{script=Script}`, `\p{InBlock}`/`\p{block=Block}`) — not wired up yet. Script data already exists in the generated `UnicodePredicates`; blocks need generator work too.
+- **Unicode blocks** (`\p{InBlock}`/`\p{block=Block}`) — not implemented yet; needs generator work first (scripts are done).
 - **Lookahead/lookaround, quotation (`\Q...\E`), atomic groups (`(?>X)`)** — not implemented; lookahead/lookbehind are currently rejected outright at parse time, since they can't be guaranteed to run in linear time.
 - **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch; `UNIX_LINES` is only partially honored (affects `^`/`$`/`\Z` but not yet `.`/`\s`/etc.'s line-terminator handling).
 - **Multi-digit backreferences** (`\12`+) — only `\1`-`\9` are supported today.

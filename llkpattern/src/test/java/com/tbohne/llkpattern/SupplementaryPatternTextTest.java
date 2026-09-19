@@ -82,13 +82,19 @@ public class SupplementaryPatternTextTest {
   }
 
   @Test
-  public void invalidEscapeOfSupplementaryChar_reportsTheRealCodePoint() {
-    // "\" followed directly by a supplementary character isn't a recognized escape form (same as
-    // "\" followed by an arbitrary unrecognized letter) -- but the exception message must name the
-    // actual U+10000 code point, not a lone (and, on its own, meaningless) surrogate half.
+  public void backslashBeforeSupplementaryChar_quotesIt() {
+    // As in java.util.regex, "\" before any non-alphabetic character (here a supplementary one)
+    // just quotes it.
+    assertMatches("\\" + SUPPLEMENTARY, SUPPLEMENTARY);
+  }
+
+  @Test
+  public void invalidGroupConstructSupplementaryChar_reportsTheRealCodePoint() {
+    // The exception message must name the actual U+10000 code point, not a lone (and, on its own,
+    // meaningless) surrogate half.
     try {
-      Ll1Pattern.compile("\\" + SUPPLEMENTARY);
-      fail("expected PatternSyntaxException for an unrecognized escape");
+      Ll1Pattern.compile("(?" + SUPPLEMENTARY + ")");
+      fail("expected PatternSyntaxException for an invalid group construct");
     } catch (PatternSyntaxException expected) {
       assertThat(expected.getMessage(), containsString("U+10000"));
     }

@@ -1018,6 +1018,16 @@ final class PatternParser {
         }
         return codePoint;
       default:
+        // As in java.util.regex, a backslash before any non-alphabetic character just quotes it
+        // ("\-", "\,", "\ ", "\<", or a non-ASCII character). ASCII letters are reserved for
+        // escapes; '1'-'9' are backreferences (handled by the caller).
+        if (peek2 != EOF
+            && !(peek2 >= 'a' && peek2 <= 'z') && !(peek2 >= 'A' && peek2 <= 'Z')
+            && !(peek2 >= '1' && peek2 <= '9')) {
+          advance(1);
+          advanceCodePoint();
+          return peek2;
+        }
         return -1; // not a single character escape
     }
   }
@@ -1176,50 +1186,22 @@ final class PatternParser {
     // All the rest of this method is parsing named character classes
     boolean positive = peek == 'p';
     advance(1);
+    String charClassName;
     if (peek != '{') {
-      throw throwUnexpectedChar("character classes \"\\p{...} must be wrapped in {}");
-    }
-    advance(1);
-    // Bug fix (2026-09-06): this used to increment `end` BEFORE checking pattern.charAt(end),
-    // meaning the loop never actually validated the name's very first character (at `index`
-    // itself) against [a-zA-Z_=], AND miscounted the name's length by one -- so a genuinely valid
-    // single-letter category name (\p{L}, \p{M}, \p{N}, \p{P}, \p{S}, \p{Z}, \p{C} all exist in
-    // NamedCharClass) was wrongly rejected by the "must have a name" check below, which compared
-    // against the pre-increment convention's off-by-one empty-name marker. Found via
-    // UnicodeClassTest. Restructured to check-then-advance so `end` always reflects the true
-    // (0-or-more) length of the name actually scanned.
-    int end = index;
-    for (; ; ) {
-      if (end == pattern.length()) {
-        throw throwUnexpectedChar(
-            "character class ", new CodePointReference(index), " is missing the closing }");
+      // Single-letter form (\pL, \PL): java.util.regex takes exactly one following character as the
+      // whole name. Whether it names a real class is left to the lookups below.
+      if (peek == EOF) {
+        throw throwUnexpectedChar("character classes \"\\p{...} must be wrapped in {}");
       }
-      char c = pattern.charAt(end);
-      if (c == '}') {
-        break;
-      }
-      // '_' is required for real Unicode property/prefix names like "White_Space", "Hex_Digit",
-      // "Join_Control", "Noncharacter_Code_Point", and the "general_category=" prefix itself --
-      // without it, \p{IsWhite_Space} (and friends) couldn't even reach the name-lookup logic
-      // below, always failing here first. Found via UnicodeClassTest. See remaining_work.md.
-      // Digits and '-' are needed for block names like "Latin-1Supplement"/"Latin_1_Supplement".
-      if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9')
-          && c != '=' && c != '_' && c != '-') {
-        throw throwUnexpectedChar(
-            "character classes \"\\p{...} must have names in [a-zA-Z0-9_=-]. Name started at ",
-            new CodePointReference(index));
-      }
-      end++;
+      charClassName = new String(Character.toChars(peek));
+      advanceCodePoint();
+    } else {
+      charClassName = parseBracedClassName();
     }
-    if (end == index) {
-      throw throwUnexpectedChar("escape character classes must have names");
-    }
-    String charClassName = pattern.substring(index, end);
     // Kept for error messages below -- charClassName itself gets its prefix stripped ("Is"/"In"/
     // "script="/etc.) before we're done, and a thrown message should always echo what the user
     // actually typed, not the stripped-down name used for the NamedCharClass.valueOf() lookup.
     String originalCharClassName = charClassName;
-    advance(end - index + 1);
     // Bug fix (2026-09-06): this used to branch on `peek`/`peek2` (a lookahead-by-one past `index`,
     // bounds-checked the same way every other one in this file is), but `advance(end - index + 1)`
     // just above already moved the parser's lookahead PAST the whole "\p{...}" construct -- so
@@ -1294,6 +1276,52 @@ final class PatternParser {
     }
   }
 
+  /** Scans a {@code {name}} property name (peek is at the opening brace) and advances past the closing brace. */
+  private String parseBracedClassName() {
+    advance(1);
+    // Bug fix (2026-09-06): this used to increment `end` BEFORE checking pattern.charAt(end),
+    // meaning the loop never actually validated the name's very first character (at `index`
+    // itself) against [a-zA-Z_=], AND miscounted the name's length by one -- so a genuinely valid
+    // single-letter category name (\p{L}, \p{M}, \p{N}, \p{P}, \p{S}, \p{Z}, \p{C} all exist in
+    // NamedCharClass) was wrongly rejected by the "must have a name" check below, which compared
+    // against the pre-increment convention's off-by-one empty-name marker. Found via
+    // UnicodeClassTest. Restructured to check-then-advance so `end` always reflects the true
+    // (0-or-more) length of the name actually scanned.
+    int end = index;
+    for (; ; ) {
+      if (end == pattern.length()) {
+        throw throwUnexpectedChar(
+            "character class ", new CodePointReference(index), " is missing the closing }");
+      }
+      char c = pattern.charAt(end);
+      if (c == '}') {
+        break;
+      }
+      // '_' is required for real Unicode property/prefix names like "White_Space", "Hex_Digit",
+      // "Join_Control", "Noncharacter_Code_Point", and the "general_category=" prefix itself --
+      // without it, \p{IsWhite_Space} (and friends) couldn't even reach the name-lookup logic
+      // below, always failing here first. Found via UnicodeClassTest. See remaining_work.md.
+      // Digits and '-' are needed for block names like "Latin-1Supplement"/"Latin_1_Supplement".
+      if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9')
+          && c != '=' && c != '_' && c != '-') {
+        throw throwUnexpectedChar(
+            "character classes \"\\p{...} must have names in [a-zA-Z0-9_=-]. Name started at ",
+            new CodePointReference(index));
+      }
+      end++;
+    }
+    if (end == index) {
+      throw throwUnexpectedChar("escape character classes must have names");
+    }
+    String name = pattern.substring(index, end);
+    advance(end - index + 1);
+    return name;
+  }
+
+  private static final String RANGE_MAX_BELOW_MIN =
+      "Maximum of range must not be less than the minimum. Alternatively, if you didn't intend to "
+          + "have a range, then move '-' to be the first character in the []";
+
   private void parseMaybeRangePredicate(CodePointSetBuilder ranges, int startCodePoint) {
     if (peek != '-') {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
@@ -1310,14 +1338,14 @@ final class PatternParser {
                 + "then move "
                 + "'-' to be the first character in the []");
       }
+      if (endCodePoint < startCodePoint) {
+        throw throwUnexpectedChar(RANGE_MAX_BELOW_MIN);
+      }
       ranges.add(startCodePoint, endCodePoint + 1);
     } else {
       int endCodePoint = Character.codePointAt(patternChars, index);
-      if (endCodePoint <= startCodePoint) {
-        throw throwUnexpectedChar(
-            "Maximum of range must be less than the minimum. Alternatively, if you didn't intend to have a range, "
-                + "then move "
-                + "'-' to be the first character in the []");
+      if (endCodePoint < startCodePoint) {
+        throw throwUnexpectedChar(RANGE_MAX_BELOW_MIN);
       }
       advanceCodePoint();
       ranges.add(startCodePoint, endCodePoint + 1);

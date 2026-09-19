@@ -161,15 +161,9 @@ enum NamedCharClass {
           })),
   // Digit is reachable both as the bare POSIX class \p{Digit} (ASCII-default, widens to
   // full-Unicode only under UNICODE_CHARACTER_CLASS) and as the Unicode binary property
-  // \p{IsDigit} (always full-Unicode, the flag never applies) -- the only one of the 13 POSIX
-  // class names that also happens to be spelled identically to a Unicode binary property name
-  // (every other POSIX/UProperty pair differs, e.g. Alpha/Alphabetic, Space/White_Space, so no
-  // other POSIX class needs this). Verified against real java.util.regex: bare \p{Alphabetic} and
-  // \p{White_Space} both throw "Unknown character property name", confirming this dual-prefix
-  // reachability really is unique to Digit, not a rule that should apply more broadly. Needs the
-  // explicit prefix-set override below since neither Source.POSIX (none only) nor Source.UProperty
-  // (is only) permits both by itself; get()'s prefix check (see below) handles making the `is`
-  // half always-full-Unicode regardless of flags.
+  // \p{IsDigit} (always full-Unicode, the flag never applies). Its explicit prefix set below is now
+  // the same as Source.POSIX's (which also allows `is`), kept because Digit's Source is UProperty.
+  // get()'s prefix check (see below) makes the `is` half always-full-Unicode regardless of flags.
   Digit(
       ImmutableSet.of(CharacterClassPrefix.none, CharacterClassPrefix.is),
       Source.UProperty, javaDigit.unicode, /* slicedAscii=*/true),
@@ -337,7 +331,9 @@ enum NamedCharClass {
   enum Source {
     Block(new ImmutableSet.Builder<CharacterClassPrefix>().add(CharacterClassPrefix.in, CharacterClassPrefix.block).build()),
     Java(new ImmutableSet.Builder<CharacterClassPrefix>().add(CharacterClassPrefix.java).build()),
-    POSIX(new ImmutableSet.Builder<CharacterClassPrefix>().add(CharacterClassPrefix.none).build()),
+    // Every POSIX class is also reachable as \p{IsXxx} (always full-Unicode, see get()) -- verified
+    // against java.util.regex on JDK 17 and 25 for all 13 names, e.g. \p{IsASCII}, \p{IsLower}.
+    POSIX(new ImmutableSet.Builder<CharacterClassPrefix>().add(CharacterClassPrefix.none, CharacterClassPrefix.is).build()),
     Category(new ImmutableSet.Builder<CharacterClassPrefix>().add(CharacterClassPrefix.is, CharacterClassPrefix.general_category,
                                         CharacterClassPrefix.none).build()),
     UProperty(new ImmutableSet.Builder<CharacterClassPrefix>().add(CharacterClassPrefix.is).build()),

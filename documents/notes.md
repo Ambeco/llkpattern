@@ -2695,3 +2695,9 @@ Notes to self about how to work on this project, and other context that doesn't 
   was read as end-of-pattern; now `EOF = -1`. Also fixed `PatternSyntaxException.throwWithReferences` crashing
   (`StringIndexOutOfBounds`) on a reference at end of pattern (`a|(`, `(?<`); both now say "end of pattern".
   The 13 affected supplementary corpus rows were refreshed and now AGREE. Tests: `NulInPatternTest`.
+
+- **2026-09-19: three corpus-triage gaps fixed.** (1) `\` before ANY non-alphabetic character quotes it (`\-`, `\,`,
+  `\<`, non-ASCII), in `tryParseSingleCharEscape`'s default case -- this was far broader than the one `[a-\X]` row that
+  exposed it. (2) `\pL`/`\PL` single-letter property form. (3) `\p{IsXxx}` works for all 13 POSIX classes (always
+  full-Unicode, verified on JDK 17/25); the old "only Digit" comment was wrong. Also: `[a-a]` was wrongly rejected (`<=`
+  vs `<`) and an escaped range maximum had no ordering check. 7 corpus rows refreshed to AGREES.

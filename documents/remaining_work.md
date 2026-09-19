@@ -178,12 +178,8 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
       or forked golden files -- not yet checked against a real device.
 ## Core implementation
 
-- [ ] **Gaps found by the 2026-09-19 corpus triage** (all rows are tagged `UNIMPLEMENTED: ...` in the
-      golden files; every other non-`AGREES` row is now `EXPECTED_DIVERGENCE`):
-  - `\pL` / `\PL` single-letter property escapes without braces (5 rows).
-  - `[a-\X]`: an escaped character as a bracket range's maximum (1 BMP row).
-  - `\p{IsASCII}` (POSIX class with an `Is` prefix; `\p{ASCII}` works) (1 row).
-  - `\Q...\E` quotation (16 rows; also tracked under "Also remember for later").
+- [ ] \Q...\E quotation: the only remaining `UNIMPLEMENTED` golden-corpus rows (16). Every other non-`AGREES` row is
+      `EXPECTED_DIVERGENCE` (2026-09-19 triage). Also tracked under "Also remember for later".
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable**
       (e.g. `(a?)+`), instead of relying solely on the entry-point-computation guard added
       2026-09-08 (see design.md's "Entry-point computation vs. matcher compilation" section) to

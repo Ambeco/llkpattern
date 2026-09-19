@@ -1,0 +1,1212 @@
+diff --git a/llkpattern/src/main/java/com/tbohne/llkpattern/Matcher.java b/llkpattern/src/main/java/com/tbohne/llkpattern/Matcher.java
+index 24aaa7b..1bb6b96 100644
+--- a/llkpattern/src/main/java/com/tbohne/llkpattern/Matcher.java
++++ b/llkpattern/src/main/java/com/tbohne/llkpattern/Matcher.java
+@@ -64,6 +64,17 @@ public class Matcher implements MatchResult {
+ 	// materializing one at all.
+ 	int[] captureGroups;
+ 
++	// One slot per capturing group, holding the position a StartCaptureMatcherConstruct most
++	// recently (speculatively) recorded for it -- read only by EndCaptureMatcherConstruct, which
++	// promotes it into this same group's real captureGroups start/end pair. Kept separate from
++	// captureGroups so that a start recorded for an attempt that never reaches its own
++	// EndCaptureMatcherConstruct (a loop iteration or optional branch that starts to enter a group
++	// but then never completes it) is simply overwritten or ignored -- captureGroups itself is
++	// never touched except by a genuine completion, so an incomplete attempt can't leave a group's
++	// externally-visible start()/end()/group() in an inconsistent (started-but-never-ended) state.
++	// See MatcherConstruct's class doc for why this split exists.
++	int[] startedGroups;
++
+ 	// True exactly when quantifiableCounts/captureGroups are already known zero/null -- right after
+ 	// construction (both arrays are `new`-allocated, so already zero-filled by the JVM without an
+ 	// explicit resetPerAttemptState() call) or an explicit reset()/reset(String)/usePattern() (which
+@@ -94,6 +105,7 @@ public class Matcher implements MatchResult {
+ 		this.quantifiableCounts = new int[pattern.quantifiableCount];
+ 		this.captureGroups = new int[pattern.captureGroupCount * 2];
+ 		java.util.Arrays.fill(captureGroups, -1);
++		this.startedGroups = new int[pattern.captureGroupCount];
+ 		syncPeeked();
+ 	}
+ 
+@@ -312,6 +324,7 @@ public class Matcher implements MatchResult {
+ 		pattern = newPattern;
+ 		quantifiableCounts = new int[newPattern.quantifiableCount];
+ 		captureGroups = new int[newPattern.captureGroupCount * 2];
++		startedGroups = new int[newPattern.captureGroupCount];
+ 		resetMatchState();
+ 		return this;
+ 	}
+diff --git a/llkpattern/src/main/java/com/tbohne/llkpattern/MatcherConstruct.java b/llkpattern/src/main/java/com/tbohne/llkpattern/MatcherConstruct.java
+index fed13e3..0c2414e 100644
+--- a/llkpattern/src/main/java/com/tbohne/llkpattern/MatcherConstruct.java
++++ b/llkpattern/src/main/java/com/tbohne/llkpattern/MatcherConstruct.java
+@@ -1,10 +1,8 @@
+ package com.tbohne.llkpattern;
+ 
+ import com.google.common.annotations.VisibleForTesting;
+-import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
+ import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
+ import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
+-import com.tbohne.llkpattern.PatternConstruct.QuantifiedUnion;
+ import org.checkerframework.checker.nullness.qual.Nullable;
+ 
+ /**
+@@ -22,30 +20,54 @@ import org.checkerframework.checker.nullness.qual.Nullable;
+  * already under construction sees its (still being filled in) {@code matcher} and returns
+  * immediately instead of recursing.
+  *
+- * <p><b>Flattened dispatch (2026-09-18 experiment, branch {@code flatten-matcher-dispatch}):</b>
+- * every node carries its own optional {@link #entrySet}/{@link #failedEntry} pair, checked BEFORE
+- * {@link #matchBody} runs (see {@link #match}) -- there is no separate fork/dispatch node any
+- * more. A chain of candidates (a union's branches, a loop's body parts) is built by giving each
+- * candidate's own compiled {@code MatcherConstruct} an {@code entrySet} (its own entry point) and
+- * a {@code failedEntry} pointing at the next candidate in priority order (or the chain's final
+- * fallback) -- see {@code PatternConstruct}'s chain-building helpers. {@code entrySet} is set via
+- * the owning {@link PatternConstruct}'s {@code dispatchEntrySet}/{@code dispatchFailedEntry}
+- * fields, read by the owner-based constructor below, so no subclass constructor needs to change
+- * just to participate in a chain.
++ * <p><b>Inline dispatch (2026-09-18 redesign, following the flatten-matcher-dispatch experiment):</b>
++ * there is no separate entry-gate field or dispatch node at all -- every node's {@link #match}
++ * simply compares {@code peeked} against its own data and does exactly one of two things: reject
++ * (delegate to {@link #failedEntry}, if any) or accept (do its own work, then delegate to {@code
++ * next} via {@code matchNext}). Modeled loosely on a CPU opcode chain: each node runs once, in
++ * sequence, and whatever it returns IS the answer -- no node ever inspects the boolean result of a
++ * delegated {@code match} call to decide anything; it only ever returns that result directly. This
++ * is what makes the "no backtracking" guarantee hold without any rollback machinery: once a node's
++ * own comparison accepts (and it commits -- consumes input, records a capture start, etc.), a
++ * failure further downstream is a failure of the WHOLE match, by construction of the LL(1)
++ * disjointness this library requires ({@code PatternConstruct#checkDisjoint}) -- retrying a
++ * sibling at that point would, at best, be redundant (disjointness guarantees it can't also
++ * accept) and at worst read stale/advanced {@code Matcher} state. Falling through to {@code
++ * failedEntry} is only ever safe -- and only ever done -- at the point a node's OWN comparison
++ * rejects, before anything has been committed.
+  *
+- * <p>{@code entrySet} is deliberately checked with a PLAIN {@link CodePointSet#contains} (see
+- * {@link #containsEntry}), never {@link #containsFolded} -- under {@code CASE_INSENSITIVE},
+- * folding is baked into {@code entrySet} itself at chain-construction time (see {@code
+- * PatternConstruct#effectiveEntrySet}), specifically so an exact match anywhere in a chain always
+- * wins over a folded match earlier in it (the same priority rule the old {@code
+- * ForkingMatcherConstruct}-based design enforced via a two-pass exact-then-fold chain -- see
+- * notes.md's entry on this experiment for the case that motivated it: {@code (?i:[a-z]+)X}
+- * against {@code "ABCX"} must not let the loop body's folded claim on {@code X} pre-empt the
+- * exact literal {@code X} that follows it). A node's OWN {@link #matchBody} still uses {@link
+- * #containsFolded} on its own (unfolded) data where relevant (e.g. {@link
+- * SingleCharMatcherConstruct}) -- that's what makes it independently correct when reached
+- * standalone (no entry gating at all, e.g. a plain sequence element), not just as a chain
+- * candidate.
++ * <p>A chain of candidates (a union's branches, a loop's body parts) is built by giving each
++ * candidate's own compiled {@code MatcherConstruct} a {@code failedEntry} pointing at the next
++ * candidate in priority order (or the chain's final fallback) -- see {@code PatternConstruct}'s
++ * chain-building helpers ({@code buildFlattenedChain}, {@code buildLoopMatcher}). {@code
++ * failedEntry} is set via the owning {@link PatternConstruct}'s {@code dispatchFailedEntry} field,
++ * read by the owner-based constructor below, so no subclass constructor needs to change just to
++ * participate in a chain. A node with no comparison of its own (a bare-flags group, a
++ * statically-resolved {@code \b}/{@code \B}) always accepts unconditionally, so it never has
++ * occasion to use its own {@code failedEntry} -- whatever outer {@code dispatchFailedEntry} it
++ * would have carried belongs instead on whichever downstream node actually does the comparing
++ * (see {@code Sequence.buildMatcher}'s propagation onto its first element for the pattern this
++ * follows).
++ *
++ * <p>{@code CASE_INSENSITIVE} ambiguity (e.g. {@code (a|A)}, or {@code (?i:[a-z]+)X} where the
++ * loop body's folded claim on {@code X} would overlap the following exact literal) is now a
++ * compile-time {@code PatternSyntaxException} from {@code checkDisjoint} rather than something
++ * resolved by chain priority -- there is no fold-priority exclusion logic left to apply at match
++ * time. A node's own comparison (e.g. {@link #containsFolded}) still folds against its own
++ * (unfolded) data exactly as before.
++ *
++ * <p>A capturing group's start is recorded by a dedicated {@link StartCaptureMatcherConstruct}
++ * node, inserted wherever the group's own dispatch begins -- it always accepts (it has no
++ * comparison of its own) and records into {@link Matcher#startedGroups}, a SEPARATE, speculative
++ * slot from {@link Matcher#captureGroups} itself. Only {@link EndCaptureMatcherConstruct}, reached
++ * exclusively on genuine completion, promotes a group's {@code startedGroups} entry into its real
++ * {@code captureGroups} start/end pair. This is what lets {@code StartCaptureMatcherConstruct}
++ * stamp unconditionally, even ahead of an attempt that ultimately fails to complete (a min==0
++ * loop's zero-iteration attempt, an optional group that ends up skipped, or -- see notes.md -- a
++ * LATER loop iteration of an outer capturing construct that starts to enter again but never
++ * finishes) without violating the "never inspect a delegated result" rule above: nothing needs
++ * inspecting, because an incomplete attempt's stray {@code startedGroups} write is simply never
++ * promoted, leaving whatever the group's last GENUINE completion recorded untouched.
+  */
+ abstract class MatcherConstruct {
+ 	// The CASE_INSENSITIVE/UNICODE_CASE/etc. flags in effect where this node's PatternConstruct was
+@@ -55,78 +77,52 @@ abstract class MatcherConstruct {
+ 	// toggles don't actually locally scope anything" in remaining_work.md.
+ 	final int flags;
+ 
+-	// See the class doc's "Flattened dispatch" section. Both null for the overwhelming majority of
+-	// nodes (anything not currently the head of a chain candidate) -- match() below then always
+-	// runs matchBody() unconditionally, identical to every node's old behavior.
+-	final @Nullable CodePointSet entrySet;
+ 	final @Nullable MatcherConstruct failedEntry;
+ 
+ 	/**
+ 	 * @param owner the PatternConstruct this MatcherConstruct implements. Assigning {@code
+ 	 *     owner.matcher = this} here, before subclass constructors resolve any dependencies, is
+-	 *     what breaks cycles -- see the class doc. {@code owner.dispatchEntrySet}/{@code
+-	 *     owner.dispatchFailedEntry} (set by a chain builder just before {@code owner.compile(...)}
+-	 *     is called, left {@code null} otherwise) become this node's own {@link #entrySet}/{@link
+-	 *     #failedEntry} -- see the class doc's "Flattened dispatch" section. This is what lets
+-	 *     every existing subclass constructor participate in a chain with no signature change of
+-	 *     its own.
++	 *     what breaks cycles -- see the class doc. {@code owner.dispatchFailedEntry} (set by a
++	 *     chain builder just before {@code owner.compile(...)} is called, left {@code null}
++	 *     otherwise) becomes this node's own {@link #failedEntry} -- see the class doc. This is
++	 *     what lets every existing subclass constructor participate in a chain with no signature
++	 *     change of its own.
+ 	 */
+ 	MatcherConstruct(PatternConstruct owner) {
+ 		owner.matcher = this;
+ 		this.flags = owner.flags;
+-		this.entrySet = owner.dispatchEntrySet;
+ 		this.failedEntry = owner.dispatchFailedEntry;
+ 	}
+ 
+ 	/**
+ 	 * For internal/synthetic nodes that aren't the externally-visible entry point of any single
+-	 * PatternConstruct -- e.g. the plain alternation dispatch wrapped inside a capturing loop's or
+-	 * capturing union's Begin/EndCapture pair (see {@code QuantifiableConstruct.buildLoopMatcher}
+-	 * and {@code QuantifiedUnion.buildMatcher}). Skips self-registration since there's no single
+-	 * owning construct to register into, so the caller must supply the local flags directly
+-	 * (normally the owning construct's own {@code flags}); never itself a chain candidate, so
+-	 * {@code entrySet}/{@code failedEntry} are always {@code null} here.
++	 * PatternConstruct (e.g. a loop's own {@code LoopMatcherExit}, or the shared {@code
++	 * StartCaptureMatcherConstruct} wrapping a capturing loop's body). Skips self-registration
++	 * since there's no single owning construct to register into, so the caller must supply the
++	 * local flags directly (normally the owning construct's own {@code flags}); never itself a
++	 * chain candidate, so {@code failedEntry} is always {@code null} here.
+ 	 */
+ 	MatcherConstruct(int flags) {
+ 		this.flags = flags;
+-		this.entrySet = null;
+ 		this.failedEntry = null;
+ 	}
+ 
+ 	/**
+-	 * Checks {@link #entrySet} (if any), deferring to {@link #failedEntry} on a miss, then runs
+-	 * {@link #matchBody}. See the class doc's "Flattened dispatch" section -- this is the one place
+-	 * the fork that used to be {@code ForkingMatcherConstruct}'s own job now lives, folded into
+-	 * every node instead of a separate node type.
+-	 */
+-	final boolean match(Matcher matcher, int peeked) {
+-		if (containsEntry(entrySet, peeked)) {
+-			return matchBody(matcher, peeked);
+-		}
+-		return failedEntry != null && failedEntry.match(matcher, peeked);
+-	}
+-
+-	/** This node's own matching behavior, run only once {@link #entrySet} (if any) has passed. */
+-	abstract boolean matchBody(Matcher matcher, int peeked);
+-
+-	/**
+-	 * Plain (unfolded) membership in {@code entrySet}, {@code null} treated as "always matches" (no
+-	 * gating at all -- the overwhelming majority of nodes). {@code -1} (Matcher's "no more input"
+-	 * sentinel -- see {@code Matcher#peek}) is never a member of any real {@code entrySet}, same
+-	 * guard as {@link #containsFolded} -- an inverted set's fill must not report it "in".
+-	 * Deliberately not {@link #containsFolded}: {@code entrySet} already has any CASE_INSENSITIVE
+-	 * folding baked in at chain-construction time -- see {@code PatternConstruct#effectiveEntrySet}
+-	 * and this class's own doc.
++	 * Compares {@code peeked} (and/or whatever else this node needs, e.g. {@code matcher.pos}) to
++	 * this node's own data, and does exactly one of two things: reject (delegate to {@link
++	 * #failedEntry}, returning its result directly) or accept (do its own work -- consume input,
++	 * etc. -- then delegate onward, again returning that result directly). See the class doc for
++	 * why a delegated result is never inspected, only ever returned.
+ 	 */
+-	private static boolean containsEntry(@Nullable CodePointSet entrySet, int peeked) {
+-		return entrySet == null || (peeked != -1 && entrySet.contains(peeked));
+-	}
++	abstract boolean match(Matcher matcher, int peeked);
+ 
+-	private static int foldAsciiUpper(int codePoint) {
++	// Package-private (not private): also used by PatternConstruct#checkDisjoint's own
++	// CASE_INSENSITIVE fold-ambiguity check -- see that method's doc.
++	static int foldAsciiUpper(int codePoint) {
+ 		return (codePoint >= 'a' && codePoint <= 'z') ? codePoint - ('a' - 'A') : codePoint;
+ 	}
+ 
+-	private static int foldAsciiLower(int codePoint) {
++	static int foldAsciiLower(int codePoint) {
+ 		return (codePoint >= 'A' && codePoint <= 'Z') ? codePoint + ('a' - 'A') : codePoint;
+ 	}
+ 
+@@ -152,10 +148,8 @@ abstract class MatcherConstruct {
+ 
+ 	/**
+ 	 * True if {@code peeked} (or, under {@code CASE_INSENSITIVE}, one of its other-case forms) is a
+-	 * member of {@code ranges}. Used by a node's own {@link #matchBody} where it still needs a real,
+-	 * runtime-folded membership test against its own (unfolded) data -- {@link
+-	 * SingleCharMatcherConstruct} being the main example -- as opposed to {@link #entrySet}'s
+-	 * already-fold-baked, plain-{@code contains} check (see {@link #containsEntry}).
++	 * member of {@code ranges} -- a node's own runtime-folded comparison against its own data, e.g.
++	 * {@link SingleCharMatcherConstruct}'s own {@link SingleCharMatcherConstruct#match}.
+ 	 */
+ 	static boolean containsFolded(CodePointSet ranges, int peeked, int flags) {
+ 		// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is checked FIRST and
+@@ -180,82 +174,6 @@ abstract class MatcherConstruct {
+ 		return (upper != peeked && ranges.contains(upper)) || (lower != peeked && ranges.contains(lower));
+ 	}
+ 
+-	/**
+-	 * {@code exact}, plus (under {@code CASE_INSENSITIVE}) every other-case fold of each of its
+-	 * members that isn't already claimed -- exactly -- by {@code excludeFromFold}. This is what
+-	 * lets a chain-candidate node's {@link #entrySet} be checked with a plain, unfolded {@link
+-	 * #containsEntry} at match time (see this class's own doc) while still enforcing the rule that
+-	 * an exact match anywhere in the chain beats a folded match earlier in it: {@code
+-	 * excludeFromFold} is the union of every OTHER candidate's own exact entry set in the same
+-	 * chain (see {@code PatternConstruct}'s chain-building call sites), so this candidate's folded
+-	 * claim on a code point another candidate exactly owns is dropped, leaving that code point free
+-	 * for the exact owner's own (unfolded) {@code entrySet} to claim instead. A fold collision
+-	 * between two candidates' folded (non-exact) claims is deliberately NOT resolved here -- that's
+-	 * settled by ordinary chain priority (whichever candidate's {@code entrySet} is checked first
+-	 * wins), same as the old two-pass fork-chain design.
+-	 *
+-	 * <p>No-op (returns {@code exact} directly, no allocation) when {@code flags} isn't {@code
+-	 * CASE_INSENSITIVE} -- the common case, and the whole point of baking folding in here rather
+-	 * than re-checking it on every match attempt.
+-	 */
+-	static CodePointSet effectiveEntrySet(CodePointSet exact, @Nullable CodePointSet excludeFromFold, int flags) {
+-		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+-			return exact;
+-		}
+-		MutableCodePointSet result = new ArrayCodePointSet();
+-		result.addAll(exact);
+-		boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
+-		exact.forEachRange((min, max) -> {
+-			for (int cp = min; cp < max; cp++) {
+-				addFoldUnlessExcluded(result, cp, unicode ? Character.toUpperCase(cp) : foldAsciiUpper(cp), excludeFromFold);
+-				addFoldUnlessExcluded(result, cp, unicode ? Character.toLowerCase(cp) : foldAsciiLower(cp), excludeFromFold);
+-			}
+-		});
+-		return result;
+-	}
+-
+-	private static void addFoldUnlessExcluded(
+-			MutableCodePointSet result, int original, int folded, @Nullable CodePointSet excludeFromFold) {
+-		if (folded != original && (excludeFromFold == null || !excludeFromFold.contains(folded))) {
+-			result.add(folded);
+-		}
+-	}
+-
+-	/**
+-	 * Sets {@code owner.matcher} to {@code target} directly when {@code owner} has no dispatch
+-	 * gating of its own ({@code owner.dispatchEntrySet}/{@code owner.dispatchFailedEntry} both
+-	 * null -- the common case), or wraps it in a {@link PassThroughMatcherConstruct} when it does.
+-	 * Needed anywhere a construct's own {@code buildMatcher()} would otherwise just alias {@code
+-	 * matcher = someOtherConstruct.matcher} (e.g. {@code Sequence}, a bare flags-only {@code
+-	 * QuantifiedUnion}, {@code buildFlattenedChain}'s own {@code owner} handling): {@code target}
+-	 * may already be fully compiled (or, for a chain's own head, gated for an INNER reason
+-	 * unrelated to {@code owner}'s own OUTER gating), so retrofitting {@code owner}'s dispatch
+-	 * fields onto it after the fact wouldn't work -- {@code owner}'s gating has to live on a node
+-	 * of its own instead.
+-	 */
+-	static MatcherConstruct aliasOrPassThrough(PatternConstruct owner, MatcherConstruct target) {
+-		if (owner.dispatchEntrySet == null && owner.dispatchFailedEntry == null) {
+-			owner.matcher = target;
+-			return target;
+-		}
+-		return new PassThroughMatcherConstruct(owner, target);
+-	}
+-
+-	/**
+-	 * A zero-width forwarding node -- see {@link #aliasOrPassThrough}'s own doc for when this is
+-	 * needed instead of a plain alias.
+-	 */
+-	static final class PassThroughMatcherConstruct extends SingleDispatchingMatcherConstruct {
+-		PassThroughMatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
+-			super(owner, next);
+-		}
+-
+-		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
+-			return matchNext(matcher, peeked);
+-		}
+-	}
+-
+ 	/**
+ 	 * Base class for the (large majority of) nodes that only ever have one possible successor,
+ 	 * known at construction time -- matching input at that node never depends on *which* character
+@@ -316,9 +234,9 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
++		boolean match(Matcher matcher, int peeked) {
+ 			if (!containsFolded(validRanges, peeked, flags)) {
+-				return false;
++				return failedEntry != null && failedEntry.match(matcher, peeked);
+ 			}
+ 			return matchNext(matcher, matcher.consume1CodePoint());
+ 		}
+@@ -358,10 +276,10 @@ abstract class MatcherConstruct {
+ 			this.value = value;
+ 		}
+ 
+-		boolean matchBody(Matcher matcher, int peeked) {
++		boolean match(Matcher matcher, int peeked) {
+ 			int end = matcher.pos + value.length();
+ 			if (end > matcher.regionEnd) {
+-				return false;
++				return failedEntry != null && failedEntry.match(matcher, peeked);
+ 			}
+ 			boolean matches;
+ 			if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+@@ -372,7 +290,7 @@ abstract class MatcherConstruct {
+ 				matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value);
+ 			}
+ 			if (!matches) {
+-				return false;
++				return failedEntry != null && failedEntry.match(matcher, peeked);
+ 			}
+ 			if (end < matcher.regionEnd
+ 					&& Character.isHighSurrogate(value.charAt(value.length() - 1))
+@@ -384,7 +302,7 @@ abstract class MatcherConstruct {
+ 				// surrogate-pairing structure agrees too, since pairing is a pure function of the
+ 				// unit values themselves); only right at `value`'s own end does the comparison above
+ 				// stop looking one unit before it would matter.
+-				return false;
++				return failedEntry != null && failedEntry.match(matcher, peeked);
+ 			}
+ 			return matchNext(matcher, matcher.consumeCodeUnits(value.length()));
+ 		}
+@@ -416,15 +334,16 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
++		boolean match(Matcher matcher, int peeked) {
+ 			int base = captureConstructIndex * 2;
+ 			int start = matcher.captureGroups[base];
+ 			int end = matcher.captureGroups[base + 1];
+ 			if (start < 0) {
+ 				// The referenced group never participated in the match (e.g. it's in a sibling
+ 				// alternation branch that wasn't taken) -- java.util.regex treats an unparticipated
+-				// group's backreference as never matching, not as matching the empty string.
+-				return false;
++				// group's backreference as never matching, not as matching the empty string. Own
++				// entry check, no consumption yet -- safe to defer.
++				return failedEntry != null && failedEntry.match(matcher, peeked);
+ 			}
+ 			if (start == end) {
+ 				return matchNext(matcher, peeked);
+@@ -436,7 +355,18 @@ abstract class MatcherConstruct {
+ 			// one-shot use.
+ 			String input = matcher.input;
+ 			int i = start;
+-			do {
++			int firstNext = input.codePointAt(i);
++			int firstUnits = Character.isSupplementaryCodePoint(firstNext) ? 2 : 1;
++			if (!codePointsMatch(firstNext, peeked, flags)) {
++				// Own entry check (the first referenced character), no consumption yet -- safe to
++				// defer to failedEntry, same as any other leaf's own comparison failing.
++				return failedEntry != null && failedEntry.match(matcher, peeked);
++			}
++			peeked = matcher.consumeCodeUnits(firstUnits);
++			i += firstUnits;
++			while (i < end) {
++				// Past the first character, we've already committed (consumed input) -- a mismatch
++				// here is a genuine match failure, not a candidate to retry a sibling on.
+ 				int next = input.codePointAt(i);
+ 				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
+ 				if (!codePointsMatch(next, peeked, flags)) {
+@@ -444,7 +374,7 @@ abstract class MatcherConstruct {
+ 				}
+ 				peeked = matcher.consumeCodeUnits(units);
+ 				i += units;
+-			} while (i < end);
++			}
+ 			return matchNext(matcher, peeked);
+ 		}
+ 	}
+@@ -536,7 +466,7 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
++		boolean match(Matcher matcher, int peeked) {
+ 			boolean matchesHere;
+ 			switch (type) {
+ 				case InputBegin: // \A: always the true start of input, MULTILINE has no effect.
+@@ -553,7 +483,10 @@ abstract class MatcherConstruct {
+ 					// is ever added without updating this switch.
+ 					throw new AssertionError("Unhandled BoundaryEnum: " + type);
+ 			}
+-			return matchesHere && matchNext(matcher, peeked);
++			if (!matchesHere) {
++				return failedEntry != null && failedEntry.match(matcher, peeked);
++			}
++			return matchNext(matcher, peeked);
+ 		}
+ 	}
+ 
+@@ -574,7 +507,7 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
++		boolean match(Matcher matcher, int peeked) {
+ 			boolean matchesHere;
+ 			if (isLineBegin) {
+ 				matchesHere = matcher.pos == matcher.regionStart
+@@ -586,7 +519,10 @@ abstract class MatcherConstruct {
+ 						: (matcher.pos == matcher.regionEnd
+ 								|| lineTerminatorLengthAt(matcher, flags) > 0);
+ 			}
+-			return matchesHere && matchNext(matcher, peeked);
++			if (!matchesHere) {
++				return failedEntry != null && failedEntry.match(matcher, peeked);
++			}
++			return matchNext(matcher, peeked);
+ 		}
+ 	}
+ 
+@@ -604,7 +540,7 @@ abstract class MatcherConstruct {
+ 	 * up not {@code Unchecked}.
+ 	 */
+ 	static final class WordBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+-		/** Whether {@code matchBody()} needs to independently check {@code matcher.peekPrevious()}. */
++		/** Whether {@code match()} needs to independently check {@code matcher.peekPrevious()}. */
+ 		enum PriorWordBoundaryMatchType {
+ 			Unchecked,
+ 			PriorMustBeWord,
+@@ -612,7 +548,7 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		/**
+-		 * Whether/how {@code matchBody()} needs to check {@code peeked} -- either against a fixed
++		 * Whether/how {@code match()} needs to check {@code peeked} -- either against a fixed
+ 		 * word-ness (when the OTHER side, the preceding character, is statically known instead), or
+ 		 * against {@code matcher.peekPrevious()}'s actual word-ness (when neither side is statically
+ 		 * known).
+@@ -656,7 +592,7 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
++		boolean match(Matcher matcher, int peeked) {
+ 			// peekPrevious() is only actually called when some check below needs it -- checkPrior
+ 			// is exactly that: either the prior side has a fixed target of its own, or the peek
+ 			// side needs to compare against it. checkPeek is the mirror image, for symmetry/clarity
+@@ -668,23 +604,15 @@ abstract class MatcherConstruct {
+ 			boolean checkPeek = peekMustBeWord != PeekWordBoundaryMatchType.Unchecked;
+ 			boolean peekIsWord = checkPeek && isWordChar(wordSet, peeked);
+ 
+-			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
+-				return false;
+-			}
+-			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeNonWord && priorIsWord) {
+-				return false;
+-			}
+-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeWord && !peekIsWord) {
+-				return false;
+-			}
+-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustNotBeWord && peekIsWord) {
+-				return false;
+-			}
+-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior && peekIsWord != priorIsWord) {
+-				return false;
+-			}
+-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior && peekIsWord == priorIsWord) {
+-				return false;
++			boolean matchesHere =
++					!(priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord)
++					&& !(priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeNonWord && priorIsWord)
++					&& !(peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeWord && !peekIsWord)
++					&& !(peekMustBeWord == PeekWordBoundaryMatchType.PeekMustNotBeWord && peekIsWord)
++					&& !(peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior && peekIsWord != priorIsWord)
++					&& !(peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior && peekIsWord == priorIsWord);
++			if (!matchesHere) {
++				return failedEntry != null && failedEntry.match(matcher, peeked);
+ 			}
+ 			return matchNext(matcher, peeked);
+ 		}
+@@ -698,8 +626,8 @@ abstract class MatcherConstruct {
+ 	 * needed any more). Conceptually: "one more body iteration just finished -- continue (retry the
+ 	 * body) if under {@code max}, otherwise force an exit (via {@link #exitNode}, which itself
+ 	 * enforces {@code min})." Neither this node nor {@link #exitNode} test code-point membership at
+-	 * all any more -- that's entirely the body chain's own {@link #entrySet}/{@link #failedEntry}
+-	 * job now (the body naturally defers to {@code exitNode} on its own when it doesn't match,
++	 * all -- that's entirely the body chain's own {@link #failedEntry} job now (the body naturally
++	 * defers to {@code exitNode} on its own when it doesn't match,
+ 	 * whether that's the very first attempt or a re-check after {@code min} iterations) -- see
+ 	 * design.md's "Quantifier/loop compilation" section for the up-to-date picture.
+ 	 *
+@@ -709,7 +637,7 @@ abstract class MatcherConstruct {
+ 	 * owns (breaking the construction-time cycle every loop body creates: the body's own compiled
+ 	 * matcher loops back to this very node). Rather than adding a mutable field to sidestep that,
+ 	 * {@code continuation} is a plain {@code final PatternConstruct} reference, and {@code
+-	 * matchBody()} reads {@code continuation.matcher} -- reusing the SAME self-registration
++	 * match()} reads {@code continuation.matcher} -- reusing the SAME self-registration
+ 	 * mechanism every other {@code PatternConstruct}/{@code MatcherConstruct} pair in this codebase
+ 	 * already relies on ({@code PatternConstruct.matcher} is the one place in this whole design
+ 	 * that's allowed to be filled in after the fact) instead of inventing a second one scoped to
+@@ -732,7 +660,7 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
++		boolean match(Matcher matcher, int peeked) {
+ 			// Unconditional: reaching this node at all means a body pass (the very first, or another
+ 			// re-check after a prior successful one) has just finished, so this always represents one
+ 			// more completed iteration -- regardless of which way the choice below then decides to go.
+@@ -752,61 +680,84 @@ abstract class MatcherConstruct {
+ 	 * LoopMatcherConstruct} forced a stop after {@code max} iterations. Enforces {@code min}
+ 	 * (failing the whole match if too few iterations happened) and, on success, resets the shared
+ 	 * counter before dispatching to whatever really follows the loop -- see design.md's
+-	 * "Quantifier/loop compilation" section. Never gated by its own {@code entrySet}/{@code
+-	 * failedEntry} (always {@code null}) -- every code-point decision that used to live in a
+-	 * combined loop/exit dispatch table now lives entirely in the body chain's own entry checks.
++	 * "Quantifier/loop compilation" section.
++	 *
++	 * <p>{@code outerFallback} handles the one case where THIS node's own "reject" is still safe to
++	 * defer, even though it's not itself a chain candidate with a {@code failedEntry} in the usual
++	 * sense: if the body chain failed to match at all on the very first attempt (zero iterations,
++	 * hence provably zero consumption -- {@code quantifiableCounts[quantifiableIndex] == 0}), then
++	 * the whole quantified construct never actually started matching, and it's safe (and, if this
++	 * construct is itself a chain candidate, necessary) to defer to whatever outer sibling it was
++	 * itself gated against. Once at least one iteration has happened, consumption has occurred, and
++	 * a subsequent shortfall against {@code min} is a genuine match failure like any other -- no
++	 * defer, same reasoning as every other node's own commit-then-fail case.
+ 	 */
+ 	static final class LoopMatcherExit extends MatcherConstruct {
+ 		final int quantifiableIndex;
+ 		final int min;
+ 		final MatcherConstruct next;
++		final @Nullable MatcherConstruct outerFallback;
+ 
+-		LoopMatcherExit(int flags, int quantifiableIndex, int min, MatcherConstruct next) {
++		LoopMatcherExit(int flags, int quantifiableIndex, int min, MatcherConstruct next, @Nullable MatcherConstruct outerFallback) {
+ 			super(flags);
+ 			this.quantifiableIndex = quantifiableIndex;
+ 			this.min = min;
+ 			this.next = next;
++			this.outerFallback = outerFallback;
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
+-			if (matcher.quantifiableCounts[quantifiableIndex] < min) {
++		boolean match(Matcher matcher, int peeked) {
++			int count = matcher.quantifiableCounts[quantifiableIndex];
++			if (count < min) {
++				if (count == 0 && outerFallback != null) {
++					return outerFallback.match(matcher, peeked);
++				}
++				// Never backtracks, so a failed attempt (past the zero-iteration case above) aborts
++				// the whole match rather than retrying with stale counter state.
+ 				return false;
+ 			}
+-			// Never backtracks, so a failed attempt aborts the whole match rather than retrying
+-			// with stale counter state -- this reset (only on the successful exit path) is enough
+-			// to guarantee the slot is already 0 whenever this loop is next freshly (re-)entered.
++			// Reset (only on the successful exit path) is enough to guarantee the slot is already 0
++			// whenever this loop is next freshly (re-)entered.
+ 			matcher.quantifiableCounts[quantifiableIndex] = 0;
+ 			return next.match(matcher, peeked);
+ 		}
+ 	}
+ 
+-	static final class BeginCaptureMatcherConstruct extends SingleDispatchingMatcherConstruct {
++	/**
++	 * Zero-width, always-accepting node that stamps {@link Matcher#startedGroups} for {@code
++	 * captureConstructIndex} at the current position before delegating -- see this class's own
++	 * doc for why that's a separate, speculative slot from {@link Matcher#captureGroups} itself,
++	 * only ever promoted by a matching {@link EndCaptureMatcherConstruct} on genuine completion.
++	 * Inserted once per capturing construct (a capturing union, or a capturing loop's body),
++	 * wherever that construct's own dispatch begins -- reused, unchanged, as the loop-back target
++	 * too, so each iteration attempt re-stamps it (last GENUINELY COMPLETED iteration wins, since
++	 * only completion promotes the stamp).
++	 */
++	static final class StartCaptureMatcherConstruct extends SingleDispatchingMatcherConstruct {
+ 		final int captureConstructIndex;
+ 
+-		BeginCaptureMatcherConstruct(PatternConstruct owner, int captureConstructIndex, MatcherConstruct next) {
++		/** Self-registering variant for a capturing (unquantified) union -- see {@code
++		 *  PatternConstruct.QuantifiedUnion#buildMatcher}. */
++		StartCaptureMatcherConstruct(PatternConstruct owner, int captureConstructIndex, MatcherConstruct next) {
+ 			super(owner, next);
+ 			this.captureConstructIndex = captureConstructIndex;
+ 		}
+ 
+ 		/**
+-		 * Internal (non-self-registering) variant used by a capturing loop's shared "begin the next
+-		 * iteration" node -- see {@code QuantifiableConstruct.buildLoopMatcher}.
++		 * Internal (non-self-registering) variant used by a capturing loop's shared body-entry node
++		 * -- see {@code QuantifiableConstruct.buildLoopMatcher}. No single owning construct: it's
++		 * referenced identically from this loop's own externally-visible entry point AND its
++		 * loop-back target.
+ 		 */
+-		BeginCaptureMatcherConstruct(int captureConstructIndex, int flags, MatcherConstruct next) {
++		StartCaptureMatcherConstruct(int captureConstructIndex, int flags, MatcherConstruct next) {
+ 			super(flags, next);
+ 			this.captureConstructIndex = captureConstructIndex;
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
+-			int base = captureConstructIndex * 2;
+-			matcher.captureGroups[base] = matcher.pos;
+-			// Reset the end slot too: re-entering a capture inside a loop must fully overwrite the
+-			// previous iteration's entry, not just its start, or a stale end from that earlier
+-			// iteration would linger if (impossibly, given this engine's forward-only structure) this
+-			// iteration's own EndCaptureMatcherConstruct somehow didn't run.
+-			matcher.captureGroups[base + 1] = -1;
++		boolean match(Matcher matcher, int peeked) {
++			matcher.startedGroups[captureConstructIndex] = matcher.pos;
+ 			return matchNext(matcher, peeked);
+ 		}
+ 	}
+@@ -820,12 +771,15 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
+-			// Just records the end index -- no substring materialized here anymore. The captured
+-			// text is built lazily by Matcher#group(int), only if a caller actually asks for it (see
+-			// allocation sampling in benchmarks/Intel-i7-9750H_llkMatch_alloc_sampling.txt), and
++		boolean match(Matcher matcher, int peeked) {
++			// Promotes startedGroups (see StartCaptureMatcherConstruct's own doc) into the real,
++			// externally-visible captureGroups start/end pair -- no substring materialized here
++			// either. The captured text is built lazily by Matcher#group(int), only if a caller
++			// actually asks for it (see allocation sampling in
++			// benchmarks/Intel-i7-9750H_llkMatch_alloc_sampling.txt), and
+ 			// BackReferenceMatcherConstruct above compares directly against these indices without
+ 			// ever needing a String/CharSequence view at all.
++			matcher.captureGroups[captureConstructIndex * 2] = matcher.startedGroups[captureConstructIndex];
+ 			matcher.captureGroups[captureConstructIndex * 2 + 1] = matcher.pos;
+ 			return matchNext(matcher, peeked);
+ 		}
+@@ -846,8 +800,9 @@ abstract class MatcherConstruct {
+ 		}
+ 
+ 		@Override
+-		boolean matchBody(Matcher matcher, int peeked) {
+-			return !matcher.requireFullMatch || matcher.pos == matcher.regionEnd;
++		boolean match(Matcher matcher, int peeked) {
++			boolean matches = !matcher.requireFullMatch || matcher.pos == matcher.regionEnd;
++			return matches || (failedEntry != null && failedEntry.match(matcher, peeked));
+ 		}
+ 	}
+ }
+diff --git a/llkpattern/src/main/java/com/tbohne/llkpattern/PatternConstruct.java b/llkpattern/src/main/java/com/tbohne/llkpattern/PatternConstruct.java
+index dfed57b..b36a7c3 100644
+--- a/llkpattern/src/main/java/com/tbohne/llkpattern/PatternConstruct.java
++++ b/llkpattern/src/main/java/com/tbohne/llkpattern/PatternConstruct.java
+@@ -29,12 +29,11 @@ abstract class PatternConstruct {
+ 
+ 	// Set by a chain builder (see #buildFlattenedChain, QuantifiableConstruct#buildLoopMatcher) just
+ 	// before calling compile() on this construct as one candidate among several -- read by
+-	// MatcherConstruct's owner-based constructor to become that node's own entrySet/failedEntry
+-	// (see MatcherConstruct's "Flattened dispatch" class doc). Null for the overwhelming majority
+-	// of constructs, which are never a chain candidate at all. Since MatcherConstruct construction
+-	// happens exactly once per construct (compile() memoizes on `matcher != null`), these must be
+-	// set BEFORE the first compile() call, never after.
+-	@Nullable CodePointSet dispatchEntrySet;
++	// MatcherConstruct's owner-based constructor to become that node's own failedEntry (see
++	// MatcherConstruct's class doc). Null for the overwhelming majority of constructs, which are
++	// never a chain candidate at all. Since MatcherConstruct construction happens exactly once per
++	// construct (compile() memoizes on `matcher != null`), this must be set BEFORE the first
++	// compile() call, never after.
+ 	@Nullable MatcherConstruct dispatchFailedEntry;
+ 
+ 	// The construct that comes after this one -- i.e. what compile() was last called with.
+@@ -382,23 +381,62 @@ abstract class PatternConstruct {
+ 	 * passed separately and is never one of {@code candidates} -- it's expected to overlap every
+ 	 * other candidate (that's the whole point of a fallback bucket), so checking it here would
+ 	 * reject every pattern that has one.
++	 *
++	 * <p>Under {@code CASE_INSENSITIVE}, each candidate's own entry ranges are folded (every
++	 * other-case form of every member added in) before comparing -- so {@code (a|A)} is rejected as
++	 * ambiguous exactly as {@code (a|b)} would be if both branches claimed the same literal
++	 * character, and likewise for a quantified body vs.\ its own {@code next} (e.g.\ {@code
++	 * (?i:[a-z]+)X}, where {@code X} folds into {@code [a-z]}'s own claim). There is no fold
++	 * priority/exclusion mechanism any more -- an overlap that folding introduces is a genuine
++	 * compile-time ambiguity, the same as any other overlap, not something match-time chain
++	 * ordering is allowed to paper over. Folding is redone per {@link #checkDisjoint} call rather
++	 * than cached: this only runs at compile time, over candidate lists that are always small.
+ 	 */
+ 	private static void checkDisjoint(
+ 			String pattern, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+-			String candidateNounPlural) {
++			String candidateNounPlural, int flags) {
+ 		int count = candidateCount(candidates, extra);
++		CodePointSet[] folded = new CodePointSet[count];
++		for (int i = 0; i < count; i++) {
++			folded[i] = foldedForAmbiguityCheck(candidateAt(candidates, extra, i).getEntryPointMap(), flags);
++		}
+ 		for (int j = 1; j < count; j++) {
+-			PatternConstruct candidate = candidateAt(candidates, extra, j);
+-			CodePointSet own = candidate.getEntryPointMap();
+ 			for (int i = 0; i < j; i++) {
+-				CodePointSet prior = candidateAt(candidates, extra, i).getEntryPointMap();
+-				if (own.intersects(prior)) {
+-					throwOverlapError(pattern, candidate, j + 1, candidateNounPlural, own, prior);
++				if (folded[j].intersects(folded[i])) {
++					throwOverlapError(pattern, candidateAt(candidates, extra, j), j + 1, candidateNounPlural, folded[j], folded[i]);
+ 				}
+ 			}
+ 		}
+ 	}
+ 
++	/**
++	 * {@code exact}, plus (under {@code CASE_INSENSITIVE}) every other-case fold of each of its
++	 * members -- used only by {@link #checkDisjoint} to decide whether two candidates' entry ranges
++	 * genuinely conflict once folding is accounted for. No-op (returns {@code exact} directly, no
++	 * allocation) when {@code flags} isn't {@code CASE_INSENSITIVE} -- the common case.
++	 */
++	private static CodePointSet foldedForAmbiguityCheck(CodePointSet exact, int flags) {
++		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
++			return exact;
++		}
++		MutableCodePointSet result = new ArrayCodePointSet();
++		result.addAll(exact);
++		boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
++		exact.forEachRange((min, max) -> {
++			for (int cp = min; cp < max; cp++) {
++				int upper = unicode ? Character.toUpperCase(cp) : MatcherConstruct.foldAsciiUpper(cp);
++				int lower = unicode ? Character.toLowerCase(cp) : MatcherConstruct.foldAsciiLower(cp);
++				if (upper != cp) {
++					result.add(upper);
++				}
++				if (lower != cp) {
++					result.add(lower);
++				}
++			}
++		});
++		return result;
++	}
++
+ 	/**
+ 	 * Only reached once {@link #checkDisjoint} has already confirmed {@code own} and {@code prior}
+ 	 * overlap -- recomputes the actual overlapping range (an allocation {@link #checkDisjoint}'s own
+@@ -427,76 +465,47 @@ abstract class PatternConstruct {
+ 	}
+ 
+ 	/**
+-	 * Union of every one of {@code candidates}' own (unquantified) entry points, plus {@code extra}
+-	 * if given -- used only to correct CASE_INSENSITIVE fold priority (see {@code
+-	 * MatcherConstruct#effectiveEntrySet}'s own doc): a candidate's folded claim on a code point
+-	 * must not pre-empt whichever candidate exactly owns it. Returns {@code null} (and is never
+-	 * even called) when the chain isn't CASE_INSENSITIVE, since {@code effectiveEntrySet} is then a
+-	 * no-op anyway -- see each call site.
+-	 */
+-	private static CodePointSet unionEntryPointsForFoldExclusion(
+-			List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
+-		MutableCodePointSet union = new ArrayCodePointSet();
+-		for (PatternConstruct candidate : candidates) {
+-			union.addAll(candidate.getEntryPointMap());
+-		}
+-		if (extra != null) {
+-			union.addAll(extra.getEntryPointMap());
+-		}
+-		return union;
+-	}
+-
+-	/**
+-	 * Builds a flattened dispatch chain over {@code candidates} (never empty), tried in list order
+-	 * -- see {@code MatcherConstruct}'s own "Flattened dispatch" class doc for the shape this
+-	 * builds: each candidate's own compiled {@code MatcherConstruct} becomes a fork itself, via
+-	 * {@code dispatchEntrySet}/{@code dispatchFailedEntry} (set here, immediately before that
+-	 * candidate is compiled -- compiling memoizes on {@link #matcher}, so these MUST be set before
+-	 * a candidate's first {@link #compile}), rather than a separate {@code
+-	 * ForkingMatcherConstruct} node wrapping it. Compiled tail-to-front, so each candidate's
+-	 * {@code dispatchFailedEntry} can point at the next one's already-resolved matcher.
+-	 *
+-	 * <p>Ambiguity between candidates is checked exactly as before (via {@link #checkDisjoint}, on
+-	 * entry points alone, no compiling) -- this experiment changes how the matcher graph is built,
+-	 * not whether an ambiguous pattern is still rejected (that machinery is a separate, later
+-	 * experiment -- see remaining_work.md's "Entry-set-conflict-detection-without-allocation"
+-	 * section).
++	 * Builds a chain over {@code candidates} (never empty), tried in list order via each
++	 * candidate's own inline comparison against {@code peeked} -- see {@code MatcherConstruct}'s
++	 * own class doc for the "compare, then accept-and-commit or reject-and-defer" shape this
++	 * relies on. Each candidate gets a {@code dispatchFailedEntry} pointing at the next one's
++	 * already-compiled matcher (set immediately before that candidate is compiled -- compiling
++	 * memoizes on {@link #matcher}, so this MUST happen before a candidate's first {@link
++	 * #compile}). Compiled tail-to-front, so each candidate's {@code dispatchFailedEntry} can point
++	 * at the next one's already-resolved matcher.
+ 	 *
+-	 * <p>{@code elseTarget} is this chain's final fallback, or {@code null} for none, in which case
+-	 * the last candidate is left entirely ungated (no {@code dispatchEntrySet}/{@code
+-	 * dispatchFailedEntry} at all) -- its own compiled matcher already re-verifies membership
+-	 * (folded or not) as its own first action, same reasoning the old fork-chain design relied on.
++	 * <p>Ambiguity between candidates is checked via {@link #checkDisjoint} (entry points alone, no
++	 * compiling, folding accounted for under CASE_INSENSITIVE).
+ 	 *
+-	 * <p>When {@code owner} is non-null, the chain's head becomes {@code owner}'s own matcher (via
+-	 * {@link MatcherConstruct#aliasOrPassThrough}, so {@code owner}'s own dispatch fields --  set
+-	 * if {@code owner} is itself a candidate in some OUTER chain -- aren't silently dropped).
++	 * <p>{@code elseTarget} is this chain's own catch-all fallback (e.g.\ a union's {@code .}
++	 * branch), or {@code null} for none. When {@code null}, the LAST candidate's own {@code
++	 * dispatchFailedEntry} is set to {@code outerFallback} instead of left dangling -- if none of
++	 * THIS chain's candidates accept (a clean rejection with no consumption, since none of them got
++	 * far enough to commit), deferring to whatever outer candidate this chain's own owner was gated
++	 * against is exactly as safe as any other candidate's own reject-before-commit case. This is
++	 * what lets a nested aggregate (e.g. an inner union that's itself one branch of an outer union)
++	 * participate in an outer chain with no wrapper node of its own -- the caller just assigns its
++	 * own {@code matcher} field straight to this method's return value, no wrapping needed (a
++	 * capturing candidate's own capture start is handled separately, by a dedicated {@code
++	 * MatcherConstruct.StartCaptureMatcherConstruct} the caller inserts -- see {@code
++	 * QuantifiedUnion#buildMatcher} and {@code QuantifiableConstruct#buildLoopMatcher}).
+ 	 */
+ 	static MatcherConstruct buildFlattenedChain(
+-			@Nullable PatternConstruct owner,
+ 			int flags,
+ 			String pattern,
+ 			List<PatternConstruct> candidates,
+ 			String candidateNounPlural,
+ 			PatternConstruct compileTarget,
+-			@Nullable MatcherConstruct elseTarget) {
+-		checkDisjoint(pattern, candidates, null, candidateNounPlural);
+-		CodePointSet allExact = (flags & Ll1Pattern.CASE_INSENSITIVE) != 0
+-				? unionEntryPointsForFoldExclusion(candidates, null)
+-				: null;
++			@Nullable MatcherConstruct elseTarget,
++			@Nullable MatcherConstruct outerFallback) {
++		checkDisjoint(pattern, candidates, null, candidateNounPlural, flags);
+ 		int count = candidates.size();
+-		MatcherConstruct tail = elseTarget;
++		MatcherConstruct tail = elseTarget != null ? elseTarget : outerFallback;
+ 		for (int i = count - 1; i >= 0; i--) {
+ 			PatternConstruct candidate = candidates.get(i);
+-			boolean lastUngated = (i == count - 1 && elseTarget == null);
+-			candidate.dispatchEntrySet = lastUngated
+-					? null
+-					: MatcherConstruct.effectiveEntrySet(candidate.getEntryPointMap(), allExact, flags);
+-			candidate.dispatchFailedEntry = lastUngated ? null : tail;
++			candidate.dispatchFailedEntry = tail;
+ 			tail = candidate.compile(compileTarget);
+ 		}
+-		if (owner != null) {
+-			MatcherConstruct.aliasOrPassThrough(owner, tail);
+-		}
+ 		return tail;
+ 	}
+ 
+@@ -545,54 +554,61 @@ abstract class PatternConstruct {
+ 
+ 		/**
+ 		 * Builds the actual loop matcher graph -- see design.md's "Quantifier/loop compilation"
+-		 * section (flattened-dispatch experiment, 2026-09-18: see {@code MatcherConstruct}'s own
+-		 * class doc for the overall design this replaced). Three nodes are involved:
++		 * section and {@code MatcherConstruct}'s own class doc for the inline-comparison-and-defer
++		 * shape this relies on. Three nodes are involved:
+ 		 *
+ 		 * <ol>
+-		 *   <li>The body's own dispatch chain (one node per {@code body} element, built via the same
+-		 *       {@code dispatchEntrySet}/{@code dispatchFailedEntry} mechanism {@link
+-		 *       #buildFlattenedChain} uses for a plain union -- see {@code MatcherConstruct}'s own
+-		 *       "Flattened dispatch" doc) -- its head IS both this construct's own externally-visible
+-		 *       entry point AND the loop-back target for a completed iteration, with no separate
+-		 *       chain needed for either any more: a body part's own {@code failedEntry} naturally
+-		 *       falls through to {@code exitNode} on a genuine non-match, at ANY position -- the very
+-		 *       first attempt (where a {@code min == 0} loop skipping itself entirely is just
+-		 *       {@code exitNode} immediately allowing that, since its own {@code min} check doesn't
+-		 *       care how it was reached) exactly as much as a later re-check.
++		 *   <li>The body's own chain (one node per {@code body} element, each comparing itself
++		 *       against {@code peeked} inline and deferring to the next via {@code
++		 *       dispatchFailedEntry} -- same mechanism {@link #buildFlattenedChain} uses for a plain
++		 *       union) -- its head IS both this construct's own externally-visible entry point AND
++		 *       the loop-back target for a completed iteration, with no separate chain needed for
++		 *       either: a body part's own {@code failedEntry} naturally falls through to {@code
++		 *       exitNode} on a genuine non-match, at ANY position -- the very first attempt
++		 *       (where a {@code min == 0} loop skipping itself entirely is just {@code exitNode}
++		 *       immediately allowing that) exactly as much as a later re-check.
+ 		 *   <li>{@link MatcherConstruct.LoopMatcherConstruct}, reached only as a completed body
+ 		 *       iteration's own continuation (via a {@link LoopBackMarker} self-registered onto it
+ 		 *       BEFORE the body compiles against it, breaking the construction-time cycle every loop
+ 		 *       body creates -- the same self-registration-first trick {@code MatcherConstruct}'s
+-		 *       class doc describes). Its whole job is now just enforcing {@code max}: dispatch back
+-		 *       to the body's own head (another attempt) if under it, or straight to {@code exitNode}
+-		 *       (forcing a stop) if not -- no code-point membership test of its own at all.
++		 *       class doc describes). Its whole job is just enforcing {@code max}: dispatch back to
++		 *       the body's own head (another attempt) if under it, or straight to {@code exitNode}
++		 *       (forcing a stop) if not -- no comparison of its own at all.
+ 		 *   <li>{@link MatcherConstruct.LoopMatcherExit}, this loop's "stop iterating" node --
+-		 *       enforces {@code min} and, on success, dispatches to {@code next}'s own matcher.
++		 *       enforces {@code min} and, on success, dispatches to {@code next}'s own matcher (see
++		 *       its own doc for the one case -- zero iterations, hence zero consumption -- where it
++		 *       may still defer to this construct's own outer {@code dispatchFailedEntry}, exactly
++		 *       as if the loop itself were a leaf that rejected before committing).
+ 		 * </ol>
+ 		 *
+ 		 * <p>When {@code captureConstructIndex != -1} (the construct is <i>also</i> a capturing group,
+-		 * e.g. {@code (a)*}), the capture must re-fire every iteration -- last iteration wins, per real
+-		 * regex semantics -- and must fire identically whether this is the very first attempt or a
+-		 * re-check; since both now share the exact same body-chain head node, that's just a single
+-		 * shared {@link MatcherConstruct.BeginCaptureMatcherConstruct} wrapping it. Each body part is
+-		 * compiled against a {@link CaptureEndMarker} standing in for the {@link LoopBackMarker}
+-		 * above, so finishing one iteration records the captured substring before looping back rather
+-		 * than looping back directly.
++		 * e.g. {@code (a)*}), the body chain's head is wrapped in ONE shared {@code
++		 * MatcherConstruct.StartCaptureMatcherConstruct} -- reused, unchanged, as both this
++		 * construct's own externally-visible entry point AND the loop-back target, so every
++		 * iteration attempt (first or repeat) re-stamps it. Last GENUINELY COMPLETED iteration
++		 * wins, per real regex semantics: a min==0 loop's ultimately-zero-iteration attempt (or any
++		 * later attempt that starts but never finishes) only ever touches the speculative {@code
++		 * Matcher#startedGroups} slot, never the confirmed one -- see {@code
++		 * MatcherConstruct.StartCaptureMatcherConstruct}'s own doc, and notes.md for the wrapper-
++		 * that-stamped-too-early bug an earlier version of this had. Each body part is compiled
++		 * against a {@link CaptureEndMarker} standing in for the {@link LoopBackMarker} above, so
++		 * finishing one iteration promotes the captured span before looping back rather than
++		 * looping back directly.
+ 		 */
+ 		void buildLoopMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
+ 			boolean capturing = captureConstructIndex != -1;
+ 
+-			// Ambiguity check only, on entry points alone -- no compiling. Unlike the old
+-			// ForkingMatcherConstruct-based design, dispatch fields must be set on each body part
+-			// BEFORE it's ever compiled (compile() memoizes on first call), so this can't reuse a
+-			// helper that compiles as a side effect. `next` is included as `extra` so this also
+-			// validates that no body part is ambiguous with `next` itself, needed on every re-check,
++			// Ambiguity check only, on entry points alone -- no compiling. Dispatch fields must be
++			// set on each body part BEFORE it's ever compiled (compile() memoizes on first call), so
++			// this can't reuse a helper that compiles as a side effect. `next` is included as `extra`
++			// so this also validates that no body part is ambiguous with `next` itself (accounting
++			// for CASE_INSENSITIVE folding -- see checkDisjoint's own doc), needed on every re-check,
+ 			// not just the min==0 entry case buildLoopEntryMap already validated.
+-			checkDisjoint(pattern, body, next, "loop part");
++			checkDisjoint(pattern, body, next, "loop part", flags);
+ 
+ 			LoopBackMarker marker = new LoopBackMarker(startIndex, this);
+ 			marker.flags = flags;
+-			LoopMatcherExit exitNode = new LoopMatcherExit(flags, quantifiableIndex, min, next.matcher);
++			LoopMatcherExit exitNode = new LoopMatcherExit(flags, quantifiableIndex, min, next.matcher, dispatchFailedEntry);
+ 
+ 			// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
+ 			// `loopNode` itself; this one's `.matcher` is where LoopMatcherConstruct's "continue"
+@@ -611,75 +627,28 @@ abstract class PatternConstruct {
+ 				bodyCompileTarget.compile(marker);
+ 			}
+ 
+-			// Fold-priority correction (see MatcherConstruct#effectiveEntrySet's own doc) needs every
+-			// OTHER candidate's own exact entry set, `next` included -- an exact match immediately
+-			// after the loop must always beat a folded match inside it (the historical
+-			// `(?i:[a-z]+)X` bug this class used to guard against directly -- see notes.md). Only
+-			// actually built under CASE_INSENSITIVE; effectiveEntrySet is a no-op otherwise.
+-			CodePointSet allExact = (flags & Ll1Pattern.CASE_INSENSITIVE) != 0
+-					? unionEntryPointsForFoldExclusion(body, next)
+-					: null;
+-
+ 			// Body parts chain to each other tail-to-front, same mechanism as buildFlattenedChain --
+ 			// but unlike a plain union's own final candidate, a loop body part can never be left
+-			// ungated: "doesn't match" always has somewhere real to go (exitNode, which itself
+-			// enforces `min` and may allow an immediate min==0 skip), never just "the whole match
+-			// fails" the way a truly catch-all-less union's last branch can rely on.
+-			//
+-			// When capturing, each part's OWN entry gate must be checked BEFORE the capture's start
+-			// index is recorded -- not after, the way a single shared BeginCaptureMatcherConstruct
+-			// wrapping the whole body chain's head would do it (tried first, reverted: it recorded a
+-			// capture start even on a min==0 loop's very first, ultimately-zero-iteration attempt,
+-			// since the shared wrapper ran unconditionally before the body's own gate ever got a say
+-			// -- see notes.md's entry on this). So each part gets its own throwaway {@link
+-			// LoopBodyPartGateMarker} carrying the gate instead, with the capture wrapped INSIDE it
+-			// (compiled ungated, since gating already happened by the time it runs).
++			// without somewhere to defer to: "doesn't match" always has somewhere real to go
++			// (exitNode, which itself enforces `min` and may allow an immediate min==0 skip), never
++			// just "the whole match fails" the way a truly catch-all-less union's last branch can
++			// rely on.
+ 			MatcherConstruct bodyTail = exitNode;
+ 			for (int i = body.size() - 1; i >= 0; i--) {
+ 				PatternConstruct part = body.get(i);
+-				CodePointSet partEntrySet = MatcherConstruct.effectiveEntrySet(part.getEntryPointMap(), allExact, flags);
+-				if (capturing) {
+-					MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
+-					LoopBodyPartGateMarker gateMarker = new LoopBodyPartGateMarker(startIndex);
+-					gateMarker.flags = flags;
+-					gateMarker.dispatchEntrySet = partEntrySet;
+-					gateMarker.dispatchFailedEntry = bodyTail;
+-					bodyTail = new BeginCaptureMatcherConstruct(gateMarker, captureConstructIndex, rawPartMatcher);
+-				} else {
+-					part.dispatchEntrySet = partEntrySet;
+-					part.dispatchFailedEntry = bodyTail;
+-					bodyTail = part.compile(bodyCompileTarget);
+-				}
++				part.dispatchFailedEntry = bodyTail;
++				bodyTail = part.compile(bodyCompileTarget);
+ 			}
+ 			MatcherConstruct bodyHead = bodyTail;
+-			continueMarker.matcher = bodyHead;
++			MatcherConstruct entryHead = capturing
++					? new MatcherConstruct.StartCaptureMatcherConstruct(captureConstructIndex, flags, bodyHead)
++					: bodyHead;
++			continueMarker.matcher = entryHead;
+ 
+ 			// This construct's own externally-visible entry point is exactly the same node used for a
+ 			// loop-back -- see the class doc above for why no separate entry-only chain is needed any
+ 			// more.
+-			MatcherConstruct.aliasOrPassThrough(this, bodyHead);
+-		}
+-	}
+-
+-	/**
+-	 * A zero-width vehicle for a single capturing loop body part's own entry gating -- see
+-	 * {@code QuantifiableConstruct.buildLoopMatcher}'s own doc for why the gate has to live here,
+-	 * one level above the {@code BeginCaptureMatcherConstruct} it owns, rather than on the body
+-	 * part itself (which is compiled ungated and wrapped INSIDE the capture instead).
+-	 */
+-	static final class LoopBodyPartGateMarker extends PatternConstruct {
+-		LoopBodyPartGateMarker(int startIndex) {
+-			super(startIndex);
+-		}
+-
+-		@Override
+-		void buildEntryMap(PatternConstruct next) {
+-			throw new AssertionError("LoopBodyPartGateMarker's entry point is never queried");
+-		}
+-
+-		@Override
+-		void buildMatcher() {
+-			throw new AssertionError("LoopBodyPartGateMarker's own matcher is built directly, not via buildMatcher()");
++			this.matcher = entryHead;
+ 		}
+ 	}
+ 
+@@ -861,8 +830,11 @@ abstract class PatternConstruct {
+ 			}
+ 			if (constructs.isEmpty()) {
+ 				// Bare flags-only group -- see buildEntryMap()'s matching case. `next` is guaranteed
+-				// compiled by now (tail-to-front compile order), unlike when buildEntryMap() ran.
+-				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
++				// compiled by now (tail-to-front compile order), unlike when buildEntryMap() ran. This
++				// construct has no comparison of its own (it always "accepts" unconditionally), so any
++				// dispatchFailedEntry it carries is provably dead code -- a plain alias is always
++				// correct, never needs wrapping.
++				this.matcher = next.matcher;
+ 				return;
+ 			}
+ 			if (isCapturing()) {
+@@ -873,17 +845,13 @@ abstract class PatternConstruct {
+ 			}
+ 			// Uses rawEntryElse (the real, non-identity-rewritten candidate), not the
+ 			// (rekeyed-to-`this`) entryMap/entryElse fields -- see rawEntryElse's doc: for the capturing
+-			// case, `this.matcher` isn't set yet at this point; for the non-capturing case, the flattened
++			// case, `this.matcher` isn't set yet at this point; for the non-capturing case, the
+ 			// chain's head node itself becomes `this.matcher`, so resolving branches through the
+ 			// rekeyed-to-`this` entryMap would resolve every entry back to this very node (an infinite
+ 			// self-dispatch loop) instead of to the actual branch matchers. Compiled here, deliberately
+-			// with no dispatch gating of its own (dispatchEntrySet/dispatchFailedEntry left null), and
+-			// EXCLUDED from the ordinary candidate list handed to buildFlattenedChain below -- unlike the
+-			// old fork-chain design (which could cheaply wrap the SAME already-compiled, ungated
+-			// candidate.matcher in two different fork nodes -- one at its own list position, one as the
+-			// tail fallback -- since gating lived in the separate fork objects, not the node itself), this
+-			// flattened design bakes gating into the candidate's own single compiled node, so the same
+-			// node can't simultaneously be "gated at its natural position" and "the ungated final
++			// with no dispatch gating of its own (dispatchFailedEntry left null), and EXCLUDED from
++			// the ordinary candidate list handed to buildFlattenedChain below, since the same node
++			// can't simultaneously be "gated at its natural position" and "the ungated final
+ 			// fallback". Dropping it from the ordinary list is only a behavior change when rawEntryElse
+ 			// ALSO claims real (non-empty) explicit ranges of its own -- rare in practice (its own explicit
+ 			// ranges, if any, were already required to be disjoint from every sibling's by buildEntryMap's
+@@ -893,11 +861,15 @@ abstract class PatternConstruct {
+ 			List<PatternConstruct> chainCandidates = rawEntryElse == null
+ 					? constructs
+ 					: constructs.stream().filter(c -> c != rawEntryElse).collect(java.util.stream.Collectors.toList());
++			MatcherConstruct dispatch = buildFlattenedChain(flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, dispatchFailedEntry);
+ 			if (isCapturing()) {
+-				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
+-				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
++				// Wraps `dispatch` in a dedicated capture-start node rather than gating each candidate
++				// individually -- see MatcherConstruct.StartCaptureMatcherConstruct's own doc for why
++				// an unconditional stamp here is safe even though this specific attempt (e.g. a
++				// candidate rejecting outright) might not end up completing.
++				new MatcherConstruct.StartCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
+ 			} else {
+-				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
++				this.matcher = dispatch;
+ 			}
+ 		}
+ 	}
+@@ -1044,9 +1016,8 @@ abstract class PatternConstruct {
+ 			// A Sequence has no matching behavior of its own -- it's exactly whatever its first
+ 			// element compiled to, so any dispatch gating of our own (if this sequence is itself a
+ 			// chain candidate) belongs on that first element's own node instead; safe to propagate
+-			// directly (no aliasOrPassThrough wrapper needed) since `patterns.get(0)` is exclusively
+-			// owned by this Sequence and hasn't been compiled by anyone else yet.
+-			patterns.get(0).dispatchEntrySet = dispatchEntrySet;
++			// directly since `patterns.get(0)` is exclusively owned by this Sequence and hasn't been
++			// compiled by anyone else yet.
+ 			patterns.get(0).dispatchFailedEntry = dispatchFailedEntry;
+ 			// Compile tail-to-front: the last element's next is this sequence's own next, and each
+ 			// earlier element's next is the element right after it (already compiled by the time we
+@@ -1268,7 +1239,6 @@ abstract class PatternConstruct {
+ 			// chain candidate) onto `delegate` BEFORE compiling it, so its own compiled node ends up
+ 			// with the right gating; safe because `delegate` is exclusively owned by this construct
+ 			// (created together, never independently compiled from anywhere else).
+-			delegate.dispatchEntrySet = dispatchEntrySet;
+ 			delegate.dispatchFailedEntry = dispatchFailedEntry;
+ 			delegate.compile(next);
+ 			matcher = delegate.matcher;
+@@ -1418,11 +1388,11 @@ abstract class PatternConstruct {
+ 							(isWordBoundary ? "\\b" : "\\B"),
+ 							" requires");
+ 				}
+-				// Statically always satisfied: a zero-width no-op, so just pass straight through.
+-				// `next` is shared/likely already compiled, so any dispatch gating of our own (if this
+-				// construct is itself a chain candidate) can't be retrofitted onto it directly -- see
+-				// MatcherConstruct#aliasOrPassThrough's own doc.
+-				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
++				// Statically always satisfied: a zero-width no-op, so just pass straight through. This
++				// construct has no comparison of its own (it always "accepts" unconditionally), so
++				// any dispatchFailedEntry it carries is provably dead code -- a plain alias is always
++				// correct here, never needs wrapping.
++				this.matcher = next.matcher;
+ 				return;
+ 			}
+ 
+diff --git a/llkpattern/src/test/java/com/tbohne/llkpattern/CaseInsensitiveTest.java b/llkpattern/src/test/java/com/tbohne/llkpattern/CaseInsensitiveTest.java
+index a3824dd..fea2a9a 100644
+--- a/llkpattern/src/test/java/com/tbohne/llkpattern/CaseInsensitiveTest.java
++++ b/llkpattern/src/test/java/com/tbohne/llkpattern/CaseInsensitiveTest.java
+@@ -2,7 +2,9 @@ package com.tbohne.llkpattern;
+ 
+ import static org.hamcrest.CoreMatchers.is;
+ import static org.hamcrest.MatcherAssert.assertThat;
++import static org.junit.Assert.assertThrows;
+ 
++import java.util.regex.PatternSyntaxException;
+ import org.junit.Test;
+ import org.junit.runner.RunWith;
+ import org.junit.runners.JUnit4;
+@@ -203,10 +205,12 @@ public class CaseInsensitiveTest {
+   // fold-retry path (SingleCharMatcherConstruct), the other of the two places local `flags` had
+   // to be threaded through. Both need their own coverage since they're separate code paths.
+   @Test
+-  public void inlineFlagGroup_scopesCharClassCaseInsensitivityToJustTheGroup() {
+-    Ll1Pattern p = Ll1Pattern.compile("(?i:[a-z]+)X");
+-    assertThat(p.matcher("ABCX").matches(), is(true));
+-    assertThat(p.matcher("ABCx").matches(), is(false));
++  public void inlineFlagGroup_loopFoldOverlapWithNext_isAmbiguityError() {
++    // Under CASE_INSENSITIVE, the loop body's own [a-z] and the following exact literal X
++    // genuinely overlap once folding is applied (X folds to x, which [a-z] claims) -- this is now
++    // a real compile-time ambiguity, the same as any other overlapping pair, not something chain
++    // priority is allowed to resolve. See PatternConstruct#checkDisjoint's doc.
++    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?i:[a-z]+)X"));
+   }
+ 
+   // Sanity check that the global (non-inline) CASE_INSENSITIVE path still reaches a \w-style
+diff --git a/llkpattern/src/test/java/com/tbohne/llkpattern/PatternParserTest.java b/llkpattern/src/test/java/com/tbohne/llkpattern/PatternParserTest.java
+index 3c9c422..4cfc5fa 100644
+--- a/llkpattern/src/test/java/com/tbohne/llkpattern/PatternParserTest.java
++++ b/llkpattern/src/test/java/com/tbohne/llkpattern/PatternParserTest.java
+@@ -88,18 +88,15 @@ public class PatternParserTest {
+ 	@Test
+ 	public void compile_alternation_dispatchesToEachBranch() {
+ 		// "A|B" (no catch-all branch) compiles to the first branch's own LiteralMatcherConstruct,
+-		// gated on A, falling through (via failedEntry) to the second branch's own
+-		// LiteralMatcherConstruct -- which, being the chain's last candidate with no catch-all, is
+-		// left entirely ungated: its own compiled matcher already re-verifies membership as its
+-		// first action -- see MatcherConstruct's "Flattened dispatch" class doc.
++		// which compares itself against the input inline and falls through (via failedEntry) to
++		// the second branch's own LiteralMatcherConstruct on a miss -- see MatcherConstruct's class
++		// doc for the inline-comparison-and-defer shape.
+ 		MatcherConstruct compiled = compile(A + "|" + B);
+ 
+ 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
+-		assertThat(compiled.entrySet, notNullValue());
+-		assertThat(compiled.entrySet.contains(A.codePointAt(0)), is(true));
+ 		MatcherConstruct second = compiled.failedEntry;
+ 		assertThat(second, instanceOf(LiteralMatcherConstruct.class));
+-		assertThat(second.entrySet, nullValue());
++		assertThat(second.failedEntry, nullValue());
+ 		assertThat(((LiteralMatcherConstruct) second).getNext(), instanceOf(EndMatcherConstruct.class));
+ 	}
+ 

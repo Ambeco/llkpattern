@@ -45,3 +45,13 @@ don't add a mutable (or wrapped-mutable) field to sidestep that -- indirect thro
 marker `PatternConstruct`, resolved by ordinary assignment once the real target is known), the same
 mechanism every other forward reference in this codebase already relies on. See
 `MatcherConstruct.LoopMatcherConstruct`'s own class doc for a worked example.
+
+## `entrySet` is load-bearing; hand-check dispatch/capture changes
+
+`MatcherConstruct.entrySet` is not redundant with a node's own comparison: it is the precomputed
+aggregate FIRST set, folding in nullable prefixes (`buildLoopEntryMap`'s `min == 0 ? next : null`).
+Before proposing to drop or inline it, see notes.md 2026-09-18 (reverted experiment).
+
+After ANY dispatch or capture change, hand-check these two cases -- the full suite did not catch
+either failure in the reverted experiment: `((a?b)c)?` vs `""` must match, and `(a+b)+` vs
+`"ababab"` must give `group(1) == "ab"`.

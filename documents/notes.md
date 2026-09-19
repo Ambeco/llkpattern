@@ -2680,3 +2680,6 @@ Notes to self about how to work on this project, and other context that doesn't 
   Cost of the extra 338 eagerly-built block sets in `UnicodePredicates`' static init (measured on JDK 17,
   cold): ~10.5 -> ~14.5 ms one-time class init, heap ~90 -> ~109 KB. Compile/match paths unchanged, so no
   JMH re-run. If startup ever matters (Android), lazily building block/script sets is the lever.
+
+- **2026-09-19: `UnicodePredicates.java` regenerated on JDK 27** (Unicode data newer than JDK 25). Same procedure;
+  `java` needs Windows-format (`cygpath -w`) classpath entries from Git Bash. Suite stayed green.

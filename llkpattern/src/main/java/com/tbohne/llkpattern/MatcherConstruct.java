@@ -36,12 +36,9 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * <p>{@code entrySet} is deliberately checked with a PLAIN {@link CodePointSet#contains} (see
  * {@link #containsEntry}), never {@link #containsFolded} -- under {@code CASE_INSENSITIVE},
  * folding is baked into {@code entrySet} itself at chain-construction time (see {@code
- * PatternConstruct#effectiveEntrySet}), specifically so an exact match anywhere in a chain always
- * wins over a folded match earlier in it (the same priority rule the old {@code
- * ForkingMatcherConstruct}-based design enforced via a two-pass exact-then-fold chain -- see
- * notes.md's entry on this experiment for the case that motivated it: {@code (?i:[a-z]+)X}
- * against {@code "ABCX"} must not let the loop body's folded claim on {@code X} pre-empt the
- * exact literal {@code X} that follows it). A node's OWN {@link #matchBody} still uses {@link
+ * MatcherConstruct#foldedEntrySet}). Because {@code checkDisjoint} rejects any fold overlap
+ * between chain candidates at compile time (e.g. {@code (?i:[a-z]+)X}), no chain priority ordering
+ * between folded and exact claims is ever needed. A node's OWN {@link #matchBody} still uses {@link
  * #containsFolded} on its own (unfolded) data where relevant (e.g. {@link
  * SingleCharMatcherConstruct}) -- that's what makes it independently correct when reached
  * standalone (no entry gating at all, e.g. a plain sequence element), not just as a chain
@@ -115,7 +112,7 @@ abstract class MatcherConstruct {
 	 * sentinel -- see {@code Matcher#peek}) is never a member of any real {@code entrySet}, same
 	 * guard as {@link #containsFolded} -- an inverted set's fill must not report it "in".
 	 * Deliberately not {@link #containsFolded}: {@code entrySet} already has any CASE_INSENSITIVE
-	 * folding baked in at chain-construction time -- see {@code PatternConstruct#effectiveEntrySet}
+	 * folding baked in at chain-construction time -- see {@code PatternConstruct#checkDisjoint}
 	 * and this class's own doc.
 	 */
 	private static boolean containsEntry(@Nullable CodePointSet entrySet, int peeked) {
@@ -182,23 +179,15 @@ abstract class MatcherConstruct {
 
 	/**
 	 * {@code exact}, plus (under {@code CASE_INSENSITIVE}) every other-case fold of each of its
-	 * members that isn't already claimed -- exactly -- by {@code excludeFromFold}. This is what
-	 * lets a chain-candidate node's {@link #entrySet} be checked with a plain, unfolded {@link
-	 * #containsEntry} at match time (see this class's own doc) while still enforcing the rule that
-	 * an exact match anywhere in the chain beats a folded match earlier in it: {@code
-	 * excludeFromFold} is the union of every OTHER candidate's own exact entry set in the same
-	 * chain (see {@code PatternConstruct}'s chain-building call sites), so this candidate's folded
-	 * claim on a code point another candidate exactly owns is dropped, leaving that code point free
-	 * for the exact owner's own (unfolded) {@code entrySet} to claim instead. A fold collision
-	 * between two candidates' folded (non-exact) claims is deliberately NOT resolved here -- that's
-	 * settled by ordinary chain priority (whichever candidate's {@code entrySet} is checked first
-	 * wins), same as the old two-pass fork-chain design.
+	 * members. This is what lets a chain-candidate node's {@link #entrySet} be checked with a plain,
+	 * unfolded {@link #containsEntry} at match time (see this class's own doc). Also what {@code
+	 * PatternConstruct#checkDisjoint} compares, so a fold collision between two candidates is a
+	 * compile-time ambiguity like any other overlap, never resolved by chain priority.
 	 *
 	 * <p>No-op (returns {@code exact} directly, no allocation) when {@code flags} isn't {@code
-	 * CASE_INSENSITIVE} -- the common case, and the whole point of baking folding in here rather
-	 * than re-checking it on every match attempt.
+	 * CASE_INSENSITIVE} -- the common case.
 	 */
-	static CodePointSet effectiveEntrySet(CodePointSet exact, @Nullable CodePointSet excludeFromFold, int flags) {
+	static CodePointSet foldedEntrySet(CodePointSet exact, int flags) {
 		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
 			return exact;
 		}
@@ -207,18 +196,17 @@ abstract class MatcherConstruct {
 		boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
 		exact.forEachRange((min, max) -> {
 			for (int cp = min; cp < max; cp++) {
-				addFoldUnlessExcluded(result, cp, unicode ? Character.toUpperCase(cp) : foldAsciiUpper(cp), excludeFromFold);
-				addFoldUnlessExcluded(result, cp, unicode ? Character.toLowerCase(cp) : foldAsciiLower(cp), excludeFromFold);
+				int upper = unicode ? Character.toUpperCase(cp) : foldAsciiUpper(cp);
+				int lower = unicode ? Character.toLowerCase(cp) : foldAsciiLower(cp);
+				if (upper != cp) {
+					result.add(upper);
+				}
+				if (lower != cp) {
+					result.add(lower);
+				}
 			}
 		});
 		return result;
-	}
-
-	private static void addFoldUnlessExcluded(
-			MutableCodePointSet result, int original, int folded, @Nullable CodePointSet excludeFromFold) {
-		if (folded != original && (excludeFromFold == null || !excludeFromFold.contains(folded))) {
-			result.add(folded);
-		}
 	}
 
 	/**

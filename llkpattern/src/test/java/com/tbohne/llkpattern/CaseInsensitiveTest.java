@@ -204,9 +204,22 @@ public class CaseInsensitiveTest {
   // to be threaded through. Both need their own coverage since they're separate code paths.
   @Test
   public void inlineFlagGroup_scopesCharClassCaseInsensitivityToJustTheGroup() {
-    Ll1Pattern p = Ll1Pattern.compile("(?i:[a-z]+)X");
-    assertThat(p.matcher("ABCX").matches(), is(true));
-    assertThat(p.matcher("ABCx").matches(), is(false));
+    Ll1Pattern p = Ll1Pattern.compile("(?i:[a-z]+)1");
+    assertThat(p.matcher("ABC1").matches(), is(true));
+    assertThat(p.matcher("abc1").matches(), is(true));
+    assertThat(Ll1Pattern.compile("(?i:[a-z]+)1").matcher("ABC2").matches(), is(false));
+  }
+
+  // A folded claim overlapping the next candidate's claim is a real LL(1) ambiguity, not something
+  // chain priority should silently resolve (documented divergence from java.util.regex).
+  @Test(expected = PatternSyntaxException.class)
+  public void foldOverlap_loopVsNext_isCompileError() {
+    Ll1Pattern.compile("(?i:[a-z]+)X");
+  }
+
+  @Test(expected = PatternSyntaxException.class)
+  public void foldOverlap_union_isCompileError() {
+    Ll1Pattern.compile("(?i:a|A)");
   }
 
   // Sanity check that the global (non-inline) CASE_INSENSITIVE path still reaches a \w-style

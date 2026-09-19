@@ -361,7 +361,10 @@ abstract class PatternConstruct {
 
 	/**
 	 * Throws the first ambiguity found among {@code candidates}, checked in priority (list) order:
-	 * two candidates whose entry ranges overlap. For each candidate (in order), checks it pairwise
+	 * two candidates whose entry ranges overlap. Under CASE_INSENSITIVE each candidate's ranges are
+	 * first folded (see {@code MatcherConstruct#foldedEntrySet}), so e.g. {@code (?i:[a-z]+)X} is
+	 * rejected as ambiguous rather than resolved by chain priority; the folded sets are returned
+	 * (index-aligned with {@code candidates} then {@code extra}) for reuse as dispatch gates. For each candidate (in order), checks it pairwise
 	 * against every earlier candidate via the boolean-only, allocation-free {@link
 	 * CodePointSet#intersects} -- no accumulated "claimed so far" union, and no {@code
 	 * CodePointMap<PatternConstruct>} tagging every candidate's ranges with its own identity either,
@@ -383,20 +386,22 @@ abstract class PatternConstruct {
 	 * other candidate (that's the whole point of a fallback bucket), so checking it here would
 	 * reject every pattern that has one.
 	 */
-	private static void checkDisjoint(
-			String pattern, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+	private static CodePointSet[] checkDisjoint(
+			String pattern, int flags, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
 			String candidateNounPlural) {
 		int count = candidateCount(candidates, extra);
+		CodePointSet[] sets = new CodePointSet[count];
+		for (int j = 0; j < count; j++) {
+			sets[j] = MatcherConstruct.foldedEntrySet(candidateAt(candidates, extra, j).getEntryPointMap(), flags);
+		}
 		for (int j = 1; j < count; j++) {
-			PatternConstruct candidate = candidateAt(candidates, extra, j);
-			CodePointSet own = candidate.getEntryPointMap();
 			for (int i = 0; i < j; i++) {
-				CodePointSet prior = candidateAt(candidates, extra, i).getEntryPointMap();
-				if (own.intersects(prior)) {
-					throwOverlapError(pattern, candidate, j + 1, candidateNounPlural, own, prior);
+				if (sets[j].intersects(sets[i])) {
+					throwOverlapError(pattern, candidateAt(candidates, extra, j), j + 1, candidateNounPlural, sets[j], sets[i]);
 				}
 			}
 		}
+		return sets;
 	}
 
 	/**
@@ -424,26 +429,6 @@ abstract class PatternConstruct {
 				});
 			}
 		});
-	}
-
-	/**
-	 * Union of every one of {@code candidates}' own (unquantified) entry points, plus {@code extra}
-	 * if given -- used only to correct CASE_INSENSITIVE fold priority (see {@code
-	 * MatcherConstruct#effectiveEntrySet}'s own doc): a candidate's folded claim on a code point
-	 * must not pre-empt whichever candidate exactly owns it. Returns {@code null} (and is never
-	 * even called) when the chain isn't CASE_INSENSITIVE, since {@code effectiveEntrySet} is then a
-	 * no-op anyway -- see each call site.
-	 */
-	private static CodePointSet unionEntryPointsForFoldExclusion(
-			List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
-		MutableCodePointSet union = new ArrayCodePointSet();
-		for (PatternConstruct candidate : candidates) {
-			union.addAll(candidate.getEntryPointMap());
-		}
-		if (extra != null) {
-			union.addAll(extra.getEntryPointMap());
-		}
-		return union;
 	}
 
 	/**
@@ -479,10 +464,7 @@ abstract class PatternConstruct {
 			String candidateNounPlural,
 			PatternConstruct compileTarget,
 			@Nullable MatcherConstruct elseTarget) {
-		checkDisjoint(pattern, candidates, null, candidateNounPlural);
-		CodePointSet allExact = (flags & Ll1Pattern.CASE_INSENSITIVE) != 0
-				? unionEntryPointsForFoldExclusion(candidates, null)
-				: null;
+		CodePointSet[] gates = checkDisjoint(pattern, flags, candidates, null, candidateNounPlural);
 		int count = candidates.size();
 		MatcherConstruct tail = elseTarget;
 		for (int i = count - 1; i >= 0; i--) {
@@ -490,7 +472,7 @@ abstract class PatternConstruct {
 			boolean lastUngated = (i == count - 1 && elseTarget == null);
 			candidate.dispatchEntrySet = lastUngated
 					? null
-					: MatcherConstruct.effectiveEntrySet(candidate.getEntryPointMap(), allExact, flags);
+					: gates[i];
 			candidate.dispatchFailedEntry = lastUngated ? null : tail;
 			tail = candidate.compile(compileTarget);
 		}
@@ -588,7 +570,7 @@ abstract class PatternConstruct {
 			// helper that compiles as a side effect. `next` is included as `extra` so this also
 			// validates that no body part is ambiguous with `next` itself, needed on every re-check,
 			// not just the min==0 entry case buildLoopEntryMap already validated.
-			checkDisjoint(pattern, body, next, "loop part");
+			CodePointSet[] gates = checkDisjoint(pattern, flags, body, next, "loop part");
 
 			LoopBackMarker marker = new LoopBackMarker(startIndex, this);
 			marker.flags = flags;
@@ -611,15 +593,6 @@ abstract class PatternConstruct {
 				bodyCompileTarget.compile(marker);
 			}
 
-			// Fold-priority correction (see MatcherConstruct#effectiveEntrySet's own doc) needs every
-			// OTHER candidate's own exact entry set, `next` included -- an exact match immediately
-			// after the loop must always beat a folded match inside it (the historical
-			// `(?i:[a-z]+)X` bug this class used to guard against directly -- see notes.md). Only
-			// actually built under CASE_INSENSITIVE; effectiveEntrySet is a no-op otherwise.
-			CodePointSet allExact = (flags & Ll1Pattern.CASE_INSENSITIVE) != 0
-					? unionEntryPointsForFoldExclusion(body, next)
-					: null;
-
 			// Body parts chain to each other tail-to-front, same mechanism as buildFlattenedChain --
 			// but unlike a plain union's own final candidate, a loop body part can never be left
 			// ungated: "doesn't match" always has somewhere real to go (exitNode, which itself
@@ -637,7 +610,7 @@ abstract class PatternConstruct {
 			MatcherConstruct bodyTail = exitNode;
 			for (int i = body.size() - 1; i >= 0; i--) {
 				PatternConstruct part = body.get(i);
-				CodePointSet partEntrySet = MatcherConstruct.effectiveEntrySet(part.getEntryPointMap(), allExact, flags);
+				CodePointSet partEntrySet = gates[i];
 				if (capturing) {
 					MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
 					LoopBodyPartGateMarker gateMarker = new LoopBodyPartGateMarker(startIndex);

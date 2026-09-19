@@ -2642,3 +2642,9 @@ Notes to self about how to work on this project, and other context that doesn't 
   `entrySet`-elimination attempt above: make `checkDisjoint` fold each candidate's entry ranges
   (under CASE_INSENSITIVE) before comparing, and delete the now-unneeded `effectiveEntrySet`/
   `unionEntryPointsForFoldExclusion` fold-priority machinery entirely. Worth its own small branch.
+
+- **2026-09-19: fold-ambiguity fix landed.** `checkDisjoint` now folds each candidate's entry set
+  (`MatcherConstruct#foldedEntrySet`) before the pairwise overlap check and returns those sets for
+  reuse as dispatch gates; `effectiveEntrySet`/`unionEntryPointsForFoldExclusion` deleted.
+  `(?i:[a-z]+)X` and `(?i:a|A)` are now `PatternSyntaxException`s (documented divergence from
+  `java.util.regex`); no scraped-corpus rows changed. Not re-benchmarked (CASE_INSENSITIVE-only path).

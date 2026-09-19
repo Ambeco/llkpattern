@@ -19,29 +19,6 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       `BASIC_LATIN` anywhere in `UnicodePredicates.java`). Needs `unicodeanalyzer` work first, not
       just `NamedCharClass` wiring.
 
-## CASE_INSENSITIVE fold ambiguity: `(?i:[a-z]+)X` should be a compile error, not chain-priority-resolved
-
-`checkDisjoint` currently compares candidates' raw (unfolded) entry points; under CASE_INSENSITIVE,
-`effectiveEntrySet`'s fold-priority exclusion instead lets an exact match elsewhere in a chain
-silently win over an earlier folded claim on the same codepoint (e.g. `(?i:[a-z]+)X` against
-`"ABCX"` compiles and matches today). Per the project owner (2026-09-18): the only "low
-priority"/catch-all candidate this engine should ever have is a literal `.`-style wildcard --
-everything else that folds into another candidate's claimed range (this loop-vs-next case, or a
-plain union like `(a|A)`, which already IS rejected since both branches claim the same raw
-character) is a genuine LL(1) ambiguity and should be a `PatternSyntaxException`.
-
-- [ ] Make `checkDisjoint` fold each candidate's own entry ranges (under CASE_INSENSITIVE, before
-      comparing pairwise for overlap) instead of comparing raw ranges.
-- [ ] Delete `MatcherConstruct#effectiveEntrySet`/`PatternConstruct#unionEntryPointsForFoldExclusion`
-      and their call sites once the above makes them unnecessary.
-- [ ] Update/add a test asserting `(?i:[a-z]+)X` now throws `PatternSyntaxException`, and check the
-      scraped corpus for other rows this newly (correctly) rejects -- a documented divergence from
-      `java.util.regex`, not a regression, if so.
-
-(See notes.md's 2026-09-18 entries for the related, larger `entrySet`-elimination experiment this
-was investigated alongside -- that one was tried and reverted; this fold-ambiguity fix is
-independent and still worth doing on its own.)
-
 ## Flattened matcher dispatch (merged to `main`)
 
 `MatcherConstruct.entrySet`/`failedEntry` fold the old `ForkingMatcherConstruct` into every node
@@ -50,7 +27,7 @@ failing the match outright when `failedEntry` is null) instead of `SingleDispatc
 always advancing to `next` and a separate `ForkingMatcherConstruct` doing the membership check
 after. See design.md's "Quantifier/loop compilation"/"Opcode set" sections for the current design.
 
-- [ ] **Known cost**: `effectiveEntrySet`'s fold expansion is O(set size) per chain candidate under
+- [ ] **Known cost**: `foldedEntrySet`'s fold expansion is O(set size) per chain candidate under
       CASE_INSENSITIVE -- `(?iu)\p{L}+9` (a ~130k-codepoint class, quantified, under
       CASE_INSENSITIVE+UNICODE_CASE) measured ~60ms just to compile. Rare pattern shape (huge class
       + case-insensitivity combined), not exercised by the scraped corpus, but worth a targeted

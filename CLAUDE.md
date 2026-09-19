@@ -55,3 +55,10 @@ Before proposing to drop or inline it, see notes.md 2026-09-18 (reverted experim
 After ANY dispatch or capture change, hand-check these two cases -- the full suite did not catch
 either failure in the reverted experiment: `((a?b)c)?` vs `""` must match, and `(a+b)+` vs
 `"ababab"` must give `group(1) == "ab"`.
+
+## Regenerating `UnicodePredicates.java`
+
+Run `UnicodeAnalyzer` with the NEWEST installed JDK (currently `C:\Program Files\Java\jdk-27`) for the
+newest Unicode data -- this means sidestepping Gradle (which can't run on JDK 25+): compile via
+`./gradlew :unicodeanalyzer:classes` on JDK 17, run the class directly with that JDK's `java`, and
+copy its output over with CRLF. Steps: documents/notes.md, 2026-09-19 entry.

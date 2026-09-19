@@ -46,7 +46,7 @@ static final CodePointSet isSupplementaryCodePoint = init_isSupplementaryCodePoi
 
 private static CodePointSet init_isLowerCase() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(675);
+	result.ensureCapacity(677);
 	result.appendSorted(0x61, 0x7b);
 	result.appendSorted(0xaa, 0xab);
 	result.appendSorted(0xb5, 0xb6);
@@ -194,7 +194,7 @@ private static CodePointSet init_isLowerCase() {
 	result.appendSorted(0x24b, 0x24c);
 	result.appendSorted(0x24d, 0x24e);
 	result.appendSorted(0x24f, 0x294);
-	result.appendSorted(0x295, 0x2b9);
+	result.appendSorted(0x296, 0x2b9);
 	result.appendSorted(0x2c0, 0x2c2);
 	result.appendSorted(0x2e0, 0x2e5);
 	result.appendSorted(0x345, 0x346);
@@ -660,13 +660,14 @@ private static CodePointSet init_isLowerCase() {
 	result.appendSorted(0xa7c8, 0xa7c9);
 	result.appendSorted(0xa7ca, 0xa7cb);
 	result.appendSorted(0xa7cd, 0xa7ce);
+	result.appendSorted(0xa7cf, 0xa7d0);
 	result.appendSorted(0xa7d1, 0xa7d2);
 	result.appendSorted(0xa7d3, 0xa7d4);
 	result.appendSorted(0xa7d5, 0xa7d6);
 	result.appendSorted(0xa7d7, 0xa7d8);
 	result.appendSorted(0xa7d9, 0xa7da);
 	result.appendSorted(0xa7db, 0xa7dc);
-	result.appendSorted(0xa7f2, 0xa7f5);
+	result.appendSorted(0xa7f1, 0xa7f5);
 	result.appendSorted(0xa7f6, 0xa7f7);
 	result.appendSorted(0xa7f8, 0xa7fb);
 	result.appendSorted(0xab30, 0xab5b);
@@ -689,6 +690,7 @@ private static CodePointSet init_isLowerCase() {
 	result.appendSorted(0x10d70, 0x10d86);
 	result.appendSorted(0x118c0, 0x118e0);
 	result.appendSorted(0x16e60, 0x16e80);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x1d41a, 0x1d434);
 	result.appendSorted(0x1d44e, 0x1d455);
 	result.appendSorted(0x1d456, 0x1d468);
@@ -728,7 +730,7 @@ static final CodePointSet isLowerCase = init_isLowerCase();
 
 private static CodePointSet init_isUpperCase() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(656);
+	result.ensureCapacity(660);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0xc0, 0xd7);
 	result.appendSorted(0xd8, 0xdf);
@@ -1333,7 +1335,10 @@ private static CodePointSet init_isUpperCase() {
 	result.appendSorted(0xa7c4, 0xa7c8);
 	result.appendSorted(0xa7c9, 0xa7ca);
 	result.appendSorted(0xa7cb, 0xa7cd);
+	result.appendSorted(0xa7ce, 0xa7cf);
 	result.appendSorted(0xa7d0, 0xa7d1);
+	result.appendSorted(0xa7d2, 0xa7d3);
+	result.appendSorted(0xa7d4, 0xa7d5);
 	result.appendSorted(0xa7d6, 0xa7d7);
 	result.appendSorted(0xa7d8, 0xa7d9);
 	result.appendSorted(0xa7da, 0xa7db);
@@ -1350,6 +1355,7 @@ private static CodePointSet init_isUpperCase() {
 	result.appendSorted(0x10d50, 0x10d66);
 	result.appendSorted(0x118a0, 0x118c0);
 	result.appendSorted(0x16e40, 0x16e60);
+	result.appendSorted(0x16ea0, 0x16eb9);
 	result.appendSorted(0x1d400, 0x1d41a);
 	result.appendSorted(0x1d434, 0x1d44e);
 	result.appendSorted(0x1d468, 0x1d482);
@@ -1408,7 +1414,7 @@ static final CodePointSet isTitleCase = init_isTitleCase();
 
 private static CodePointSet init_isDigit() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(71);
+	result.ensureCapacity(72);
 	result.appendSorted(0x30, 0x3a);
 	result.appendSorted(0x660, 0x66a);
 	result.appendSorted(0x6f0, 0x6fa);
@@ -1466,6 +1472,7 @@ private static CodePointSet init_isDigit() {
 	result.appendSorted(0x11c50, 0x11c5a);
 	result.appendSorted(0x11d50, 0x11d5a);
 	result.appendSorted(0x11da0, 0x11daa);
+	result.appendSorted(0x11de0, 0x11dea);
 	result.appendSorted(0x11f50, 0x11f5a);
 	result.appendSorted(0x16130, 0x1613a);
 	result.appendSorted(0x16a60, 0x16a6a);
@@ -1486,7 +1493,7 @@ static final CodePointSet isDigit = init_isDigit();
 
 private static CodePointSet init_isDefined() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(731);
+	result.ensureCapacity(735);
 	result.appendSorted(0x0, 0x378);
 	result.appendSorted(0x37a, 0x380);
 	result.appendSorted(0x384, 0x38b);
@@ -1508,8 +1515,7 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x840, 0x85c);
 	result.appendSorted(0x85e, 0x85f);
 	result.appendSorted(0x860, 0x86b);
-	result.appendSorted(0x870, 0x88f);
-	result.appendSorted(0x890, 0x892);
+	result.appendSorted(0x870, 0x892);
 	result.appendSorted(0x897, 0x984);
 	result.appendSorted(0x985, 0x98d);
 	result.appendSorted(0x98f, 0x991);
@@ -1593,7 +1599,7 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0xc4a, 0xc4e);
 	result.appendSorted(0xc55, 0xc57);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc64);
 	result.appendSorted(0xc66, 0xc70);
 	result.appendSorted(0xc77, 0xc8d);
@@ -1605,7 +1611,7 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0xcc6, 0xcc9);
 	result.appendSorted(0xcca, 0xcce);
 	result.appendSorted(0xcd5, 0xcd7);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce4);
 	result.appendSorted(0xce6, 0xcf0);
 	result.appendSorted(0xcf1, 0xcf4);
@@ -1700,7 +1706,8 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x1a7f, 0x1a8a);
 	result.appendSorted(0x1a90, 0x1a9a);
 	result.appendSorted(0x1aa0, 0x1aae);
-	result.appendSorted(0x1ab0, 0x1acf);
+	result.appendSorted(0x1ab0, 0x1ade);
+	result.appendSorted(0x1ae0, 0x1aec);
 	result.appendSorted(0x1b00, 0x1b4d);
 	result.appendSorted(0x1b4e, 0x1bf4);
 	result.appendSorted(0x1bfc, 0x1c38);
@@ -1729,14 +1736,13 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x2066, 0x2072);
 	result.appendSorted(0x2074, 0x208f);
 	result.appendSorted(0x2090, 0x209d);
-	result.appendSorted(0x20a0, 0x20c1);
+	result.appendSorted(0x20a0, 0x20c2);
 	result.appendSorted(0x20d0, 0x20f1);
 	result.appendSorted(0x2100, 0x218c);
 	result.appendSorted(0x2190, 0x242a);
 	result.appendSorted(0x2440, 0x244b);
 	result.appendSorted(0x2460, 0x2b74);
-	result.appendSorted(0x2b76, 0x2b96);
-	result.appendSorted(0x2b97, 0x2cf4);
+	result.appendSorted(0x2b76, 0x2cf4);
 	result.appendSorted(0x2cf9, 0x2d26);
 	result.appendSorted(0x2d27, 0x2d28);
 	result.appendSorted(0x2d2d, 0x2d2e);
@@ -1766,11 +1772,8 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0xa490, 0xa4c7);
 	result.appendSorted(0xa4d0, 0xa62c);
 	result.appendSorted(0xa640, 0xa6f8);
-	result.appendSorted(0xa700, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa82d);
+	result.appendSorted(0xa700, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa82d);
 	result.appendSorted(0xa830, 0xa83a);
 	result.appendSorted(0xa840, 0xa878);
 	result.appendSorted(0xa880, 0xa8c6);
@@ -1805,10 +1808,7 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0xfb3e, 0xfb3f);
 	result.appendSorted(0xfb40, 0xfb42);
 	result.appendSorted(0xfb43, 0xfb45);
-	result.appendSorted(0xfb46, 0xfbc3);
-	result.appendSorted(0xfbd3, 0xfd90);
-	result.appendSorted(0xfd92, 0xfdc8);
-	result.appendSorted(0xfdcf, 0xfdd0);
+	result.appendSorted(0xfb46, 0xfdd0);
 	result.appendSorted(0xfdf0, 0xfe1a);
 	result.appendSorted(0xfe20, 0xfe53);
 	result.appendSorted(0xfe54, 0xfe67);
@@ -1879,7 +1879,7 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x108fb, 0x1091c);
 	result.appendSorted(0x1091f, 0x1093a);
-	result.appendSorted(0x1093f, 0x10940);
+	result.appendSorted(0x1093f, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109bc, 0x109d0);
 	result.appendSorted(0x109d2, 0x10a04);
@@ -1911,8 +1911,9 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eab, 0x10eae);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
-	result.appendSorted(0x10efc, 0x10f28);
+	result.appendSorted(0x10ec2, 0x10ec8);
+	result.appendSorted(0x10ed0, 0x10ed9);
+	result.appendSorted(0x10efa, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f5a);
 	result.appendSorted(0x10f70, 0x10f8a);
 	result.appendSorted(0x10fb0, 0x10fcc);
@@ -1995,6 +1996,7 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x11a50, 0x11aa3);
 	result.appendSorted(0x11ab0, 0x11af9);
 	result.appendSorted(0x11b00, 0x11b0a);
+	result.appendSorted(0x11b60, 0x11b68);
 	result.appendSorted(0x11bc0, 0x11be2);
 	result.appendSorted(0x11bf0, 0x11bfa);
 	result.appendSorted(0x11c00, 0x11c09);
@@ -2017,6 +2019,8 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x11d90, 0x11d92);
 	result.appendSorted(0x11d93, 0x11d99);
 	result.appendSorted(0x11da0, 0x11daa);
+	result.appendSorted(0x11db0, 0x11ddc);
+	result.appendSorted(0x11de0, 0x11dea);
 	result.appendSorted(0x11ee0, 0x11ef9);
 	result.appendSorted(0x11f00, 0x11f11);
 	result.appendSorted(0x11f12, 0x11f3b);
@@ -2046,14 +2050,16 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x16b7d, 0x16b90);
 	result.appendSorted(0x16d40, 0x16d7a);
 	result.appendSorted(0x16e40, 0x16e9b);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f4f, 0x16f88);
 	result.appendSorted(0x16f8f, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe5);
-	result.appendSorted(0x16ff0, 0x16ff2);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff0, 0x16ff7);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -2068,8 +2074,10 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x1bc80, 0x1bc89);
 	result.appendSorted(0x1bc90, 0x1bc9a);
 	result.appendSorted(0x1bc9c, 0x1bca4);
-	result.appendSorted(0x1cc00, 0x1ccfa);
+	result.appendSorted(0x1cc00, 0x1ccfd);
 	result.appendSorted(0x1cd00, 0x1ceb4);
+	result.appendSorted(0x1ceba, 0x1ced1);
+	result.appendSorted(0x1cee0, 0x1cef1);
 	result.appendSorted(0x1cf00, 0x1cf2e);
 	result.appendSorted(0x1cf30, 0x1cf47);
 	result.appendSorted(0x1cf50, 0x1cfc4);
@@ -2123,6 +2131,9 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x1e4d0, 0x1e4fa);
 	result.appendSorted(0x1e5d0, 0x1e5fb);
 	result.appendSorted(0x1e5ff, 0x1e600);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6f6);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -2180,11 +2191,10 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x1f240, 0x1f249);
 	result.appendSorted(0x1f250, 0x1f252);
 	result.appendSorted(0x1f260, 0x1f266);
-	result.appendSorted(0x1f300, 0x1f6d8);
+	result.appendSorted(0x1f300, 0x1f6d9);
 	result.appendSorted(0x1f6dc, 0x1f6ed);
 	result.appendSorted(0x1f6f0, 0x1f6fd);
-	result.appendSorted(0x1f700, 0x1f777);
-	result.appendSorted(0x1f77b, 0x1f7da);
+	result.appendSorted(0x1f700, 0x1f7da);
 	result.appendSorted(0x1f7e0, 0x1f7ec);
 	result.appendSorted(0x1f7f0, 0x1f7f1);
 	result.appendSorted(0x1f800, 0x1f80c);
@@ -2194,25 +2204,26 @@ private static CodePointSet init_isDefined() {
 	result.appendSorted(0x1f890, 0x1f8ae);
 	result.appendSorted(0x1f8b0, 0x1f8bc);
 	result.appendSorted(0x1f8c0, 0x1f8c2);
-	result.appendSorted(0x1f900, 0x1fa54);
+	result.appendSorted(0x1f8d0, 0x1f8d9);
+	result.appendSorted(0x1f900, 0x1fa58);
 	result.appendSorted(0x1fa60, 0x1fa6e);
 	result.appendSorted(0x1fa70, 0x1fa7d);
-	result.appendSorted(0x1fa80, 0x1fa8a);
-	result.appendSorted(0x1fa8f, 0x1fac7);
-	result.appendSorted(0x1face, 0x1fadd);
-	result.appendSorted(0x1fadf, 0x1faea);
-	result.appendSorted(0x1faf0, 0x1faf9);
+	result.appendSorted(0x1fa80, 0x1fa8b);
+	result.appendSorted(0x1fa8e, 0x1fac7);
+	result.appendSorted(0x1fac8, 0x1fac9);
+	result.appendSorted(0x1facd, 0x1fadd);
+	result.appendSorted(0x1fadf, 0x1faeb);
+	result.appendSorted(0x1faef, 0x1faf9);
 	result.appendSorted(0x1fb00, 0x1fb93);
-	result.appendSorted(0x1fb94, 0x1fbfa);
+	result.appendSorted(0x1fb94, 0x1fbfb);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	result.appendSorted(0xe0001, 0xe0002);
 	result.appendSorted(0xe0020, 0xe0080);
 	result.appendSorted(0xe0100, 0xe01f0);
@@ -2224,7 +2235,7 @@ static final CodePointSet isDefined = init_isDefined();
 
 private static CodePointSet init_isLetter() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(677);
+	result.ensureCapacity(684);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0x61, 0x7b);
 	result.appendSorted(0xaa, 0xab);
@@ -2275,7 +2286,7 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0x840, 0x859);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
+	result.appendSorted(0x889, 0x890);
 	result.appendSorted(0x8a0, 0x8ca);
 	result.appendSorted(0x904, 0x93a);
 	result.appendSorted(0x93d, 0x93e);
@@ -2341,7 +2352,7 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0xc2a, 0xc3a);
 	result.appendSorted(0xc3d, 0xc3e);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc62);
 	result.appendSorted(0xc80, 0xc81);
 	result.appendSorted(0xc85, 0xc8d);
@@ -2350,7 +2361,7 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0xcaa, 0xcb4);
 	result.appendSorted(0xcb5, 0xcba);
 	result.appendSorted(0xcbd, 0xcbe);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce2);
 	result.appendSorted(0xcf1, 0xcf3);
 	result.appendSorted(0xd04, 0xd0d);
@@ -2534,11 +2545,8 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0xa6a0, 0xa6e6);
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa722, 0xa789);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa802);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa802);
 	result.appendSorted(0xa803, 0xa806);
 	result.appendSorted(0xa807, 0xa80b);
 	result.appendSorted(0xa80c, 0xa823);
@@ -2653,6 +2661,7 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a01);
@@ -2675,7 +2684,7 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0x10d6f, 0x10d86);
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
+	result.appendSorted(0x10ec2, 0x10ec8);
 	result.appendSorted(0x10f00, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f46);
@@ -2768,6 +2777,7 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0x11d67, 0x11d69);
 	result.appendSorted(0x11d6a, 0x11d8a);
 	result.appendSorted(0x11d98, 0x11d99);
+	result.appendSorted(0x11db0, 0x11ddc);
 	result.appendSorted(0x11ee0, 0x11ef3);
 	result.appendSorted(0x11f02, 0x11f03);
 	result.appendSorted(0x11f04, 0x11f11);
@@ -2791,14 +2801,17 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0x16b7d, 0x16b90);
 	result.appendSorted(0x16d40, 0x16d6d);
 	result.appendSorted(0x16e40, 0x16e80);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f50, 0x16f51);
 	result.appendSorted(0x16f93, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe4);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff2, 0x16ff4);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -2853,6 +2866,12 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0x1e4d0, 0x1e4ec);
 	result.appendSorted(0x1e5d0, 0x1e5ee);
 	result.appendSorted(0x1e5f0, 0x1e5f1);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6e3);
+	result.appendSorted(0x1e6e4, 0x1e6e6);
+	result.appendSorted(0x1e6e7, 0x1e6ee);
+	result.appendSorted(0x1e6f0, 0x1e6f5);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -2894,21 +2913,20 @@ private static CodePointSet init_isLetter() {
 	result.appendSorted(0x1eea5, 0x1eeaa);
 	result.appendSorted(0x1eeab, 0x1eebc);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet isLetter = init_isLetter();
 
 private static CodePointSet init_isLetterOrDigit() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(728);
+	result.ensureCapacity(736);
 	result.appendSorted(0x30, 0x3a);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0x61, 0x7b);
@@ -2960,7 +2978,7 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0x840, 0x859);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
+	result.appendSorted(0x889, 0x890);
 	result.appendSorted(0x8a0, 0x8ca);
 	result.appendSorted(0x904, 0x93a);
 	result.appendSorted(0x93d, 0x93e);
@@ -3031,7 +3049,7 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0xc2a, 0xc3a);
 	result.appendSorted(0xc3d, 0xc3e);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc62);
 	result.appendSorted(0xc66, 0xc70);
 	result.appendSorted(0xc80, 0xc81);
@@ -3041,7 +3059,7 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0xcaa, 0xcb4);
 	result.appendSorted(0xcb5, 0xcba);
 	result.appendSorted(0xcbd, 0xcbe);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce2);
 	result.appendSorted(0xce6, 0xcf0);
 	result.appendSorted(0xcf1, 0xcf3);
@@ -3236,11 +3254,8 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0xa6a0, 0xa6e6);
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa722, 0xa789);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa802);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa802);
 	result.appendSorted(0xa803, 0xa806);
 	result.appendSorted(0xa807, 0xa80b);
 	result.appendSorted(0xa80c, 0xa823);
@@ -3359,6 +3374,7 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a01);
@@ -3382,7 +3398,7 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0x10d6f, 0x10d86);
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
+	result.appendSorted(0x10ec2, 0x10ec8);
 	result.appendSorted(0x10f00, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f46);
@@ -3490,6 +3506,8 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0x11d6a, 0x11d8a);
 	result.appendSorted(0x11d98, 0x11d99);
 	result.appendSorted(0x11da0, 0x11daa);
+	result.appendSorted(0x11db0, 0x11ddc);
+	result.appendSorted(0x11de0, 0x11dea);
 	result.appendSorted(0x11ee0, 0x11ef3);
 	result.appendSorted(0x11f02, 0x11f03);
 	result.appendSorted(0x11f04, 0x11f11);
@@ -3519,14 +3537,17 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0x16d40, 0x16d6d);
 	result.appendSorted(0x16d70, 0x16d7a);
 	result.appendSorted(0x16e40, 0x16e80);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f50, 0x16f51);
 	result.appendSorted(0x16f93, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe4);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff2, 0x16ff4);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -3586,6 +3607,12 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0x1e4f0, 0x1e4fa);
 	result.appendSorted(0x1e5d0, 0x1e5ee);
 	result.appendSorted(0x1e5f0, 0x1e5fb);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6e3);
+	result.appendSorted(0x1e6e4, 0x1e6e6);
+	result.appendSorted(0x1e6e7, 0x1e6ee);
+	result.appendSorted(0x1e6f0, 0x1e6f5);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -3629,21 +3656,20 @@ private static CodePointSet init_isLetterOrDigit() {
 	result.appendSorted(0x1eeab, 0x1eebc);
 	result.appendSorted(0x1fbf0, 0x1fbfa);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet isLetterOrDigit = init_isLetterOrDigit();
 
 private static CodePointSet init_isAlphabetic() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(757);
+	result.ensureCapacity(761);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0x61, 0x7b);
 	result.appendSorted(0xaa, 0xab);
@@ -3697,7 +3723,7 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x840, 0x859);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
+	result.appendSorted(0x889, 0x890);
 	result.appendSorted(0x897, 0x898);
 	result.appendSorted(0x8a0, 0x8ca);
 	result.appendSorted(0x8d4, 0x8e0);
@@ -3788,7 +3814,7 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0xc4a, 0xc4d);
 	result.appendSorted(0xc55, 0xc57);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc64);
 	result.appendSorted(0xc80, 0xc84);
 	result.appendSorted(0xc85, 0xc8d);
@@ -3800,7 +3826,7 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0xcc6, 0xcc9);
 	result.appendSorted(0xcca, 0xccd);
 	result.appendSorted(0xcd5, 0xcd7);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce4);
 	result.appendSorted(0xcf1, 0xcf4);
 	result.appendSorted(0xd00, 0xd0d);
@@ -4000,11 +4026,8 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0xa67f, 0xa6f0);
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa722, 0xa789);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa806);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa806);
 	result.appendSorted(0xa807, 0xa828);
 	result.appendSorted(0xa840, 0xa874);
 	result.appendSorted(0xa880, 0xa8c4);
@@ -4113,6 +4136,7 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a04);
@@ -4138,8 +4162,8 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eab, 0x10ead);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
-	result.appendSorted(0x10efc, 0x10efd);
+	result.appendSorted(0x10ec2, 0x10ec8);
+	result.appendSorted(0x10efa, 0x10efd);
 	result.appendSorted(0x10f00, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f46);
@@ -4232,6 +4256,7 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x11a50, 0x11a98);
 	result.appendSorted(0x11a9d, 0x11a9e);
 	result.appendSorted(0x11ab0, 0x11af9);
+	result.appendSorted(0x11b60, 0x11b68);
 	result.appendSorted(0x11bc0, 0x11be1);
 	result.appendSorted(0x11c00, 0x11c09);
 	result.appendSorted(0x11c0a, 0x11c37);
@@ -4254,6 +4279,7 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x11d90, 0x11d92);
 	result.appendSorted(0x11d93, 0x11d97);
 	result.appendSorted(0x11d98, 0x11d99);
+	result.appendSorted(0x11db0, 0x11ddc);
 	result.appendSorted(0x11ee0, 0x11ef7);
 	result.appendSorted(0x11f00, 0x11f11);
 	result.appendSorted(0x11f12, 0x11f3b);
@@ -4278,15 +4304,17 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x16b7d, 0x16b90);
 	result.appendSorted(0x16d40, 0x16d6d);
 	result.appendSorted(0x16e40, 0x16e80);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f4f, 0x16f88);
 	result.appendSorted(0x16f8f, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe4);
-	result.appendSorted(0x16ff0, 0x16ff2);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff0, 0x16ff7);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -4348,6 +4376,9 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x1e4d0, 0x1e4ec);
 	result.appendSorted(0x1e5d0, 0x1e5ee);
 	result.appendSorted(0x1e5f0, 0x1e5f1);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6f6);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -4393,14 +4424,13 @@ private static CodePointSet init_isAlphabetic() {
 	result.appendSorted(0x1f150, 0x1f16a);
 	result.appendSorted(0x1f170, 0x1f18a);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet isAlphabetic = init_isAlphabetic();
@@ -4416,26 +4446,26 @@ private static CodePointSet init_isIdeographic() {
 	result.appendSorted(0xf900, 0xfa6e);
 	result.appendSorted(0xfa70, 0xfada);
 	result.appendSorted(0x16fe4, 0x16fe5);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff2, 0x16ff7);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1b170, 0x1b2fc);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet isIdeographic = init_isIdeographic();
 
 private static CodePointSet init_isJavaIdentifierStart() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(701);
+	result.ensureCapacity(708);
 	result.appendSorted(0x24, 0x25);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0x5f, 0x60);
@@ -4491,7 +4521,7 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x840, 0x859);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
+	result.appendSorted(0x889, 0x890);
 	result.appendSorted(0x8a0, 0x8ca);
 	result.appendSorted(0x904, 0x93a);
 	result.appendSorted(0x93d, 0x93e);
@@ -4559,7 +4589,7 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0xc2a, 0xc3a);
 	result.appendSorted(0xc3d, 0xc3e);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc62);
 	result.appendSorted(0xc80, 0xc81);
 	result.appendSorted(0xc85, 0xc8d);
@@ -4568,7 +4598,7 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0xcaa, 0xcb4);
 	result.appendSorted(0xcb5, 0xcba);
 	result.appendSorted(0xcbd, 0xcbe);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce2);
 	result.appendSorted(0xcf1, 0xcf3);
 	result.appendSorted(0xd04, 0xd0d);
@@ -4700,7 +4730,7 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x2071, 0x2072);
 	result.appendSorted(0x207f, 0x2080);
 	result.appendSorted(0x2090, 0x209d);
-	result.appendSorted(0x20a0, 0x20c1);
+	result.appendSorted(0x20a0, 0x20c2);
 	result.appendSorted(0x2102, 0x2103);
 	result.appendSorted(0x2107, 0x2108);
 	result.appendSorted(0x210a, 0x2114);
@@ -4756,11 +4786,8 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0xa6a0, 0xa6f0);
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa722, 0xa789);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa802);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa802);
 	result.appendSorted(0xa803, 0xa806);
 	result.appendSorted(0xa807, 0xa80b);
 	result.appendSorted(0xa80c, 0xa823);
@@ -4884,6 +4911,7 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a01);
@@ -4906,7 +4934,7 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x10d6f, 0x10d86);
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
+	result.appendSorted(0x10ec2, 0x10ec8);
 	result.appendSorted(0x10f00, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f46);
@@ -4999,6 +5027,7 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x11d67, 0x11d69);
 	result.appendSorted(0x11d6a, 0x11d8a);
 	result.appendSorted(0x11d98, 0x11d99);
+	result.appendSorted(0x11db0, 0x11ddc);
 	result.appendSorted(0x11ee0, 0x11ef3);
 	result.appendSorted(0x11f02, 0x11f03);
 	result.appendSorted(0x11f04, 0x11f11);
@@ -5024,14 +5053,17 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x16b7d, 0x16b90);
 	result.appendSorted(0x16d40, 0x16d6d);
 	result.appendSorted(0x16e40, 0x16e80);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f50, 0x16f51);
 	result.appendSorted(0x16f93, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe4);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff2, 0x16ff7);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -5087,6 +5119,12 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x1e4d0, 0x1e4ec);
 	result.appendSorted(0x1e5d0, 0x1e5ee);
 	result.appendSorted(0x1e5f0, 0x1e5f1);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6e3);
+	result.appendSorted(0x1e6e4, 0x1e6e6);
+	result.appendSorted(0x1e6e7, 0x1e6ee);
+	result.appendSorted(0x1e6f0, 0x1e6f5);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -5129,21 +5167,20 @@ private static CodePointSet init_isJavaIdentifierStart() {
 	result.appendSorted(0x1eea5, 0x1eeaa);
 	result.appendSorted(0x1eeab, 0x1eebc);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet isJavaIdentifierStart = init_isJavaIdentifierStart();
 
 private static CodePointSet init_isJavaIdentifierPart() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(823);
+	result.ensureCapacity(828);
 	result.appendSorted(0x0, 0x9);
 	result.appendSorted(0xe, 0x1c);
 	result.appendSorted(0x24, 0x25);
@@ -5205,8 +5242,7 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x840, 0x85c);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
-	result.appendSorted(0x890, 0x892);
+	result.appendSorted(0x889, 0x892);
 	result.appendSorted(0x897, 0x964);
 	result.appendSorted(0x966, 0x970);
 	result.appendSorted(0x971, 0x984);
@@ -5297,7 +5333,7 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0xc4a, 0xc4e);
 	result.appendSorted(0xc55, 0xc57);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc64);
 	result.appendSorted(0xc66, 0xc70);
 	result.appendSorted(0xc80, 0xc84);
@@ -5310,7 +5346,7 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0xcc6, 0xcc9);
 	result.appendSorted(0xcca, 0xcce);
 	result.appendSorted(0xcd5, 0xcd7);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce4);
 	result.appendSorted(0xce6, 0xcf0);
 	result.appendSorted(0xcf1, 0xcf4);
@@ -5421,7 +5457,8 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x1a90, 0x1a9a);
 	result.appendSorted(0x1aa7, 0x1aa8);
 	result.appendSorted(0x1ab0, 0x1abe);
-	result.appendSorted(0x1abf, 0x1acf);
+	result.appendSorted(0x1abf, 0x1ade);
+	result.appendSorted(0x1ae0, 0x1aec);
 	result.appendSorted(0x1b00, 0x1b4d);
 	result.appendSorted(0x1b50, 0x1b5a);
 	result.appendSorted(0x1b6b, 0x1b74);
@@ -5462,7 +5499,7 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x2071, 0x2072);
 	result.appendSorted(0x207f, 0x2080);
 	result.appendSorted(0x2090, 0x209d);
-	result.appendSorted(0x20a0, 0x20c1);
+	result.appendSorted(0x20a0, 0x20c2);
 	result.appendSorted(0x20d0, 0x20dd);
 	result.appendSorted(0x20e1, 0x20e2);
 	result.appendSorted(0x20e5, 0x20f1);
@@ -5521,11 +5558,8 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0xa67f, 0xa6f2);
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa722, 0xa789);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa828);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa828);
 	result.appendSorted(0xa82c, 0xa82d);
 	result.appendSorted(0xa838, 0xa839);
 	result.appendSorted(0xa840, 0xa874);
@@ -5648,6 +5682,7 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a04);
@@ -5676,8 +5711,8 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eab, 0x10ead);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
-	result.appendSorted(0x10efc, 0x10f1d);
+	result.appendSorted(0x10ec2, 0x10ec8);
+	result.appendSorted(0x10efa, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f51);
 	result.appendSorted(0x10f70, 0x10f86);
@@ -5773,6 +5808,7 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x11a50, 0x11a9a);
 	result.appendSorted(0x11a9d, 0x11a9e);
 	result.appendSorted(0x11ab0, 0x11af9);
+	result.appendSorted(0x11b60, 0x11b68);
 	result.appendSorted(0x11bc0, 0x11be1);
 	result.appendSorted(0x11bf0, 0x11bfa);
 	result.appendSorted(0x11c00, 0x11c09);
@@ -5795,6 +5831,8 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x11d90, 0x11d92);
 	result.appendSorted(0x11d93, 0x11d99);
 	result.appendSorted(0x11da0, 0x11daa);
+	result.appendSorted(0x11db0, 0x11ddc);
+	result.appendSorted(0x11de0, 0x11dea);
 	result.appendSorted(0x11ee0, 0x11ef7);
 	result.appendSorted(0x11f00, 0x11f11);
 	result.appendSorted(0x11f12, 0x11f3b);
@@ -5825,15 +5863,17 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x16d40, 0x16d6d);
 	result.appendSorted(0x16d70, 0x16d7a);
 	result.appendSorted(0x16e40, 0x16e80);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f4f, 0x16f88);
 	result.appendSorted(0x16f8f, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe5);
-	result.appendSorted(0x16ff0, 0x16ff2);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff0, 0x16ff7);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -5912,6 +5952,9 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x1e2ff, 0x1e300);
 	result.appendSorted(0x1e4d0, 0x1e4fa);
 	result.appendSorted(0x1e5d0, 0x1e5fb);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6f6);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -5956,14 +5999,13 @@ private static CodePointSet init_isJavaIdentifierPart() {
 	result.appendSorted(0x1eeab, 0x1eebc);
 	result.appendSorted(0x1fbf0, 0x1fbfa);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	result.appendSorted(0xe0001, 0xe0002);
 	result.appendSorted(0xe0020, 0xe0080);
 	result.appendSorted(0xe0100, 0xe01f0);
@@ -5973,7 +6015,7 @@ static final CodePointSet isJavaIdentifierPart = init_isJavaIdentifierPart();
 
 private static CodePointSet init_isUnicodeIdentifierStart() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(678);
+	result.ensureCapacity(685);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0x61, 0x7b);
 	result.appendSorted(0xaa, 0xab);
@@ -6024,7 +6066,7 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0x840, 0x859);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
+	result.appendSorted(0x889, 0x890);
 	result.appendSorted(0x8a0, 0x8ca);
 	result.appendSorted(0x904, 0x93a);
 	result.appendSorted(0x93d, 0x93e);
@@ -6090,7 +6132,7 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0xc2a, 0xc3a);
 	result.appendSorted(0xc3d, 0xc3e);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc62);
 	result.appendSorted(0xc80, 0xc81);
 	result.appendSorted(0xc85, 0xc8d);
@@ -6099,7 +6141,7 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0xcaa, 0xcb4);
 	result.appendSorted(0xcb5, 0xcba);
 	result.appendSorted(0xcbd, 0xcbe);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce2);
 	result.appendSorted(0xcf1, 0xcf3);
 	result.appendSorted(0xd04, 0xd0d);
@@ -6282,11 +6324,8 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0xa6a0, 0xa6f0);
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa722, 0xa789);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa802);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa802);
 	result.appendSorted(0xa803, 0xa806);
 	result.appendSorted(0xa807, 0xa80b);
 	result.appendSorted(0xa80c, 0xa823);
@@ -6402,6 +6441,7 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a01);
@@ -6424,7 +6464,7 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0x10d6f, 0x10d86);
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
+	result.appendSorted(0x10ec2, 0x10ec8);
 	result.appendSorted(0x10f00, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f46);
@@ -6517,6 +6557,7 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0x11d67, 0x11d69);
 	result.appendSorted(0x11d6a, 0x11d8a);
 	result.appendSorted(0x11d98, 0x11d99);
+	result.appendSorted(0x11db0, 0x11ddc);
 	result.appendSorted(0x11ee0, 0x11ef3);
 	result.appendSorted(0x11f02, 0x11f03);
 	result.appendSorted(0x11f04, 0x11f11);
@@ -6541,14 +6582,17 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0x16b7d, 0x16b90);
 	result.appendSorted(0x16d40, 0x16d6d);
 	result.appendSorted(0x16e40, 0x16e80);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f50, 0x16f51);
 	result.appendSorted(0x16f93, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe4);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff2, 0x16ff7);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -6603,6 +6647,12 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0x1e4d0, 0x1e4ec);
 	result.appendSorted(0x1e5d0, 0x1e5ee);
 	result.appendSorted(0x1e5f0, 0x1e5f1);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6e3);
+	result.appendSorted(0x1e6e4, 0x1e6e6);
+	result.appendSorted(0x1e6e7, 0x1e6ee);
+	result.appendSorted(0x1e6f0, 0x1e6f5);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -6644,21 +6694,20 @@ private static CodePointSet init_isUnicodeIdentifierStart() {
 	result.appendSorted(0x1eea5, 0x1eeaa);
 	result.appendSorted(0x1eeab, 0x1eebc);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet isUnicodeIdentifierStart = init_isUnicodeIdentifierStart();
 
 private static CodePointSet init_isUnicodeIdentifierPart() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(807);
+	result.ensureCapacity(812);
 	result.appendSorted(0x0, 0x9);
 	result.appendSorted(0xe, 0x1c);
 	result.appendSorted(0x30, 0x3a);
@@ -6717,8 +6766,7 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x840, 0x85c);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
-	result.appendSorted(0x890, 0x892);
+	result.appendSorted(0x889, 0x892);
 	result.appendSorted(0x897, 0x964);
 	result.appendSorted(0x966, 0x970);
 	result.appendSorted(0x971, 0x984);
@@ -6807,7 +6855,7 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0xc4a, 0xc4e);
 	result.appendSorted(0xc55, 0xc57);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc64);
 	result.appendSorted(0xc66, 0xc70);
 	result.appendSorted(0xc80, 0xc84);
@@ -6820,7 +6868,7 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0xcc6, 0xcc9);
 	result.appendSorted(0xcca, 0xcce);
 	result.appendSorted(0xcd5, 0xcd7);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce4);
 	result.appendSorted(0xce6, 0xcf0);
 	result.appendSorted(0xcf1, 0xcf4);
@@ -6932,7 +6980,8 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x1a90, 0x1a9a);
 	result.appendSorted(0x1aa7, 0x1aa8);
 	result.appendSorted(0x1ab0, 0x1abe);
-	result.appendSorted(0x1abf, 0x1acf);
+	result.appendSorted(0x1abf, 0x1ade);
+	result.appendSorted(0x1ae0, 0x1aec);
 	result.appendSorted(0x1b00, 0x1b4d);
 	result.appendSorted(0x1b50, 0x1b5a);
 	result.appendSorted(0x1b6b, 0x1b74);
@@ -7028,11 +7077,8 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0xa67f, 0xa6f2);
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa722, 0xa789);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa828);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa828);
 	result.appendSorted(0xa82c, 0xa82d);
 	result.appendSorted(0xa840, 0xa874);
 	result.appendSorted(0xa880, 0xa8c6);
@@ -7150,6 +7196,7 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a04);
@@ -7178,8 +7225,8 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eab, 0x10ead);
 	result.appendSorted(0x10eb0, 0x10eb2);
-	result.appendSorted(0x10ec2, 0x10ec5);
-	result.appendSorted(0x10efc, 0x10f1d);
+	result.appendSorted(0x10ec2, 0x10ec8);
+	result.appendSorted(0x10efa, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f51);
 	result.appendSorted(0x10f70, 0x10f86);
@@ -7275,6 +7322,7 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x11a50, 0x11a9a);
 	result.appendSorted(0x11a9d, 0x11a9e);
 	result.appendSorted(0x11ab0, 0x11af9);
+	result.appendSorted(0x11b60, 0x11b68);
 	result.appendSorted(0x11bc0, 0x11be1);
 	result.appendSorted(0x11bf0, 0x11bfa);
 	result.appendSorted(0x11c00, 0x11c09);
@@ -7297,6 +7345,8 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x11d90, 0x11d92);
 	result.appendSorted(0x11d93, 0x11d99);
 	result.appendSorted(0x11da0, 0x11daa);
+	result.appendSorted(0x11db0, 0x11ddc);
+	result.appendSorted(0x11de0, 0x11dea);
 	result.appendSorted(0x11ee0, 0x11ef7);
 	result.appendSorted(0x11f00, 0x11f11);
 	result.appendSorted(0x11f12, 0x11f3b);
@@ -7326,15 +7376,17 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x16d40, 0x16d6d);
 	result.appendSorted(0x16d70, 0x16d7a);
 	result.appendSorted(0x16e40, 0x16e80);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f4f, 0x16f88);
 	result.appendSorted(0x16f8f, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe5);
-	result.appendSorted(0x16ff0, 0x16ff2);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x16ff0, 0x16ff7);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
@@ -7412,6 +7464,9 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x1e2c0, 0x1e2fa);
 	result.appendSorted(0x1e4d0, 0x1e4fa);
 	result.appendSorted(0x1e5d0, 0x1e5fb);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6f6);
+	result.appendSorted(0x1e6fe, 0x1e700);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -7455,14 +7510,13 @@ private static CodePointSet init_isUnicodeIdentifierPart() {
 	result.appendSorted(0x1eeab, 0x1eebc);
 	result.appendSorted(0x1fbf0, 0x1fbfa);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	result.appendSorted(0xe0001, 0xe0002);
 	result.appendSorted(0xe0020, 0xe0080);
 	result.appendSorted(0xe0100, 0xe01f0);
@@ -7663,7 +7717,7 @@ static final CodePointSet isMirrored = init_isMirrored();
 
 private static CodePointSet init_UNASSIGNED() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(731);
+	result.ensureCapacity(735);
 	result.appendSorted(0x378, 0x37a);
 	result.appendSorted(0x380, 0x384);
 	result.appendSorted(0x38b, 0x38c);
@@ -7685,7 +7739,6 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x85c, 0x85e);
 	result.appendSorted(0x85f, 0x860);
 	result.appendSorted(0x86b, 0x870);
-	result.appendSorted(0x88f, 0x890);
 	result.appendSorted(0x892, 0x897);
 	result.appendSorted(0x984, 0x985);
 	result.appendSorted(0x98d, 0x98f);
@@ -7769,7 +7822,7 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0xc49, 0xc4a);
 	result.appendSorted(0xc4e, 0xc55);
 	result.appendSorted(0xc57, 0xc58);
-	result.appendSorted(0xc5b, 0xc5d);
+	result.appendSorted(0xc5b, 0xc5c);
 	result.appendSorted(0xc5e, 0xc60);
 	result.appendSorted(0xc64, 0xc66);
 	result.appendSorted(0xc70, 0xc77);
@@ -7781,7 +7834,7 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0xcc5, 0xcc6);
 	result.appendSorted(0xcc9, 0xcca);
 	result.appendSorted(0xcce, 0xcd5);
-	result.appendSorted(0xcd7, 0xcdd);
+	result.appendSorted(0xcd7, 0xcdc);
 	result.appendSorted(0xcdf, 0xce0);
 	result.appendSorted(0xce4, 0xce6);
 	result.appendSorted(0xcf0, 0xcf1);
@@ -7877,7 +7930,8 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x1a8a, 0x1a90);
 	result.appendSorted(0x1a9a, 0x1aa0);
 	result.appendSorted(0x1aae, 0x1ab0);
-	result.appendSorted(0x1acf, 0x1b00);
+	result.appendSorted(0x1ade, 0x1ae0);
+	result.appendSorted(0x1aec, 0x1b00);
 	result.appendSorted(0x1b4d, 0x1b4e);
 	result.appendSorted(0x1bf4, 0x1bfc);
 	result.appendSorted(0x1c38, 0x1c3b);
@@ -7906,13 +7960,12 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x2072, 0x2074);
 	result.appendSorted(0x208f, 0x2090);
 	result.appendSorted(0x209d, 0x20a0);
-	result.appendSorted(0x20c1, 0x20d0);
+	result.appendSorted(0x20c2, 0x20d0);
 	result.appendSorted(0x20f1, 0x2100);
 	result.appendSorted(0x218c, 0x2190);
 	result.appendSorted(0x242a, 0x2440);
 	result.appendSorted(0x244b, 0x2460);
 	result.appendSorted(0x2b74, 0x2b76);
-	result.appendSorted(0x2b96, 0x2b97);
 	result.appendSorted(0x2cf4, 0x2cf9);
 	result.appendSorted(0x2d26, 0x2d27);
 	result.appendSorted(0x2d28, 0x2d2d);
@@ -7943,10 +7996,7 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0xa4c7, 0xa4d0);
 	result.appendSorted(0xa62c, 0xa640);
 	result.appendSorted(0xa6f8, 0xa700);
-	result.appendSorted(0xa7ce, 0xa7d0);
-	result.appendSorted(0xa7d2, 0xa7d3);
-	result.appendSorted(0xa7d4, 0xa7d5);
-	result.appendSorted(0xa7dd, 0xa7f2);
+	result.appendSorted(0xa7dd, 0xa7f1);
 	result.appendSorted(0xa82d, 0xa830);
 	result.appendSorted(0xa83a, 0xa840);
 	result.appendSorted(0xa878, 0xa880);
@@ -7982,9 +8032,6 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0xfb3f, 0xfb40);
 	result.appendSorted(0xfb42, 0xfb43);
 	result.appendSorted(0xfb45, 0xfb46);
-	result.appendSorted(0xfbc3, 0xfbd3);
-	result.appendSorted(0xfd90, 0xfd92);
-	result.appendSorted(0xfdc8, 0xfdcf);
 	result.appendSorted(0xfdd0, 0xfdf0);
 	result.appendSorted(0xfe1a, 0xfe20);
 	result.appendSorted(0xfe53, 0xfe54);
@@ -8056,7 +8103,7 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x108f6, 0x108fb);
 	result.appendSorted(0x1091c, 0x1091f);
 	result.appendSorted(0x1093a, 0x1093f);
-	result.appendSorted(0x10940, 0x10980);
+	result.appendSorted(0x1095a, 0x10980);
 	result.appendSorted(0x109b8, 0x109bc);
 	result.appendSorted(0x109d0, 0x109d2);
 	result.appendSorted(0x10a04, 0x10a05);
@@ -8088,7 +8135,8 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x10eaa, 0x10eab);
 	result.appendSorted(0x10eae, 0x10eb0);
 	result.appendSorted(0x10eb2, 0x10ec2);
-	result.appendSorted(0x10ec5, 0x10efc);
+	result.appendSorted(0x10ec8, 0x10ed0);
+	result.appendSorted(0x10ed9, 0x10efa);
 	result.appendSorted(0x10f28, 0x10f30);
 	result.appendSorted(0x10f5a, 0x10f70);
 	result.appendSorted(0x10f8a, 0x10fb0);
@@ -8171,7 +8219,8 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x11a48, 0x11a50);
 	result.appendSorted(0x11aa3, 0x11ab0);
 	result.appendSorted(0x11af9, 0x11b00);
-	result.appendSorted(0x11b0a, 0x11bc0);
+	result.appendSorted(0x11b0a, 0x11b60);
+	result.appendSorted(0x11b68, 0x11bc0);
 	result.appendSorted(0x11be2, 0x11bf0);
 	result.appendSorted(0x11bfa, 0x11c00);
 	result.appendSorted(0x11c09, 0x11c0a);
@@ -8193,7 +8242,9 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x11d8f, 0x11d90);
 	result.appendSorted(0x11d92, 0x11d93);
 	result.appendSorted(0x11d99, 0x11da0);
-	result.appendSorted(0x11daa, 0x11ee0);
+	result.appendSorted(0x11daa, 0x11db0);
+	result.appendSorted(0x11ddc, 0x11de0);
+	result.appendSorted(0x11dea, 0x11ee0);
 	result.appendSorted(0x11ef9, 0x11f00);
 	result.appendSorted(0x11f11, 0x11f12);
 	result.appendSorted(0x11f3b, 0x11f3e);
@@ -8222,15 +8273,17 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x16b78, 0x16b7d);
 	result.appendSorted(0x16b90, 0x16d40);
 	result.appendSorted(0x16d7a, 0x16e40);
-	result.appendSorted(0x16e9b, 0x16f00);
+	result.appendSorted(0x16e9b, 0x16ea0);
+	result.appendSorted(0x16eb9, 0x16ebb);
+	result.appendSorted(0x16ed4, 0x16f00);
 	result.appendSorted(0x16f4b, 0x16f4f);
 	result.appendSorted(0x16f88, 0x16f8f);
 	result.appendSorted(0x16fa0, 0x16fe0);
 	result.appendSorted(0x16fe5, 0x16ff0);
-	result.appendSorted(0x16ff2, 0x17000);
-	result.appendSorted(0x187f8, 0x18800);
+	result.appendSorted(0x16ff7, 0x17000);
 	result.appendSorted(0x18cd6, 0x18cff);
-	result.appendSorted(0x18d09, 0x1aff0);
+	result.appendSorted(0x18d1f, 0x18d80);
+	result.appendSorted(0x18df3, 0x1aff0);
 	result.appendSorted(0x1aff4, 0x1aff5);
 	result.appendSorted(0x1affc, 0x1affd);
 	result.appendSorted(0x1afff, 0x1b000);
@@ -8245,8 +8298,10 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x1bc89, 0x1bc90);
 	result.appendSorted(0x1bc9a, 0x1bc9c);
 	result.appendSorted(0x1bca4, 0x1cc00);
-	result.appendSorted(0x1ccfa, 0x1cd00);
-	result.appendSorted(0x1ceb4, 0x1cf00);
+	result.appendSorted(0x1ccfd, 0x1cd00);
+	result.appendSorted(0x1ceb4, 0x1ceba);
+	result.appendSorted(0x1ced1, 0x1cee0);
+	result.appendSorted(0x1cef1, 0x1cf00);
 	result.appendSorted(0x1cf2e, 0x1cf30);
 	result.appendSorted(0x1cf47, 0x1cf50);
 	result.appendSorted(0x1cfc4, 0x1d000);
@@ -8299,7 +8354,10 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x1e300, 0x1e4d0);
 	result.appendSorted(0x1e4fa, 0x1e5d0);
 	result.appendSorted(0x1e5fb, 0x1e5ff);
-	result.appendSorted(0x1e600, 0x1e7e0);
+	result.appendSorted(0x1e600, 0x1e6c0);
+	result.appendSorted(0x1e6df, 0x1e6e0);
+	result.appendSorted(0x1e6f6, 0x1e6fe);
+	result.appendSorted(0x1e700, 0x1e7e0);
 	result.appendSorted(0x1e7e7, 0x1e7e8);
 	result.appendSorted(0x1e7ec, 0x1e7ed);
 	result.appendSorted(0x1e7ef, 0x1e7f0);
@@ -8357,10 +8415,9 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x1f249, 0x1f250);
 	result.appendSorted(0x1f252, 0x1f260);
 	result.appendSorted(0x1f266, 0x1f300);
-	result.appendSorted(0x1f6d8, 0x1f6dc);
+	result.appendSorted(0x1f6d9, 0x1f6dc);
 	result.appendSorted(0x1f6ed, 0x1f6f0);
 	result.appendSorted(0x1f6fd, 0x1f700);
-	result.appendSorted(0x1f777, 0x1f77b);
 	result.appendSorted(0x1f7da, 0x1f7e0);
 	result.appendSorted(0x1f7ec, 0x1f7f0);
 	result.appendSorted(0x1f7f1, 0x1f800);
@@ -8370,26 +8427,27 @@ private static CodePointSet init_UNASSIGNED() {
 	result.appendSorted(0x1f888, 0x1f890);
 	result.appendSorted(0x1f8ae, 0x1f8b0);
 	result.appendSorted(0x1f8bc, 0x1f8c0);
-	result.appendSorted(0x1f8c2, 0x1f900);
-	result.appendSorted(0x1fa54, 0x1fa60);
+	result.appendSorted(0x1f8c2, 0x1f8d0);
+	result.appendSorted(0x1f8d9, 0x1f900);
+	result.appendSorted(0x1fa58, 0x1fa60);
 	result.appendSorted(0x1fa6e, 0x1fa70);
 	result.appendSorted(0x1fa7d, 0x1fa80);
-	result.appendSorted(0x1fa8a, 0x1fa8f);
-	result.appendSorted(0x1fac7, 0x1face);
+	result.appendSorted(0x1fa8b, 0x1fa8e);
+	result.appendSorted(0x1fac7, 0x1fac8);
+	result.appendSorted(0x1fac9, 0x1facd);
 	result.appendSorted(0x1fadd, 0x1fadf);
-	result.appendSorted(0x1faea, 0x1faf0);
+	result.appendSorted(0x1faeb, 0x1faef);
 	result.appendSorted(0x1faf9, 0x1fb00);
 	result.appendSorted(0x1fb93, 0x1fb94);
-	result.appendSorted(0x1fbfa, 0x20000);
+	result.appendSorted(0x1fbfb, 0x20000);
 	result.appendSorted(0x2a6e0, 0x2a700);
-	result.appendSorted(0x2b73a, 0x2b740);
 	result.appendSorted(0x2b81e, 0x2b820);
-	result.appendSorted(0x2cea2, 0x2ceb0);
+	result.appendSorted(0x2ceae, 0x2ceb0);
 	result.appendSorted(0x2ebe1, 0x2ebf0);
 	result.appendSorted(0x2ee5e, 0x2f800);
 	result.appendSorted(0x2fa1e, 0x30000);
 	result.appendSorted(0x3134b, 0x31350);
-	result.appendSorted(0x323b0, 0xe0001);
+	result.appendSorted(0x3347a, 0xe0001);
 	result.appendSorted(0xe0002, 0xe0020);
 	result.appendSorted(0xe0080, 0xe0100);
 	result.appendSorted(0xe01f0, 0xf0000);
@@ -8401,7 +8459,7 @@ static final CodePointSet UNASSIGNED = init_UNASSIGNED();
 
 private static CodePointSet init_UPPERCASE_LETTER() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(651);
+	result.ensureCapacity(655);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0xc0, 0xd7);
 	result.appendSorted(0xd8, 0xdf);
@@ -9004,7 +9062,10 @@ private static CodePointSet init_UPPERCASE_LETTER() {
 	result.appendSorted(0xa7c4, 0xa7c8);
 	result.appendSorted(0xa7c9, 0xa7ca);
 	result.appendSorted(0xa7cb, 0xa7cd);
+	result.appendSorted(0xa7ce, 0xa7cf);
 	result.appendSorted(0xa7d0, 0xa7d1);
+	result.appendSorted(0xa7d2, 0xa7d3);
+	result.appendSorted(0xa7d4, 0xa7d5);
 	result.appendSorted(0xa7d6, 0xa7d7);
 	result.appendSorted(0xa7d8, 0xa7d9);
 	result.appendSorted(0xa7da, 0xa7db);
@@ -9021,6 +9082,7 @@ private static CodePointSet init_UPPERCASE_LETTER() {
 	result.appendSorted(0x10d50, 0x10d66);
 	result.appendSorted(0x118a0, 0x118c0);
 	result.appendSorted(0x16e40, 0x16e60);
+	result.appendSorted(0x16ea0, 0x16eb9);
 	result.appendSorted(0x1d400, 0x1d41a);
 	result.appendSorted(0x1d434, 0x1d44e);
 	result.appendSorted(0x1d468, 0x1d482);
@@ -9059,7 +9121,7 @@ static final CodePointSet UPPERCASE_LETTER = init_UPPERCASE_LETTER();
 
 private static CodePointSet init_LOWERCASE_LETTER() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(662);
+	result.ensureCapacity(664);
 	result.appendSorted(0x61, 0x7b);
 	result.appendSorted(0xb5, 0xb6);
 	result.appendSorted(0xdf, 0xf7);
@@ -9205,7 +9267,7 @@ private static CodePointSet init_LOWERCASE_LETTER() {
 	result.appendSorted(0x24b, 0x24c);
 	result.appendSorted(0x24d, 0x24e);
 	result.appendSorted(0x24f, 0x294);
-	result.appendSorted(0x295, 0x2b0);
+	result.appendSorted(0x296, 0x2b0);
 	result.appendSorted(0x371, 0x372);
 	result.appendSorted(0x373, 0x374);
 	result.appendSorted(0x377, 0x378);
@@ -9666,6 +9728,7 @@ private static CodePointSet init_LOWERCASE_LETTER() {
 	result.appendSorted(0xa7c8, 0xa7c9);
 	result.appendSorted(0xa7ca, 0xa7cb);
 	result.appendSorted(0xa7cd, 0xa7ce);
+	result.appendSorted(0xa7cf, 0xa7d0);
 	result.appendSorted(0xa7d1, 0xa7d2);
 	result.appendSorted(0xa7d3, 0xa7d4);
 	result.appendSorted(0xa7d5, 0xa7d6);
@@ -9690,6 +9753,7 @@ private static CodePointSet init_LOWERCASE_LETTER() {
 	result.appendSorted(0x10d70, 0x10d86);
 	result.appendSorted(0x118c0, 0x118e0);
 	result.appendSorted(0x16e60, 0x16e80);
+	result.appendSorted(0x16ebb, 0x16ed4);
 	result.appendSorted(0x1d41a, 0x1d434);
 	result.appendSorted(0x1d44e, 0x1d455);
 	result.appendSorted(0x1d456, 0x1d468);
@@ -9745,7 +9809,7 @@ static final CodePointSet TITLECASE_LETTER = init_TITLECASE_LETTER();
 
 private static CodePointSet init_MODIFIER_LETTER() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(75);
+	result.ensureCapacity(79);
 	result.appendSorted(0x2b0, 0x2c2);
 	result.appendSorted(0x2c6, 0x2d2);
 	result.appendSorted(0x2e0, 0x2e5);
@@ -9792,7 +9856,7 @@ private static CodePointSet init_MODIFIER_LETTER() {
 	result.appendSorted(0xa717, 0xa720);
 	result.appendSorted(0xa770, 0xa771);
 	result.appendSorted(0xa788, 0xa789);
-	result.appendSorted(0xa7f2, 0xa7f5);
+	result.appendSorted(0xa7f1, 0xa7f5);
 	result.appendSorted(0xa7f8, 0xa7fa);
 	result.appendSorted(0xa9cf, 0xa9d0);
 	result.appendSorted(0xa9e6, 0xa9e7);
@@ -9808,18 +9872,22 @@ private static CodePointSet init_MODIFIER_LETTER() {
 	result.appendSorted(0x107b2, 0x107bb);
 	result.appendSorted(0x10d4e, 0x10d4f);
 	result.appendSorted(0x10d6f, 0x10d70);
+	result.appendSorted(0x10ec5, 0x10ec6);
+	result.appendSorted(0x11dd9, 0x11dda);
 	result.appendSorted(0x16b40, 0x16b44);
 	result.appendSorted(0x16d40, 0x16d43);
 	result.appendSorted(0x16d6b, 0x16d6d);
 	result.appendSorted(0x16f93, 0x16fa0);
 	result.appendSorted(0x16fe0, 0x16fe2);
 	result.appendSorted(0x16fe3, 0x16fe4);
+	result.appendSorted(0x16ff2, 0x16ff4);
 	result.appendSorted(0x1aff0, 0x1aff4);
 	result.appendSorted(0x1aff5, 0x1affc);
 	result.appendSorted(0x1affd, 0x1afff);
 	result.appendSorted(0x1e030, 0x1e06e);
 	result.appendSorted(0x1e137, 0x1e13e);
 	result.appendSorted(0x1e4eb, 0x1e4ec);
+	result.appendSorted(0x1e6ff, 0x1e700);
 	result.appendSorted(0x1e94b, 0x1e94c);
 	return result;
 }
@@ -9827,12 +9895,12 @@ static final CodePointSet MODIFIER_LETTER = init_MODIFIER_LETTER();
 
 private static CodePointSet init_OTHER_LETTER() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(528);
+	result.ensureCapacity(537);
 	result.appendSorted(0xaa, 0xab);
 	result.appendSorted(0xba, 0xbb);
 	result.appendSorted(0x1bb, 0x1bc);
 	result.appendSorted(0x1c0, 0x1c4);
-	result.appendSorted(0x294, 0x295);
+	result.appendSorted(0x294, 0x296);
 	result.appendSorted(0x5d0, 0x5eb);
 	result.appendSorted(0x5ef, 0x5f3);
 	result.appendSorted(0x620, 0x640);
@@ -9852,7 +9920,7 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0x840, 0x859);
 	result.appendSorted(0x860, 0x86b);
 	result.appendSorted(0x870, 0x888);
-	result.appendSorted(0x889, 0x88f);
+	result.appendSorted(0x889, 0x890);
 	result.appendSorted(0x8a0, 0x8c9);
 	result.appendSorted(0x904, 0x93a);
 	result.appendSorted(0x93d, 0x93e);
@@ -9918,7 +9986,7 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0xc2a, 0xc3a);
 	result.appendSorted(0xc3d, 0xc3e);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc62);
 	result.appendSorted(0xc80, 0xc81);
 	result.appendSorted(0xc85, 0xc8d);
@@ -9927,7 +9995,7 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0xcaa, 0xcb4);
 	result.appendSorted(0xcb5, 0xcba);
 	result.appendSorted(0xcbd, 0xcbe);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce2);
 	result.appendSorted(0xcf1, 0xcf3);
 	result.appendSorted(0xd04, 0xd0d);
@@ -10153,6 +10221,7 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0x108f4, 0x108f6);
 	result.appendSorted(0x10900, 0x10916);
 	result.appendSorted(0x10920, 0x1093a);
+	result.appendSorted(0x10940, 0x1095a);
 	result.appendSorted(0x10980, 0x109b8);
 	result.appendSorted(0x109be, 0x109c0);
 	result.appendSorted(0x10a00, 0x10a01);
@@ -10174,6 +10243,7 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0x10e80, 0x10eaa);
 	result.appendSorted(0x10eb0, 0x10eb2);
 	result.appendSorted(0x10ec2, 0x10ec5);
+	result.appendSorted(0x10ec6, 0x10ec8);
 	result.appendSorted(0x10f00, 0x10f1d);
 	result.appendSorted(0x10f27, 0x10f28);
 	result.appendSorted(0x10f30, 0x10f46);
@@ -10265,6 +10335,8 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0x11d67, 0x11d69);
 	result.appendSorted(0x11d6a, 0x11d8a);
 	result.appendSorted(0x11d98, 0x11d99);
+	result.appendSorted(0x11db0, 0x11dd9);
+	result.appendSorted(0x11dda, 0x11ddc);
 	result.appendSorted(0x11ee0, 0x11ef3);
 	result.appendSorted(0x11f02, 0x11f03);
 	result.appendSorted(0x11f04, 0x11f11);
@@ -10288,9 +10360,9 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0x16d43, 0x16d6b);
 	result.appendSorted(0x16f00, 0x16f4b);
 	result.appendSorted(0x16f50, 0x16f51);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18cd6);
-	result.appendSorted(0x18cff, 0x18d09);
+	result.appendSorted(0x17000, 0x18cd6);
+	result.appendSorted(0x18cff, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	result.appendSorted(0x1b000, 0x1b123);
 	result.appendSorted(0x1b132, 0x1b133);
 	result.appendSorted(0x1b150, 0x1b153);
@@ -10309,6 +10381,12 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0x1e4d0, 0x1e4eb);
 	result.appendSorted(0x1e5d0, 0x1e5ee);
 	result.appendSorted(0x1e5f0, 0x1e5f1);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6e3);
+	result.appendSorted(0x1e6e4, 0x1e6e6);
+	result.appendSorted(0x1e6e7, 0x1e6ee);
+	result.appendSorted(0x1e6f0, 0x1e6f5);
+	result.appendSorted(0x1e6fe, 0x1e6ff);
 	result.appendSorted(0x1e7e0, 0x1e7e7);
 	result.appendSorted(0x1e7e8, 0x1e7ec);
 	result.appendSorted(0x1e7ed, 0x1e7ef);
@@ -10348,21 +10426,20 @@ private static CodePointSet init_OTHER_LETTER() {
 	result.appendSorted(0x1eea5, 0x1eeaa);
 	result.appendSorted(0x1eeab, 0x1eebc);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet OTHER_LETTER = init_OTHER_LETTER();
 
 private static CodePointSet init_NON_SPACING_MARK() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(357);
+	result.ensureCapacity(365);
 	result.appendSorted(0x300, 0x370);
 	result.appendSorted(0x483, 0x488);
 	result.appendSorted(0x591, 0x5be);
@@ -10505,7 +10582,8 @@ private static CodePointSet init_NON_SPACING_MARK() {
 	result.appendSorted(0x1a73, 0x1a7d);
 	result.appendSorted(0x1a7f, 0x1a80);
 	result.appendSorted(0x1ab0, 0x1abe);
-	result.appendSorted(0x1abf, 0x1acf);
+	result.appendSorted(0x1abf, 0x1ade);
+	result.appendSorted(0x1ae0, 0x1aec);
 	result.appendSorted(0x1b00, 0x1b04);
 	result.appendSorted(0x1b34, 0x1b35);
 	result.appendSorted(0x1b36, 0x1b3b);
@@ -10587,7 +10665,7 @@ private static CodePointSet init_NON_SPACING_MARK() {
 	result.appendSorted(0x10d24, 0x10d28);
 	result.appendSorted(0x10d69, 0x10d6e);
 	result.appendSorted(0x10eab, 0x10ead);
-	result.appendSorted(0x10efc, 0x10f00);
+	result.appendSorted(0x10efa, 0x10f00);
 	result.appendSorted(0x10f46, 0x10f51);
 	result.appendSorted(0x10f82, 0x10f86);
 	result.appendSorted(0x11001, 0x11002);
@@ -10662,6 +10740,9 @@ private static CodePointSet init_NON_SPACING_MARK() {
 	result.appendSorted(0x11a59, 0x11a5c);
 	result.appendSorted(0x11a8a, 0x11a97);
 	result.appendSorted(0x11a98, 0x11a9a);
+	result.appendSorted(0x11b60, 0x11b61);
+	result.appendSorted(0x11b62, 0x11b65);
+	result.appendSorted(0x11b66, 0x11b67);
 	result.appendSorted(0x11c30, 0x11c37);
 	result.appendSorted(0x11c38, 0x11c3e);
 	result.appendSorted(0x11c3f, 0x11c40);
@@ -10717,6 +10798,10 @@ private static CodePointSet init_NON_SPACING_MARK() {
 	result.appendSorted(0x1e2ec, 0x1e2f0);
 	result.appendSorted(0x1e4ec, 0x1e4f0);
 	result.appendSorted(0x1e5ee, 0x1e5f0);
+	result.appendSorted(0x1e6e3, 0x1e6e4);
+	result.appendSorted(0x1e6e6, 0x1e6e7);
+	result.appendSorted(0x1e6ee, 0x1e6f0);
+	result.appendSorted(0x1e6f5, 0x1e6f6);
 	result.appendSorted(0x1e8d0, 0x1e8d7);
 	result.appendSorted(0x1e944, 0x1e94b);
 	result.appendSorted(0xe0100, 0xe01f0);
@@ -10738,7 +10823,7 @@ static final CodePointSet ENCLOSING_MARK = init_ENCLOSING_MARK();
 
 private static CodePointSet init_COMBINING_SPACING_MARK() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(190);
+	result.ensureCapacity(193);
 	result.appendSorted(0x903, 0x904);
 	result.appendSorted(0x93b, 0x93c);
 	result.appendSorted(0x93e, 0x941);
@@ -10911,6 +10996,9 @@ private static CodePointSet init_COMBINING_SPACING_MARK() {
 	result.appendSorted(0x11a39, 0x11a3a);
 	result.appendSorted(0x11a57, 0x11a59);
 	result.appendSorted(0x11a97, 0x11a98);
+	result.appendSorted(0x11b61, 0x11b62);
+	result.appendSorted(0x11b65, 0x11b66);
+	result.appendSorted(0x11b67, 0x11b68);
 	result.appendSorted(0x11c2f, 0x11c30);
 	result.appendSorted(0x11c3e, 0x11c3f);
 	result.appendSorted(0x11ca9, 0x11caa);
@@ -10935,7 +11023,7 @@ static final CodePointSet COMBINING_SPACING_MARK = init_COMBINING_SPACING_MARK()
 
 private static CodePointSet init_DECIMAL_DIGIT_NUMBER() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(71);
+	result.ensureCapacity(72);
 	result.appendSorted(0x30, 0x3a);
 	result.appendSorted(0x660, 0x66a);
 	result.appendSorted(0x6f0, 0x6fa);
@@ -10993,6 +11081,7 @@ private static CodePointSet init_DECIMAL_DIGIT_NUMBER() {
 	result.appendSorted(0x11c50, 0x11c5a);
 	result.appendSorted(0x11d50, 0x11d5a);
 	result.appendSorted(0x11da0, 0x11daa);
+	result.appendSorted(0x11de0, 0x11dea);
 	result.appendSorted(0x11f50, 0x11f5a);
 	result.appendSorted(0x16130, 0x1613a);
 	result.appendSorted(0x16a60, 0x16a6a);
@@ -11013,7 +11102,7 @@ static final CodePointSet DECIMAL_DIGIT_NUMBER = init_DECIMAL_DIGIT_NUMBER();
 
 private static CodePointSet init_LETTER_NUMBER() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(12);
+	result.ensureCapacity(13);
 	result.appendSorted(0x16ee, 0x16f1);
 	result.appendSorted(0x2160, 0x2183);
 	result.appendSorted(0x2185, 0x2189);
@@ -11026,6 +11115,7 @@ private static CodePointSet init_LETTER_NUMBER() {
 	result.appendSorted(0x1034a, 0x1034b);
 	result.appendSorted(0x103d1, 0x103d6);
 	result.appendSorted(0x12400, 0x1246f);
+	result.appendSorted(0x16ff4, 0x16ff7);
 	return result;
 }
 static final CodePointSet LETTER_NUMBER = init_LETTER_NUMBER();
@@ -11405,7 +11495,7 @@ static final CodePointSet CONNECTOR_PUNCTUATION = init_CONNECTOR_PUNCTUATION();
 
 private static CodePointSet init_OTHER_PUNCTUATION() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(193);
+	result.ensureCapacity(194);
 	result.appendSorted(0x21, 0x24);
 	result.appendSorted(0x25, 0x28);
 	result.appendSorted(0x2a, 0x2b);
@@ -11549,6 +11639,7 @@ private static CodePointSet init_OTHER_PUNCTUATION() {
 	result.appendSorted(0x10af0, 0x10af7);
 	result.appendSorted(0x10b39, 0x10b40);
 	result.appendSorted(0x10b99, 0x10b9d);
+	result.appendSorted(0x10ed0, 0x10ed1);
 	result.appendSorted(0x10f55, 0x10f5a);
 	result.appendSorted(0x10f86, 0x10f8a);
 	result.appendSorted(0x11047, 0x1104e);
@@ -11605,7 +11696,7 @@ static final CodePointSet OTHER_PUNCTUATION = init_OTHER_PUNCTUATION();
 
 private static CodePointSet init_MATH_SYMBOL() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(65);
+	result.ensureCapacity(67);
 	result.appendSorted(0x2b, 0x2c);
 	result.appendSorted(0x3c, 0x3f);
 	result.appendSorted(0x7c, 0x7d);
@@ -11660,6 +11751,7 @@ private static CodePointSet init_MATH_SYMBOL() {
 	result.appendSorted(0xffe2, 0xffe3);
 	result.appendSorted(0xffe9, 0xffed);
 	result.appendSorted(0x10d8e, 0x10d90);
+	result.appendSorted(0x1cef0, 0x1cef1);
 	result.appendSorted(0x1d6c1, 0x1d6c2);
 	result.appendSorted(0x1d6db, 0x1d6dc);
 	result.appendSorted(0x1d6fb, 0x1d6fc);
@@ -11671,6 +11763,7 @@ private static CodePointSet init_MATH_SYMBOL() {
 	result.appendSorted(0x1d7a9, 0x1d7aa);
 	result.appendSorted(0x1d7c3, 0x1d7c4);
 	result.appendSorted(0x1eef0, 0x1eef2);
+	result.appendSorted(0x1f8d0, 0x1f8d9);
 	return result;
 }
 static final CodePointSet MATH_SYMBOL = init_MATH_SYMBOL();
@@ -11689,7 +11782,7 @@ private static CodePointSet init_CURRENCY_SYMBOL() {
 	result.appendSorted(0xbf9, 0xbfa);
 	result.appendSorted(0xe3f, 0xe40);
 	result.appendSorted(0x17db, 0x17dc);
-	result.appendSorted(0x20a0, 0x20c1);
+	result.appendSorted(0x20a0, 0x20c2);
 	result.appendSorted(0xa838, 0xa839);
 	result.appendSorted(0xfdfc, 0xfdfd);
 	result.appendSorted(0xfe69, 0xfe6a);
@@ -11743,7 +11836,7 @@ static final CodePointSet MODIFIER_SYMBOL = init_MODIFIER_SYMBOL();
 
 private static CodePointSet init_OTHER_SYMBOL() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(187);
+	result.ensureCapacity(193);
 	result.appendSorted(0xa6, 0xa7);
 	result.appendSorted(0xa9, 0xaa);
 	result.appendSorted(0xae, 0xaf);
@@ -11823,8 +11916,7 @@ private static CodePointSet init_OTHER_SYMBOL() {
 	result.appendSorted(0x2b00, 0x2b30);
 	result.appendSorted(0x2b45, 0x2b47);
 	result.appendSorted(0x2b4d, 0x2b74);
-	result.appendSorted(0x2b76, 0x2b96);
-	result.appendSorted(0x2b97, 0x2c00);
+	result.appendSorted(0x2b76, 0x2c00);
 	result.appendSorted(0x2ce5, 0x2ceb);
 	result.appendSorted(0x2e50, 0x2e52);
 	result.appendSorted(0x2e80, 0x2e9a);
@@ -11852,8 +11944,10 @@ private static CodePointSet init_OTHER_SYMBOL() {
 	result.appendSorted(0xa836, 0xa838);
 	result.appendSorted(0xa839, 0xa83a);
 	result.appendSorted(0xaa77, 0xaa7a);
+	result.appendSorted(0xfbc3, 0xfbd3);
 	result.appendSorted(0xfd40, 0xfd50);
-	result.appendSorted(0xfdcf, 0xfdd0);
+	result.appendSorted(0xfd90, 0xfd92);
+	result.appendSorted(0xfdc8, 0xfdd0);
 	result.appendSorted(0xfdfd, 0xfe00);
 	result.appendSorted(0xffe4, 0xffe5);
 	result.appendSorted(0xffe8, 0xffe9);
@@ -11867,6 +11961,7 @@ private static CodePointSet init_OTHER_SYMBOL() {
 	result.appendSorted(0x101d0, 0x101fd);
 	result.appendSorted(0x10877, 0x10879);
 	result.appendSorted(0x10ac8, 0x10ac9);
+	result.appendSorted(0x10ed1, 0x10ed9);
 	result.appendSorted(0x1173f, 0x11740);
 	result.appendSorted(0x11fd5, 0x11fdd);
 	result.appendSorted(0x11fe1, 0x11ff2);
@@ -11874,7 +11969,10 @@ private static CodePointSet init_OTHER_SYMBOL() {
 	result.appendSorted(0x16b45, 0x16b46);
 	result.appendSorted(0x1bc9c, 0x1bc9d);
 	result.appendSorted(0x1cc00, 0x1ccf0);
+	result.appendSorted(0x1ccfa, 0x1ccfd);
 	result.appendSorted(0x1cd00, 0x1ceb4);
+	result.appendSorted(0x1ceba, 0x1ced1);
+	result.appendSorted(0x1cee0, 0x1cef0);
 	result.appendSorted(0x1cf50, 0x1cfc4);
 	result.appendSorted(0x1d000, 0x1d0f6);
 	result.appendSorted(0x1d100, 0x1d127);
@@ -11907,11 +12005,10 @@ private static CodePointSet init_OTHER_SYMBOL() {
 	result.appendSorted(0x1f250, 0x1f252);
 	result.appendSorted(0x1f260, 0x1f266);
 	result.appendSorted(0x1f300, 0x1f3fb);
-	result.appendSorted(0x1f400, 0x1f6d8);
+	result.appendSorted(0x1f400, 0x1f6d9);
 	result.appendSorted(0x1f6dc, 0x1f6ed);
 	result.appendSorted(0x1f6f0, 0x1f6fd);
-	result.appendSorted(0x1f700, 0x1f777);
-	result.appendSorted(0x1f77b, 0x1f7da);
+	result.appendSorted(0x1f700, 0x1f7da);
 	result.appendSorted(0x1f7e0, 0x1f7ec);
 	result.appendSorted(0x1f7f0, 0x1f7f1);
 	result.appendSorted(0x1f800, 0x1f80c);
@@ -11921,16 +12018,18 @@ private static CodePointSet init_OTHER_SYMBOL() {
 	result.appendSorted(0x1f890, 0x1f8ae);
 	result.appendSorted(0x1f8b0, 0x1f8bc);
 	result.appendSorted(0x1f8c0, 0x1f8c2);
-	result.appendSorted(0x1f900, 0x1fa54);
+	result.appendSorted(0x1f900, 0x1fa58);
 	result.appendSorted(0x1fa60, 0x1fa6e);
 	result.appendSorted(0x1fa70, 0x1fa7d);
-	result.appendSorted(0x1fa80, 0x1fa8a);
-	result.appendSorted(0x1fa8f, 0x1fac7);
-	result.appendSorted(0x1face, 0x1fadd);
-	result.appendSorted(0x1fadf, 0x1faea);
-	result.appendSorted(0x1faf0, 0x1faf9);
+	result.appendSorted(0x1fa80, 0x1fa8b);
+	result.appendSorted(0x1fa8e, 0x1fac7);
+	result.appendSorted(0x1fac8, 0x1fac9);
+	result.appendSorted(0x1facd, 0x1fadd);
+	result.appendSorted(0x1fadf, 0x1faeb);
+	result.appendSorted(0x1faef, 0x1faf9);
 	result.appendSorted(0x1fb00, 0x1fb93);
 	result.appendSorted(0x1fb94, 0x1fbf0);
+	result.appendSorted(0x1fbfa, 0x1fbfb);
 	return result;
 }
 static final CodePointSet OTHER_SYMBOL = init_OTHER_SYMBOL();
@@ -11972,7 +12071,7 @@ static final CodePointSet FINAL_QUOTE_PUNCTUATION = init_FINAL_QUOTE_PUNCTUATION
 
 private static CodePointSet init_COMMON() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(174);
+	result.ensureCapacity(176);
 	result.appendSorted(0x0, 0x41);
 	result.appendSorted(0x5b, 0x61);
 	result.appendSorted(0x7b, 0xaa);
@@ -12013,7 +12112,7 @@ private static CodePointSet init_COMMON() {
 	result.appendSorted(0x2066, 0x2071);
 	result.appendSorted(0x2074, 0x207f);
 	result.appendSorted(0x2080, 0x208f);
-	result.appendSorted(0x20a0, 0x20c1);
+	result.appendSorted(0x20a0, 0x20c2);
 	result.appendSorted(0x2100, 0x2126);
 	result.appendSorted(0x2127, 0x212a);
 	result.appendSorted(0x212c, 0x2132);
@@ -12024,8 +12123,7 @@ private static CodePointSet init_COMMON() {
 	result.appendSorted(0x2440, 0x244b);
 	result.appendSorted(0x2460, 0x2800);
 	result.appendSorted(0x2900, 0x2b74);
-	result.appendSorted(0x2b76, 0x2b96);
-	result.appendSorted(0x2b97, 0x2c00);
+	result.appendSorted(0x2b76, 0x2c00);
 	result.appendSorted(0x2e00, 0x2e5e);
 	result.appendSorted(0x2ff0, 0x3005);
 	result.appendSorted(0x3006, 0x3007);
@@ -12071,8 +12169,10 @@ private static CodePointSet init_COMMON() {
 	result.appendSorted(0x101d0, 0x101fd);
 	result.appendSorted(0x102e1, 0x102fc);
 	result.appendSorted(0x1bca0, 0x1bca4);
-	result.appendSorted(0x1cc00, 0x1ccfa);
+	result.appendSorted(0x1cc00, 0x1ccfd);
 	result.appendSorted(0x1cd00, 0x1ceb4);
+	result.appendSorted(0x1ceba, 0x1ced1);
+	result.appendSorted(0x1cee0, 0x1cef1);
 	result.appendSorted(0x1cf50, 0x1cfc4);
 	result.appendSorted(0x1d000, 0x1d0f6);
 	result.appendSorted(0x1d100, 0x1d127);
@@ -12121,11 +12221,10 @@ private static CodePointSet init_COMMON() {
 	result.appendSorted(0x1f240, 0x1f249);
 	result.appendSorted(0x1f250, 0x1f252);
 	result.appendSorted(0x1f260, 0x1f266);
-	result.appendSorted(0x1f300, 0x1f6d8);
+	result.appendSorted(0x1f300, 0x1f6d9);
 	result.appendSorted(0x1f6dc, 0x1f6ed);
 	result.appendSorted(0x1f6f0, 0x1f6fd);
-	result.appendSorted(0x1f700, 0x1f777);
-	result.appendSorted(0x1f77b, 0x1f7da);
+	result.appendSorted(0x1f700, 0x1f7da);
 	result.appendSorted(0x1f7e0, 0x1f7ec);
 	result.appendSorted(0x1f7f0, 0x1f7f1);
 	result.appendSorted(0x1f800, 0x1f80c);
@@ -12135,16 +12234,18 @@ private static CodePointSet init_COMMON() {
 	result.appendSorted(0x1f890, 0x1f8ae);
 	result.appendSorted(0x1f8b0, 0x1f8bc);
 	result.appendSorted(0x1f8c0, 0x1f8c2);
-	result.appendSorted(0x1f900, 0x1fa54);
+	result.appendSorted(0x1f8d0, 0x1f8d9);
+	result.appendSorted(0x1f900, 0x1fa58);
 	result.appendSorted(0x1fa60, 0x1fa6e);
 	result.appendSorted(0x1fa70, 0x1fa7d);
-	result.appendSorted(0x1fa80, 0x1fa8a);
-	result.appendSorted(0x1fa8f, 0x1fac7);
-	result.appendSorted(0x1face, 0x1fadd);
-	result.appendSorted(0x1fadf, 0x1faea);
-	result.appendSorted(0x1faf0, 0x1faf9);
+	result.appendSorted(0x1fa80, 0x1fa8b);
+	result.appendSorted(0x1fa8e, 0x1fac7);
+	result.appendSorted(0x1fac8, 0x1fac9);
+	result.appendSorted(0x1facd, 0x1fadd);
+	result.appendSorted(0x1fadf, 0x1faeb);
+	result.appendSorted(0x1faef, 0x1faf9);
 	result.appendSorted(0x1fb00, 0x1fb93);
-	result.appendSorted(0x1fb94, 0x1fbfa);
+	result.appendSorted(0x1fb94, 0x1fbfb);
 	result.appendSorted(0xe0001, 0xe0002);
 	result.appendSorted(0xe0020, 0xe0080);
 	return result;
@@ -12153,7 +12254,7 @@ static final CodePointSet COMMON = init_COMMON();
 
 private static CodePointSet init_LATIN() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(39);
+	result.ensureCapacity(36);
 	result.appendSorted(0x41, 0x5b);
 	result.appendSorted(0x61, 0x7b);
 	result.appendSorted(0xaa, 0xab);
@@ -12177,11 +12278,8 @@ private static CodePointSet init_LATIN() {
 	result.appendSorted(0x2160, 0x2189);
 	result.appendSorted(0x2c60, 0x2c80);
 	result.appendSorted(0xa722, 0xa788);
-	result.appendSorted(0xa78b, 0xa7ce);
-	result.appendSorted(0xa7d0, 0xa7d2);
-	result.appendSorted(0xa7d3, 0xa7d4);
-	result.appendSorted(0xa7d5, 0xa7dd);
-	result.appendSorted(0xa7f2, 0xa800);
+	result.appendSorted(0xa78b, 0xa7dd);
+	result.appendSorted(0xa7f1, 0xa800);
 	result.appendSorted(0xab30, 0xab5b);
 	result.appendSorted(0xab5c, 0xab65);
 	result.appendSorted(0xab66, 0xab6a);
@@ -12286,7 +12384,7 @@ static final CodePointSet HEBREW = init_HEBREW();
 
 private static CodePointSet init_ARABIC() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(59);
+	result.ensureCapacity(56);
 	result.appendSorted(0x600, 0x605);
 	result.appendSorted(0x606, 0x60c);
 	result.appendSorted(0x60d, 0x61b);
@@ -12297,21 +12395,18 @@ private static CodePointSet init_ARABIC() {
 	result.appendSorted(0x671, 0x6dd);
 	result.appendSorted(0x6de, 0x700);
 	result.appendSorted(0x750, 0x780);
-	result.appendSorted(0x870, 0x88f);
-	result.appendSorted(0x890, 0x892);
+	result.appendSorted(0x870, 0x892);
 	result.appendSorted(0x897, 0x8e2);
 	result.appendSorted(0x8e3, 0x900);
-	result.appendSorted(0xfb50, 0xfbc3);
-	result.appendSorted(0xfbd3, 0xfd3e);
-	result.appendSorted(0xfd40, 0xfd90);
-	result.appendSorted(0xfd92, 0xfdc8);
-	result.appendSorted(0xfdcf, 0xfdd0);
+	result.appendSorted(0xfb50, 0xfd3e);
+	result.appendSorted(0xfd40, 0xfdd0);
 	result.appendSorted(0xfdf0, 0xfe00);
 	result.appendSorted(0xfe70, 0xfe75);
 	result.appendSorted(0xfe76, 0xfefd);
 	result.appendSorted(0x10e60, 0x10e7f);
-	result.appendSorted(0x10ec2, 0x10ec5);
-	result.appendSorted(0x10efc, 0x10f00);
+	result.appendSorted(0x10ec2, 0x10ec8);
+	result.appendSorted(0x10ed0, 0x10ed9);
+	result.appendSorted(0x10efa, 0x10f00);
 	result.appendSorted(0x1ee00, 0x1ee04);
 	result.appendSorted(0x1ee05, 0x1ee20);
 	result.appendSorted(0x1ee21, 0x1ee23);
@@ -12504,7 +12599,7 @@ private static CodePointSet init_TELUGU() {
 	result.appendSorted(0xc4a, 0xc4e);
 	result.appendSorted(0xc55, 0xc57);
 	result.appendSorted(0xc58, 0xc5b);
-	result.appendSorted(0xc5d, 0xc5e);
+	result.appendSorted(0xc5c, 0xc5e);
 	result.appendSorted(0xc60, 0xc64);
 	result.appendSorted(0xc66, 0xc70);
 	result.appendSorted(0xc77, 0xc80);
@@ -12524,7 +12619,7 @@ private static CodePointSet init_KANNADA() {
 	result.appendSorted(0xcc6, 0xcc9);
 	result.appendSorted(0xcca, 0xcce);
 	result.appendSorted(0xcd5, 0xcd7);
-	result.appendSorted(0xcdd, 0xcdf);
+	result.appendSorted(0xcdc, 0xcdf);
 	result.appendSorted(0xce0, 0xce4);
 	result.appendSorted(0xce6, 0xcf0);
 	result.appendSorted(0xcf1, 0xcf4);
@@ -12806,7 +12901,7 @@ static final CodePointSet BOPOMOFO = init_BOPOMOFO();
 
 private static CodePointSet init_HAN() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(22);
+	result.ensureCapacity(21);
 	result.appendSorted(0x2e80, 0x2e9a);
 	result.appendSorted(0x2e9b, 0x2ef4);
 	result.appendSorted(0x2f00, 0x2fd6);
@@ -12819,16 +12914,15 @@ private static CodePointSet init_HAN() {
 	result.appendSorted(0xf900, 0xfa6e);
 	result.appendSorted(0xfa70, 0xfada);
 	result.appendSorted(0x16fe2, 0x16fe4);
-	result.appendSorted(0x16ff0, 0x16ff2);
+	result.appendSorted(0x16ff0, 0x16ff7);
 	result.appendSorted(0x20000, 0x2a6e0);
-	result.appendSorted(0x2a700, 0x2b73a);
-	result.appendSorted(0x2b740, 0x2b81e);
-	result.appendSorted(0x2b820, 0x2cea2);
+	result.appendSorted(0x2a700, 0x2b81e);
+	result.appendSorted(0x2b820, 0x2ceae);
 	result.appendSorted(0x2ceb0, 0x2ebe1);
 	result.appendSorted(0x2ebf0, 0x2ee5e);
 	result.appendSorted(0x2f800, 0x2fa1e);
 	result.appendSorted(0x30000, 0x3134b);
-	result.appendSorted(0x31350, 0x323b0);
+	result.appendSorted(0x31350, 0x3347a);
 	return result;
 }
 static final CodePointSet HAN = init_HAN();
@@ -12869,13 +12963,14 @@ static final CodePointSet DESERET = init_DESERET();
 
 private static CodePointSet init_INHERITED() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(29);
+	result.ensureCapacity(30);
 	result.appendSorted(0x300, 0x370);
 	result.appendSorted(0x485, 0x487);
 	result.appendSorted(0x64b, 0x656);
 	result.appendSorted(0x670, 0x671);
 	result.appendSorted(0x951, 0x955);
-	result.appendSorted(0x1ab0, 0x1acf);
+	result.appendSorted(0x1ab0, 0x1ade);
+	result.appendSorted(0x1ae0, 0x1aec);
 	result.appendSorted(0x1cd0, 0x1cd3);
 	result.appendSorted(0x1cd4, 0x1ce1);
 	result.appendSorted(0x1ce2, 0x1ce9);
@@ -13453,8 +13548,9 @@ static final CodePointSet CHAKMA = init_CHAKMA();
 
 private static CodePointSet init_SHARADA() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(1);
+	result.ensureCapacity(2);
 	result.appendSorted(0x11180, 0x111e0);
+	result.appendSorted(0x11b60, 0x11b68);
 	return result;
 }
 static final CodePointSet SHARADA = init_SHARADA();
@@ -13814,9 +13910,9 @@ private static CodePointSet init_TANGUT() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
 	result.ensureCapacity(4);
 	result.appendSorted(0x16fe0, 0x16fe1);
-	result.appendSorted(0x17000, 0x187f8);
-	result.appendSorted(0x18800, 0x18b00);
-	result.appendSorted(0x18d00, 0x18d09);
+	result.appendSorted(0x17000, 0x18b00);
+	result.appendSorted(0x18d00, 0x18d1f);
+	result.appendSorted(0x18d80, 0x18df3);
 	return result;
 }
 static final CodePointSet TANGUT = init_TANGUT();
@@ -14139,9 +14235,45 @@ private static CodePointSet init_OL_ONAL() {
 }
 static final CodePointSet OL_ONAL = init_OL_ONAL();
 
+private static CodePointSet init_SIDETIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10940, 0x1095a);
+	return result;
+}
+static final CodePointSet SIDETIC = init_SIDETIC();
+
+private static CodePointSet init_TOLONG_SIKI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(2);
+	result.appendSorted(0x11db0, 0x11ddc);
+	result.appendSorted(0x11de0, 0x11dea);
+	return result;
+}
+static final CodePointSet TOLONG_SIKI = init_TOLONG_SIKI();
+
+private static CodePointSet init_BERIA_ERFE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(2);
+	result.appendSorted(0x16ea0, 0x16eb9);
+	result.appendSorted(0x16ebb, 0x16ed4);
+	return result;
+}
+static final CodePointSet BERIA_ERFE = init_BERIA_ERFE();
+
+private static CodePointSet init_TAI_YO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(3);
+	result.appendSorted(0x1e6c0, 0x1e6df);
+	result.appendSorted(0x1e6e0, 0x1e6f6);
+	result.appendSorted(0x1e6fe, 0x1e700);
+	return result;
+}
+static final CodePointSet TAI_YO = init_TAI_YO();
+
 private static CodePointSet init_UNKNOWN() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
-	result.ensureCapacity(729);
+	result.ensureCapacity(733);
 	result.appendSorted(0x378, 0x37a);
 	result.appendSorted(0x380, 0x384);
 	result.appendSorted(0x38b, 0x38c);
@@ -14163,7 +14295,6 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x85c, 0x85e);
 	result.appendSorted(0x85f, 0x860);
 	result.appendSorted(0x86b, 0x870);
-	result.appendSorted(0x88f, 0x890);
 	result.appendSorted(0x892, 0x897);
 	result.appendSorted(0x984, 0x985);
 	result.appendSorted(0x98d, 0x98f);
@@ -14247,7 +14378,7 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0xc49, 0xc4a);
 	result.appendSorted(0xc4e, 0xc55);
 	result.appendSorted(0xc57, 0xc58);
-	result.appendSorted(0xc5b, 0xc5d);
+	result.appendSorted(0xc5b, 0xc5c);
 	result.appendSorted(0xc5e, 0xc60);
 	result.appendSorted(0xc64, 0xc66);
 	result.appendSorted(0xc70, 0xc77);
@@ -14259,7 +14390,7 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0xcc5, 0xcc6);
 	result.appendSorted(0xcc9, 0xcca);
 	result.appendSorted(0xcce, 0xcd5);
-	result.appendSorted(0xcd7, 0xcdd);
+	result.appendSorted(0xcd7, 0xcdc);
 	result.appendSorted(0xcdf, 0xce0);
 	result.appendSorted(0xce4, 0xce6);
 	result.appendSorted(0xcf0, 0xcf1);
@@ -14355,7 +14486,8 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x1a8a, 0x1a90);
 	result.appendSorted(0x1a9a, 0x1aa0);
 	result.appendSorted(0x1aae, 0x1ab0);
-	result.appendSorted(0x1acf, 0x1b00);
+	result.appendSorted(0x1ade, 0x1ae0);
+	result.appendSorted(0x1aec, 0x1b00);
 	result.appendSorted(0x1b4d, 0x1b4e);
 	result.appendSorted(0x1bf4, 0x1bfc);
 	result.appendSorted(0x1c38, 0x1c3b);
@@ -14384,13 +14516,12 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x2072, 0x2074);
 	result.appendSorted(0x208f, 0x2090);
 	result.appendSorted(0x209d, 0x20a0);
-	result.appendSorted(0x20c1, 0x20d0);
+	result.appendSorted(0x20c2, 0x20d0);
 	result.appendSorted(0x20f1, 0x2100);
 	result.appendSorted(0x218c, 0x2190);
 	result.appendSorted(0x242a, 0x2440);
 	result.appendSorted(0x244b, 0x2460);
 	result.appendSorted(0x2b74, 0x2b76);
-	result.appendSorted(0x2b96, 0x2b97);
 	result.appendSorted(0x2cf4, 0x2cf9);
 	result.appendSorted(0x2d26, 0x2d27);
 	result.appendSorted(0x2d28, 0x2d2d);
@@ -14421,10 +14552,7 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0xa4c7, 0xa4d0);
 	result.appendSorted(0xa62c, 0xa640);
 	result.appendSorted(0xa6f8, 0xa700);
-	result.appendSorted(0xa7ce, 0xa7d0);
-	result.appendSorted(0xa7d2, 0xa7d3);
-	result.appendSorted(0xa7d4, 0xa7d5);
-	result.appendSorted(0xa7dd, 0xa7f2);
+	result.appendSorted(0xa7dd, 0xa7f1);
 	result.appendSorted(0xa82d, 0xa830);
 	result.appendSorted(0xa83a, 0xa840);
 	result.appendSorted(0xa878, 0xa880);
@@ -14460,9 +14588,6 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0xfb3f, 0xfb40);
 	result.appendSorted(0xfb42, 0xfb43);
 	result.appendSorted(0xfb45, 0xfb46);
-	result.appendSorted(0xfbc3, 0xfbd3);
-	result.appendSorted(0xfd90, 0xfd92);
-	result.appendSorted(0xfdc8, 0xfdcf);
 	result.appendSorted(0xfdd0, 0xfdf0);
 	result.appendSorted(0xfe1a, 0xfe20);
 	result.appendSorted(0xfe53, 0xfe54);
@@ -14534,7 +14659,7 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x108f6, 0x108fb);
 	result.appendSorted(0x1091c, 0x1091f);
 	result.appendSorted(0x1093a, 0x1093f);
-	result.appendSorted(0x10940, 0x10980);
+	result.appendSorted(0x1095a, 0x10980);
 	result.appendSorted(0x109b8, 0x109bc);
 	result.appendSorted(0x109d0, 0x109d2);
 	result.appendSorted(0x10a04, 0x10a05);
@@ -14566,7 +14691,8 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x10eaa, 0x10eab);
 	result.appendSorted(0x10eae, 0x10eb0);
 	result.appendSorted(0x10eb2, 0x10ec2);
-	result.appendSorted(0x10ec5, 0x10efc);
+	result.appendSorted(0x10ec8, 0x10ed0);
+	result.appendSorted(0x10ed9, 0x10efa);
 	result.appendSorted(0x10f28, 0x10f30);
 	result.appendSorted(0x10f5a, 0x10f70);
 	result.appendSorted(0x10f8a, 0x10fb0);
@@ -14649,7 +14775,8 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x11a48, 0x11a50);
 	result.appendSorted(0x11aa3, 0x11ab0);
 	result.appendSorted(0x11af9, 0x11b00);
-	result.appendSorted(0x11b0a, 0x11bc0);
+	result.appendSorted(0x11b0a, 0x11b60);
+	result.appendSorted(0x11b68, 0x11bc0);
 	result.appendSorted(0x11be2, 0x11bf0);
 	result.appendSorted(0x11bfa, 0x11c00);
 	result.appendSorted(0x11c09, 0x11c0a);
@@ -14671,7 +14798,9 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x11d8f, 0x11d90);
 	result.appendSorted(0x11d92, 0x11d93);
 	result.appendSorted(0x11d99, 0x11da0);
-	result.appendSorted(0x11daa, 0x11ee0);
+	result.appendSorted(0x11daa, 0x11db0);
+	result.appendSorted(0x11ddc, 0x11de0);
+	result.appendSorted(0x11dea, 0x11ee0);
 	result.appendSorted(0x11ef9, 0x11f00);
 	result.appendSorted(0x11f11, 0x11f12);
 	result.appendSorted(0x11f3b, 0x11f3e);
@@ -14700,15 +14829,17 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x16b78, 0x16b7d);
 	result.appendSorted(0x16b90, 0x16d40);
 	result.appendSorted(0x16d7a, 0x16e40);
-	result.appendSorted(0x16e9b, 0x16f00);
+	result.appendSorted(0x16e9b, 0x16ea0);
+	result.appendSorted(0x16eb9, 0x16ebb);
+	result.appendSorted(0x16ed4, 0x16f00);
 	result.appendSorted(0x16f4b, 0x16f4f);
 	result.appendSorted(0x16f88, 0x16f8f);
 	result.appendSorted(0x16fa0, 0x16fe0);
 	result.appendSorted(0x16fe5, 0x16ff0);
-	result.appendSorted(0x16ff2, 0x17000);
-	result.appendSorted(0x187f8, 0x18800);
+	result.appendSorted(0x16ff7, 0x17000);
 	result.appendSorted(0x18cd6, 0x18cff);
-	result.appendSorted(0x18d09, 0x1aff0);
+	result.appendSorted(0x18d1f, 0x18d80);
+	result.appendSorted(0x18df3, 0x1aff0);
 	result.appendSorted(0x1aff4, 0x1aff5);
 	result.appendSorted(0x1affc, 0x1affd);
 	result.appendSorted(0x1afff, 0x1b000);
@@ -14723,8 +14854,10 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x1bc89, 0x1bc90);
 	result.appendSorted(0x1bc9a, 0x1bc9c);
 	result.appendSorted(0x1bca4, 0x1cc00);
-	result.appendSorted(0x1ccfa, 0x1cd00);
-	result.appendSorted(0x1ceb4, 0x1cf00);
+	result.appendSorted(0x1ccfd, 0x1cd00);
+	result.appendSorted(0x1ceb4, 0x1ceba);
+	result.appendSorted(0x1ced1, 0x1cee0);
+	result.appendSorted(0x1cef1, 0x1cf00);
 	result.appendSorted(0x1cf2e, 0x1cf30);
 	result.appendSorted(0x1cf47, 0x1cf50);
 	result.appendSorted(0x1cfc4, 0x1d000);
@@ -14777,7 +14910,10 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x1e300, 0x1e4d0);
 	result.appendSorted(0x1e4fa, 0x1e5d0);
 	result.appendSorted(0x1e5fb, 0x1e5ff);
-	result.appendSorted(0x1e600, 0x1e7e0);
+	result.appendSorted(0x1e600, 0x1e6c0);
+	result.appendSorted(0x1e6df, 0x1e6e0);
+	result.appendSorted(0x1e6f6, 0x1e6fe);
+	result.appendSorted(0x1e700, 0x1e7e0);
 	result.appendSorted(0x1e7e7, 0x1e7e8);
 	result.appendSorted(0x1e7ec, 0x1e7ed);
 	result.appendSorted(0x1e7ef, 0x1e7f0);
@@ -14835,10 +14971,9 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x1f249, 0x1f250);
 	result.appendSorted(0x1f252, 0x1f260);
 	result.appendSorted(0x1f266, 0x1f300);
-	result.appendSorted(0x1f6d8, 0x1f6dc);
+	result.appendSorted(0x1f6d9, 0x1f6dc);
 	result.appendSorted(0x1f6ed, 0x1f6f0);
 	result.appendSorted(0x1f6fd, 0x1f700);
-	result.appendSorted(0x1f777, 0x1f77b);
 	result.appendSorted(0x1f7da, 0x1f7e0);
 	result.appendSorted(0x1f7ec, 0x1f7f0);
 	result.appendSorted(0x1f7f1, 0x1f800);
@@ -14848,26 +14983,27 @@ private static CodePointSet init_UNKNOWN() {
 	result.appendSorted(0x1f888, 0x1f890);
 	result.appendSorted(0x1f8ae, 0x1f8b0);
 	result.appendSorted(0x1f8bc, 0x1f8c0);
-	result.appendSorted(0x1f8c2, 0x1f900);
-	result.appendSorted(0x1fa54, 0x1fa60);
+	result.appendSorted(0x1f8c2, 0x1f8d0);
+	result.appendSorted(0x1f8d9, 0x1f900);
+	result.appendSorted(0x1fa58, 0x1fa60);
 	result.appendSorted(0x1fa6e, 0x1fa70);
 	result.appendSorted(0x1fa7d, 0x1fa80);
-	result.appendSorted(0x1fa8a, 0x1fa8f);
-	result.appendSorted(0x1fac7, 0x1face);
+	result.appendSorted(0x1fa8b, 0x1fa8e);
+	result.appendSorted(0x1fac7, 0x1fac8);
+	result.appendSorted(0x1fac9, 0x1facd);
 	result.appendSorted(0x1fadd, 0x1fadf);
-	result.appendSorted(0x1faea, 0x1faf0);
+	result.appendSorted(0x1faeb, 0x1faef);
 	result.appendSorted(0x1faf9, 0x1fb00);
 	result.appendSorted(0x1fb93, 0x1fb94);
-	result.appendSorted(0x1fbfa, 0x20000);
+	result.appendSorted(0x1fbfb, 0x20000);
 	result.appendSorted(0x2a6e0, 0x2a700);
-	result.appendSorted(0x2b73a, 0x2b740);
 	result.appendSorted(0x2b81e, 0x2b820);
-	result.appendSorted(0x2cea2, 0x2ceb0);
+	result.appendSorted(0x2ceae, 0x2ceb0);
 	result.appendSorted(0x2ebe1, 0x2ebf0);
 	result.appendSorted(0x2ee5e, 0x2f800);
 	result.appendSorted(0x2fa1e, 0x30000);
 	result.appendSorted(0x3134b, 0x31350);
-	result.appendSorted(0x323b0, 0xe0001);
+	result.appendSorted(0x3347a, 0xe0001);
 	result.appendSorted(0xe0002, 0xe0020);
 	result.appendSorted(0xe0080, 0xe0100);
 	result.appendSorted(0xe01f0, 0x110000);
@@ -15048,6 +15184,10 @@ static CodePointSet scriptByEnumName(String enumName) {
 		case "GURUNG_KHEMA": return GURUNG_KHEMA;
 		case "KIRAT_RAI": return KIRAT_RAI;
 		case "OL_ONAL": return OL_ONAL;
+		case "SIDETIC": return SIDETIC;
+		case "TOLONG_SIKI": return TOLONG_SIKI;
+		case "BERIA_ERFE": return BERIA_ERFE;
+		case "TAI_YO": return TAI_YO;
 		case "UNKNOWN": return UNKNOWN;
 		default: return null;
 	}
@@ -16613,6 +16753,14 @@ private static CodePointSet init_BLOCK_LYDIAN() {
 }
 static final CodePointSet BLOCK_LYDIAN = init_BLOCK_LYDIAN();
 
+private static CodePointSet init_BLOCK_SIDETIC() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x10940, 0x10960);
+	return result;
+}
+static final CodePointSet BLOCK_SIDETIC = init_BLOCK_SIDETIC();
+
 private static CodePointSet init_BLOCK_MEROITIC_HIEROGLYPHS() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
 	result.ensureCapacity(1);
@@ -17021,6 +17169,14 @@ private static CodePointSet init_BLOCK_DEVANAGARI_EXTENDED_A() {
 }
 static final CodePointSet BLOCK_DEVANAGARI_EXTENDED_A = init_BLOCK_DEVANAGARI_EXTENDED_A();
 
+private static CodePointSet init_BLOCK_SHARADA_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11b60, 0x11b80);
+	return result;
+}
+static final CodePointSet BLOCK_SHARADA_SUPPLEMENT = init_BLOCK_SHARADA_SUPPLEMENT();
+
 private static CodePointSet init_BLOCK_SUNUWAR() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
 	result.ensureCapacity(1);
@@ -17060,6 +17216,14 @@ private static CodePointSet init_BLOCK_GUNJALA_GONDI() {
 	return result;
 }
 static final CodePointSet BLOCK_GUNJALA_GONDI = init_BLOCK_GUNJALA_GONDI();
+
+private static CodePointSet init_BLOCK_TOLONG_SIKI() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x11db0, 0x11df0);
+	return result;
+}
+static final CodePointSet BLOCK_TOLONG_SIKI = init_BLOCK_TOLONG_SIKI();
 
 private static CodePointSet init_BLOCK_MAKASAR() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
@@ -17221,6 +17385,14 @@ private static CodePointSet init_BLOCK_MEDEFAIDRIN() {
 }
 static final CodePointSet BLOCK_MEDEFAIDRIN = init_BLOCK_MEDEFAIDRIN();
 
+private static CodePointSet init_BLOCK_BERIA_ERFE() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x16ea0, 0x16ee0);
+	return result;
+}
+static final CodePointSet BLOCK_BERIA_ERFE = init_BLOCK_BERIA_ERFE();
+
 private static CodePointSet init_BLOCK_MIAO() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
 	result.ensureCapacity(1);
@@ -17268,6 +17440,14 @@ private static CodePointSet init_BLOCK_TANGUT_SUPPLEMENT() {
 	return result;
 }
 static final CodePointSet BLOCK_TANGUT_SUPPLEMENT = init_BLOCK_TANGUT_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_TANGUT_COMPONENTS_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x18d80, 0x18e00);
+	return result;
+}
+static final CodePointSet BLOCK_TANGUT_COMPONENTS_SUPPLEMENT = init_BLOCK_TANGUT_COMPONENTS_SUPPLEMENT();
 
 private static CodePointSet init_BLOCK_KANA_EXTENDED_B() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
@@ -17332,6 +17512,14 @@ private static CodePointSet init_BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT()
 	return result;
 }
 static final CodePointSet BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT = init_BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT();
+
+private static CodePointSet init_BLOCK_MISCELLANEOUS_SYMBOLS_SUPPLEMENT() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1cec0, 0x1cf00);
+	return result;
+}
+static final CodePointSet BLOCK_MISCELLANEOUS_SYMBOLS_SUPPLEMENT = init_BLOCK_MISCELLANEOUS_SYMBOLS_SUPPLEMENT();
 
 private static CodePointSet init_BLOCK_ZNAMENNY_MUSICAL_NOTATION() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
@@ -17476,6 +17664,14 @@ private static CodePointSet init_BLOCK_OL_ONAL() {
 	return result;
 }
 static final CodePointSet BLOCK_OL_ONAL = init_BLOCK_OL_ONAL();
+
+private static CodePointSet init_BLOCK_TAI_YO() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x1e6c0, 0x1e700);
+	return result;
+}
+static final CodePointSet BLOCK_TAI_YO = init_BLOCK_TAI_YO();
 
 private static CodePointSet init_BLOCK_ETHIOPIC_EXTENDED_B() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
@@ -17725,6 +17921,14 @@ private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H() {
 }
 static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H();
 
+private static CodePointSet init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_J() {
+	ArrayCodePointSet result = new ArrayCodePointSet();
+	result.ensureCapacity(1);
+	result.appendSorted(0x323b0, 0x33480);
+	return result;
+}
+static final CodePointSet BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_J = init_BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_J();
+
 private static CodePointSet init_BLOCK_TAGS() {
 	ArrayCodePointSet result = new ArrayCodePointSet();
 	result.ensureCapacity(1);
@@ -17955,6 +18159,7 @@ static CodePointSet blockByEnumName(String enumName) {
 		case "HATRAN": return BLOCK_HATRAN;
 		case "PHOENICIAN": return BLOCK_PHOENICIAN;
 		case "LYDIAN": return BLOCK_LYDIAN;
+		case "SIDETIC": return BLOCK_SIDETIC;
 		case "MEROITIC_HIEROGLYPHS": return BLOCK_MEROITIC_HIEROGLYPHS;
 		case "MEROITIC_CURSIVE": return BLOCK_MEROITIC_CURSIVE;
 		case "KHAROSHTHI": return BLOCK_KHAROSHTHI;
@@ -18006,11 +18211,13 @@ static CodePointSet blockByEnumName(String enumName) {
 		case "UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED_A": return BLOCK_UNIFIED_CANADIAN_ABORIGINAL_SYLLABICS_EXTENDED_A;
 		case "PAU_CIN_HAU": return BLOCK_PAU_CIN_HAU;
 		case "DEVANAGARI_EXTENDED_A": return BLOCK_DEVANAGARI_EXTENDED_A;
+		case "SHARADA_SUPPLEMENT": return BLOCK_SHARADA_SUPPLEMENT;
 		case "SUNUWAR": return BLOCK_SUNUWAR;
 		case "BHAIKSUKI": return BLOCK_BHAIKSUKI;
 		case "MARCHEN": return BLOCK_MARCHEN;
 		case "MASARAM_GONDI": return BLOCK_MASARAM_GONDI;
 		case "GUNJALA_GONDI": return BLOCK_GUNJALA_GONDI;
+		case "TOLONG_SIKI": return BLOCK_TOLONG_SIKI;
 		case "MAKASAR": return BLOCK_MAKASAR;
 		case "KAWI": return BLOCK_KAWI;
 		case "LISU_SUPPLEMENT": return BLOCK_LISU_SUPPLEMENT;
@@ -18031,12 +18238,14 @@ static CodePointSet blockByEnumName(String enumName) {
 		case "PAHAWH_HMONG": return BLOCK_PAHAWH_HMONG;
 		case "KIRAT_RAI": return BLOCK_KIRAT_RAI;
 		case "MEDEFAIDRIN": return BLOCK_MEDEFAIDRIN;
+		case "BERIA_ERFE": return BLOCK_BERIA_ERFE;
 		case "MIAO": return BLOCK_MIAO;
 		case "IDEOGRAPHIC_SYMBOLS_AND_PUNCTUATION": return BLOCK_IDEOGRAPHIC_SYMBOLS_AND_PUNCTUATION;
 		case "TANGUT": return BLOCK_TANGUT;
 		case "TANGUT_COMPONENTS": return BLOCK_TANGUT_COMPONENTS;
 		case "KHITAN_SMALL_SCRIPT": return BLOCK_KHITAN_SMALL_SCRIPT;
 		case "TANGUT_SUPPLEMENT": return BLOCK_TANGUT_SUPPLEMENT;
+		case "TANGUT_COMPONENTS_SUPPLEMENT": return BLOCK_TANGUT_COMPONENTS_SUPPLEMENT;
 		case "KANA_EXTENDED_B": return BLOCK_KANA_EXTENDED_B;
 		case "KANA_SUPPLEMENT": return BLOCK_KANA_SUPPLEMENT;
 		case "KANA_EXTENDED_A": return BLOCK_KANA_EXTENDED_A;
@@ -18045,6 +18254,7 @@ static CodePointSet blockByEnumName(String enumName) {
 		case "DUPLOYAN": return BLOCK_DUPLOYAN;
 		case "SHORTHAND_FORMAT_CONTROLS": return BLOCK_SHORTHAND_FORMAT_CONTROLS;
 		case "SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT": return BLOCK_SYMBOLS_FOR_LEGACY_COMPUTING_SUPPLEMENT;
+		case "MISCELLANEOUS_SYMBOLS_SUPPLEMENT": return BLOCK_MISCELLANEOUS_SYMBOLS_SUPPLEMENT;
 		case "ZNAMENNY_MUSICAL_NOTATION": return BLOCK_ZNAMENNY_MUSICAL_NOTATION;
 		case "BYZANTINE_MUSICAL_SYMBOLS": return BLOCK_BYZANTINE_MUSICAL_SYMBOLS;
 		case "MUSICAL_SYMBOLS": return BLOCK_MUSICAL_SYMBOLS;
@@ -18063,6 +18273,7 @@ static CodePointSet blockByEnumName(String enumName) {
 		case "WANCHO": return BLOCK_WANCHO;
 		case "NAG_MUNDARI": return BLOCK_NAG_MUNDARI;
 		case "OL_ONAL": return BLOCK_OL_ONAL;
+		case "TAI_YO": return BLOCK_TAI_YO;
 		case "ETHIOPIC_EXTENDED_B": return BLOCK_ETHIOPIC_EXTENDED_B;
 		case "MENDE_KIKAKUI": return BLOCK_MENDE_KIKAKUI;
 		case "ADLAM": return BLOCK_ADLAM;
@@ -18094,6 +18305,7 @@ static CodePointSet blockByEnumName(String enumName) {
 		case "CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT": return BLOCK_CJK_COMPATIBILITY_IDEOGRAPHS_SUPPLEMENT;
 		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_G;
 		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_H;
+		case "CJK_UNIFIED_IDEOGRAPHS_EXTENSION_J": return BLOCK_CJK_UNIFIED_IDEOGRAPHS_EXTENSION_J;
 		case "TAGS": return BLOCK_TAGS;
 		case "VARIATION_SELECTORS_SUPPLEMENT": return BLOCK_VARIATION_SELECTORS_SUPPLEMENT;
 		case "SUPPLEMENTARY_PRIVATE_USE_AREA_A": return BLOCK_SUPPLEMENTARY_PRIVATE_USE_AREA_A;

@@ -307,11 +307,6 @@ to keep it "vaguely reasonable" and the jar/dex small.
 
 ## Toolchain
 
-- [ ] **Download the JDK 27 preview and regenerate `UnicodePredicates.java` with it**, for newer Unicode
-      data than JDK 25 (currently the newest used -- 171 scripts). Procedure is in notes.md's
-      2026-09-19 entry (run `UnicodeAnalyzer` directly with that JDK's `java`, not via Gradle, which
-      can't run on it). Re-run the suite afterward; the test JVM's own (older) Unicode data may make
-      differential tests disagree on newly assigned characters.
 - [ ] Pin a Checker Framework version compatible with modern JDKs (or a JDK toolchain constraint) and re-enable the nullness checker in `llkpattern/build.gradle` — currently disabled because the default-resolved 3.19.0 crashes against JDK 25's javac internals.
 - [ ] Consider bumping the Gradle wrapper (currently 8.7) so it can run on newer JDKs directly, instead of requiring `JAVA_HOME` to point at JDK 17/21. Check compatibility with the Android Gradle Plugin used by `app/` first.
 

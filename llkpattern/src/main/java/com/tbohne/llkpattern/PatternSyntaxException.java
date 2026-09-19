@@ -33,6 +33,9 @@ class PatternSyntaxException extends java.util.regex.PatternSyntaxException {
 	}
 
 	private static StringBuilder appendCodePoint(StringBuilder sb, int codePoint) {
+		if (codePoint < 0) {
+			return sb.append("end of pattern");
+		}
 		sb.append("'");
 		// Not sb.appendCodePoint(codePoint) -- the JDK's own implementation allocates a throwaway
 		// char[2] (via Character.toChars) for any supplementary code point just to copy it into sb
@@ -69,7 +72,8 @@ class PatternSyntaxException extends java.util.regex.PatternSyntaxException {
 				appendCodePoint(msg, ((CodePoint)o).codePoint);
 			} else if (o instanceof CodePointReference) {
 				int codePointIndex = ((CodePointReference)o).index;
-				int codePoint = pattern.codePointAt(codePointIndex);
+				// A reference at/after the end of the pattern (e.g. "a|(" or "(?<") has no code point.
+				int codePoint = codePointIndex < pattern.length() ? pattern.codePointAt(codePointIndex) : -1;
 				appendCodePoint(msg, codePoint);
 				appendReference(context, pattern, codePointIndex, codePoint);
 			} else {

@@ -180,10 +180,6 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
 
 - [ ] **Gaps found by the 2026-09-19 corpus triage** (all rows are tagged `UNIMPLEMENTED: ...` in the
       golden files; every other non-`AGREES` row is now `EXPECTED_DIVERGENCE`):
-  - **Real bug**: a raw U+0000 in the pattern text (e.g. `[NUL-z]`) is misparsed as end-of-pattern, because
-    `PatternParser#peek` returns `'\0'` as its past-the-end sentinel (see the comment at
-    `PatternParser.java:160`). Fails as `expected "]"`; 13 supplementary corpus rows. Fix: a real sentinel
-    (e.g. -1) at every `'\0'` comparison/switch-case (lines ~216/273/367/777).
   - `\pL` / `\PL` single-letter property escapes without braces (5 rows).
   - `[a-\X]`: an escaped character as a bracket range's maximum (1 BMP row).
   - `\p{IsASCII}` (POSIX class with an `Is` prefix; `\p{ASCII}` works) (1 row).

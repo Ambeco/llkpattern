@@ -157,13 +157,14 @@ final class PatternParser {
     return anchorsToPreviousMatchEnd;
   }
 
-  // `'\0'` (rather than -1) is the sentinel for "past the end of the pattern" throughout this
-  // class, matching every literal '\0' comparison/switch-case against `peek` below -- consistent
-  // with `advance`/`advanceCodePoint`'s own prior behavior, just centralized here so every `peek`
-  // assignment goes through pattern.codePointAt, never charAt (see `peek`'s own field doc for why
-  // that distinction matters for a supplementary code point).
+  // `EOF` (-1, never a valid code point, so a literal U+0000 in the pattern text stays an ordinary
+  // character) is the sentinel for "past the end of the pattern" throughout this class. Every
+  // `peek` assignment goes through pattern.codePointAt, never charAt (see `peek`'s own field doc
+  // for why that distinction matters for a supplementary code point).
+  private static final int EOF = -1;
+
   private int codePointAt(int i) {
-    return i < patternChars.length ? Character.codePointAt(patternChars, i) : '\0';
+    return i < patternChars.length ? Character.codePointAt(patternChars, i) : EOF;
   }
 
   private void advanceCodePoint() {
@@ -213,7 +214,7 @@ final class PatternParser {
       } else if (peek == '#') {
         // Same reasoning: a comment body is arbitrary pattern text up to the next '\n', which can
         // genuinely contain a supplementary character.
-        while (peek != '\n' && peek != '\0') {
+        while (peek != '\n' && peek != EOF) {
           advanceCodePoint();
         }
       } else {
@@ -270,7 +271,7 @@ final class PatternParser {
       // well enough that this makes no measurable difference -- kept for its own sake regardless,
       // since it's no less readable.
       if (peek == '(' || peek == ')' || peek == '[' || peek == ']' || peek == '|' || peek == '.'
-          || peek == '^' || peek == '$' || peek == '\0') {
+          || peek == '^' || peek == '$' || peek == EOF) {
         if (rawTextStartIndex >= 0) {
           // rawTextPureEnd, not `index`: this iteration's own skipComments() call just above may
           // already have skipped a trailing comment/whitespace gap since the pure content last
@@ -364,7 +365,7 @@ final class PatternParser {
             advance(1);
             break;
           case ')':
-          case '\0':
+          case EOF:
             if (sequence.patterns.isEmpty()) {
               throw throwEmptySequence(sequence.startIndex, parent.startIndex);
             } else {
@@ -774,7 +775,7 @@ final class PatternParser {
     @Nullable CodePointSet intersectionSoFar = null;
     for (; ; ) {
       switch (peek) {
-        case '\0':
+        case EOF:
           throw throwUnexpectedChar("expected \"]\" to match ", new CodePointReference(startIndex));
         case ']':
           if (index > startIndex + 1) {

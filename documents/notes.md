@@ -2690,3 +2690,8 @@ Notes to self about how to work on this project, and other context that doesn't 
   reluctant `{n,m}?` accepted-as-no-op (4). The old `a{2,3}` vs `"aaaa"` hard-fail is gone (now matches `aaa`, same
   as regex). What's left `UNIMPLEMENTED` is listed in remaining_work.md, including a real NUL-sentinel parser bug.
   Reluctant/possessive modifiers were never a compile error; still accepted as no-ops (see its open question).
+
+- **2026-09-19: raw U+0000 in pattern text fixed.** `PatternParser`'s past-the-end sentinel was `'\0'`, so a literal NUL
+  was read as end-of-pattern; now `EOF = -1`. Also fixed `PatternSyntaxException.throwWithReferences` crashing
+  (`StringIndexOutOfBounds`) on a reference at end of pattern (`a|(`, `(?<`); both now say "end of pattern".
+  The 13 affected supplementary corpus rows were refreshed and now AGREE. Tests: `NulInPatternTest`.

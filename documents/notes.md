@@ -2656,3 +2656,10 @@ Notes to self about how to work on this project, and other context that doesn't 
   order). Gotchas: a script the running JDK knows but the checked-in `UnicodePredicates` predates is
   reported unknown. Also spotted: `UnicodeAnalyzer#blocks` uses `ranges.getOrDefault(...)` and never `put`s, so it
   emits no block sets at all (relevant to the blocks item in remaining_work.md).
+
+- **2026-09-19: `UnicodePredicates.java` regenerated on JDK 25** (Unicode data newer than the JDK 17/21
+  Gradle can run on; 171 scripts vs 157 before). `./gradlew :unicodeanalyzer:generateUnicodePredicates`
+  runs on the Gradle JDK, so for the newest data compile via Gradle (JDK 17) then run
+  `UnicodeAnalyzer` directly with JDK 25's `java` (classpath: `unicodeanalyzer/build/classes/java/main`
+  + the guava jar), redirect stdout to a scratch file, and copy over (convert to CRLF to match the
+  checked-in file). Full suite stayed green even though the test JVM (17) has older Unicode data.

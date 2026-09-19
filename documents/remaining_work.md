@@ -61,29 +61,6 @@ dated AGREES-count snapshot rather than tracking that number here.
 
 **Next steps**:
 
-- [ ] Human triage pass over every non-`AGREES` row in both golden files -- retag
-      `EXPECTED_DIVERGENCE` vs leave as a real bug to fix, per `CorpusGenerator`'s status scheme.
-      Progress (2026-09-07): triaged all `UNEXPECTED` rows (both engines completed but disagreed --
-      the `UNIMPLEMENTED` rows, where llk simply doesn't support a feature yet, weren't in scope
-      for this pass). Found and fixed two real bugs this way (see the "Core implementation"
-      section's history in notes.md): `Matcher#attemptMatch` never reset `quantifiableCounts`/
-      `captureGroups` between separate match attempts (so a loop's iteration counter leaked across
-      `find()`'s internal scan positions and repeated `matches()`/`lookingAt()`/`find()` calls),
-      and capturing groups were numbered in closing-paren order instead of opening-paren order for
-      any nested group. Then implemented `COMMENTS` (`(?x)`, see the flags item above), which
-      resolved the corpus's `(?x)`-with-whitespace rows too. 33 `UNEXPECTED` rows dropped to 12,
-      then a nested-loop entry-point bug fix (see notes.md) resolved the remaining nested-loop
-      rows too. What's left falls into one category, not fixed (by design, not a bug):
-      - Bounded/reluctant quantifier edge cases where the engine's no-backtracking design cannot
-        produce the same match `java.util.regex` does even though llk's own greedy result is
-        internally consistent (e.g. `a{2,3}` against `"aaaa"`: llk cannot tell "stop at 3" from
-        "keep going" without a distinguishing next character, since nothing follows the loop, so
-        it hard-fails at every position where a 4th `a` follows the first three and instead matches
-        the *tail* 3 `a`s rather than `java.util.regex`'s backtracked leading 3; reluctant
-        (`?`) quantifiers being a documented no-op compounds this for `{n,m}?` cases). These are a
-        fundamental consequence of the engine's design (see README's own "tradeoff: not every
-        pattern a traditional regex engine accepts can be expressed this way"), not bugs -- should
-        be retagged `EXPECTED_DIVERGENCE` with that rationale, not left as "needs investigation."
 - [ ] More sources, each as its own `scrape_<source>.py` + golden file + `ScrapedCorpusTestBase`
       subclass (the pipeline already supports this cleanly):
   - [ ] **AOSP/libcore**: `https://android.googlesource.com/platform/libcore/+/refs/heads/main/ojluni/src/test/java/util/regex/`
@@ -201,6 +178,16 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
       or forked golden files -- not yet checked against a real device.
 ## Core implementation
 
+- [ ] **Gaps found by the 2026-09-19 corpus triage** (all rows are tagged `UNIMPLEMENTED: ...` in the
+      golden files; every other non-`AGREES` row is now `EXPECTED_DIVERGENCE`):
+  - **Real bug**: a raw U+0000 in the pattern text (e.g. `[NUL-z]`) is misparsed as end-of-pattern, because
+    `PatternParser#peek` returns `'\0'` as its past-the-end sentinel (see the comment at
+    `PatternParser.java:160`). Fails as `expected "]"`; 13 supplementary corpus rows. Fix: a real sentinel
+    (e.g. -1) at every `'\0'` comparison/switch-case (lines ~216/273/367/777).
+  - `\pL` / `\PL` single-letter property escapes without braces (5 rows).
+  - `[a-\X]`: an escaped character as a bracket range's maximum (1 BMP row).
+  - `\p{IsASCII}` (POSIX class with an `Is` prefix; `\p{ASCII}` works) (1 row).
+  - `\Q...\E` quotation (16 rows; also tracked under "Also remember for later").
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable**
       (e.g. `(a?)+`), instead of relying solely on the entry-point-computation guard added
       2026-09-08 (see design.md's "Entry-point computation vs. matcher compilation" section) to

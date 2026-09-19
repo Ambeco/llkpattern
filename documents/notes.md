@@ -2683,3 +2683,10 @@ Notes to self about how to work on this project, and other context that doesn't 
 
 - **2026-09-19: `UnicodePredicates.java` regenerated on JDK 27** (Unicode data newer than JDK 25). Same procedure;
   `java` needs Windows-format (`cygpath -w`) classpath entries from Git Bash. Suite stayed green.
+
+- **2026-09-19: corpus triage pass done.** All non-`AGREES` golden rows classified by re-running llk and reading
+  its actual message (scratch retag tool, deleted; only the `status` column changed). Now `EXPECTED_DIVERGENCE`:
+  LL(1) ambiguity rejections (39 rows, e.g. `.+b`, `a|ab`, `(aaa)?aaa`), lookaround rejected by design (21), and
+  reluctant `{n,m}?` accepted-as-no-op (4). The old `a{2,3}` vs `"aaaa"` hard-fail is gone (now matches `aaa`, same
+  as regex). What's left `UNIMPLEMENTED` is listed in remaining_work.md, including a real NUL-sentinel parser bug.
+  Reluctant/possessive modifiers were never a compile error; still accepted as no-ops (see its open question).

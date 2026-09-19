@@ -18,6 +18,8 @@ enum NamedCharClass {
   javaLowerCase(Source.Java, UnicodePredicates.isLowerCase),
   javaUpperCase(Source.Java, UnicodePredicates.isUpperCase),
   javaTitleCase(Source.Java, UnicodePredicates.isTitleCase),
+  // \p{javaDigit}: always all Unicode digits (Character.isDigit), like \p{IsDigit} -- unlike the
+  // bare POSIX \p{Digit}, which is ASCII-only by default. See the Digit constant below.
   javaDigit(Source.Java, UnicodePredicates.isDigit),
   javaDefined(Source.Java, UnicodePredicates.isDefined),
   javaLetter(Source.Java, UnicodePredicates.isLetter),
@@ -159,10 +161,17 @@ enum NamedCharClass {
             m.add(0x205F);
             m.add(0x3000);
           })),
-  // Digit is reachable both as the bare POSIX class \p{Digit} (ASCII-default, widens to
-  // full-Unicode only under UNICODE_CHARACTER_CLASS) and as the Unicode binary property
-  // \p{IsDigit} (always full-Unicode, the flag never applies). Its explicit prefix set below is now
-  // the same as Source.POSIX's (which also allows `is`), kept because Digit's Source is UProperty.
+  // There are TWO distinct predicates in java.util.regex that are both named "Digit", and this one
+  // constant stands in for both (via its `ascii` and `unicode` sets):
+  //   1. The POSIX class, `\p{Digit}` (no prefix): ASCII [0-9] only, unless
+  //      UNICODE_CHARACTER_CLASS is set, in which case it widens to all Unicode decimal digits.
+  //      Served by `ascii`/`unicode` depending on the flag -- see get().
+  //   2. The Unicode binary property, `\p{IsDigit}` (`is` prefix): ALWAYS all Unicode decimal
+  //      digits; the flag never applies. Served by `unicode`.
+  // Because the two share a name, the bare `\p{Digit}` always selects the POSIX one, so the `Is`
+  // prefix is the only way to reach the Unicode one. (`\p{javaDigit}` is a third spelling of the
+  // always-Unicode set, via Character.isDigit.) The explicit prefix set below is now the same as
+  // Source.POSIX's (which also allows `is`), kept because Digit's Source is UProperty.
   // get()'s prefix check (see below) makes the `is` half always-full-Unicode regardless of flags.
   Digit(
       ImmutableSet.of(CharacterClassPrefix.none, CharacterClassPrefix.is),
@@ -428,8 +437,8 @@ enum NamedCharClass {
 
   final Source source;
   // Which prefixes this constant may legally be looked up under -- defaults to source's own set,
-  // but see the Digit constant above for the one case (a name shared between a POSIX class and a
-  // Unicode binary property) that needs to override this to allow prefixes from both families.
+  // but see the Digit constant above for the one case (two predicates sharing the name "Digit": the
+  // POSIX class and the Unicode binary property) that needs to override this to allow both families.
   final ImmutableSet<CharacterClassPrefix> allowedPrefixes;
   final CodePointSet ascii;
   final CodePointSet unicode;
@@ -481,8 +490,8 @@ enum NamedCharClass {
     // \p{general_category=Xxx}) always means "exactly this Unicode-defined set" -- the
     // ASCII/full-Unicode split (governed by UNICODE_CHARACTER_CLASS) only applies to a bare POSIX
     // class name or a "java"-prefixed java.lang.Character-method class. This is what lets Digit
-    // (see above) serve both \p{Digit} (flag-sensitive) and \p{IsDigit} (always full-Unicode) from
-    // one constant instead of needing a separate always-full-Unicode duplicate.
+    // (see above) serve both the POSIX \p{Digit} (flag-sensitive) and the Unicode \p{IsDigit}
+    // (always full-Unicode) from one constant instead of needing a separate duplicate.
     if (prefix != CharacterClassPrefix.none && prefix != CharacterClassPrefix.java) {
       return unicode;
     }

@@ -388,10 +388,11 @@ enum NamedCharClass {
    * The Unicode script named {@code name} (a full name like {@code Latin} or ISO 15924 alias like
    * {@code Latn}, case-insensitive -- whatever {@link Character.UnicodeScript#forName} accepts), or
    * {@code null} if it names no script. Scripts aren't enum constants here (there are ~160 of them):
-   * {@code UnicodePredicates} generates one field per {@code Character.UnicodeScript} constant,
-   * named exactly {@code UnicodeScript#name()}, so this maps through that. A script the running
-   * JDK knows but the checked-in {@code UnicodePredicates} was generated before (a newer JDK than
-   * the one that ran {@code UnicodeAnalyzer}) is also {@code null} here, i.e. reported as unknown.
+   * {@code UnicodePredicates} generates one set per {@code Character.UnicodeScript} constant plus a
+   * {@code scriptByEnumName} string switch over them (not reflection, so it's shrinker-safe). A
+   * script the running JDK knows but the checked-in {@code UnicodePredicates} was generated before
+   * (a newer JDK than the one that ran {@code UnicodeAnalyzer}) is also {@code null} here, i.e.
+   * reported as unknown.
    */
   static @Nullable CodePointSet scriptByName(String name) {
     Character.UnicodeScript script;
@@ -400,11 +401,7 @@ enum NamedCharClass {
     } catch (IllegalArgumentException e) {
       return null;
     }
-    try {
-      return (CodePointSet) UnicodePredicates.class.getDeclaredField(script.name()).get(null);
-    } catch (ReflectiveOperationException e) {
-      return null;
-    }
+    return UnicodePredicates.scriptByEnumName(script.name());
   }
 
   /** True if {@code name} is a named class that may be looked up under the {@code Is} prefix. */

@@ -149,6 +149,17 @@ public class UnicodeAnalyzer {
 			for (Character.UnicodeScript script : Character.UnicodeScript.values()) {
 				printRanges(script.name(), ranges.get(script));
 			}
+			// A plain string switch rather than reflection over the fields above, so it survives
+			// R8/ProGuard field stripping/renaming.
+			System.out.print("/** The set for {@code Character.UnicodeScript#name()} {@code enumName}, or {@code null} if unknown. */\n");
+			System.out.print("static CodePointSet scriptByEnumName(String enumName) {\n");
+			System.out.print("\tswitch (enumName) {\n");
+			for (Character.UnicodeScript script : Character.UnicodeScript.values()) {
+				System.out.printf("\t\tcase \"%s\": return %s;\n", script.name(), script.name());
+			}
+			System.out.print("\t\tdefault: return null;\n");
+			System.out.print("\t}\n");
+			System.out.print("}\n\n");
 		}
 
 	public static void blocks() {

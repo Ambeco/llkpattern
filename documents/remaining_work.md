@@ -261,6 +261,40 @@ report (leaves ranked by frequency, then each leaf's callers recursively) at
     worth trying a `long[]` variant with 42 range/mask bits instead of `int[]`'s 11, trading larger
     per-entry size for fewer wasted bits when ranges/gaps are long.
 
+## Shrink `UnicodePredicates` (idea from the project owner, 2026-09-19)
+
+Measured 2026-09-19 (JDK 17, cold): `UnicodePredicates` is 561 `CodePointSet` fields (22 `Character`
+predicates, 201 categories/scripts, 338 blocks) holding 13,640 ranges total; a 316KB class file; ~14ms
+first-touch (~4ms load, ~3ms verification, ~7ms running 561 tiny init methods -- mostly one-time
+class-loading overhead, not compute); ~109KB heap afterward (~55KB of that is the raw range data at 4
+bytes/range, the rest per-set object/array overhead). One-time cost, so not urgent -- only worth doing
+to keep it "vaguely reasonable" and the jar/dex small.
+
+- [ ] **Step 1: pack all the ranges into one binary blob plus an index.** The generator concatenates
+      every set's `int[]` internals (`ArrayCodePointSet`'s own packed `(min<<11)|count` format, ~55KB
+      total before compression) into one big buffer, and writes a second buffer mapping each predicate
+      to its slice (offset/length). Both live as jar resources (or, to avoid needing resource loading
+      at all -- relevant on Android -- as `String` constants in a generated class, split into <64KB
+      pieces since a class-file string constant is capped at 65,535 modified-UTF-8 bytes). Each
+      predicate becomes a thin set built on demand from its slice. Should collapse the class file,
+      verification, and static-init cost, since there'd be no per-set bytecode at all.
+      Design questions to settle before building: (a) lookup speed matters more than init speed --
+      `contains`/`containsAll`/`forEachRange` on a set that reads through an `IntBuffer`/offset would
+      be slower than `ArrayCodePointSet`'s plain `int[]` indexing, so likely copy the slice into a real
+      `ArrayCodePointSet` on first use and cache it (a small per-set cost paid only by sets actually
+      used) rather than adding a new view-backed `CodePointSet`; (b) resource loading via
+      `getResourceAsStream` needs checking on the Pixel 3a / APK packaging, and its failure mode should
+      be a loud, detailed exception per this project's error-message conventions.
+- [ ] **Step 2 (after step 1): replace the 561 members with an enum** (or an ordinal-indexed table) and
+      one method that materializes the set for a given value on the fly. Fits the existing name lookups
+      (`NamedCharClass#scriptByName`/`#blockByName`, currently generated string switches) and lets
+      nothing be built until asked for. Supersedes the simpler "separate generated classes per family
+      (`UnicodeBlocks`/`UnicodeScripts`) so they only load when used" idea, which only defers the cost
+      instead of removing it.
+- [ ] Both steps change the generator (`UnicodeAnalyzer`) output format, so re-run the regeneration
+      (see notes.md's 2026-09-19 entry) and the full suite afterward, and re-measure class size, init
+      time and heap with the same numbers as above.
+
 ## Toolchain
 
 - [ ] **Download the JDK 27 preview and regenerate `UnicodePredicates.java` with it**, for newer Unicode

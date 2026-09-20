@@ -23,10 +23,9 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 ## Also remember for later (currently-unimplemented/deferred features)
 
-- [ ] Once implemented, add the same depth of test coverage for: quotation (`\Q...\E`),
-      positive/negative lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind
-      (`(?<=...)`/`(?<!...)`) -- note lookahead/lookbehind are currently rejected outright at
-      parse time per design.md, and independent/atomic non-capturing groups (`(?>X)`).
+- [ ] Once implemented, add the same depth of test coverage for: positive/negative lookahead
+      (`(?=...)`/`(?!...)`) and lookbehind (`(?<=...)`/`(?<!...)`) -- note both are currently
+      rejected outright at parse time per design.md.
 - [ ] Remaining `java.util.regex.Pattern` compile flags: `UNIX_LINES` is only partially honored (it affects
       `^`/`$`/`\Z` but not which characters `.`/`\s`/etc. treat as line terminators), and `LITERAL` (treat
       the whole pattern as literal text) and `CANON_EQ` (canonical-equivalence matching) are not started: no tests
@@ -79,19 +78,12 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 ## Core implementation
 
-- [ ] Implement `\Q...\E` quotation. Its 16 golden-corpus rows are the only ones still tagged
-      `UNIMPLEMENTED`; its tests are listed under "Also remember for later".
-- [ ] Implement atomic groups `(?>X)`: currently rejected as "Not a valid group special construct". With no
-      backtracking every group already matches atomically, so this is probably just parsing `(?>X)` as a
-      non-capturing group `(?:X)`. Confirm that reasoning before doing it.
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable** (e.g. `(a?)+`).
       Today only the entry-point-computation guard (design.md's "Entry-point computation vs. matcher compilation")
       catches it, as a compile-time `PatternSyntaxException`; `PatternParser` has no `nullable(construct)` recursion
       (a third sibling to `firstCharSet()`/`lastCharSet()`). A parse-time version would only improve the
       diagnostic (an earlier, more specific message), not correctness, since the guard already catches every case
       (`NestedQuantifierCombinatorialTest`).
-- [ ] Flag groups with no positive flags fail to parse: `(?-i)a` and `(?-i:a)` throw "Not a valid group special
-      construct", while `(?i-s)a`, `(?i-s:a)` and `(?is)a` work. `java.util.regex` accepts a leading `-`.
 - [ ] Numbered backreferences only support a single digit (`\1`-`\9`) -- unlike `java.util.regex`,
       which greedily consumes further digits when enough groups exist to make them part of the
       group number (`\12` can mean group 12, not group 1 followed by literal "2"). A pattern

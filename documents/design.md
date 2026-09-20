@@ -128,6 +128,12 @@ If both sides are statically known, the boundary either always holds (compiles t
 - Possibly-empty referenced groups (e.g. `(a*)\1`, where `\1` can be zero-width) make `firstCharSet()` return unknown, falling back to the catch-all entry set — same as `BackReference`'s original, pre-`firstCharSet()` stub. Fed into the normal disjointness check, this correctly rejects two such backreferences (or a backreference and any other catch-all construct) sharing the same alternation/loop-tail dispatch, since two catch-alls are always ambiguous; a single catch-all backreference alongside sibling branches with specific, disjoint entry sets isn't itself ambiguous (the specific branches simply take priority) and compiles fine, matching zero-width handling's existing "rare and probably not what you want, but not unsound" treatment elsewhere in this engine.
 - Forward references (`\1` before its group is defined, e.g. `\1(a)`) are rejected at compile time.
 
+### Quotation, atomic groups, and negative-only flag groups
+
+- `\Q...\E` is removed by a pre-pass in the `PatternParser` constructor (`removeQuoting`), as `java.util.regex` does: quoted ASCII non-alphanumerics get a backslash, everything else is copied verbatim, and an unterminated `\Q` quotes to the end. The rest of the parser never sees quotation, so it works inside brackets and groups, keeps whitespace/`#` literal under `COMMENTS`, and a following quantifier applies to the last quoted character. The cost is that error positions in a pattern containing quotation refer to the rewritten text.
+- `(?>X)` parses as `(?:X)`: with no backtracking, every group already matches atomically.
+- Inline flag groups apply as `(flags | enabled) & ~disabled`, so `(?-i)` and `(?-i:X)` are accepted.
+
 ### Public API shape
 
 - `Ll1Pattern` and `Matcher` are designed to mirror `java.util.regex.Pattern`/`Matcher`'s public method surface, so callers can largely swap one for the other. See remaining_work.md for the current list of implemented vs. stubbed methods.

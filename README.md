@@ -65,8 +65,7 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
 - **Reluctant and possessive quantifier modifiers are accepted but are no-ops**, since there is no backtracking to be
   reluctant about. `a{2,3}?` matches `aaa` here, where `java.util.regex` matches `aa`.
 
-Not yet implemented (these will be supported eventually): `\Q...\E` quotation, atomic groups
-`(?>X)`, flag groups that only turn flags off (`(?-i)`), the `LITERAL` and `CANON_EQ` flags, multi-digit backreferences,
+Not yet implemented (these will be supported eventually): the `LITERAL` and `CANON_EQ` flags, multi-digit backreferences,
 and the `Matcher` replace/split methods.
 
 ### Considered and deliberately not added
@@ -77,7 +76,7 @@ and the `Matcher` replace/split methods.
 
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
-- **Lookahead/lookaround, quotation (`\Q...\E`), atomic groups (`(?>X)`)** — not implemented; lookahead/lookbehind are currently rejected outright at parse time, since they can't be guaranteed to run in linear time.
+- **Lookahead/lookbehind** — rejected outright at parse time, since they can't be guaranteed to run in linear time.
 - **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch; `UNIX_LINES` is only partially honored (affects `^`/`$`/`\Z` but not yet `.`/`\s`/etc.'s line-terminator handling).
 - **Multi-digit backreferences** (`\12`+) — only `\1`-`\9` are supported today.
 - **`Matcher`/`Ll1Pattern` API gaps** — `replaceAll`/`replaceFirst`/`split` and friends, `region()`'s interaction with anchoring/transparent bounds, are still stubs.

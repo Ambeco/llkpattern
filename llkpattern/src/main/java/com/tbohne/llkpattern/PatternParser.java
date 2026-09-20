@@ -131,13 +131,50 @@ final class PatternParser {
   private final Map<Integer, QuantifiedUnion> closedGroupsByIndex = new HashMap<>();
 
   PatternParser(String pattern, int flags) {
-    this.pattern = pattern;
-    this.patternChars = pattern.toCharArray();
+    this.pattern = removeQuoting(pattern);
+    this.patternChars = this.pattern.toCharArray();
     index = 0;
     peek = codePointAt(0);
     this.flags = flags;
     quantifiableIndex = 0;
     captureConstructIndex = 0;
+  }
+
+  /**
+   * Rewrites every {@code \Q...\E} span into escaped literal characters, as {@code
+   * java.util.regex} does, so the rest of the parser never sees quotation: ASCII non-alphanumerics
+   * get a backslash, everything else is copied verbatim. An unterminated {@code \Q} quotes to the
+   * end of the pattern. Error positions in a pattern containing quotation refer to the rewritten
+   * text. Returns {@code pattern} itself when it contains no {@code \Q}.
+   */
+  private static String removeQuoting(String pattern) {
+    if (pattern.indexOf("\\Q") < 0) {
+      return pattern;
+    }
+    StringBuilder out = new StringBuilder(pattern.length() + 8);
+    int i = 0;
+    int n = pattern.length();
+    while (i < n) {
+      char c = pattern.charAt(i);
+      if (c != '\\' || i + 1 >= n) {
+        out.append(c);
+        i++;
+      } else if (pattern.charAt(i + 1) != 'Q') {
+        out.append(c).append(pattern.charAt(i + 1));
+        i += 2;
+      } else {
+        i += 2;
+        while (i < n && !(pattern.charAt(i) == '\\' && i + 1 < n && pattern.charAt(i + 1) == 'E')) {
+          char q = pattern.charAt(i++);
+          if (q < 128 && !Character.isLetterOrDigit(q)) {
+            out.append('\\');
+          }
+          out.append(q);
+        }
+        i += 2; // skip "\E" (or run past the end for an unterminated quote)
+      }
+    }
+    return out.toString();
   }
 
   /** Total number of quantifiable (?, *, +, {n,m}) constructs -- sizes Matcher#quantifiableCounts. */
@@ -607,6 +644,9 @@ final class PatternParser {
           advance(1);
           break;
         case ':':
+        case '>':
+          // "(?>X)" (atomic group) is just "(?:X)": with no backtracking, every group already
+          // matches atomically.
           union.captureConstructIndex = -1;
           advance(1);
           break;
@@ -623,6 +663,7 @@ final class PatternParser {
         case 'u':
         case 'x':
         case 'U':
+        case '-': // negative-only flags, e.g. "(?-i)"
           // Bug fix (2026-09-06): a flags-only construct ("(?s)" or "(?s:...)") is non-capturing,
           // exactly like "(?:...)" (which sets this explicitly, above) -- but this branch never
           // did, leaving QuantifiedUnion's captureConstructIndex at its default of 0, i.e.
@@ -676,11 +717,11 @@ final class PatternParser {
           if (peek == ')') {
             union.endIndex = index;
             advance(1);
-            flags = flags | enableFlags & ~disableFlags;
+            flags = (flags | enableFlags) & ~disableFlags;
             return union;
           } else if (peek == ':') {
             advance(1);
-            flags = flags | enableFlags & ~disableFlags;
+            flags = (flags | enableFlags) & ~disableFlags;
             union.tempFlags = true;
           } else {
             throw throwUnexpectedChar("That character is illegal in group special construct.");

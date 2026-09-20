@@ -18,16 +18,6 @@ class PatternSyntaxException extends java.util.regex.PatternSyntaxException {
 		}
 	}
 
-	static class Reference {
-		int startIndex;
-		int endIndex;
-
-		Reference(int startIndex, int endIndex) {
-			this.startIndex = startIndex;
-			this.endIndex = endIndex;
-		}
-	}
-
 	public PatternSyntaxException(String desc, String regex, int index) {
 		super(desc, regex, index);
 	}

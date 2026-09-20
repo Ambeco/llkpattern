@@ -151,8 +151,24 @@ public final class Ll1Pattern {
 		this.startsWithBeginAnchor = startsWithBeginAnchor;
 	}
 
+	/** Like java.util.regex.Pattern#asPredicate: true if a match is found anywhere in the input. */
 	public Predicate<String> asPredicate() {
+		return (input) -> matcher(input).find();
+	}
+
+	/** Like java.util.regex.Pattern#asMatchPredicate: true if the whole input matches. */
+	public Predicate<String> asMatchPredicate() {
 		return (input) -> matcher(input).matches();
+	}
+
+	/** Named group to its 1-based group number, unmodifiable (java.util.regex.Pattern#namedGroups). */
+	public Map<String, Integer> namedGroups() {
+		Map<String, Integer> result = new java.util.LinkedHashMap<>();
+		for (Map.Entry<String, Integer> e : namedGroups.entrySet()) {
+			// namedGroups stores the 0-based capture index; the public numbering is 1-based.
+			result.put(e.getKey(), e.getValue() + 1);
+		}
+		return java.util.Collections.unmodifiableMap(result);
 	}
 
 	public int flags() {
@@ -172,28 +188,44 @@ public final class Ll1Pattern {
 	}
 
 	public String[] split(CharSequence input, int limit) {
+		return split(input, limit, false);
+	}
+
+	/** Like {@link #split(CharSequence)}, but each matched delimiter is also included in the result. */
+	public String[] splitWithDelimiters(CharSequence input, int limit) {
+		return split(input, limit, true);
+	}
+
+	private String[] split(CharSequence input, int limit, boolean withDelimiters) {
 		// Same algorithm as java.util.regex.Pattern#split: a zero-width match at index 0 never produces a
 		// leading empty string, and limit == 0 drops trailing empty strings.
 		int index = 0;
 		boolean matchLimited = limit > 0;
 		ArrayList<String> matchList = new ArrayList<>();
+		// Counts pieces excluding delimiters, which limit applies to.
+		int pieceCount = 0;
 		Matcher m = matcher(input);
 		while (m.find()) {
-			if (!matchLimited || matchList.size() < limit - 1) {
+			if (!matchLimited || pieceCount < limit - 1) {
 				if (index == 0 && index == m.start() && m.start() == m.end()) {
 					continue;
 				}
 				matchList.add(input.subSequence(index, m.start()).toString());
 				index = m.end();
-			} else if (matchList.size() == limit - 1) {
+				if (withDelimiters) {
+					matchList.add(input.subSequence(m.start(), index).toString());
+				}
+				pieceCount++;
+			} else if (pieceCount == limit - 1) {
 				matchList.add(input.subSequence(index, input.length()).toString());
 				index = m.end();
+				pieceCount++;
 			}
 		}
 		if (index == 0) {
 			return new String[] {input.toString()};
 		}
-		if (!matchLimited || matchList.size() < limit) {
+		if (!matchLimited || pieceCount < limit) {
 			matchList.add(input.subSequence(index, input.length()).toString());
 		}
 		int resultSize = matchList.size();

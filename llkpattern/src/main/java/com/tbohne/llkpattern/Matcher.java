@@ -593,8 +593,20 @@ public class Matcher implements MatchResult {
 		}
 	}
 
-	public String toString()  {
-		return pattern.toString();
+	/** Same shape as java.util.regex.Matcher#toString. */
+	public String toString() {
+		return getClass().getName() + "[pattern=" + pattern() + " region=" + regionStart + "," + regionEnd
+				+ " lastmatch=" + (hasMatch ? group() : "") + "]";
+	}
+
+	/** Whether the previous match operation found a match -- see java.util.regex.Matcher#hasMatch. */
+	public boolean hasMatch() {
+		return hasMatch;
+	}
+
+	/** Named group to group number; see {@link Ll1Pattern#namedGroups()}. */
+	public java.util.Map<String, Integer> namedGroups() {
+		return pattern.namedGroups();
 	}
 
 	/** Like java.util.regex.Matcher#useAnchoringBounds: does not otherwise reset this matcher. */
@@ -758,13 +770,5 @@ public class Matcher implements MatchResult {
 		pos += width;
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
 		return peeked;
-	}
-
-	int beginCapture(String name) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#beginCapture");
-	}
-
-	void endCapture(int captureId, boolean result) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#endCapture");
 	}
 }

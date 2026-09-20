@@ -174,9 +174,11 @@ public class MatcherApiTest {
   // --- asPredicate() / static matches() ---
 
   @Test
-  public void asPredicate_delegatesToMatches() {
+  public void asPredicate_findsAnywhere() {
     assertThat(Ll1Pattern.compile(A + "+").asPredicate().test(repeat(A, 3)), is(true));
-    assertThat(Ll1Pattern.compile(A + "+").asPredicate().test(repeat(A, 3) + B), is(false));
+    assertThat(Ll1Pattern.compile(A + "+").asPredicate().test(repeat(A, 3) + B), is(true));
+    assertThat(Ll1Pattern.compile(A + "+").asPredicate().test(B), is(false));
+    assertThat(Ll1Pattern.compile(A + "+").asMatchPredicate().test(repeat(A, 3) + B), is(false));
   }
 
   @Test

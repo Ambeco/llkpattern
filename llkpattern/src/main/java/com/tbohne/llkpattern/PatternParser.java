@@ -518,6 +518,14 @@ final class PatternParser {
         }
       } else {
         int startIndex = index;
+        if (peek == '*' || peek == '+' || peek == '?' || peek == '{') {
+          // Any quantifier that follows an atom is consumed by parseQuantifiable, so one seen here
+          // has nothing to repeat: at the start of a sequence ("*a", "a|+b", "(?i)?a") or after an
+          // already-quantified atom ("a**"). java.util.regex rejects these as well.
+          throw throwUnexpectedChar(
+              " quantifier with nothing to repeat. Did you mean to escape it as \"\\", new CodePoint(peek),
+              "\", or to put it after the character, group or class it should repeat?");
+        }
         if (rawTextStartIndex < 0) {
           rawTextStartIndex = startIndex;
           rawTextPureEnd = startIndex;
@@ -1107,6 +1115,16 @@ final class PatternParser {
     }
   }
 
+  /** {@code \\b{g}} (grapheme boundary) and other {@code \\b{...}} forms aren't supported; without
+   *  this the "{g}" would silently be read as literal text after a plain word boundary. */
+  private void rejectBoundaryType() {
+    if (peek == '{') {
+      throw throwUnexpectedChar(
+          " boundary type. Only \\b and \\B are supported: grapheme boundaries (\\b{g}) aren't, "
+              + "and \\X (extended grapheme cluster) doesn't exist here either");
+    }
+  }
+
   private @Nullable PatternConstruct tryParseBoundary() {
     if (peek != '\\') {
       throw new IllegalStateException("entered tryParseBoundary at illegal start point");
@@ -1115,12 +1133,14 @@ final class PatternParser {
     switch (peek2) {
       case 'b': {
         advance(2);
+        rejectBoundaryType();
         WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
         b.flags = flags;
         return b;
       }
       case 'B': {
         advance(2);
+        rejectBoundaryType();
         WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ false);
         b.flags = flags;
         return b;

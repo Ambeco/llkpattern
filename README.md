@@ -75,8 +75,10 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   `LITERAL` overrides `CANON_EQ`, as in the JDK.
 
 Not yet implemented, and gaps to close rather than design choices: `\X` (grapheme cluster), `\N{name}`, the emoji
-binary properties added in JDK 21 (`\p{IsEmoji}` etc.), and `Matcher.reset(CharSequence)` (only `reset(String)`
-exists).
+binary properties added in JDK 21 (`\p{IsEmoji}` etc.). `\b{g}` is rejected rather than silently misread.
+`Matcher.reset(CharSequence)` snapshots the text with `toString()`, so later changes to a mutable sequence aren't seen.
+A quantifier with nothing to repeat (`*a`, `a**`), or one after a zero-width construct (`^*`, `\b+`), is a compile
+error here; the JDK rejects the first kind and accepts the second.
 
 ### Considered and deliberately not added
 

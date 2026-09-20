@@ -129,6 +129,33 @@ public class MatcherApiTest {
     assertThat(m.matches(), is(false));
   }
 
+  @Test
+  public void resetWithCharSequence_matchesAgainstItsCurrentTextAndSnapshotsIt() {
+    Matcher m = Ll1Pattern.compile("ab+").matcher("zz");
+    StringBuilder sb = new StringBuilder("xabbx");
+    m.reset(sb);
+    assertThat(m.find(), is(true));
+    assertThat(m.group(), is("abb"));
+    sb.setLength(0);
+    m.reset();
+    assertThat(m.find(), is(true));
+    assertThat(m.start(), is(1));
+  }
+
+  @Test
+  public void boundaryTypeSuffixIsRejected() {
+    for (String p : new String[] {"\\b{g}", "a\\B{g}", "\\b{"}) {
+      assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(p));
+    }
+  }
+
+  @Test
+  public void danglingQuantifierIsRejected() {
+    for (String p : new String[] {"*a", "a|+b", "(?i)?a", "a**", "{2}a"}) {
+      assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(p));
+    }
+  }
+
   // --- Groups ---
 
   @Test

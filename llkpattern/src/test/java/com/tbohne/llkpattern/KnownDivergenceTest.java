@@ -91,6 +91,7 @@ public class KnownDivergenceTest {
     "a{2,}", "a{,3}", "\\g", "\\pL", "\\p{Is_L}", "\\p{general_category=Lu}", "\\p{script=Latin}",
     "\\p{block=Greek}", "\\p{IsHan}", "\\p{XDigit}", "\\p{Punct}", "\\p{Graph}", "\\p{ASCII}", "\\p{Sc}",
     "(a", "a)", "[a", "a{2", "\\", "(?<1a>x)", "\\k<nope>",
+    "*a", "+a", "?a", "a|*b", "(*a)", "a**", "a?*", "{a}", "(?i)*a", "\\B{g}", "\\b{w}", "\\b{",
   };
 
   @Test
@@ -123,7 +124,7 @@ public class KnownDivergenceTest {
   // fails: move the pattern into AGREE_ON_COMPILING and drop it from remaining_work.md.
 
   private static final String[] OPEN_GAPS = {
-    "\\X", "\\N{LATIN SMALL LETTER A}", "\\p{IsEmoji}", "\\p{IsEmoji_Presentation}", "\\p{IsExtended_Pictographic}",
+    "\\X", "\\b{g}", "\\N{LATIN SMALL LETTER A}", "\\p{IsEmoji}", "\\p{IsEmoji_Presentation}", "\\p{IsExtended_Pictographic}",
   };
 
   @Test
@@ -140,23 +141,21 @@ public class KnownDivergenceTest {
     assertRejected("\\2(a)", 0);
   }
 
-  // --- A quantifier with nothing before it is a "dangling meta character" error in
-  // java.util.regex but is silently taken as a literal here. A gap: when fixed this test fails, so
-  // move the patterns into AGREE_ON_COMPILING and drop the remaining_work.md item.
-
-  @Test
-  public void danglingQuantifiersAreStillAcceptedAsLiterals() {
-    for (String p : new String[] {"*a", "+a", "?a"}) {
-      assertThat("/" + p + "/", compiles(p, false), is(true));
-      assertThat("/" + p + "/ in the JDK", compiles(p, true), is(false));
-    }
-  }
-
   // --- Rejected by design: they can't be guaranteed to run in linear time.
 
   @Test
   public void lookaroundIsRejectedByDesign() {
     for (String p : new String[] {"(?=a)a", "(?!b)a", "(?<=a)b", "(?<!a)b"}) {
+      assertRejected(p, 0);
+    }
+  }
+
+  // --- A quantifier after a zero-width construct: java.util.regex accepts "^*a", "\b+a" (repeating
+  // a zero-width match is pointless); here the quantifier is rejected as dangling.
+
+  @Test
+  public void quantifiedZeroWidthConstructIsRejected() {
+    for (String p : new String[] {"^*a", "$+a", "\\b*a", "\\A+a"}) {
       assertRejected(p, 0);
     }
   }

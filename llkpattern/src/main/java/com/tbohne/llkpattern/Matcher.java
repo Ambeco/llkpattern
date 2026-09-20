@@ -93,7 +93,7 @@ public class Matcher implements MatchResult {
 
 	// True exactly when quantifiableCounts/captureGroups are already known zero/null -- right after
 	// construction (both arrays are `new`-allocated, so already zero-filled by the JVM without an
-	// explicit resetPerAttemptState() call) or an explicit reset()/reset(String)/usePattern() (which
+	// explicit resetPerAttemptState() call) or an explicit reset()/reset(CharSequence)/usePattern() (which
 	// still calls resetPerAttemptState() itself, then sets this true). attemptMatch() consults this
 	// to skip a redundant resetPerAttemptState() on the very first attempt after any of those --
 	// state can only have been dirtied by a PRIOR attempt, and there isn't one yet. Set false again
@@ -480,8 +480,10 @@ public class Matcher implements MatchResult {
 		return this;
 	}
 
-	public Matcher reset(String input)  {
-		this.input = input;
+	/** Like java.util.regex.Matcher#reset(CharSequence), except the text is snapshotted with toString()
+	 *  (as Ll1Pattern#matcher already does): later changes to a mutable CharSequence aren't seen. */
+	public Matcher reset(CharSequence input)  {
+		this.input = input.toString();
 		regionStart = 0;
 		regionEnd = input.length();
 		pos = 0;
@@ -509,7 +511,7 @@ public class Matcher implements MatchResult {
 
 	/** The per-attempt state a fresh match attempt must never see left over from an earlier one --
 	 *  see {@link #attemptMatch}'s doc for why this must run before EVERY attempt, not just on an
-	 *  explicit reset()/reset(String). */
+	 *  explicit reset()/reset(CharSequence). */
 	private void resetPerAttemptState() {
 		java.util.Arrays.fill(quantifiableCounts, 0);
 		java.util.Arrays.fill(captureGroups, -1);
@@ -643,7 +645,7 @@ public class Matcher implements MatchResult {
 		syncPeeked();
 		this.requireFullMatch = requireFullMatch;
 		// Bug fix (2026-09-07): quantifiableCounts/captureGroups used to only get reset by
-		// reset()/reset(String) -- never per attempt -- so a loop's iteration counter (incremented by
+		// reset()/reset(CharSequence) -- never per attempt -- so a loop's iteration counter (incremented by
 		// LoopMatcherConstruct as it consumes each repetition) leaked from one match attempt into the
 		// next whenever an attempt failed WITHOUT reaching its own EndLoopMatcherConstruct exit (the
 		// only place a counter gets reset to 0), which happens routinely: e.g. a bounded {n,m} loop
@@ -662,7 +664,7 @@ public class Matcher implements MatchResult {
 		// constructs, and quantified capturing groups all showed wrong matches/no-matches whenever a
 		// find() scan or repeated match attempt was involved, not just a single matches() call.
 		//
-		// Skipped on the very first attempt after construction/reset()/reset(String)/usePattern()
+		// Skipped on the very first attempt after construction/reset()/reset(CharSequence)/usePattern()
 		// (see perAttemptStateIsFresh's own doc): quantifiableCounts/captureGroups are already known
 		// zero/null then, so there's nothing to reset yet -- only a PRIOR attempt (this one, about to
 		// run) can dirty them, which is exactly what clearing the flag right after guards against.

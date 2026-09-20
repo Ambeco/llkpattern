@@ -170,4 +170,27 @@ public class BackReferenceTest {
       // expected
     }
   }
+
+  private static final String TEN_GROUPS = "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)";
+
+  private static void assertBothMatch(String pattern, String input, boolean expected) {
+    assertThat(pattern + " vs " + input, Ll1Pattern.compile(pattern).matcher(input).matches(), is(expected));
+    assertThat(
+        "java.util.regex " + pattern + " vs " + input,
+        java.util.regex.Pattern.compile(pattern).matcher(input).matches(),
+        is(expected));
+  }
+
+  @Test
+  public void multiDigitBackReferenceUsedOnceEnoughGroupsExist() {
+    assertBothMatch(TEN_GROUPS + "\\10", "abcdefghijj", true);
+    assertBothMatch(TEN_GROUPS + "\\10", "abcdefghija0", false);
+  }
+
+  @Test
+  public void extraDigitIsLiteralWhenGroupNumberWouldExceedGroupCount() {
+    // Only 10 groups, so "\\11" is group 1 followed by a literal "1".
+    assertBothMatch(TEN_GROUPS + "\\11", "abcdefghija1", true);
+    assertBothMatch("(a)\\10", "aa0", true);
+  }
 }

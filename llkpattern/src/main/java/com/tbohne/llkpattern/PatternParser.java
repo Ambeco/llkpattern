@@ -1123,10 +1123,9 @@ final class PatternParser {
    * namedGroups}), rejecting forward references and references to undefined groups here at parse
    * time -- see design.md's "Backreferences" section and {@code closedGroupsByIndex}'s doc.
    *
-   * <p>Only single-digit numbered backreferences ({@code \1}-{@code \9}) are supported -- unlike
-   * {@code java.util.regex}, which greedily consumes further digits when enough groups exist to
-   * make them part of the group number (e.g. {@code \12} can mean group 12 rather than group 1
-   * followed by a literal "2"). Patterns needing a 10th+ backreference aren't supported yet.
+   * <p>Like {@code java.util.regex}, further digits are consumed greedily only while the resulting
+   * number doesn't exceed the number of groups opened so far, so {@code \12} means group 12 once 12
+   * groups have been opened, and group 1 followed by a literal "2" otherwise.
    */
   private @Nullable PatternConstruct tryParseBackReference() {
     if (peek != '\\') {
@@ -1136,6 +1135,16 @@ final class PatternParser {
     if (peek2 >= '1' && peek2 <= '9') {
       int startIndex = index;
       int groupNumber = peek2 - '0';
+      int digitsEnd = index + 2;
+      while (digitsEnd < pattern.length()) {
+        char digit = pattern.charAt(digitsEnd);
+        int extended = groupNumber * 10 + (digit - '0');
+        if (digit < '0' || digit > '9' || extended > captureConstructIndex) {
+          break;
+        }
+        groupNumber = extended;
+        digitsEnd++;
+      }
       int referencedIndex = groupNumber - 1;
       QuantifiedUnion referenced = closedGroupsByIndex.get(referencedIndex);
       if (referenced == null) {
@@ -1146,7 +1155,7 @@ final class PatternParser {
             "hasn't been closed yet at this point in the pattern (forward references aren't ",
             "supported) -- ", captureConstructIndex, " capturing group(s) defined so far");
       }
-      advance(2);
+      advance(digitsEnd - index);
       BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
       backReference.flags = flags;
       return backReference;

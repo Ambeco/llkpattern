@@ -105,3 +105,14 @@ Redirect Gradle output to a file and search it with `grep -a` (raw bytes in test
 give "Binary file matches"). Per-test failure messages are in
 `llkpattern/build/test-results/test/TEST-*.xml`.
 
+## Differential tests against `java.util.regex`
+
+Empty patterns (and a bare `\G`) don't compile here by design ("Sequences must always match at
+least one actual character"), so leave them out of differential test matrices. Patterns must also
+be unambiguous (LL(1)) to compile at all.
+
+## Multi-line edits to CRLF Java files containing backslashes
+
+A Python heredoc through Bash silently fails to apply (backslashes get halved, so a `replace` finds
+no match). Write the edit script to the scratchpad with the Write tool instead: raw `r'''...'''`
+strings, assert `count == 1` per replacement, and read/write bytes with CRLF<->LF normalization.

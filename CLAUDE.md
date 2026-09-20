@@ -73,11 +73,26 @@ either failure in the reverted experiment: `((a?b)c)?` vs `""` must match, and `
 ## Regenerating `UnicodePredicates.java`
 
 Run `UnicodeAnalyzer` with the NEWEST installed JDK (currently `C:\Program Files\Java\jdk-27`) for the
-newest Unicode data -- this means sidestepping Gradle (which can't run on JDK 25+): compile via
+newest Unicode data -- this means sidestepping Gradle (which crashed intermittently on JDK 25): compile via
 `./gradlew :unicodeanalyzer:classes` on JDK 17, run the class directly with that JDK's `java`, and
 copy its output over with CRLF. Steps: documents/notes.md, 2026-09-19 entry. From Git Bash the
 Windows `java` needs classpath entries in Windows form: `cygpath -w` the guava jar (under
 `~/.gradle/caches/modules-2/files-2.1/com.google.guava/`) and join with `;`.
+
+## Differential-test workflow
+
+Diff the full matrix, not hand-picked cases: every region `(s,e)` of short inputs x flag sets x
+`matches`/`lookingAt`/`find()`-loop x the setting under test, comparing spans, `hitEnd` and `requireEnd`.
+Put the first ~400 divergences in the assertion message, then read them from
+`llkpattern/build/test-results/test/TEST-*.xml` (the message is HTML-escaped with literal `\n`; bucket
+by pattern with a short script). This found the MULTILINE `^`-at-end rule and the elided-`\b` `hitEnd`
+divergence that hand-written cases missed.
+
+## JDK API level in tests
+
+`llkpattern` compiles at `sourceCompatibility 8` with no `--release`, so tests see the running JDK's
+newer APIs (`Pattern.splitWithDelimiters`, `Matcher.hasMatch`, both JDK 20/21+). Call them by
+reflection with `assumeNoException`, so the suite still compiles and runs on JDK 17.
 
 ## Ad-hoc probes against `java.util.regex`
 

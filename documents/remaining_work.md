@@ -1,6 +1,6 @@
 # Remaining Work
 
-Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) to check the current state of the suite; see notes.md for dated pass/fail history rather than this file.
+Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](notes.md)) to check the current state of the suite; see notes.md for dated pass/fail history rather than this file.
 
 ## Matcher dispatch
 
@@ -170,7 +170,7 @@ to keep it "vaguely reasonable" and the jar/dex small.
 ## Toolchain
 
 - [ ] Pin a Checker Framework version compatible with modern JDKs (or a JDK toolchain constraint) and re-enable the nullness checker in `llkpattern/build.gradle` — currently disabled because the default-resolved 3.19.0 crashes against JDK 25's javac internals.
-- [ ] Consider bumping the Gradle wrapper (currently 8.7) so it can run on newer JDKs directly, instead of requiring `JAVA_HOME` to point at JDK 17/21. Check compatibility with the Android Gradle Plugin used by `app/` first.
+- [ ] Consider bumping the Gradle wrapper (currently 8.7) so it can run on newer JDKs directly, instead of falling back to `JAVA_HOME` at JDK 17/21 if a newer one misbehaves. Check compatibility with the Android Gradle Plugin used by `app/` first.
 
 ## Testing
 

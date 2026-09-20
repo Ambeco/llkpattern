@@ -150,16 +150,6 @@ public class KnownDivergenceTest {
     }
   }
 
-  // --- A quantifier after a zero-width construct: java.util.regex accepts "^*a", "\b+a" (repeating
-  // a zero-width match is pointless); here the quantifier is rejected as dangling.
-
-  @Test
-  public void quantifiedZeroWidthConstructIsRejected() {
-    for (String p : new String[] {"^*a", "$+a", "\\b*a", "\\A+a"}) {
-      assertRejected(p, 0);
-    }
-  }
-
   // --- Reluctant and possessive modifiers are accepted but mean the same as the greedy form.
 
   @Test

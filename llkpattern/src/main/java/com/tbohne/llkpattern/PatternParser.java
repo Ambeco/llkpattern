@@ -426,14 +426,18 @@ final class PatternParser {
           case '^':
             LineBoundaryConstruct lineBegin = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ true);
             lineBegin.flags = flags;
-            sequence.patterns.add(lineBegin);
             advance(1);
+            if (keepZeroWidthAfterQuantifier()) {
+              sequence.patterns.add(lineBegin);
+            }
             break;
           case '$':
             LineBoundaryConstruct lineEnd = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ false);
             lineEnd.flags = flags;
-            sequence.patterns.add(lineEnd);
             advance(1);
+            if (keepZeroWidthAfterQuantifier()) {
+              sequence.patterns.add(lineEnd);
+            }
             break;
           case ')':
           case EOF:
@@ -503,7 +507,9 @@ final class PatternParser {
           }
           PatternConstruct boundaryConstruct = tryParseBoundary();
           if (boundaryConstruct != null) {
-            sequence.patterns.add(boundaryConstruct);
+            if (keepZeroWidthAfterQuantifier()) {
+              sequence.patterns.add(boundaryConstruct);
+            }
           } else {
             // parseComplexEscape()'s result is assigned straight into ComplexCharacter.ranges (now
             // effectively immutable -- see its own doc), no defensive copy needed: unlike the
@@ -1115,10 +1121,14 @@ final class PatternParser {
     }
   }
 
+  private static boolean isQuantifierStart(char afterBrace) {
+    return (afterBrace >= '0' && afterBrace <= '9') || afterBrace == ',';
+  }
+
   /** {@code \\b{g}} (grapheme boundary) and other {@code \\b{...}} forms aren't supported; without
-   *  this the "{g}" would silently be read as literal text after a plain word boundary. */
+   *  this the "{g}" (a "{" not starting a quantifier) would silently be read as literal text after a plain word boundary. */
   private void rejectBoundaryType() {
-    if (peek == '{') {
+    if (peek == '{' && !(index + 1 < pattern.length() && isQuantifierStart(pattern.charAt(index + 1)))) {
       throw throwUnexpectedChar(
           " boundary type. Only \\b and \\B are supported: grapheme boundaries (\\b{g}) aren't, "
               + "and \\X (extended grapheme cluster) doesn't exist here either");
@@ -1460,6 +1470,33 @@ final class PatternParser {
       return construct;
     }
     return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, index, construct));
+  }
+
+  /**
+   * Consumes a quantifier suffix after a zero-width construct ({@code ^ $  \B \A \Z \z}), as
+   * java.util.regex allows. A zero-width assertion is idempotent, so {@code X{min,max}} is just
+   * {@code X} when {@code min >= 1} and matches nothing extra when {@code min == 0}. Returns whether
+   * the construct itself must still be added to the sequence.
+   */
+  private boolean keepZeroWidthAfterQuantifier() {
+    skipComments();
+    if (peek != '?' && peek != '*' && peek != '+' && peek != '{') {
+      return true;
+    }
+    int savedQuantifiableIndex = quantifiableIndex;
+    QuantifiableConstruct quantifier = parseQuantifiable(new QuantifiableConstruct(pattern, index) {
+      @Override
+      void buildEntryMap(PatternConstruct next) {
+        throw new UnsupportedOperationException("scratch quantifier holder for a zero-width construct");
+      }
+
+      @Override
+      void buildMatcher() {
+        throw new UnsupportedOperationException("scratch quantifier holder for a zero-width construct");
+      }
+    });
+    quantifiableIndex = savedQuantifiableIndex; // the scratch holder needs no loop counter slot
+    return quantifier.min >= 1;
   }
 
   private <T extends QuantifiableConstruct> T parseQuantifiable(T construct) {

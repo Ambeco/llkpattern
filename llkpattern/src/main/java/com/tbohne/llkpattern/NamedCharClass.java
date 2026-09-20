@@ -511,12 +511,8 @@ enum NamedCharClass {
   enum RegexCharacterClass {
     DOT(build(m -> m.add(+'\n')).complement()),
     d(Digit),
-    // Bug fix (2026-09-07): this used to be a single-RangeSet `D(Digit.unicode.complement())`,
-    // which (like every other single-RangeSet constructor call here) is flag-insensitive -- so \D
-    // always matched the complement of the *full-Unicode* digit set, ignoring
-    // UNICODE_CHARACTER_CLASS entirely (unlike \S/\W below, which already complement `ascii`/
-    // `unicode` separately). Found via PredefinedClassTest's \d/\D UNICODE_CHARACTER_CLASS
-    // coverage, added alongside the NamedCharClass.Digit/PosixDigit merge (see its own doc).
+    // \D complements `ascii` and `unicode` separately, so (like \d, \S and \W) it honors
+    // UNICODE_CHARACTER_CLASS. A single-set `Digit.unicode.complement()` would be flag-insensitive.
     D(Digit.ascii.complement(), Digit.unicode.complement()),
     h(build(
           m -> {

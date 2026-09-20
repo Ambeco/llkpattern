@@ -50,6 +50,25 @@ if (matcher.find()) {
 Ll1Pattern.compile("a|ab"); // throws PatternSyntaxException: both branches start with 'a'
 ```
 
+### Intentional differences from `java.util.regex`
+
+These are deliberate, and each is checked against `java.util.regex` by the scraped-corpus tests (tagged
+`EXPECTED_DIVERGENCE`). Everything else that differs is a gap to be fixed, not a design choice; see
+[documents/remaining_work.md](documents/remaining_work.md).
+
+- **Ambiguity is a compile-time error.** If two `|` branches, or a loop's body and whatever follows it, could both
+  start with the same character, `Ll1Pattern.compile` throws `PatternSyntaxException` instead of backtracking.
+  `a|ab`, `(aaa)?aaa`, `.+b` and `a(b){4,5}b` are rejected; `a(b){4,5}c` and `a|b` are fine. Under
+  `CASE_INSENSITIVE`, branches are compared after case folding, so `(?i:a|A)` and `(?i:[a-z]+)X` are rejected too.
+- **Lookahead and lookbehind are rejected** (`(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`), since they cannot be
+  guaranteed to run in linear time.
+- **Reluctant and possessive quantifier modifiers are accepted but are no-ops**, since there is no backtracking to be
+  reluctant about. `a{2,3}?` matches `aaa` here, where `java.util.regex` matches `aa`.
+
+Not yet implemented (these will be supported eventually): `\Q...\E` quotation, atomic groups
+`(?>X)`, flag groups that only turn flags off (`(?-i)`), the `LITERAL` and `CANON_EQ` flags, multi-digit backreferences,
+and the `Matcher` replace/split methods.
+
 ### Considered and deliberately not added
 
 - **A client-runnable Unicode generator + external data file.** Letting a client run the Unicode generator themselves and having the library prefer that data file over its built-in ranges. Rejected: substantial work and likely slower compile/match, for very little value, since the built-in data is regenerated from a newer JDK when needed. See [documents/design.md](documents/design.md)'s "Alternatives Considered".

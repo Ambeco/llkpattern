@@ -2701,3 +2701,39 @@ Notes to self about how to work on this project, and other context that doesn't 
   exposed it. (2) `\pL`/`\PL` single-letter property form. (3) `\p{IsXxx}` works for all 13 POSIX classes (always
   full-Unicode, verified on JDK 17/25); the old "only Digit" comment was wrong. Also: `[a-a]` was wrongly rejected (`<=`
   vs `<`) and an escaped range maximum had no ordering check. 7 corpus rows refreshed to AGREES.
+
+- **2026-09-19: remaining_work.md cleared of history; the learnings it carried, moved here.**
+  - *Corpus harness*: `tools/scrape_<source>.py` -> intermediate TSV `(pattern, flags, input[, mode])` ->
+    `CorpusGenerator` (`./gradlew :llkpattern:generateCorpus -Pinput= -Poutput= -Pmode= -Punescape=`) runs both engines
+    and writes a golden TSV with an auto-tagged `status` (`AGREES`/`UNIMPLEMENTED`/`UNEXPECTED`, a first-pass
+    heuristic). Hand-triaged tags like `EXPECTED_DIVERGENCE` live only in the golden file. `ScrapedCorpusTestBase` is a
+    JUnit4 `@Parameterized` base; one subclass per golden file.
+  - *Desktop benchmarks*: `CorpusBenchmark` (JMH via `me.champeau.jmh`) times regex vs llk compile/match over rows where
+    both engines compiled; `./gradlew :llkpattern:jmh` writes `benchmarks/<machine>_corpus_benchmark_results.json`
+    only if the whole run completes. `jmhSampling` (CPU, chained after `jmh`) and `jmhAllocSampling` (JFR
+    `jdk.ObjectAllocationSample`, standalone) write `benchmarks/<machine>_<name>[_alloc]_sampling.txt`.
+  - *Android benchmark*: `AndroidCorpusBenchmark` (androidTest; JMH can't run on Android) reuses the golden TSVs via
+    `copyGoldenAssetsForAndroidTest` and its own `AndroidGoldenTsv` reader (`java.nio.file` needs API 26+).
+    `FRACTION_OF_TEST_ROWS` subsamples for slow devices; results are named after `Build.MANUFACTURER/MODEL/DEVICE`.
+    The CPU sampler is hand-rolled (`Thread.getStackTrace()`) because `Debug.startMethodTracingSampling` can't cap stack
+    depth. Getting it running needed `compileSdk` 33 -> 36 (androidx.activity 1.8.0) and excluding
+    `com.google.guava:listenablefuture` (guava issue 2960). Uninstalling the app after `connectedAndroidTest` wipes its
+    external files dir, which once lost the results JSON before it could be pulled (workaround was a manual `adb install`
+    + `am instrument`; the Gradle task now writes the files itself).
+  - *CodePointSetBuilder*: fits `parseComplexCharacterRanges`'s literal members, but converting
+    `PatternParser#intersect`, `#mergeRun`'s combine branch and `PatternConstruct#mergeEntryPoints` to it regressed
+    allocation four times, against four successively better builders (including one that IS-A `ArrayCodePointSet`).
+    Those call sites accumulate ~1-2 ranges, so any builder overhead costs more than `ArrayCodePointSet`'s direct sorted
+    insert. Don't try a fifth builder variant there without a fundamentally different idea; the same reasoning rules it
+    out for the `Sequence`/`QuantifiedUnion` `ArrayList`s.
+  - *lastCharSet*: don't remove `lastCharSet`/`WordBoundaryConstruct.priorCharSet`. It drives `\b`/`\B`'s compile-time
+    static-wordness check (`classify` needs a queryable `CodePointSet`); removing it fails no test but silently pushes
+    every `\b` onto the runtime check.
+  - *Fork-chain dispatch (2026-09-11/12; step 1 since superseded by the flattened `entrySet`/`failedEntry` dispatch)*:
+    every `CodePointMap<Boolean>` became a `CodePointSet`/`ArrayCodePointSet` (`complement()` is a flag flip).
+    `UnionCodePointSet` (lazy union) is always materialized back into an `ArrayCodePointSet` before leaving
+    `parseComplexCharacterRanges`, because it is measurably slower at `contains`/`containsAll`/`forEachRange`; JMH showed
+    no change (few corpus brackets combine several large sets). A private "complement" constructor overload once
+    silently shadowed the public copy constructor; fixed with a static factory.
+  - *Codepoint-indexed `PatternParser`*: tried 2026-09-14 (codepoint `int[]` + parallel char-offset `int[]`); correct,
+    but desktop `llkCompile` regressed 5-8% with ~10% more allocation. See the 2026-09-14/15 entries.

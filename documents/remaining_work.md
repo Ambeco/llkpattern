@@ -2,13 +2,7 @@
 
 Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — see [notes.md](notes.md)) to check the current state of the suite; see notes.md for dated pass/fail history rather than this file.
 
-## Flattened matcher dispatch (merged to `main`)
-
-`MatcherConstruct.entrySet`/`failedEntry` fold the old `ForkingMatcherConstruct` into every node
-(checked *before* a node's own matching logic runs, falling through to `failedEntry` on a miss and
-failing the match outright when `failedEntry` is null) instead of `SingleDispatchingMatcherConstruct`
-always advancing to `next` and a separate `ForkingMatcherConstruct` doing the membership check
-after. See design.md's "Quantifier/loop compilation"/"Opcode set" sections for the current design.
+## Matcher dispatch
 
 - [ ] **Known cost**: `foldedEntrySet`'s fold expansion is O(set size) per chain candidate under
       CASE_INSENSITIVE -- `(?iu)\p{L}+9` (a ~130k-codepoint class, quantified, under
@@ -33,33 +27,12 @@ after. See design.md's "Quantifier/loop compilation"/"Opcode set" sections for t
       positive/negative lookahead (`(?=...)`/`(?!...)`), positive/negative lookbehind
       (`(?<=...)`/`(?<!...)`) -- note lookahead/lookbehind are currently rejected outright at
       parse time per design.md, and independent/atomic non-capturing groups (`(?>X)`).
-- [ ] Of `java.util.regex.Pattern`'s remaining compile flags -- `CASE_INSENSITIVE`, `UNICODE_CASE`,
-      `DOTALL`, and now `COMMENTS` (`(?x)`, implemented 2026-09-07 -- see `CommentsFlagTest`/
-      `PatternParser.skipComments()`) are implemented (both globally and correctly scoped through
-      an inline `(?i:...)`/`(?s:...)`/`(?x:...)`), and `MULTILINE`/`UNIX_LINES` are now implemented
-      too, but *only* as far as `^`/`$`/`\Z` (`BoundaryMatcherConstruct`) consult them --
-      `.`/`\s`/etc. under `UNIX_LINES` (which characters count as line terminators for those) is
-      still unaffected by the flag, so `UNIX_LINES` is only partially honored. `LITERAL` (treat the
-      whole pattern string as literal text, no metacharacters) and `CANON_EQ` (Unicode
-      canonical-equivalence matching) are not started at all. Neither has any test coverage or even
-      a stub `flags` branch, unlike the boundary/backreference stubs above -- they're simply
-      unimplemented from scratch.
+- [ ] Remaining `java.util.regex.Pattern` compile flags: `UNIX_LINES` is only partially honored (it affects
+      `^`/`$`/`\Z` but not which characters `.`/`\s`/etc. treat as line terminators), and `LITERAL` (treat
+      the whole pattern as literal text) and `CANON_EQ` (canonical-equivalence matching) are not started: no tests
+      and no stub `flags` branch.
 
 ## Scraped-corpus differential test harness
-
-Design: `./tools/scrape_<source>.py` fetches a source project's own regex test data and
-emits an "intermediate" TSV of `(pattern, flags, input[, mode])` tuples. `CorpusGenerator`
-(`llkpattern/src/test/java/.../corpus/CorpusGenerator.java`, run via
-`./gradlew :llkpattern:generateCorpus -Pinput=... -Poutput=... -Pmode=... -Punescape=...`) reads
-that, runs each tuple through both `java.util.regex` and `Ll1Pattern`, and writes a golden TSV
-(`GoldenRow`/`GoldenTsv`) with an auto-tagged `status` column (`AGREES`/`UNIMPLEMENTED: ...`/
-`UNEXPECTED: ...` -- see `CorpusGenerator`'s javadoc; a first-pass heuristic, not human-verified).
-`ScrapedCorpusTestBase` is a JUnit4 `@Parameterized` base class; one concrete subclass per golden
-file (`OpenJdkBmpCorpusTest`, `OpenJdkSupplementaryCorpusTest`) — regenerate via the
-`generateCorpus` command above after any scraping/unescaping/engine change. See notes.md for a
-dated AGREES-count snapshot rather than tracking that number here.
-
-**Next steps**:
 
 - [ ] More sources, each as its own `scrape_<source>.py` + golden file + `ScrapedCorpusTestBase`
       subclass (the pipeline already supports this cleanly):
@@ -80,26 +53,16 @@ dated AGREES-count snapshot rather than tracking that number here.
       what the "correct" outcome even is without an oracle to compare against. java-reggie
       apparently found an answer worth copying -- read it before building anything, don't just
       copy the "fuzz" label.
+- [ ] **Let `CorpusGenerator` refresh a golden file in place.** Today it only writes a whole file from an
+      intermediate TSV, which discards the hand-triaged `status` tags, so refreshing a few rows means writing a
+      throwaway class (see CLAUDE.md). Add a mode that reads an existing golden file, takes a selector for which
+      rows to regenerate (e.g. a status prefix, a pattern regex, or row numbers), re-runs llk for them, and
+      rewrites only those rows, leaving every other row untouched. A flag chooses whether to also re-run
+      `java.util.regex` for the selected rows (when its recorded columns are suspect) or keep the recorded regex
+      columns and refresh only the llk ones. `status` is recomputed only for regenerated rows.
 
 ## Scraped-corpus microbenchmark
 
-Done (2026-09-07): `CorpusBenchmark` (`llkpattern/src/jmh/java/.../corpus/CorpusBenchmark.java`),
-via the `me.champeau.jmh` Gradle plugin (see `llkpattern/build.gradle`'s `jmh {}` block). Loads
-every golden row from `openjdk_bmp.tsv`/`openjdk_supplementary.tsv`, keeps only rows where both
-engines compiled successfully (a stricter filter than `status == "AGREES"`, which also covers rows
-where both engines agree by both throwing the same compile exception -- not a speed sample), and
-times `java.util.regex` vs `Ll1Pattern` compile and match separately (`regexCompile`/`llkCompile`,
-`regexMatch`/`llkMatch` -- matches are pre-compiled once in `@Setup` so match timing never includes
-compile cost). Run via `./gradlew :llkpattern:jmh`; results print to console and are also written
-as JSON to `benchmarks/Intel-i7-9750H_corpus_benchmark_results.json` (named after the
-desktop it was run on, mirroring the Pixel 3a's own results file below -- rename if run on a
-different machine) (only once the *entire* run completes -- an interrupted run leaves that file
-empty), meant to be committed as a baseline and diffed against on later runs to catch regressions.
-CPU-sampling (`SamplingRunner`, JMH's `stack` profiler, flat chain format) and allocation-sampling
-(`AllocationSamplingRunner`, JFR's `jdk.ObjectAllocationSample` event, reversed call-tree format --
-see `AndroidCorpusBenchmark`'s CPU sampler for the same tree format) are separate, opt-in Gradle
-tasks (`jmhSampling`, auto-chained after `jmh`; `jmhAllocSampling`, standalone) writing
-`benchmarks/<machine>_<name>_sampling.txt`/`_alloc_sampling.txt` respectively.
 - [ ] `jmhAllocSampling`'s fixed 3000-iteration count (`llkpattern/build.gradle`) was sized for
       `llkCompile` (yielded ~3000 `jdk.ObjectAllocationSample` events, a good sample size); the same
       count only yielded 135 events for `llkMatch` (it allocates far less per pass) -- still enough
@@ -108,90 +71,24 @@ tasks (`jmhSampling`, auto-chained after `jmh`; `jmhAllocSampling`, standalone) 
 
 ## On-device (Android) corpus benchmark
 
-Done (2026-09-08, verified on a real device -- a Pixel 3a, API 32): `AndroidCorpusBenchmark`
-(`app/src/androidTest/java/.../corpus/AndroidCorpusBenchmark.java`) mirrors `CorpusBenchmark` above
-but runs as an `androidx.test` instrumented test on a phone (JMH itself doesn't run on Android), so
-it can be compared against the desktop numbers under a slower CPU, a much smaller heap, and
-Android's own `java.util.regex`/ART. It reuses the same golden TSVs (copied into androidTest assets
-at build time by `app/build.gradle`'s `copyGoldenAssetsForAndroidTest` task, so the checked-in
-copies under `llkpattern/src/test/resources/golden/` stay the only source of truth) via a
-standalone `AndroidGoldenRow`/`AndroidGoldenTsv` reader (kept separate from `GoldenRow`/`GoldenTsv`
-since those live in `llkpattern`'s `test` source set and use `java.nio.file`, which needs API 26+ /
-desugaring this app module doesn't otherwise pull in). `FRACTION_OF_TEST_ROWS` subsamples the
-corpus for slower devices; results are written as JSON named after the actual device
-(`Build.MANUFACTURER`/`MODEL`/`DEVICE`) to the app's external files dir, since the point is
-comparing several phones with different hardware. GC counts during each measured benchmark are
-recorded via `Debug.getGlobalGcInvocationCount()`. `sampleMatchLlk`/`sampleCompileLlk` (a
-hand-rolled stack sampler, since `Debug.startMethodTracingSampling` has no way to cap stack depth)
-run unconditionally alongside the four timing benchmarks, aggregating into a reversed call-tree
-report (leaves ranked by frequency, then each leaf's callers recursively) at
-`benchmarks/<device>_<name>_sampling.txt`.
-- [x] ~~Run `./gradlew :app:connectedAndroidTest` against real hardware~~ -- done 2026-09-08 against
-      a Pixel 3a (API 32): all 5 tests pass. Required two unrelated fixes to `app/build.gradle`,
-      both pre-existing issues not caused by this test itself: `compileSdk` bumped 33 -> 36
-      (`appcompat`/`material`'s transitive `androidx.activity:1.8.0` requires 34+; 36 chosen over
-      34 since it was already installed locally, avoiding an SDK download) and a
-      `configurations.all { exclude group: 'com.google.guava', module: 'listenablefuture' }` added
-      (Guava's `-jre` flavor, pulled in transitively via the new `androidTestImplementation
-      project(':llkpattern')` dependency, conflicts with the empty `listenablefuture` stub artifact
-      several androidx libraries depend on -- Guava's own documented workaround, see
-      https://github.com/google/guava/issues/2960).
-      A first small-fraction run (0.25, 103 rows, default 3 warmup/5 measured iterations) showed
-      the whole run finishing in ~4 seconds -- wildly underusing a 5-minute test budget -- so
-      `FRACTION_OF_TEST_ROWS` was set to `1.0f` (full 406-row corpus) and `WARMUP_ITERATIONS`/
-      `MEASURED_ITERATIONS` bumped to 50/1000, landing at ~124s wall-clock (`am instrument`'s own
-      "Time:" figure), comfortably under 5 minutes with margin for slower devices. Current
-      committed baseline (`benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json`,
-      full corpus, 1000 measured iterations, re-run 2026-09-08 after this session's `appendSorted`/
-      `entryMap`-aliasing compile-time fixes): `llkCompile` ~6.3x slower than `regexCompile`
-      (41.47ms vs 6.56ms/pass -- down from an earlier 101.7ms/6.7ms baseline before those fixes,
-      consistent with the desktop-side improvement); `llkMatch` is actually *faster* than
-      `regexMatch` at this row count and iteration depth (1.26ms vs 3.77ms/pass) -- notably
-      different from the small-fraction run's `llkMatch` being slower, and from the desktop JMH
-      ratio (see `Intel-i7-9750H_corpus_benchmark_results.json`) where `llkMatch` is slower than `regexMatch` --
-      not yet investigated further (different row mix at full fraction, ART vs HotSpot JIT
-      behavior, and/or genuine device-specific dispatch performance are all plausible; worth
-      another look if it matters for a real decision, but out of scope for just standing up this
-      harness).
-      **Gotcha found re-running this** (2026-09-08): `./gradlew :app:connectedAndroidTest` installs
-      both APKs, runs the tests, and then uninstalls them afterward -- and uninstalling an app on
-      this device wipes its `/sdcard/Android/data/<package>/files/` directory (standard Android
-      behavior), taking the just-written results JSON with it before it can be pulled. Worked
-      around by installing both APKs manually (`adb install -r
-      app/build/outputs/apk/debug/app-debug.apk` and the matching `.../androidTest/debug/
-      app-debug-androidTest.apk`) and running via `adb shell am instrument -w
-      com.tbohne.llkpattern.test/androidx.test.runner.AndroidJUnitRunner` directly instead --
-      exactly the invocation already documented below for the sampling test, which is presumably
-      why that one never hit this. Pull promptly after that command returns, before doing anything
-      else that might trigger a reinstall/uninstall cycle.
-      Also captured CPU sampling profiles of `llkMatch`/`llkCompile` (`sampleMatchLlk`/
-      `sampleCompileLlk`): a hand-rolled sampler (a background thread periodically snapshotting the
-      benchmark thread via `Thread.getStackTrace()`) rather than `Debug.startMethodTracingSampling`
-      (tried first, but its sampling API has no way to cap stack depth -- see notes.md), aggregated
-      into a reversed call-tree report at
-      `benchmarks/Google_Pixel_3a_sargo_{MatchLlk,CompileLlk}_sampling.txt`. These two run
-      unconditionally alongside the four timing benchmarks -- no separate invocation needed.
-      Worth re-running both (timing and sampling) on the other phones once convenient.
 - [ ] If a device's `java.util.regex` disagrees with the golden files' recorded `regexMatchResult`
       (scraped on desktop), decide whether that's rare enough to ignore (the benchmark only times
       *speed*, not correctness, on-device) or common enough to need Android-specific golden columns
       or forked golden files -- not yet checked against a real device.
+- [ ] Re-run the timing and sampling benchmarks on the other phones once convenient.
+
 ## Core implementation
 
-- [ ] \Q...\E quotation: the only remaining `UNIMPLEMENTED` golden-corpus rows (16). Every other non-`AGREES` row is
-      `EXPECTED_DIVERGENCE` (2026-09-19 triage). Also tracked under "Also remember for later".
-- [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable**
-      (e.g. `(a?)+`), instead of relying solely on the entry-point-computation guard added
-      2026-09-08 (see design.md's "Entry-point computation vs. matcher compilation" section) to
-      catch it as a compile-time `PatternSyntaxException`. Checked (2026-09-08): no such parse-time
-      check exists today -- `PatternParser` has nothing recognizing a nullable quantifier body, so
-      the guard is currently the *only* thing catching these patterns, not a backstop for
-      parser-level rejection as originally hoped. A `NestedQuantifierCombinatorialTest` was added
-      the same day to prove the guard itself is reachable and never escapes as anything other than
-      `PatternSyntaxException` across ~600 nested-quantifier pattern shapes. A parse-time version
-      would need a `nullable(construct)` AST recursion (a third sibling to `firstCharSet()`/
-      `lastCharSet()`) and would only be a diagnostic-quality improvement (an earlier, more
-      specific error message) -- not a correctness fix, since the guard already catches every case.
+- [ ] Implement `\Q...\E` quotation. Its 16 golden-corpus rows are the only ones still tagged
+      `UNIMPLEMENTED`; its tests are listed under "Also remember for later".
+- [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable** (e.g. `(a?)+`).
+      Today only the entry-point-computation guard (design.md's "Entry-point computation vs. matcher compilation")
+      catches it, as a compile-time `PatternSyntaxException`; `PatternParser` has no `nullable(construct)` recursion
+      (a third sibling to `firstCharSet()`/`lastCharSet()`). A parse-time version would only improve the
+      diagnostic (an earlier, more specific message), not correctness, since the guard already catches every case
+      (`NestedQuantifierCombinatorialTest`).
+- [ ] Flag groups with no positive flags fail to parse: `(?-i)a` and `(?-i:a)` throw "Not a valid group special
+      construct", while `(?i-s)a`, `(?i-s:a)` and `(?is)a` work. `java.util.regex` accepts a leading `-`.
 - [ ] Numbered backreferences only support a single digit (`\1`-`\9`) -- unlike `java.util.regex`,
       which greedily consumes further digits when enough groups exist to make them part of the
       group number (`\12` can mean group 12, not group 1 followed by literal "2"). A pattern
@@ -304,58 +201,31 @@ to keep it "vaguely reasonable" and the jar/dex small.
 
 - [ ] **Reluctant/possessive quantifiers' permanent semantics**: the parser currently accepts and no-ops `?`/`+` quantifier modifiers (per its own comment, "reluctant and possessive quantifiers are no-ops in this Pattern"). Confirm this is the intended permanent semantic (i.e., this engine has one matching behavior, and the reluctant/possessive distinction from `java.util.regex` doesn't apply here) and document it prominently for users migrating from `java.util.regex`, rather than leaving it as an implicit consequence of "no backtracking."
 
-## `PatternParser` codepoint-array indexing (proposed 2026-09-15, tried 2026-09-14, reverted -- measured regression)
+## `PatternParser` codepoint-array indexing
 
-- [ ] **Convert `PatternParser`'s internal `index` from a char index into `pattern` to a codepoint
-      index into a decoded `int[]`**, to skip `Character.charCount`/surrogate-pair math throughout
-      the per-character scan loop (proposed by the project owner, following the same reasoning as
-      `Matcher.peeked`/`PatternParser.patternChars`'s own char\[\]-vs-String win -- see notes.md's
-      2026-09-15 entries). Explicitly deferred to its own session rather than attempted
-      opportunistically: this isn't a small tweak, it's a full re-indexing of the file --
-      `index`/`startIndex`/`endIndex` are used well over 100 times, including every
-      `PatternSyntaxException`'s char-accurate error position (must keep matching
-      `java.util.regex`'s own char-offset contract), every `pattern.substring(...)` call (group/
-      char-class names), and the three `CharBuffer.wrap(pattern, ...)` zero-copy literal-text
-      sites added 2026-09-14.
-- [ ] To land this **without** losing the zero-copy literal optimization or breaking char-accurate
-      error positions: decode `pattern` into a codepoint `int[]` AND a parallel `int[] charOffsets`
-      (`charOffsets[codepointIndex]` = the char index that codepoint starts at, built in one pass
-      alongside the codepoint decode) at construction. `index` becomes a codepoint index used for
-      the hot scan loop (`advance`/`advanceCodePoint`/`peek` all collapse to simple `index++`/array
-      reads, no charCount distinction needed at all, since every codepoint occupies exactly one
-      array slot regardless of BMP/supplementary); every place that currently captures a
-      `startIndex`/`endIndex` for a `PatternConstruct`, a `pattern.substring(...)` call, or a
-      `CharBuffer.wrap(pattern, ...)` call translates through `charOffsets[index]` first, so
-      external-facing behavior (spans, substrings, exception positions, the zero-copy literal
-      views) is unchanged.
-- **Tried exactly as specced above (2026-09-14), reverted -- see notes.md's entry.** Correctness
-  held (full test suite green, including char-accurate exception positions), but desktop
-  `llkCompile` regressed ~5-8% (0.229 -> 0.241-0.244 ms/op, reproduced across two runs, tight error
-  bars) with ~10% more allocation (667,200 -> ~735,000 B/op) -- the two per-compile `int[]`
-  allocations (`codePoints` + `charOffsets`) cost more than the `charCount`/surrogate-math this
-  corpus's short patterns ever needed skipped. Left as an open item in case a different corpus
-  (much longer patterns, where the per-character savings would actually accumulate) or a
-  single-array encoding (packing the char-offset into unused high bits of each codepoint slot,
-  avoiding the second array) changes the tradeoff -- not attempted this session.
-- [ ] Measure before keeping, same as everything else touched this session -- this project has
-      twice already measured a plausible-sounding indexing/pre-sizing heuristic as a net
-      regression (see notes.md's 2026-09-10 `CodePointMapBuilder` entries), and parsing happens
-      once per compile on typically-short pattern strings, so the absolute win here may be small
-      even if real.
+- [ ] **Convert `PatternParser`'s `index` from a char index into `pattern` to a codepoint index into a decoded
+      `int[]`**, to skip `Character.charCount`/surrogate math in the per-character scan loop. Not a small tweak:
+      `index`/`startIndex`/`endIndex` are used 100+ times, including every `PatternSyntaxException`'s char-accurate
+      position (must keep matching `java.util.regex`'s char-offset contract), every `pattern.substring(...)`, and the
+      three `CharBuffer.wrap(pattern, ...)` zero-copy literal sites. Design: a parallel `int[] charOffsets`
+      (codepoint index -> char index), built in one pass with the decode and translated through at every
+      span/substring/error site.
+- Tried exactly this on 2026-09-14 and reverted (notes.md): correct, but desktop `llkCompile` regressed ~5-8%
+  with ~10% more allocation, because the two per-compile `int[]`s cost more than this corpus's short patterns
+  ever saved. Only worth revisiting for a corpus of much longer patterns, or a single-array encoding (char offset
+  packed into unused high bits of each codepoint slot). Measure before keeping.
 
-## `firstCharSet`/`lastCharSet` follow-ups (2026-09-08)
+## `firstCharSet`/`lastCharSet` follow-ups
 
 - [ ] **`BackReference` aliasing its referenced group's own entry point directly**, instead of going through the separate `firstCharSet`/`lastCharSet` static-walk helpers -- proposed this session, NOT done: `firstCharSet(referencedGroup)` and `referencedGroup.getEntryPointMap()` diverge for a nullable referenced group (the latter folds in `next`'s entries via `buildLoopEntryMap`'s `min == 0` case, and can throw `EntryPointCycleException` on a pattern that compiles fine today), so this needs verifying against `(a?)\1` and `(a|b)?\1` before landing, not just assumed safe.
-- [ ] **`lastCharSet`/`WordBoundaryConstruct.priorCharSet` should NOT be removed** -- raised and rejected this session. `lastCharSet` isn't dead now that sequences link `next` pointers directly; it's the compile-time `\b`/`\B` static-wordness optimization (`WordBoundaryConstruct.classify`'s subset/disjoint checks need an actual queryable `CodePointSet`, which a push-only API can't give it). Removing it wouldn't fail any test, just silently push every `\b` onto the runtime-check path -- noted here so it isn't attempted again without realizing that.
 - [ ] `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`, and stale-named -- it's a `CodePointSet` now, not a `CodePointMap`) and the `QuantifiedUnion`-branch-union temporary sets inside those two methods are still real, un-eliminated small allocations -- left alone this session per the item above (converting `lastCharSet`'s callers to a push model isn't viable; `firstCharSet`'s one call site might be, see above, but wasn't converted). Worth renaming `singletonCodePointMap` to `singletonCodePointSet` while touching this.
 
-## Remaining desktop-allocation-sampling leaders (2026-09-18)
+## Remaining desktop-allocation-sampling leaders
 
-Found via `:llkpattern:jmhAllocSampling` after `CodePointSetBuilder`'s own eager-array fix (see
-notes.md's entry) knocked it out of the top 10. Neither item below was attempted this session --
-both have a materially bigger blast radius than `CodePointSetBuilder` (a throwaway per-bracket-
-expression builder) for a similar-sized win, so they need their own dedicated look rather than
-being folded in opportunistically:
+Found via `:llkpattern:jmhAllocSampling`. Each has a bigger blast radius than the throwaway per-bracket
+`CodePointSetBuilder`, so each needs its own dedicated look. Before touching any of them, read the
+`CodePointSetBuilder` entry in notes.md: small-N accumulation sites have repeatedly regressed when converted to a
+builder or pre-sized.
 
 - [ ] **`ArrayCodePointSet`'s own eager `keys` array** (~6% of sampled allocation weight) has the
       same "allocated even when the set ends up empty" shape `CodePointSetBuilder` had, but
@@ -376,29 +246,6 @@ being folded in opportunistically:
       "measure before keeping" guidance a few sections up (a plausible-sounding pre-sizing
       heuristic has already twice measured as a net regression in this project).
 
-**Both items above now have one more caution attached, learned 2026-09-18** (see notes.md's three
-entries that session): `CodePointSetBuilder` went through THREE further rewrites that session --
-one array (`long[]`, packing `(min,max)` per entry), then a fully packed single `int[]` matching
-`ArrayCodePointSet`'s own `(min<<11)|count` format exactly, then finally restructured as an
-interface implemented by a class that literally IS-A `ArrayCodePointSet` (so `#build` returns
-`this`, no separate final object at all) -- each measurably improving its one real caller
-(`parseComplexCharacterRanges`'s literal members) a little further, down to 632,792 B/op from the
-original 667,200. But converting three OTHER allocation-sampling leaders that looked like ideal
-`CodePointSetBuilder` candidates (`PatternParser#intersect`, `#mergeRun`'s combine branch,
-`PatternConstruct#mergeEntryPoints`'s main loop) to use it regressed allocation EVERY time this was
-tried -- FOUR times, against four successively-more-optimized versions of the builder (including
-the final IS-A-`ArrayCodePointSet` version, which should have eliminated the "two objects" cost
-entirely), each attempt on the theory that the specific inefficiency just fixed was what had sunk
-the previous attempt. Even after two more targeted fixes on top of the IS-A version (bypassing
-`ArrayCodePointSet#addAll`'s own fast path; giving the builder a bigger starting capacity than
-`ArrayCodePointSet`'s own), it STILL regressed -- both of those "fixes" made it measurably WORSE,
-not better. The likely real explanation, this time genuinely load-bearing across all four attempts:
-these three call sites' typical accumulation is small enough (often just 1-2 ranges) that ANY
-builder-shaped approach -- extra object, extra array-growth bookkeeping, whatever the exact design
--- costs more than `ArrayCodePointSet`'s own direct sorted-insert-with-shift mutation, which has
-no fixed overhead to amortize in the first place. This also rules out `CodePointSetBuilder` for the
-`Sequence`/`Union` `ArrayList` item below it (also typically few elements) for the same reason.
-
 - [ ] **`PatternParser.parse`'s own `PatternConstruct` allocation is ~18% of sampled allocation
       weight** -- every `QuantifiedUnion`/`Sequence` node gets allocated eagerly as the parser
       descends, even for AST shapes that could plausibly be deferred or elided (e.g. a `Sequence`
@@ -411,11 +258,6 @@ no fixed overhead to amortize in the first place. This also rules out `CodePoint
       enough in surface area (`PatternParser`'s whole recursive-descent structure assumes eager
       construction) to warrant its own dedicated session per this file's usual guidance, not a
       quick opportunistic change.
-Don't reach for `CodePointSetBuilder` as a general "any small accumulation" replacement without
-measuring first, and don't re-attempt converting these three specific call sites a FIFTH time
-without a fundamentally different idea, not just another tuning knob on the same "builder" concept
--- four independent variants of that concept have now all failed the same way.
-
 - [ ] **`PatternParser#parseComplexCharacterRanges`'s `negate` handling** calls a separate
       `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a bracket
       expression starts with `^`. `CodePointSetBuilder` gained an `#invert` method (2026-09-18,
@@ -434,53 +276,3 @@ without a fundamentally different idea, not just another tuning knob on the same
       as the three rejected `CodePointSetBuilder` conversions, so a `CodePointSetBuilder`-based fix
       specifically is NOT the presumed answer here -- a pre-sized `ArrayCodePointSet` is more likely
       the right shape, same as before the `mergeEntryPointsRaw` deletion).
-
-## Fork-chain dispatch (2026-09-11/12) -- the performance plan
-
-**Superseded 2026-09-18** (branch `flatten-matcher-dispatch`): step 1's `ForkingMatcherConstruct`
-node and `LoopMatcherConstruct`'s own `memberSet`/`exitSet` fields (referenced below) no longer
-exist -- the fork is now folded into every node via an `entrySet`/`failedEntry` pair instead of a
-separate wrapping node. See design.md's "Opcode set" section for the current design and its
-"Alternatives Considered" section for `ForkingMatcherConstruct`'s own pros/cons relative to it.
-Steps 2 and 3 below (the `CodePointMap<Boolean>` -> `CodePointSet` migration, and
-`UnionCodePointSet`) are unaffected by this and remain accurate.
-
-Step 1 (2026-09-11): `DispatchMatcherConstruct`/`MultiDispatchingMatcherConstruct` (the
-`CodePointMap<MatcherConstruct>`-table-backed N-way dispatch node) is gone, replaced by chains of a
-new `ForkingMatcherConstruct` (a plain 2-way fork on set membership) for unions and a quantified
-construct's own entry point, plus a related but separate `LoopMatcherConstruct` for a loop's own
-continue-vs-exit choice -- see notes.md's 2026-09-11 entry for the case-insensitive priority bug
-this surfaced and fixed along the way.
-
-Step 2 (2026-09-12): every `CodePointMap<Boolean>` production use (`PatternConstruct.entryMap`,
-`ComplexCharacter.ranges`, a dispatch node's own membership set(s), `WordBoundaryConstruct`'s
-word-set classification, every `NamedCharClass`/`UnicodePredicates` constant) is now a plain
-`CodePointSet`/`ArrayCodePointSet` -- no `V[] values`
-array, and `complement()` is a flag flip (`invert`) instead of a real rebuild. `UnicodeAnalyzer`
-(the `unicodeanalyzer` module's generator) updated to emit `CodePointSet` fields directly;
-`UnicodePredicates.java` regenerated. `ArrayCodePointMap<V>`/`CodePointMap<V>` remain in use only
-where a real multi-valued map is still needed: `mergeEntryPointsRaw`'s transient
-`PatternConstruct`-valued ambiguity-check merge, and the general-purpose `String`-valued test
-oracle (`TreeCodePointMap`/`CodePointMapDifferentialTest`). See notes.md's 2026-09-12 entry for a
-real bug found along the way (a private "complement" constructor overload silently shadowing the
-public copy constructor for any same-class argument -- fixed via a static factory instead of a
-constructor overload).
-
-Step 3 (2026-09-12): added `UnionCodePointSet`, a read-only lazy union of two delegate `CodePointSet`s
-(see its own class doc). Wired into `PatternParser#parseComplexCharacterRanges`: a bracket run's
-escape/nested-class contributions (`\d`, `\p{...}`, `[...]`) are unioned in by reference while the
-run is being parsed, instead of each one being copied into the run's `CodePointSetBuilder`
-immediately. The lazy union is **always materialized back into a concrete `ArrayCodePointSet`**
-before the run's result leaves `parseComplexCharacterRanges` (`mergeRun`'s job) -- a `Union
-CodePointSet` is measurably slower than `ArrayCodePointSet` at `contains`/`containsAll`/
-`forEachRange` (extra virtual calls, or a full materialize), so letting one reach `ComplexCharacter
-.ranges`/a compiled matcher would trade a one-time parse-time copy for a permanent match-time cost --
-see notes.md's 2026-09-12 entry. Net effect: a bracket combining multiple large sets (e.g.
-`[\d\w\s]`) now does its unioning in one pass at the end instead of copying each one in turn, but a
-bracket with only one such contribution and no other members (e.g. `[\d]`) skips the copy entirely.
-JMH before/after (`0.353`/`0.355` ms/op compile, `0.035`/`0.035` ms/op match) showed no measurable
-match-time change and no measurable compile-time change either -- the corpus has few brackets with
-multiple large named-class members, so this is a real but narrow win; not surprising given the
-guard above intentionally limits its own scope. The "bracket-embedded named classes still merge"
-item elsewhere in this file describes the same remaining copy-at-the-end behavior from a different
-angle -- not fully superseded by this, since `mergeRun` still materializes eagerly today.

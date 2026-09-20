@@ -28,11 +28,11 @@ final class PatternParser {
   // SequenceConstruct -> Text QuantifierConstruct? SequenceConstruct?
   // Group -> "?" "<" GroupName ">" ) UnionConstruct
   // Group -> "?" ":" UnionConstruct
-  // Group -> "?" "=" UnionConstruct
-  // Group -> "?" "!" UnionConstruct
-  // Group -> "?" "<=" UnionConstruct
-  // Group -> "?" "<!" UnionConstruct
-  // Group -> "?" ">" UnionConstruct
+  // Group -> "?" "=" UnionConstruct   // rejected at parse time: can't run in linear time
+  // Group -> "?" "!" UnionConstruct   // rejected at parse time: can't run in linear time
+  // Group -> "?" "<=" UnionConstruct  // rejected at parse time: can't run in linear time
+  // Group -> "?" "<!" UnionConstruct  // rejected at parse time: can't run in linear time
+  // Group -> "?" ">" UnionConstruct   // atomic group: not implemented
   // Group -> UnionConstruct
   // QuantifierConstruct -> "?" ReluctantQuantifier?
   // QuantifierConstruct -> "*" ReluctantQuantifier?
@@ -43,7 +43,7 @@ final class PatternParser {
   // GroupName -> [A-Za-z0-9]
   // Text -> "\" "n" Text? //BackReferenceIdConstruct
   // Text -> "\" "k" "<" GroupName ">" Text? // BackReferenceStringConstruct - Note this isn't actually context-free
-  // Text -> "\" "Q" ([^\][^E])* "\" "E" Text? // Technically this is LL(2), but it doesn't impact speed much here.
+  // Text -> "\" "Q" ([^\][^E])* "\" "E" Text? // Not implemented yet. Technically this is LL(2), but it doesn't impact speed much here.
   // Text -> CharacterConstruct Text?  // LiteralConstruct
   // CharacterConstruct -> "[" "^"? IntersectionCharacter
   // CharacterConstruct -> "." // PatternConstruct.DOT
@@ -52,11 +52,12 @@ final class PatternParser {
   // CharacterConstruct -> TerminalCharacter
   // IntersectionCharacter -> UnionCharacter (&& IntersectionCharacter)?
   // UnionCharacter -> RangeCharacter UnionCharacter? //or ListOfCharacters
-  // RangeCharacter -> TerminalCharacter ("-" TerminalCharacter)?
+  // RangeCharacter -> TerminalCharacter ("-" TerminalCharacter)?  // max must not be below min
   // RangeCharacter -> "[" IntersectionCharacter "]"
   // TerminalCharacter -> "\" EscapeCharacter
   // TerminalCharacter -> [terminal]
-  // EscapeCharacter -> [\\\|()?*+{}\[\]^$.]"
+  // EscapeCharacter -> [^A-Za-z1-9]  // quotes any other character (e.g. \\ \| \- \, \< or non-ASCII);
+  //                                  // ASCII letters are reserved for escapes, 1-9 for backreferences
   // EscapeCharacter -> [tnrfaeR]
   // EscapeCharacter -> "0" Octal Octal?
   // EscapeCharacter -> "0" Octal3 Octal Octal
@@ -68,6 +69,7 @@ final class PatternParser {
   // EscapeCharacter -> [bBAGZz] //misc CharacterConstruct
   // EscapeCharacter -> "p" "{" Predefined "}"
   // EscapeCharacter -> "P" "{" Predefined "}" //negation
+  // EscapeCharacter -> [pP] [A-Za-z]  // single-letter form, e.g. \pL: the letter is the whole Predefined name
   // Predefined -> "Lower" | "Upper" | "ASCII" | "Alpha" | "Digit" | "Alnum" | "Punct" //misc CharacterConstruct
   // Predefined -> "Graph" | "Print" | "Blank" |"Cntrl" | "XDigit" | "Space" //misc CharacterConstruct
   // Predefined -> "javaLowerCase" | "javaUpperCase" | "javaWhitespace" | "javaMirrored" //misc CharacterConstruct
@@ -78,6 +80,7 @@ final class PatternParser {
   // ScriptOrBinaryPropertyOrCategory -> Script
   // ScriptOrBinaryPropertyOrCategory -> BinaryProperty
   // ScriptOrBinaryPropertyOrCategory -> Category
+  // ScriptOrBinaryPropertyOrCategory -> PosixName  // "Lower" | "Upper" | "ASCII" | ... as above, but always full-Unicode
   // BinaryProperty -> "Alphabetic" | "Ideographic" | "Letter" | "Lowercase" | "Uppercase"
   // BinaryProperty -> "Titlecase" | "Punctuation" | "Control" | "White_Space" | "Digit"
   // BinaryProperty -> "Hex_Digit" | "Join_Control" | "Noncharacter_Code_Point" | "Assigned"
@@ -1202,19 +1205,10 @@ final class PatternParser {
     // "script="/etc.) before we're done, and a thrown message should always echo what the user
     // actually typed, not the stripped-down name used for the NamedCharClass.valueOf() lookup.
     String originalCharClassName = charClassName;
-    // Bug fix (2026-09-06): this used to branch on `peek`/`peek2` (a lookahead-by-one past `index`,
-    // bounds-checked the same way every other one in this file is), but `advance(end - index + 1)`
-    // just above already moved the parser's lookahead PAST the whole "\p{...}" construct -- so
-    // `peek`/`peek2` were actually the character(s) *following* the escape, not the first
-    // character(s) of the class name, making every Is/In/java-prefixed class (\p{IsAlphabetic},
-    // \p{javaLowerCase}, etc.) fail with "unknown named character class" unless the pattern text
-    // happened to coincidentally continue with 'I'/'j'. Fixed to check `charClassName` itself
-    // (captured before the advance), which is what these prefixes are actually part of. See
-    // remaining_work.md. `peek2` itself was dead (never read after being assigned) -- removed
-    // rather than left as an unused local.
-    // Bare "Digit" needs no special-casing here -- NamedCharClass.Digit itself accepts both the
-    // `none` prefix (this branch, ASCII-default/flag-sensitive) and `is` (always full-Unicode,
-    // see NamedCharClass.Digit's own doc for why it's the one name that needs both).
+    // The prefixes are checked on `charClassName`, not `peek`: by now the parser's lookahead is
+    // already past the whole "\p{...}" escape, so `peek` is the character AFTER it.
+    // The two predicates named "Digit" (POSIX vs Unicode) need no special-casing here: get()
+    // picks the ASCII/flag-sensitive or always-full-Unicode set from the prefix.
     NamedCharClass.CharacterClassPrefix prefix;
     if (charClassName.startsWith("Is")) {
       prefix = NamedCharClass.CharacterClassPrefix.is;
@@ -1279,14 +1273,8 @@ final class PatternParser {
   /** Scans a {@code {name}} property name (peek is at the opening brace) and advances past the closing brace. */
   private String parseBracedClassName() {
     advance(1);
-    // Bug fix (2026-09-06): this used to increment `end` BEFORE checking pattern.charAt(end),
-    // meaning the loop never actually validated the name's very first character (at `index`
-    // itself) against [a-zA-Z_=], AND miscounted the name's length by one -- so a genuinely valid
-    // single-letter category name (\p{L}, \p{M}, \p{N}, \p{P}, \p{S}, \p{Z}, \p{C} all exist in
-    // NamedCharClass) was wrongly rejected by the "must have a name" check below, which compared
-    // against the pre-increment convention's off-by-one empty-name marker. Found via
-    // UnicodeClassTest. Restructured to check-then-advance so `end` always reflects the true
-    // (0-or-more) length of the name actually scanned.
+    // Check-then-advance, so `end` always reflects the true (0-or-more) length of the name scanned
+    // and the name's very first character is validated too.
     int end = index;
     for (; ; ) {
       if (end == pattern.length()) {

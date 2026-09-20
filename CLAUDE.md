@@ -6,9 +6,9 @@ When a change is intended to affect (or plausibly could affect) compile-time or 
 performance, once the test suite is green:
 
 1. Re-run the relevant JMH benchmark(s) on this desktop (`./gradlew :llkpattern:jmh`, JDK 17/21 for
-   the Gradle daemon -- see documents/notes.md's toolchain note) and update
-   `benchmarks/corpus_benchmark_results.json` and README.md's benchmark tables with the
-   new numbers.
+   the Gradle daemon -- see documents/notes.md's toolchain note). The task writes
+   `benchmarks/Intel-i7-9750H_corpus_benchmark_results.json` itself; update README.md's benchmark
+   tables by hand with the new numbers.
 2. If the change plausibly shifts *where* time is spent (not just how much), re-capture CPU
    sampling too (temporary `profilers = ['gc', 'stack:lines=4;detailLine=true']` in
    `llkpattern/build.gradle`, reverted after -- 4-frame depth, not 8: 8 was tried and came out too
@@ -17,13 +17,11 @@ performance, once the test suite is green:
    since-removed method is worse than no sampling at all.
 3. Check via `adb devices` whether the Pixel 3a is already plugged in and unlocked. If it is, go
    ahead and run `./gradlew :app:connectedAndroidTest` without asking first. Its benchmark/sampling
-   output files under `benchmarks/` are now updated automatically by the Gradle task itself -- no
-   manual pull/copy needed -- but double-check after the run that they actually updated (new
-   timestamp/numbers), since JMH's own desktop benchmark (step 1 above) is NOT yet wired up the
-   same way and still needs its results copied in by hand. If the device isn't there (or is there
-   but locked, so the test run would just fail/hang), skip that step and don't block the rest of
-   the work on it -- but once everything else is done, remind the user to plug in and unlock the
-   Pixel 3a so this step can be run.
+   output files under `benchmarks/` are written by the Gradle task itself (no manual pull/copy);
+   double-check after the run that they actually updated (new timestamp/numbers). If the device
+   isn't there (or is there but locked, so the test run would just fail/hang), skip that step and
+   don't block the rest of the work on it -- but once everything else is done, remind the user to
+   plug in and unlock the Pixel 3a so this step can be run.
 
 **While iterating on a narrow hypothesis** (e.g. "does data structure X beat Y for an N-element
 accumulation?", not yet the final design), don't run the full corpus benchmark cycle above per
@@ -61,4 +59,41 @@ either failure in the reverted experiment: `((a?b)c)?` vs `""` must match, and `
 Run `UnicodeAnalyzer` with the NEWEST installed JDK (currently `C:\Program Files\Java\jdk-27`) for the
 newest Unicode data -- this means sidestepping Gradle (which can't run on JDK 25+): compile via
 `./gradlew :unicodeanalyzer:classes` on JDK 17, run the class directly with that JDK's `java`, and
-copy its output over with CRLF. Steps: documents/notes.md, 2026-09-19 entry.
+copy its output over with CRLF. Steps: documents/notes.md, 2026-09-19 entry. From Git Bash the
+Windows `java` needs classpath entries in Windows form: `cygpath -w` the guava jar (under
+`~/.gradle/caches/modules-2/files-2.1/com.google.guava/`) and join with `;`.
+
+## Ad-hoc probes against `java.util.regex`
+
+To compare llk with `java.util.regex` on a handful of patterns, compile a scratch class (in the
+scratchpad, not the repo) against `llkpattern\build\classes\java\main` plus the guava jar (add
+`...\test` if you need the corpus classes), after `./gradlew :llkpattern:compileJava
+:llkpattern:compileTestJava`. `PatternSyntaxException` is package-private, so from outside the
+package compare `e.getClass().getSimpleName()`. A probe class holding pattern strings with
+backslashes must be written with the Write tool, not a Bash heredoc (see the global Windows notes).
+
+## Refreshing golden corpus rows
+
+Golden files are `llkpattern/src/test/resources/golden/*.tsv`; the `status` column is
+hand-triaged and must survive a refresh, so never re-run `generateCorpus` over a whole file. To
+refresh specific rows, write a scratch class in package `com.tbohne.llkpattern.corpus` (needed for
+`CorpusGenerator.generateRow`), compile it against `build\classes\java\{main,test}` + guava, and
+read the file with `GoldenTsv.read`, replace the wanted rows with `generateRow(pattern, flags,
+input, mode)`, and `GoldenTsv.write` it back. Afterward verify that only the `status` column
+differs from `git show HEAD:<file>` for rows you did not mean to change.
+
+## Editing `documents/*.md`
+
+These files are CRLF in the working tree but LF in the index (`core.autocrlf=true`). Edit them as
+bytes (`open(p, 'rb')`, normalize, edit, re-encode with CRLF), and check `git diff --stat`
+afterward: a diff of ~1000 lines means the line endings were rewritten. Never put a literal `\0`
+in Python source passed through Bash: the Bash tool halves backslashes, so it becomes a real NUL
+byte, and git then treats the file as binary (`git ls-files --eol` shows `w/-text`). Build such
+text with `chr(92)`, or use the Edit tool.
+
+## Reading Gradle test output
+
+Redirect Gradle output to a file and search it with `grep -a` (raw bytes in test names otherwise
+give "Binary file matches"). Per-test failure messages are in
+`llkpattern/build/test-results/test/TEST-*.xml`.
+

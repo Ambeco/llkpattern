@@ -145,3 +145,6 @@ be unambiguous (LL(1)) to compile at all.
 A Python heredoc through Bash silently fails to apply (backslashes get halved, so a `replace` finds
 no match). Write the edit script to the scratchpad with the Write tool instead: raw `r'''...'''`
 strings, assert `count == 1` per replacement, and read/write bytes with CRLF<->LF normalization.
+
+This also applies to `cat <<'EOF'` heredocs that create new `.java` files: use the Write tool for any
+Java text containing `\`.

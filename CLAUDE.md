@@ -31,6 +31,14 @@ the desktop quiet; (3) by the time it finishes, the other session's "ready" shou
 arrived -- if so, start the Intel run right away, otherwise wait for it, never start without it;
 (4) message the other session when the Intel run is done so it can resume.
 
+**A/B against a fresh baseline, after any change that could potentially affect performance.** The
+committed `benchmarks/*` baselines can be stale, so a delta against them may not come from your change
+(seen: a committed 44,616 B/op vs 48,488 B/op measured on unchanged code). Copy the new JSON somewhere,
+`git stash -u`, run `./gradlew :llkpattern:jmh` (~75 s), copy that JSON, then
+`git checkout -- benchmarks && git stash pop`. Compare `primaryMetric.score` and
+`secondaryMetrics["·gc.alloc.rate.norm"]`. The jmh task also regenerates the `*_sampling.txt` files by
+itself; the Pixel 3a run takes ~95 s.
+
 **While iterating on a narrow hypothesis** (e.g. "does data structure X beat Y for an N-element
 accumulation?", not yet the final design), don't run the full corpus benchmark cycle above per
 variant -- it exercises the entire parse/compile pipeline, not just the operation in question, so
@@ -104,6 +112,12 @@ text with `chr(92)`, or use the Edit tool.
 Redirect Gradle output to a file and search it with `grep -a` (raw bytes in test names otherwise
 give "Binary file matches"). Per-test failure messages are in
 `llkpattern/build/test-results/test/TEST-*.xml`.
+
+## Parser root shape
+
+`PatternParser.parse()` unwraps a single-alternative root, so `parsed` is a bare `Sequence`, not a
+`QuantifiedUnion`. Code inspecting the root construct (e.g. `Ll1Pattern.startsWithBeginAnchor`) must
+handle both shapes.
 
 ## Differential tests against `java.util.regex`
 

@@ -36,6 +36,11 @@ public class UnicodeAnalyzer {
 		intPredicate("isWhitespace", Character::isWhitespace);
 		intPredicate("isISOControl", Character::isISOControl);
 		intPredicate("isMirrored", Character::isMirrored);
+		// JDK 21+ only. Looked up reflectively so this module still compiles on the JDK 17 Gradle runs on.
+		for (String name : new String[] {"isEmoji", "isEmojiPresentation", "isEmojiModifier",
+				"isEmojiModifierBase", "isEmojiComponent", "isExtendedPictographic"}) {
+			intPredicate(name, reflectedCharacterPredicate(name));
+		}
 
 		categories();
 		scripts();
@@ -61,6 +66,24 @@ public class UnicodeAnalyzer {
 
 	public static void printFooter() {
 		System.out.print("}\n");
+	}
+
+	private static IntPredicate reflectedCharacterPredicate(String methodName) {
+		java.lang.reflect.Method method;
+		try {
+			method = Character.class.getMethod(methodName, int.class);
+		} catch (NoSuchMethodException e) {
+			throw new IllegalStateException("Character." + methodName + "(int) needs JDK 21+, but this is JDK "
+					+ System.getProperty("java.version") + ". Run UnicodeAnalyzer with the newest installed JDK "
+					+ "(see CLAUDE.md, \"Regenerating UnicodePredicates.java\").", e);
+		}
+		return codePoint -> {
+			try {
+				return (Boolean) method.invoke(null, codePoint);
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException(e);
+			}
+		};
 	}
 
 	public static void intPredicate(String name, IntPredicate predicate) {

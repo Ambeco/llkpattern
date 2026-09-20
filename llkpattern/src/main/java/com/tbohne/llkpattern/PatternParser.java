@@ -1368,7 +1368,9 @@ final class PatternParser {
     }
 
     try {
-      NamedCharClass namedClass = NamedCharClass.valueOf(charClassName);
+      NamedCharClass namedClass = prefix == NamedCharClass.CharacterClassPrefix.is
+          ? NamedCharClass.valueOfIs(charClassName)
+          : NamedCharClass.valueOf(charClassName);
       CodePointSet namedRanges = namedClass.get(prefix, flags);
       // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but
       // never actually used -- "\P{...}" silently behaved exactly like "\p{...}" (always positive).

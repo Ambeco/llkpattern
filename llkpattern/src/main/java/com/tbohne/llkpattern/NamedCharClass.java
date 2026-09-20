@@ -122,6 +122,14 @@ enum NamedCharClass {
   // Unicode Binary Properties
   Alphabetic(Source.UProperty, javaAlphabetic),
   Ideographic(Source.UProperty, javaIdeographic),
+  // JDK 21+ emoji properties: java.util.regex only knows them from JDK 21, but they're generated
+  // into UnicodePredicates regardless of the JDK this runs on.
+  Emoji(Source.UProperty, UnicodePredicates.isEmoji),
+  Emoji_Presentation(Source.UProperty, UnicodePredicates.isEmojiPresentation),
+  Emoji_Modifier(Source.UProperty, UnicodePredicates.isEmojiModifier),
+  Emoji_Modifier_Base(Source.UProperty, UnicodePredicates.isEmojiModifierBase),
+  Emoji_Component(Source.UProperty, UnicodePredicates.isEmojiComponent),
+  Extended_Pictographic(Source.UProperty, UnicodePredicates.isExtendedPictographic),
   Letter(Source.UProperty, javaLetter),
   Lowercase(Source.UProperty, javaLowerCase),
   Uppercase(Source.UProperty, javaUpperCase),
@@ -429,9 +437,38 @@ enum NamedCharClass {
   /** True if {@code name} is a named class that may be looked up under the {@code Is} prefix. */
   static boolean isNamedClass(String name) {
     try {
-      return valueOf(name).allowedPrefixes.contains(CharacterClassPrefix.is);
+      return valueOfIs(name).allowedPrefixes.contains(CharacterClassPrefix.is);
     } catch (IllegalArgumentException e) {
       return false;
+    }
+  }
+
+  // The four binary properties java.util.regex also accepts spelled without underscores.
+  private static final ImmutableSet<String> UNDERSCORE_OPTIONAL =
+      ImmutableSet.of("HEX_DIGIT", "JOIN_CONTROL", "NONCHARACTER_CODE_POINT", "WHITE_SPACE");
+
+  /**
+   * {@link #valueOf} for a name written after {@code \p{Is}}: like java.util.regex, binary property
+   * and POSIX names match case-insensitively there ({@code \p{IsALPHABETIC}}), while categories
+   * ({@code \p{IsLu}}) stay case-sensitive.
+   */
+  static NamedCharClass valueOfIs(String name) {
+    try {
+      return valueOf(name);
+    } catch (IllegalArgumentException e) {
+      for (NamedCharClass c : values()) {
+        // \p{IsASCII} is the one POSIX name java.util.regex matches case-sensitively.
+        if (c == ASCII || c.source == Source.Category || !c.allowedPrefixes.contains(CharacterClassPrefix.is)) {
+          continue;
+        }
+        String candidate = c.name();
+        if (candidate.equalsIgnoreCase(name)
+            || UNDERSCORE_OPTIONAL.contains(candidate.toUpperCase(java.util.Locale.ROOT))
+                && candidate.replace("_", "").equalsIgnoreCase(name)) {
+          return c;
+        }
+      }
+      throw e;
     }
   }
 

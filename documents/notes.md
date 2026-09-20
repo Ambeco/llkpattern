@@ -2664,6 +2664,11 @@ Notes to self about how to work on this project, and other context that doesn't 
   + the guava jar), redirect stdout to a scratch file, and copy over (convert to CRLF to match the
   checked-in file). Full suite stayed green even though the test JVM (17) has older Unicode data.
 
+- **2026-09-20: JDK 21 emoji properties added** (`\p{IsEmoji}` etc., 6 sets in `UnicodePredicates`, regenerated on JDK 27).
+  `UnicodeAnalyzer` now REQUIRES JDK 21+ to run (reflective `Character.isEmoji*`, throws otherwise). Also found: JDK
+  matches `\p{Is...}` binary-property/POSIX names case-insensitively (`IsALPHABETIC`), but not categories
+  (`IsLU`), and `IsASCII` only in upper case; llk was case-sensitive everywhere (`NamedCharClass#valueOfIs`).
+
 - **2026-09-19: considered and rejected: a client-runnable generator writing an external Unicode data file
   the library would prefer when present.** Too much work (format, loader, discovery, validation), likely
   slower than compiled-in sets, and little value since regenerating `UnicodePredicates.java` is cheap.

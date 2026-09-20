@@ -2737,3 +2737,4 @@ Notes to self about how to work on this project, and other context that doesn't 
     silently shadowed the public copy constructor; fixed with a static factory.
   - *Codepoint-indexed `PatternParser`*: tried 2026-09-14 (codepoint `int[]` + parallel char-offset `int[]`); correct,
     but desktop `llkCompile` regressed 5-8% with ~10% more allocation. See the 2026-09-14/15 entries.
+- 2026-09-19: `find(int)` now `reset()`s first (region included) and a failed `find()` keeps `matchEnd`/clears `matchStart` like the JDK's `last`/`first`, so it stays failed; an early `nextStart > regionEnd` failure must NOT clear `matchStart` or an empty match at the end would re-match. `region()` now clears all match state (JDK calls `reset()`). Anchoring bounds: see design.md; benchmarks not re-run (boundary constructs only).

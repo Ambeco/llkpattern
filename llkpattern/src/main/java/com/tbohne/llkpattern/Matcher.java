@@ -55,6 +55,12 @@ public class Matcher implements MatchResult {
 	String input;
 	int regionEnd;
 	int regionStart = 0;
+	// Where ^ $ \A \z \Z see the start/end of input: the region's own edges when anchoring bounds are
+	// on (the default), else the true edges of the input. Always kept in sync with regionStart/
+	// regionEnd/input/anchoringBounds by syncAnchors(); anchorStart <= regionStart, anchorEnd >= regionEnd.
+	int anchorStart = 0;
+	int anchorEnd;
+	private boolean anchoringBounds = true;
 	int pos = 0;
 	// The code point at `pos` (or -1 at/past regionEnd) -- kept in sync by every method that moves
 	// `pos` (attemptMatch/consume1CodePoint/consumeCodeUnits/region/reset*, all via syncPeeked()),
@@ -118,6 +124,7 @@ public class Matcher implements MatchResult {
 		this.pattern = pattern;
 		this.input = input;
 		this.regionEnd = input.length();
+		this.anchorEnd = regionEnd;
 		this.quantifiableCounts = new int[pattern.quantifiableCount];
 		this.captureGroups = new int[pattern.captureGroupCount * 2];
 		java.util.Arrays.fill(captureGroups, -1);
@@ -353,8 +360,8 @@ public class Matcher implements MatchResult {
 		return pattern.captureGroupCount;
 	}
 
-	public boolean hasAnchoringBounds()  {
-		throw new UnsupportedOperationException("TODO: implement Matcher#hasAnchoringBounds");
+	public boolean hasAnchoringBounds() {
+		return anchoringBounds;
 	}
 
 	public boolean hasTransparentBounds()  {
@@ -387,6 +394,7 @@ public class Matcher implements MatchResult {
 		this.regionStart = start;
 		this.regionEnd = end;
 		this.pos = start;
+		syncAnchors();
 		resetMatchState();
 		syncPeeked();
 		return this;
@@ -460,6 +468,7 @@ public class Matcher implements MatchResult {
 		regionStart = 0;
 		regionEnd = input.length();
 		pos = 0;
+		syncAnchors();
 		syncPeeked();
 		resetMatchState();
 		return this;
@@ -470,9 +479,15 @@ public class Matcher implements MatchResult {
 		regionStart = 0;
 		regionEnd = input.length();
 		pos = 0;
+		syncAnchors();
 		syncPeeked();
 		resetMatchState();
 		return this;
+	}
+
+	private void syncAnchors() {
+		anchorStart = anchoringBounds ? regionStart : 0;
+		anchorEnd = anchoringBounds ? regionEnd : input.length();
 	}
 
 	private void resetMatchState() {
@@ -574,8 +589,11 @@ public class Matcher implements MatchResult {
 		return pattern.toString();
 	}
 
-	public Matcher useAnchoringBounds(boolean b)  {
-		throw new UnsupportedOperationException("TODO: implement Matcher#useAnchoringBounds");
+	/** Like java.util.regex.Matcher#useAnchoringBounds: does not otherwise reset this matcher. */
+	public Matcher useAnchoringBounds(boolean b) {
+		anchoringBounds = b;
+		syncAnchors();
+		return this;
 	}
 
 	public Matcher usePattern(Ll1Pattern newPattern)  {

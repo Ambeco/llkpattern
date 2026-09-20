@@ -475,14 +475,16 @@ abstract class MatcherConstruct {
 	 * BoundaryMatcherConstruct} ({@code \Z}) and {@link LineBoundaryMatcherConstruct} ({@code $}).
 	 */
 	private static int lineTerminatorLengthAt(Matcher matcher, int flags) {
-		if (matcher.pos >= matcher.regionEnd) {
+		if (matcher.pos >= matcher.anchorEnd) {
 			return 0;
 		}
 		// matcher.peeked, not input.charAt(index): both call sites always pass matcher.pos as
 		// `index`, and every char this checks against is BMP, so the already-computed code point
 		// at that position (see Matcher.peeked's own doc) doubles as the char directly -- one
 		// fewer input.charAt/codePointAt call on this method's own hot path.
-		int c = matcher.peeked;
+		// (Except when anchoring bounds are off and pos is at regionEnd, where peeked is the
+		// end-of-region sentinel but the input goes on.)
+		int c = matcher.pos < matcher.regionEnd ? matcher.peeked : matcher.input.charAt(matcher.pos);
 		if (c == '\n') {
 			return 1;
 		}
@@ -490,7 +492,7 @@ abstract class MatcherConstruct {
 			return 0;
 		}
 		if (c == '\r') {
-			return (matcher.pos + 1 < matcher.regionEnd && matcher.input.charAt(matcher.pos + 1) == '\n') ? 2 : 1;
+			return (matcher.pos + 1 < matcher.anchorEnd &&matcher.input.charAt(matcher.pos + 1) == '\n') ? 2 : 1;
 		}
 		return (c == '' || c == ' ' || c == ' ') ? 1 : 0;
 	}
@@ -536,11 +538,11 @@ abstract class MatcherConstruct {
 	 * shared by {@link BoundaryMatcherConstruct} and {@link LineBoundaryMatcherConstruct}.
 	 */
 	private static boolean matchesEndExceptTerminator(Matcher matcher, int flags) {
-		if (matcher.pos == matcher.regionEnd) {
+		if (matcher.pos == matcher.anchorEnd) {
 			return true;
 		}
 		int len = lineTerminatorLengthAt(matcher, flags);
-		return len > 0 && matcher.pos + len == matcher.regionEnd;
+		return len > 0 && matcher.pos + len == matcher.anchorEnd;
 	}
 
 	static final class BoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
@@ -556,10 +558,10 @@ abstract class MatcherConstruct {
 			boolean matchesHere;
 			switch (type) {
 				case InputBegin: // \A: always the true start of input, MULTILINE has no effect.
-					matchesHere = matcher.pos == matcher.regionStart;
+					matchesHere = matcher.pos == matcher.anchorStart;
 					break;
 				case InputEnd: // \z: always the true end of input, MULTILINE has no effect.
-					matchesHere = matcher.pos == matcher.regionEnd;
+					matchesHere = matcher.pos == matcher.anchorEnd;
 					break;
 				case InputEndExceptTerminator: // \Z
 					matchesHere = matchesEndExceptTerminator(matcher, flags);
@@ -599,9 +601,15 @@ abstract class MatcherConstruct {
 			boolean matchesHere;
 			boolean atEnd = false;
 			if (isLineBegin) {
-				matchesHere = matcher.pos == matcher.regionStart
+				if ((flags & Ll1Pattern.MULTILINE) != 0 && matcher.pos == matcher.anchorEnd) {
+					// java.util.regex never matches a MULTILINE ^ at the end of input (even after a
+					// terminator, or in empty input), and counts the attempt as hitting the end.
+					matcher.hitEnd = true;
+					return false;
+				}
+				matchesHere = matcher.pos == matcher.anchorStart
 						|| ((flags & Ll1Pattern.MULTILINE) != 0
-								&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.regionStart, matcher.regionEnd, flags) > 0);
+								&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.anchorStart, matcher.anchorEnd, flags) > 0);
 			} else {
 				// Without MULTILINE every $ match is at the end or before the final terminator, and
 				// java.util.regex flags both; with it only an actual end-of-input match is flagged.
@@ -609,7 +617,7 @@ abstract class MatcherConstruct {
 					matchesHere = matchesEndExceptTerminator(matcher, flags);
 					atEnd = matchesHere;
 				} else {
-					atEnd = matcher.pos == matcher.regionEnd;
+					atEnd = matcher.pos == matcher.anchorEnd;
 					matchesHere = atEnd || lineTerminatorLengthAt(matcher, flags) > 0;
 				}
 			}

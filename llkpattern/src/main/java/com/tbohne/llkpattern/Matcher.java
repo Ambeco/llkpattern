@@ -257,27 +257,44 @@ public class Matcher implements MatchResult {
 		// Same start-of-search-window semantics as java.util.regex: resume right after the previous
 		// match, advancing by one extra position if that match was empty so find() always makes
 		// forward progress instead of matching the same empty span forever.
-		int nextStart = hasMatch ? (matchEnd == matchStart ? matchEnd + 1 : matchEnd) : regionStart;
-		return find(nextStart);
+		// Like java.util.regex, resumes from the previous match's end even after a failed find() (which
+		// keeps matchEnd but clears matchStart), so a failed find() stays failed.
+		int nextStart = matchEnd == matchStart ? matchEnd + 1 : matchEnd;
+		if (nextStart < regionStart) {
+			nextStart = regionStart;
+		}
+		if (nextStart > regionEnd) {
+			// Deliberately leaves matchStart alone: clearing it would make the next find() resume at
+			// matchEnd again instead of failing again.
+			hasMatch = false;
+			hitEnd = true;
+			requireEnd = false;
+			return false;
+		}
+		return search(nextStart);
 	}
 
+	/** Like java.util.regex.Matcher#find(int): resets this matcher (including its region) first. */
 	public boolean find(int start) {
+		if (start < 0 || start > input.length()) {
+			throw new IndexOutOfBoundsException(
+					"Illegal start index " + start + " (input length is " + input.length() + ")");
+		}
+		reset();
+		return search(start);
+	}
+
+	private boolean search(int start) {
 		hitEnd = false;
 		requireEnd = false;
 		if (pattern.anchorsToPreviousMatchEnd) {
-			if (start > regionEnd) {
-				// find() advances past an empty match's end; without this an empty \G match at regionEnd
-				// would keep "matching" at ever-later positions forever.
-				hasMatch = false;
-				hitEnd = true;
-				return false;
-			}
 			// \G: no PatternConstruct/MatcherConstruct involved at all -- it's purely this flag,
 			// meaning "only try exactly here, don't scan forward looking for a later match." See
 			// PatternParser#anchorsToPreviousMatchEnd's doc.
 			boolean success = attemptMatch(start, false);
 			if (!success) {
 				hasMatch = false;
+				matchStart = -1;
 				// java.util.regex's search loop always ends a failed find() by running off the end.
 				hitEnd = true;
 			}
@@ -302,6 +319,7 @@ public class Matcher implements MatchResult {
 			}
 		}
 		hasMatch = false;
+		matchStart = -1;
 		if (!pattern.startsWithBeginAnchor) {
 			hitEnd = true;
 		}
@@ -369,8 +387,7 @@ public class Matcher implements MatchResult {
 		this.regionStart = start;
 		this.regionEnd = end;
 		this.pos = start;
-		hasMatch = false;
-		appendPos = 0;
+		resetMatchState();
 		syncPeeked();
 		return this;
 	}
@@ -462,7 +479,7 @@ public class Matcher implements MatchResult {
 		hasMatch = false;
 		appendPos = 0;
 		matchStart = -1;
-		matchEnd = -1;
+		matchEnd = 0;
 		resetPerAttemptState();
 		perAttemptStateIsFresh = true;
 	}

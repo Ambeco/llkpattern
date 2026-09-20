@@ -23,6 +23,14 @@ performance, once the test suite is green:
    don't block the rest of the work on it -- but once everything else is done, remind the user to
    plug in and unlock the Pixel 3a so this step can be run.
 
+**Sequencing the benchmark runs with other sessions.** The Intel JMH run needs the desktop CPU
+quiet. If another Claude session is active (`ListAgents`), do this in order: (1) `SendMessage` it
+first, asking it to stop builds/tests and heavy tabs and reply "ready" (with `notify_when_idle:
+true`); (2) immediately start the Pixel 3a run, which takes a couple of minutes and doesn't need
+the desktop quiet; (3) by the time it finishes, the other session's "ready" should already have
+arrived -- if so, start the Intel run right away, otherwise wait for it, never start without it;
+(4) message the other session when the Intel run is done so it can resume.
+
 **While iterating on a narrow hypothesis** (e.g. "does data structure X beat Y for an N-element
 accumulation?", not yet the final design), don't run the full corpus benchmark cycle above per
 variant -- it exercises the entire parse/compile pipeline, not just the operation in question, so

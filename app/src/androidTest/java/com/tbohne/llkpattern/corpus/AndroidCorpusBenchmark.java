@@ -125,6 +125,20 @@ public class AndroidCorpusBenchmark {
    */
   private static final Map<String, Object> results = new LinkedHashMap<>();
 
+  /**
+   * The golden files record desktop {@code java.util.regex} behavior, but Android's is ICU-based and
+   * rejects some patterns the desktop JDK accepts (e.g. {@code \pL}); such rows can't be timed
+   * against it.
+   */
+  private static boolean deviceRegexCompiles(AndroidGoldenRow row) {
+    try {
+      Pattern.compile(row.pattern, row.flagBits());
+      return true;
+    } catch (RuntimeException e) {
+      return false;
+    }
+  }
+
   @BeforeClass
   public static void setUpCorpus() throws IOException {
     Context context = InstrumentationRegistry.getInstrumentation().getContext();
@@ -140,7 +154,8 @@ public class AndroidCorpusBenchmark {
         // successfully are usable for a *speed* comparison.
         if (row.status.equals("AGREES")
             && row.regexCompileException.isEmpty()
-            && row.llkCompileException.isEmpty()) {
+            && row.llkCompileException.isEmpty()
+            && deviceRegexCompiles(row)) {
           usable.add(row);
         }
       }

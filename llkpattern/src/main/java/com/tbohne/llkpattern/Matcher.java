@@ -1,6 +1,11 @@
 package com.tbohne.llkpattern;
 
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.function.Function;
 import java.util.regex.MatchResult;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * An engine that performs match operations on a character sequence by
@@ -22,7 +27,18 @@ import java.util.regex.MatchResult;
  */
 public class Matcher implements MatchResult {
 	public static String quoteReplacement(String s) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#quoteReplacement");
+		if (s.indexOf('\\') == -1 && s.indexOf('$') == -1) {
+			return s;
+		}
+		StringBuilder sb = new StringBuilder(s.length() + 4);
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c == '\\' || c == '$') {
+				sb.append('\\');
+			}
+			sb.append(c);
+		}
+		return sb.toString();
 	}
 
 	// Package-private (not private) so MatcherConstruct can read pattern.flags() for
@@ -86,6 +102,9 @@ public class Matcher implements MatchResult {
 	private boolean hasMatch = false;
 	private int matchStart = -1;
 	private int matchEnd = -1;
+	// Where the next appendReplacement() should resume copying unmatched input from: the end of the
+	// previous appendReplacement()'s match (0 before any).
+	private int appendPos = 0;
 
 	Matcher(Ll1Pattern pattern, String input) {
 		this.pattern = pattern;
@@ -98,11 +117,116 @@ public class Matcher implements MatchResult {
 	}
 
 	public Matcher appendReplacement(StringBuffer sb, String replacement) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#appendReplacement");
+		sb.append(replacementText(replacement));
+		return this;
+	}
+
+	public Matcher appendReplacement(StringBuilder sb, String replacement) {
+		sb.append(replacementText(replacement));
+		return this;
 	}
 
 	public StringBuffer appendTail(StringBuffer sb) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#appendTail");
+		sb.append(input, appendPos, input.length());
+		return sb;
+	}
+
+	public StringBuilder appendTail(StringBuilder sb) {
+		sb.append(input, appendPos, input.length());
+		return sb;
+	}
+
+	/** The unmatched input since the last appendReplacement(), followed by {@code replacement} with its
+	 *  {@code $n}/{@code ${name}}/backslash escapes expanded against the current match. Advances
+	 *  {@link #appendPos}. Error cases and messages mirror java.util.regex.Matcher's. */
+	private String replacementText(String replacement) {
+		if (!hasMatch) {
+			throw new IllegalStateException("No match available");
+		}
+		StringBuilder result = new StringBuilder();
+		result.append(input, appendPos, matchStart);
+		int cursor = 0;
+		int length = replacement.length();
+		while (cursor < length) {
+			char c = replacement.charAt(cursor);
+			if (c == '\\') {
+				cursor++;
+				if (cursor == length) {
+					throw new IllegalArgumentException(
+							"character to be escaped is missing (a trailing backslash in a replacement must itself be "
+									+ "escaped as \\\\; did you mean Matcher.quoteReplacement(...)?)");
+				}
+				result.append(replacement.charAt(cursor));
+				cursor++;
+			} else if (c == '$') {
+				cursor++;
+				if (cursor == length) {
+					throw new IllegalArgumentException(
+							"Illegal group reference: group index is missing (a literal '$' in a replacement must be "
+									+ "escaped as \\$; did you mean Matcher.quoteReplacement(...)?)");
+				}
+				c = replacement.charAt(cursor);
+				int refNum;
+				if (c == '{') {
+					cursor++;
+					int nameStart = cursor;
+					while (cursor < length && isAsciiAlphanumeric(replacement.charAt(cursor))) {
+						cursor++;
+					}
+					String name = replacement.substring(nameStart, cursor);
+					if (name.isEmpty()) {
+						throw new IllegalArgumentException("named capturing group has 0 length name");
+					}
+					if (cursor == length || replacement.charAt(cursor) != '}') {
+						throw new IllegalArgumentException("named capturing group is missing trailing '}'");
+					}
+					if (name.charAt(0) >= '0' && name.charAt(0) <= '9') {
+						throw new IllegalArgumentException(
+								"capturing group name {" + name + "} starts with digit character");
+					}
+					Integer index = pattern.namedGroups.get(name);
+					if (index == null) {
+						throw new IllegalArgumentException("No group with name {" + name + "}");
+					}
+					refNum = index + 1;
+					cursor++;
+				} else {
+					refNum = c - '0';
+					if (refNum < 0 || refNum > 9) {
+						throw new IllegalArgumentException(
+								"Illegal group reference (expected a digit or {name} after '$', got '" + c + "')");
+					}
+					cursor++;
+					// Greedy extra digits, but only while the result is still a real group -- so "$10"
+					// with one group means group 1 followed by a literal '0'.
+					while (cursor < length) {
+						int digit = replacement.charAt(cursor) - '0';
+						if (digit < 0 || digit > 9) {
+							break;
+						}
+						int extended = refNum * 10 + digit;
+						if (groupCount() < extended) {
+							break;
+						}
+						refNum = extended;
+						cursor++;
+					}
+				}
+				String text = group(refNum);
+				if (text != null) {
+					result.append(text);
+				}
+			} else {
+				result.append(c);
+				cursor++;
+			}
+		}
+		appendPos = matchEnd;
+		return result.toString();
+	}
+
+	private static boolean isAsciiAlphanumeric(char c) {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
 	}
 
 	public int end() {
@@ -131,6 +255,12 @@ public class Matcher implements MatchResult {
 
 	public boolean find(int start) {
 		if (pattern.anchorsToPreviousMatchEnd) {
+			if (start > regionEnd) {
+				// find() advances past an empty match's end; without this an empty \G match at regionEnd
+				// would keep "matching" at ever-later positions forever.
+				hasMatch = false;
+				return false;
+			}
 			// \G: no PatternConstruct/MatcherConstruct involved at all -- it's purely this flag,
 			// meaning "only try exactly here, don't scan forward looking for a later match." See
 			// PatternParser#anchorsToPreviousMatchEnd's doc.
@@ -218,6 +348,7 @@ public class Matcher implements MatchResult {
 		this.regionEnd = end;
 		this.pos = start;
 		hasMatch = false;
+		appendPos = 0;
 		syncPeeked();
 		return this;
 	}
@@ -230,12 +361,54 @@ public class Matcher implements MatchResult {
 		return regionStart;
 	}
 
-	String replaceAll(String replacement) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#replaceAll");
+	public String replaceAll(String replacement) {
+		return replaceAll(m -> replacement);
 	}
 
-	String replaceFirst(String replacement) {
-		throw new UnsupportedOperationException("TODO: implement Matcher#replaceFirst");
+	public String replaceAll(Function<MatchResult, String> replacer) {
+		reset();
+		if (!find()) {
+			return input;
+		}
+		StringBuilder sb = new StringBuilder();
+		do {
+			appendReplacement(sb, replacer.apply(this));
+		} while (find());
+		appendTail(sb);
+		return sb.toString();
+	}
+
+	public String replaceFirst(String replacement) {
+		return replaceFirst(m -> replacement);
+	}
+
+	public String replaceFirst(Function<MatchResult, String> replacer) {
+		reset();
+		if (!find()) {
+			return input;
+		}
+		StringBuilder sb = new StringBuilder();
+		appendReplacement(sb, replacer.apply(this));
+		appendTail(sb);
+		return sb.toString();
+	}
+
+	/** Like java.util.regex.Matcher#results: resets this matcher, then lazily yields a snapshot of each
+	 *  successive find(). */
+	public Stream<MatchResult> results() {
+		reset();
+		return StreamSupport.stream(
+				new Spliterators.AbstractSpliterator<MatchResult>(Long.MAX_VALUE, Spliterator.ORDERED | Spliterator.NONNULL) {
+					@Override
+					public boolean tryAdvance(java.util.function.Consumer<? super MatchResult> action) {
+						if (!find()) {
+							return false;
+						}
+						action.accept(toMatchResult());
+						return true;
+					}
+				},
+				false);
 	}
 
 	boolean requireEnd() {
@@ -263,6 +436,7 @@ public class Matcher implements MatchResult {
 
 	private void resetMatchState() {
 		hasMatch = false;
+		appendPos = 0;
 		matchStart = -1;
 		matchEnd = -1;
 		resetPerAttemptState();
@@ -293,8 +467,66 @@ public class Matcher implements MatchResult {
 		return start(groupIndexByName(name));
 	}
 
+	/** A snapshot of the current match, unaffected by later use of this matcher. If there is no current
+	 *  match, its accessors throw IllegalStateException, same as this matcher's own would. */
 	public MatchResult toMatchResult() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#toMatchResult");
+		int groups = pattern.captureGroupCount;
+		int[] bounds = new int[(groups + 1) * 2];
+		if (hasMatch) {
+			bounds[0] = matchStart;
+			bounds[1] = matchEnd;
+			System.arraycopy(captureGroups, 0, bounds, 2, groups * 2);
+		}
+		return new Snapshot(hasMatch ? input : null, bounds);
+	}
+
+	private static final class Snapshot implements MatchResult {
+		private final String input; // null iff there was no match
+		private final int[] bounds; // start,end per group, group 0 (the whole match) first
+
+		Snapshot(String input, int[] bounds) {
+			this.input = input;
+			this.bounds = bounds;
+		}
+
+		private int checkGroup(int group) {
+			if (input == null) {
+				throw new IllegalStateException("No match found");
+			}
+			if (group < 0 || group > groupCount()) {
+				throw new IndexOutOfBoundsException("No group " + group);
+			}
+			return group * 2;
+		}
+
+		public int start() {
+			return start(0);
+		}
+
+		public int start(int group) {
+			return bounds[checkGroup(group)];
+		}
+
+		public int end() {
+			return end(0);
+		}
+
+		public int end(int group) {
+			return bounds[checkGroup(group) + 1];
+		}
+
+		public String group() {
+			return group(0);
+		}
+
+		public String group(int group) {
+			int i = checkGroup(group);
+			return bounds[i] < 0 ? null : input.substring(bounds[i], bounds[i + 1]);
+		}
+
+		public int groupCount() {
+			return bounds.length / 2 - 1;
+		}
 	}
 
 	public String toString()  {

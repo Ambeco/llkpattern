@@ -66,7 +66,7 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   reluctant about. `a{2,3}?` matches `aaa` here, where `java.util.regex` matches `aa`.
 
 Not yet implemented (these will be supported eventually): the `LITERAL` and `CANON_EQ` flags,
-and the `Matcher` replace/split methods.
+and `Matcher#hitEnd`/`requireEnd`/anchoring and transparent bounds.
 
 ### Considered and deliberately not added
 
@@ -78,7 +78,7 @@ See [documents/remaining_work.md](documents/remaining_work.md) for the full, act
 
 - **Lookahead/lookbehind** — rejected outright at parse time, since they can't be guaranteed to run in linear time.
 - **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch; `UNIX_LINES` is only partially honored (affects `^`/`$`/`\Z` but not yet `.`/`\s`/etc.'s line-terminator handling).
-- **`Matcher`/`Ll1Pattern` API gaps** — `replaceAll`/`replaceFirst`/`split` and friends, `region()`'s interaction with anchoring/transparent bounds, are still stubs.
+- **`Matcher` API gaps** — `hitEnd`/`requireEnd` and `region()`'s interaction with anchoring/transparent bounds are still stubs.
 - **More scraped-corpus sources planned** beyond OpenJDK — AOSP/libcore, RE2J (another non-backtracking engine, interesting as a design comparison), dregex, dk.brics.automaton, and DataDog/java-reggie are all identified candidates.
 - **`ArrayCodePointMap` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
 
@@ -91,7 +91,7 @@ In brief:
 - **Parsing** (`PatternParser`, `PatternConstruct`): a recursive-descent parser turns a pattern string into an AST of `PatternConstruct` nodes (unions, sequences, literals, character classes, quantifiers, boundaries, backreferences, groups). This layer is fairly mature; several real parsing bugs were found and fixed while building out the compiler (see [documents/notes.md](documents/notes.md)).
 - **Code point range representation** (`CodePointMap`/`ArrayCodePointMap`): done and tested. A `RangeMap`-style interface over Unicode code points, backed by a specialized two-flat-array implementation (`TreeCodePointMap`, a Guava `TreeRangeMap` adapter, is kept only as its differential-test oracle).
 - **Compilation** (`PatternConstruct` → `MatcherConstruct`): working for literals, character classes, sequences, alternation (with real ambiguity detection — two `|` branches that could match the same next character are a compile-time error), quantifiers/loops (`?`, `*`, `+`, `{n,m}`), and capturing groups — including a group that's both capturing and quantified at once (e.g. `(a)*`), which correctly captures whichever iteration matched last, per real regex semantics. Boundary matching is implemented for `\b`/`\B` (with a compile-time optimization for the common case where a boundary sits next to a statically-word/non-word literal or character class), `^`/`$`/`\A`/`\Z`/`\z` (honoring `MULTILINE`/`UNIX_LINES`). Backreferences (`\1`-`\9`, `\k<name>`) are implemented, using a precise compile-time entry set computed from the referenced group so ordinary usage stays fully LL(1)-checked (see [documents/design.md](documents/design.md)'s "Backreferences" section). `\G` doesn't match a position at all — see design.md's "Boundary matching" section.
-- **Matching** (`Matcher`): core API implemented and tested — `matches()`, `lookingAt()`, `find()`/`find(int)`, numbered and named group accessors, regions, `reset()`. Replacement (`replaceAll`/`replaceFirst`/etc.), `split`, and a few other corners are still stubs.
+- **Matching** (`Matcher`): core API implemented and tested — `matches()`, `lookingAt()`, `find()`/`find(int)`, numbered and named group accessors, regions, `reset()`. Replacement (`replaceAll`/`replaceFirst`/`appendReplacement`/etc.), `split`, `toMatchResult` and `results` are implemented and differentially tested against `java.util.regex`; `hitEnd`/`requireEnd` and the bounds methods are still stubs.
 - **Supporting pieces**: `NamedCharClass`/`UnicodePredicates` (Unicode category/script/block support) and the `unicodeanalyzer` module (its code generator) are largely built out.
 - `oldllkpattern/` holds an earlier version of the implementation, kept for reference during the ongoing refactor.
 

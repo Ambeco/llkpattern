@@ -1,5 +1,7 @@
 package com.tbohne.llkpattern;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -71,7 +73,23 @@ public final class Ll1Pattern {
 	}
 
 	public static String quote(String s) {
-		throw new UnsupportedOperationException("TODO: implement Ll1Pattern#quote");
+		int slashEIndex = s.indexOf("\\E");
+		if (slashEIndex == -1) {
+			return "\\Q" + s + "\\E";
+		}
+		// A literal \E can't appear inside \Q...\E, so close the quotation, emit the backslash quoted,
+		// and reopen for the 'E' onward -- same technique as java.util.regex.Pattern#quote.
+		StringBuilder sb = new StringBuilder(s.length() * 2);
+		sb.append("\\Q");
+		int current = 0;
+		while ((slashEIndex = s.indexOf("\\E", current)) != -1) {
+			sb.append(s, current, slashEIndex);
+			current = slashEIndex + 2;
+			sb.append("\\E\\\\E\\Q");
+		}
+		sb.append(s, current, s.length());
+		sb.append("\\E");
+		return sb.toString();
 	}
 
 	private final String pattern;
@@ -128,15 +146,45 @@ public final class Ll1Pattern {
 	}
 
 	public String[] split(CharSequence input) {
-		return split(input, Integer.MAX_VALUE);
+		return split(input, 0);
 	}
 
 	public String[] split(CharSequence input, int limit) {
-		throw new UnsupportedOperationException("TODO: implement Ll1Pattern#split");
+		// Same algorithm as java.util.regex.Pattern#split: a zero-width match at index 0 never produces a
+		// leading empty string, and limit == 0 drops trailing empty strings.
+		int index = 0;
+		boolean matchLimited = limit > 0;
+		ArrayList<String> matchList = new ArrayList<>();
+		Matcher m = matcher(input);
+		while (m.find()) {
+			if (!matchLimited || matchList.size() < limit - 1) {
+				if (index == 0 && index == m.start() && m.start() == m.end()) {
+					continue;
+				}
+				matchList.add(input.subSequence(index, m.start()).toString());
+				index = m.end();
+			} else if (matchList.size() == limit - 1) {
+				matchList.add(input.subSequence(index, input.length()).toString());
+				index = m.end();
+			}
+		}
+		if (index == 0) {
+			return new String[] {input.toString()};
+		}
+		if (!matchLimited || matchList.size() < limit) {
+			matchList.add(input.subSequence(index, input.length()).toString());
+		}
+		int resultSize = matchList.size();
+		if (limit == 0) {
+			while (resultSize > 0 && matchList.get(resultSize - 1).isEmpty()) {
+				resultSize--;
+			}
+		}
+		return matchList.subList(0, resultSize).toArray(new String[resultSize]);
 	}
 
 	public Stream<String> splitAsStream(CharSequence input) {
-		throw new UnsupportedOperationException("TODO: implement Ll1Pattern#split");
+		return Arrays.stream(split(input, 0));
 	}
 
 	public String toString() {

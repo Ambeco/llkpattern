@@ -667,12 +667,14 @@ abstract class MatcherConstruct {
 		final CodePointSet wordSet;
 		final PriorWordBoundaryMatchType priorMustBeWord;
 		final PeekWordBoundaryMatchType peekMustBeWord;
+		final boolean isWordBoundary; // true: \b, false: \B
 
 		WordBoundaryMatcherConstruct(
 				PatternConstruct owner,
 				CodePointSet wordSet,
 				PriorWordBoundaryMatchType priorMustBeWord,
-				PeekWordBoundaryMatchType peekMustBeWord) {
+				PeekWordBoundaryMatchType peekMustBeWord,
+				boolean isWordBoundary) {
 			super(owner, owner.next.matcher);
 			if (priorMustBeWord == PriorWordBoundaryMatchType.Unchecked
 					&& peekMustBeWord == PeekWordBoundaryMatchType.Unchecked) {
@@ -685,6 +687,7 @@ abstract class MatcherConstruct {
 			this.wordSet = wordSet;
 			this.priorMustBeWord = priorMustBeWord;
 			this.peekMustBeWord = peekMustBeWord;
+			this.isWordBoundary = isWordBoundary;
 		}
 
 		// Static, with `wordSet` passed as a parameter, rather than an instance method reading
@@ -700,18 +703,26 @@ abstract class MatcherConstruct {
 			// is exactly that: either the prior side has a fixed target of its own, or the peek
 			// side needs to compare against it. checkPeek is the mirror image, for symmetry/clarity
 			// (peeked itself is already available for free, but isWordChar(peeked) is not free).
-			if (peeked == -1) {
+			int ahead = matcher.peekForBoundary();
+			if (ahead == -1) {
 				// java.util.regex's Bound looks at the character after the position even when this
 				// engine's compile-time classification only needs the one before it.
 				matcher.hitEnd = true;
 				matcher.requireEnd = true;
 			}
-			boolean checkPrior = priorMustBeWord != PriorWordBoundaryMatchType.Unchecked
+			if (peeked == -1 && ahead != -1) {
+				// Transparent bounds, at regionEnd: the compile-time classification below assumes the
+				// character next consumed is the one at pos, but nothing can consume past the region, so
+				// test the real boundary here; whatever follows then fails (and flags hitEnd) on its own.
+				boolean boundary = isWordChar(wordSet, matcher.peekPrevious()) != isWordChar(wordSet, ahead);
+				return boundary == isWordBoundary && matchNext(matcher, peeked);
+			}
+			boolean checkPrior = priorMustBeWord !=PriorWordBoundaryMatchType.Unchecked
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;
 			boolean priorIsWord = checkPrior && isWordChar(wordSet, matcher.peekPrevious());
 			boolean checkPeek = peekMustBeWord != PeekWordBoundaryMatchType.Unchecked;
-			boolean peekIsWord = checkPeek && isWordChar(wordSet, peeked);
+			boolean peekIsWord = checkPeek && isWordChar(wordSet, ahead);
 
 			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
 				return false;

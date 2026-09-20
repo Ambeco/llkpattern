@@ -167,10 +167,6 @@ to keep it "vaguely reasonable" and the jar/dex small.
       (see notes.md's 2026-09-19 entry) and the full suite afterward, and re-measure class size, init
       time and heap with the same numbers as above.
 
-## Matcher API
-
-- [ ] `useTransparentBounds`/`hasTransparentBounds` (still `UnsupportedOperationException` stubs): `\b`/`\B` (`Matcher#peekPrevious`) hard-code opaque bounds (never look before `regionStart`); transparent bounds would let them see the characters just outside the region. (`useAnchoringBounds` is done -- `^`/`$`/`\A`/`\Z`/`\z` follow `Matcher.anchorStart`/`anchorEnd`.)
-
 ## Toolchain
 
 - [ ] Pin a Checker Framework version compatible with modern JDKs (or a JDK toolchain constraint) and re-enable the nullness checker in `llkpattern/build.gradle` — currently disabled because the default-resolved 3.19.0 crashes against JDK 25's javac internals.

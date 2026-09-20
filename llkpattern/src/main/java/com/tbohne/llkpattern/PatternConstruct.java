@@ -1431,7 +1431,7 @@ abstract class PatternConstruct {
 						: WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.PriorMustBeNonWord;
 				peekMatchType = WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.Unchecked;
 			}
-			new WordBoundaryMatcherConstruct(this, wordSet, priorMatchType, peekMatchType);
+			new WordBoundaryMatcherConstruct(this, wordSet, priorMatchType, peekMatchType, isWordBoundary);
 		}
 	}
 

@@ -61,6 +61,11 @@ public class Matcher implements MatchResult {
 	int anchorStart = 0;
 	int anchorEnd;
 	private boolean anchoringBounds = true;
+	// How far \b/\B may look before regionStart / at-and-after regionEnd: the region's own edges when
+	// bounds are opaque (the default), else the true edges of the input. Kept in sync by syncAnchors().
+	private boolean transparentBounds = false;
+	int lookFloor = 0;
+	int lookCeil;
 	int pos = 0;
 	// The code point at `pos` (or -1 at/past regionEnd) -- kept in sync by every method that moves
 	// `pos` (attemptMatch/consume1CodePoint/consumeCodeUnits/region/reset*, all via syncPeeked()),
@@ -125,6 +130,7 @@ public class Matcher implements MatchResult {
 		this.input = input;
 		this.regionEnd = input.length();
 		this.anchorEnd = regionEnd;
+		this.lookCeil = regionEnd;
 		this.quantifiableCounts = new int[pattern.quantifiableCount];
 		this.captureGroups = new int[pattern.captureGroupCount * 2];
 		java.util.Arrays.fill(captureGroups, -1);
@@ -365,7 +371,7 @@ public class Matcher implements MatchResult {
 	}
 
 	public boolean hasTransparentBounds()  {
-		throw new UnsupportedOperationException("TODO: implement Matcher#hasTransparentBounds");
+		return transparentBounds;
 	}
 
 	/** True if the end of input was hit (or examined) by the search engine in the last match operation
@@ -488,6 +494,8 @@ public class Matcher implements MatchResult {
 	private void syncAnchors() {
 		anchorStart = anchoringBounds ? regionStart : 0;
 		anchorEnd = anchoringBounds ? regionEnd : input.length();
+		lookFloor = transparentBounds ? 0 : regionStart;
+		lookCeil = transparentBounds ? input.length() : regionEnd;
 	}
 
 	private void resetMatchState() {
@@ -608,7 +616,9 @@ public class Matcher implements MatchResult {
 	}
 
 	public Matcher useTransparentBounds(boolean b)  {
-		throw new UnsupportedOperationException("TODO: implement Matcher#useTransparentBounds");
+		transparentBounds = b;
+		syncAnchors();
+		return this;
 	}
 
 	/**
@@ -708,11 +718,17 @@ public class Matcher implements MatchResult {
 
 	// Used by WordBoundaryMatcherConstruct (\b/\B), which is the only construct that needs to look
 	// backward instead of forward -- see design.md's "Boundary matching" section. Bounded at
-	// regionStart, not 0: useTransparentBounds() is still a stub (opaque bounds only), so a region's
+	// lookFloor (regionStart unless transparent bounds are on), so with opaque bounds a region's
 	// start is treated the same as true start-of-input, same as -1 is peek()'s "no more input"
 	// sentinel. codePointBefore (not charAt(pos-1)) to not split a surrogate pair.
 	int peekPrevious() {
-		return pos <= regionStart ? -1 : input.codePointBefore(pos);
+		return pos <= lookFloor ? -1 : input.codePointBefore(pos);
+	}
+
+	/** The code point at {@code pos} as {@code \b}/{@code \B} see it: like {@link #peek()}, except that
+	 *  with transparent bounds it looks past regionEnd (-1 only at the true end of input). */
+	int peekForBoundary() {
+		return peeked != -1 || pos >= lookCeil ? peeked : input.codePointAt(pos);
 	}
 
 	boolean consumeLiteral(String value) {

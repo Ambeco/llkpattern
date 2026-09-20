@@ -65,7 +65,26 @@ public final class Ll1Pattern {
 				parser.getQuantifiableCount(),
 				parser.getCaptureGroupCount(),
 				parser.getNamedGroups(),
-				parser.anchorsToPreviousMatchEnd());
+				parser.anchorsToPreviousMatchEnd(),
+				startsWithBeginAnchor(parsed));
+	}
+
+	// Whether the whole pattern is a single alternative whose first element is \A or a
+	// non-MULTILINE ^. java.util.regex tries such a pattern only at the search start instead of
+	// scanning, so a failed find() there isn't a hit-end (see Matcher#find).
+	private static boolean startsWithBeginAnchor(PatternConstruct parsed) {
+		// PatternParser#parse() unwraps a single-alternative root, so that's a bare Sequence here.
+		if (!(parsed instanceof PatternConstruct.Sequence)) {
+			return false;
+		}
+		PatternConstruct first = ((PatternConstruct.Sequence) parsed).patterns.get(0);
+		if (first instanceof PatternConstruct.BoundaryConstruct) {
+			return ((PatternConstruct.BoundaryConstruct) first).type
+					== PatternConstruct.BoundaryConstruct.BoundaryEnum.InputBegin;
+		}
+		return first instanceof PatternConstruct.LineBoundaryConstruct
+				&& ((PatternConstruct.LineBoundaryConstruct) first).isLineBegin
+				&& (first.flags & MULTILINE) == 0;
 	}
 
 	public static boolean matches(String regex, CharSequence input) {
@@ -106,6 +125,7 @@ public final class Ll1Pattern {
 	// ended (Matcher#matchEnd), rather than scanning forward for a later match. See
 	// PatternParser#anchorsToPreviousMatchEnd's doc for the full rationale.
 	final boolean anchorsToPreviousMatchEnd;
+	final boolean startsWithBeginAnchor;
 
 	Ll1Pattern(
 			String pattern,
@@ -114,7 +134,8 @@ public final class Ll1Pattern {
 			int quantifiableCount,
 			int captureGroupCount,
 			Map<String, Integer> namedGroups,
-			boolean anchorsToPreviousMatchEnd) {
+			boolean anchorsToPreviousMatchEnd,
+			boolean startsWithBeginAnchor) {
 		this.pattern = pattern;
 		this.flags = flags;
 		this.compiled = compiled;
@@ -127,6 +148,7 @@ public final class Ll1Pattern {
 		// allocation on every compile().
 		this.namedGroups = namedGroups;
 		this.anchorsToPreviousMatchEnd = anchorsToPreviousMatchEnd;
+		this.startsWithBeginAnchor = startsWithBeginAnchor;
 	}
 
 	public Predicate<String> asPredicate() {

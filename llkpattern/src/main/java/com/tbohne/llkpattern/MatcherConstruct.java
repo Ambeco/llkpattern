@@ -100,6 +100,11 @@ abstract class MatcherConstruct {
 		if (containsEntry(entrySet, peeked)) {
 			return matchBody(matcher, peeked);
 		}
+		// Miss path only: a gated dispatch that fails at end of input has looked past the end
+		// (Matcher#hitEnd).
+		if (peeked == -1) {
+			matcher.hitEnd = true;
+		}
 		return failedEntry != null && failedEntry.match(matcher, peeked);
 	}
 
@@ -306,6 +311,9 @@ abstract class MatcherConstruct {
 		@Override
 		boolean matchBody(Matcher matcher, int peeked) {
 			if (!containsFolded(validRanges, peeked, flags)) {
+				if (peeked == -1) {
+					matcher.hitEnd = true;
+				}
 				return false;
 			}
 			return matchNext(matcher, matcher.consume1CodePoint());
@@ -349,6 +357,11 @@ abstract class MatcherConstruct {
 		boolean matchBody(Matcher matcher, int peeked) {
 			int end = matcher.pos + value.length();
 			if (end > matcher.regionEnd) {
+				// Only a hit-end if the input that IS left agrees with value so far -- a mismatch
+				// before the end never reads that far (java.util.regex's Slice behaves the same).
+				if (remainingInputIsPrefixOfValue(matcher)) {
+					matcher.hitEnd = true;
+				}
 				return false;
 			}
 			boolean matches;
@@ -357,7 +370,7 @@ abstract class MatcherConstruct {
 			} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
 				matches = matcher.input.regionMatches(true, matcher.pos, value, 0, value.length());
 			} else {
-				matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value);
+				matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value, value.length());
 			}
 			if (!matches) {
 				return false;
@@ -377,8 +390,17 @@ abstract class MatcherConstruct {
 			return matchNext(matcher, matcher.consumeCodeUnits(value.length()));
 		}
 
-		private static boolean asciiFoldRegionMatches(String input, int offset, String value) {
-			int len = value.length();
+		private boolean remainingInputIsPrefixOfValue(Matcher matcher) {
+			int available = matcher.regionEnd - matcher.pos;
+			if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+				return matcher.input.regionMatches(matcher.pos, value, 0, available);
+			} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
+				return matcher.input.regionMatches(true, matcher.pos, value, 0, available);
+			}
+			return asciiFoldRegionMatches(matcher.input, matcher.pos, value, available);
+		}
+
+		private static boolean asciiFoldRegionMatches(String input, int offset, String value, int len) {
 			for (int i = 0; i < len; i++) {
 				char a = input.charAt(offset + i);
 				char b = value.charAt(i);
@@ -428,6 +450,12 @@ abstract class MatcherConstruct {
 				int next = input.codePointAt(i);
 				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
 				if (!codePointsMatch(next, peeked, flags)) {
+					// java.util.regex's BackRef checks the whole group's length against the input
+					// left BEFORE comparing anything, so a too-short remainder is a hit-end even if
+					// it would also have mismatched.
+					if (matcher.pos + (end - i) > matcher.regionEnd) {
+						matcher.hitEnd = true;
+					}
 					return false;
 				}
 				peeked = matcher.consumeCodeUnits(units);
@@ -541,6 +569,11 @@ abstract class MatcherConstruct {
 					// is ever added without updating this switch.
 					throw new AssertionError("Unhandled BoundaryEnum: " + type);
 			}
+			if (matchesHere && type != BoundaryEnum.InputBegin) {
+				// \z only hits the end; \Z (like $) also could be broken by more input.
+				matcher.hitEnd = true;
+				matcher.requireEnd |= type == BoundaryEnum.InputEndExceptTerminator;
+			}
 			return matchesHere && matchNext(matcher, peeked);
 		}
 	}
@@ -564,15 +597,25 @@ abstract class MatcherConstruct {
 		@Override
 		boolean matchBody(Matcher matcher, int peeked) {
 			boolean matchesHere;
+			boolean atEnd = false;
 			if (isLineBegin) {
 				matchesHere = matcher.pos == matcher.regionStart
 						|| ((flags & Ll1Pattern.MULTILINE) != 0
 								&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.regionStart, matcher.regionEnd, flags) > 0);
 			} else {
-				matchesHere = (flags & Ll1Pattern.MULTILINE) == 0
-						? matchesEndExceptTerminator(matcher, flags)
-						: (matcher.pos == matcher.regionEnd
-								|| lineTerminatorLengthAt(matcher, flags) > 0);
+				// Without MULTILINE every $ match is at the end or before the final terminator, and
+				// java.util.regex flags both; with it only an actual end-of-input match is flagged.
+				if ((flags & Ll1Pattern.MULTILINE) == 0) {
+					matchesHere = matchesEndExceptTerminator(matcher, flags);
+					atEnd = matchesHere;
+				} else {
+					atEnd = matcher.pos == matcher.regionEnd;
+					matchesHere = atEnd || lineTerminatorLengthAt(matcher, flags) > 0;
+				}
+			}
+			if (atEnd) {
+				matcher.hitEnd = true;
+				matcher.requireEnd = true;
 			}
 			return matchesHere && matchNext(matcher, peeked);
 		}
@@ -649,6 +692,12 @@ abstract class MatcherConstruct {
 			// is exactly that: either the prior side has a fixed target of its own, or the peek
 			// side needs to compare against it. checkPeek is the mirror image, for symmetry/clarity
 			// (peeked itself is already available for free, but isWordChar(peeked) is not free).
+			if (peeked == -1) {
+				// java.util.regex's Bound looks at the character after the position even when this
+				// engine's compile-time classification only needs the one before it.
+				matcher.hitEnd = true;
+				matcher.requireEnd = true;
+			}
 			boolean checkPrior = priorMustBeWord != PriorWordBoundaryMatchType.Unchecked
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;

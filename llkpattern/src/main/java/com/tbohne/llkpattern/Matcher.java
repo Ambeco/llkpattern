@@ -96,6 +96,14 @@ public class Matcher implements MatchResult {
 	// design needs a runtime switch -- see design.md.
 	boolean requireFullMatch;
 
+	// hitEnd()/requireEnd() state. Sticky across every start position one find() tries, cleared at
+	// the start of each matches()/lookingAt()/find(int) (same as java.util.regex, which clears them
+	// at the start of every match/search operation). Only ever set from MatcherConstruct's cold
+	// paths -- a dispatch/character miss at end of input, a literal that runs off the end, a
+	// $/\z/\Z/\b that matched at end of input -- so the match hot path never touches them.
+	boolean hitEnd;
+	boolean requireEnd;
+
 	// The most recent successful match's span, and whether one exists yet at all (start()/end()/
 	// group() throw IllegalStateException before the first successful match(), same as
 	// java.util.regex.Matcher).
@@ -254,11 +262,14 @@ public class Matcher implements MatchResult {
 	}
 
 	public boolean find(int start) {
+		hitEnd = false;
+		requireEnd = false;
 		if (pattern.anchorsToPreviousMatchEnd) {
 			if (start > regionEnd) {
 				// find() advances past an empty match's end; without this an empty \G match at regionEnd
 				// would keep "matching" at ever-later positions forever.
 				hasMatch = false;
+				hitEnd = true;
 				return false;
 			}
 			// \G: no PatternConstruct/MatcherConstruct involved at all -- it's purely this flag,
@@ -267,6 +278,8 @@ public class Matcher implements MatchResult {
 			boolean success = attemptMatch(start, false);
 			if (!success) {
 				hasMatch = false;
+				// java.util.regex's search loop always ends a failed find() by running off the end.
+				hitEnd = true;
 			}
 			return success;
 		}
@@ -289,6 +302,9 @@ public class Matcher implements MatchResult {
 			}
 		}
 		hasMatch = false;
+		if (!pattern.startsWithBeginAnchor) {
+			hitEnd = true;
+		}
 		return false;
 	}
 
@@ -327,15 +343,21 @@ public class Matcher implements MatchResult {
 		throw new UnsupportedOperationException("TODO: implement Matcher#hasTransparentBounds");
 	}
 
+	/** True if the end of input was hit (or examined) by the search engine in the last match operation
+	 *  -- see java.util.regex.Matcher#hitEnd. */
 	public boolean hitEnd() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#hitEnd");
+		return hitEnd;
 	}
 
 	public boolean lookingAt() {
+		hitEnd = false;
+		requireEnd = false;
 		return attemptMatch(regionStart, false);
 	}
 
 	public boolean matches() {
+		hitEnd = false;
+		requireEnd = false;
 		return attemptMatch(regionStart, true);
 	}
 
@@ -411,8 +433,10 @@ public class Matcher implements MatchResult {
 				false);
 	}
 
-	boolean requireEnd() {
-		throw new UnsupportedOperationException("TODO: implement Matcher#requireEnd");
+	/** True if more input could change a positive match into a negative one -- see
+	 *  java.util.regex.Matcher#requireEnd. Only meaningful after a successful match. */
+	public boolean requireEnd() {
+		return requireEnd;
 	}
 
 	public Matcher reset() {

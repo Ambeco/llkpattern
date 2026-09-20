@@ -81,6 +81,9 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
 
 - [ ] Implement `\Q...\E` quotation. Its 16 golden-corpus rows are the only ones still tagged
       `UNIMPLEMENTED`; its tests are listed under "Also remember for later".
+- [ ] Implement atomic groups `(?>X)`: currently rejected as "Not a valid group special construct". With no
+      backtracking every group already matches atomically, so this is probably just parsing `(?>X)` as a
+      non-capturing group `(?:X)`. Confirm that reasoning before doing it.
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable** (e.g. `(a?)+`).
       Today only the entry-point-computation guard (design.md's "Entry-point computation vs. matcher compilation")
       catches it, as a compile-time `PatternSyntaxException`; `PatternParser` has no `nullable(construct)` recursion

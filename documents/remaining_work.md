@@ -32,7 +32,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 - [ ] `\X` (extended grapheme cluster) and `\b{g}` (grapheme boundary; rejected at parse time for now, along with any other
       `\b{...}`/`\B{...}`, rather than read as a word boundary plus literal text).
 - [ ] `\N{name}` (character by Unicode name, JDK 9+).
-- [ ] `\p{IsWord}` (JDK accepts it, case-insensitively; llk rejects it).
 - [ ] `CANON_EQ` follow-ups (all compile-time rejections or documented differences, see README): a cluster inside a
       negated/nested/range-bounding class; more than 6 consecutive marks after one base.
 

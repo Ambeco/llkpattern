@@ -227,6 +227,18 @@ enum NamedCharClass {
   Assigned(
       Source.UProperty,
       UnicodePredicates.UNASSIGNED.complement()),
+  // \p{IsWord}: the same set as \w under UNICODE_CHARACTER_CLASS (RegexCharacterClass.w.unicode,
+  // repeated here since that class may depend on this one but not the reverse -- see Space's comment).
+  Word(
+      Source.UProperty,
+      unionOf(
+          Alphabetic.unicode,
+          Digit.unicode,
+          UnicodePredicates.NON_SPACING_MARK,
+          UnicodePredicates.COMBINING_SPACING_MARK,
+          UnicodePredicates.ENCLOSING_MARK,
+          UnicodePredicates.CONNECTOR_PUNCTUATION,
+          Join_Control.unicode)),
 
   // POSIX character classes
   Lower(

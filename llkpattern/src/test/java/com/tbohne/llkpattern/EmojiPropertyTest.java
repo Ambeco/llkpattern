@@ -56,6 +56,14 @@ public class EmojiPropertyTest {
   }
 
   @Test
+  public void isWordMatchesJdkAndUnicodeW() {
+    assertSameProperty("\\p{IsWord}", "\\p{IsWord}");
+    assertSameProperty("\\p{IsWORD}", "\\p{IsWORD}");
+    assertSameProperty("\\p{IsWord}", "(?U)\\w");
+    assertSameProperty("\\P{IsWord}", "\\P{IsWord}");
+  }
+
+  @Test
   public void negationAndCaseInsensitiveNameMatchJdk() {
     assertSameProperty("\\P{IsEmoji}", "\\P{IsEmoji}");
     assertSameProperty("\\p{IsEMOJI_MODIFIER_BASE}", "\\p{IsEMOJI_MODIFIER_BASE}");
@@ -67,7 +75,7 @@ public class EmojiPropertyTest {
     StringBuilder diffs = new StringBuilder();
     for (String name : new String[] {
         "ALPHABETIC", "alphabetic", "WHITESPACE", "White_Space", "HEXDIGIT", "JOINCONTROL", "NONCHARACTERCODEPOINT",
-        "LOWERCASE", "ALPHA", "alpha", "XDIGIT", "BLANK", "ASCII", "ascii", "Lu", "LU", "lu", "L", "l", "Han", "HAN"}) {
+        "LOWERCASE", "ALPHA", "alpha", "XDIGIT", "BLANK", "ASCII", "ascii", "Lu", "LU", "lu", "L", "l", "Han", "HAN", "Word", "WORD", "word"}) {
       String p = "\\p{Is" + name + "}";
       boolean jdk;
       try {

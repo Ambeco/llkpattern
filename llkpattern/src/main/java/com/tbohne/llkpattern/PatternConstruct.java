@@ -173,7 +173,7 @@ abstract class PatternConstruct {
 	 * already self-registered here to break a cycle -- this returns immediately without redoing
 	 * (or re-entering) any work.
 	 */
-	@Nullable MatcherConstruct compile(PatternConstruct next) {
+	MatcherConstruct compile(PatternConstruct next) {
 		if (matcher != null) {
 			return matcher;
 		}
@@ -186,6 +186,11 @@ abstract class PatternConstruct {
 			// first act is `this.matcher = it` (see MatcherConstruct's class doc) -- so `matcher` is
 			// set as a side effect of the call below, not by assigning its return value.
 			buildMatcher();
+			if (matcher == null) {
+				throw new IllegalStateException(getClass().getSimpleName() + ".buildMatcher() did not construct a "
+						+ "MatcherConstruct (every MatcherConstruct constructor self-registers on its owner's `matcher`; "
+						+ "did you mean to construct one, or to override needsEntryPointBeforeMatcher()?)");
+			}
 		}
 		return matcher;
 	}

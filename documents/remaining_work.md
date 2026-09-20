@@ -36,6 +36,8 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       `IsEmoji_Modifier_Base`, `IsEmoji_Component`, `IsExtended_Pictographic`. `UnicodeAnalyzer` would need a JDK 21+
       run to generate them (`Character.isEmoji` etc.), and the tests need reflection to stay compilable on JDK 17.
 - [ ] `Matcher.reset(CharSequence)`: only `reset(String)` exists.
+- [ ] A quantifier with nothing before it (`*a`, `+a`, `?a`) is silently taken as a literal here; the JDK rejects it
+      as a dangling meta character. Pinned by `KnownDivergenceTest`.
 - [ ] `CANON_EQ` follow-ups (all compile-time rejections or documented differences, see README): a cluster inside a
       negated/nested/range-bounding class; more than 6 consecutive marks after one base.
 

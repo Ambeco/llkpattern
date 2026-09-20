@@ -2664,6 +2664,11 @@ Notes to self about how to work on this project, and other context that doesn't 
   + the guava jar), redirect stdout to a scratch file, and copy over (convert to CRLF to match the
   checked-in file). Full suite stayed green even though the test JVM (17) has older Unicode data.
 
+- **2026-09-20: `\N{name}` added** via reflective `Character.codePointOf` (no embedded name table: too big for a rare
+  escape; devices with older Unicode data just don't know newer names). Found while adding it: a quantifier after ANY
+  single-character escape (`\n+`, `\x41{2}`, `\.*`, `\Q...\E+`) was silently read as literal text; fixed in `PatternParser`'s
+  escape branch (`EscapeQuantifierTest`).
+
 - **2026-09-20: JDK 21 emoji properties added** (`\p{IsEmoji}` etc., 6 sets in `UnicodePredicates`, regenerated on JDK 27).
   `UnicodeAnalyzer` now REQUIRES JDK 21+ to run (reflective `Character.isEmoji*`, throws otherwise). Also found: JDK
   matches `\p{Is...}` binary-property/POSIX names case-insensitively (`IsALPHABETIC`), but not categories

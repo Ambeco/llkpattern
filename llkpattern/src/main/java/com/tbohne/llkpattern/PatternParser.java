@@ -454,6 +454,31 @@ final class PatternParser {
         int startIndex = index;
         int codePoint = tryParseSingleCharEscape();
         if (codePoint != -1) {
+          skipComments();
+          if (peek == '{' || peek == '?' || peek == '+' || peek == '*') {
+            // A quantifier belongs to this one escaped character, not to the literal run before it
+            // -- same handling as an unescaped character followed by a quantifier, below.
+            boolean hasPendingLiteral = rawTextStartIndex >= 0
+                && (rawTextIsPure ? rawTextPureEnd > rawTextStartIndex : rawText.length() > 0);
+            if (hasPendingLiteral) {
+              CharSequence literalValue = rawTextIsPure
+                  ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
+                  : rawText.toString();
+              LiteralString literal = new LiteralString(rawTextStartIndex, startIndex, literalValue);
+              literal.flags = flags;
+              sequence.patterns.add(literal);
+              if (rawText != null) {
+                rawText.setLength(0);
+              }
+            }
+            ComplexCharacter complex = new ComplexCharacter(startIndex, codePoint);
+            complex.flags = flags;
+            complex.endIndex = index;
+            sequence.patterns.add(parseQuantifiable(complex));
+            rawTextStartIndex = -1;
+            rawTextIsPure = true;
+            continue;
+          }
           if (rawTextStartIndex < 0) {
             rawTextStartIndex = startIndex;
           } else if (rawTextIsPure) {
@@ -529,8 +554,8 @@ final class PatternParser {
           // has nothing to repeat: at the start of a sequence ("*a", "a|+b", "(?i)?a") or after an
           // already-quantified atom ("a**"). java.util.regex rejects these as well.
           throw throwUnexpectedChar(
-              " quantifier with nothing to repeat. Did you mean to escape it as \"\\", new CodePoint(peek),
-              "\", or to put it after the character, group or class it should repeat?");
+              " quantifier with nothing to repeat. Did you mean to escape it with a backslash, or to put "
+                  + "it after the character, group or class it should repeat?");
         }
         if (rawTextStartIndex < 0) {
           rawTextStartIndex = startIndex;
@@ -1106,6 +1131,9 @@ final class PatternParser {
           }
         }
         return codePoint;
+      case 'N':
+        advance(2);
+        return parseCharacterName();
       default:
         // As in java.util.regex, a backslash before any non-alphabetic character just quotes it
         // ("\-", "\,", "\ ", "\<", or a non-ASCII character). ASCII letters are reserved for
@@ -1472,6 +1500,58 @@ final class PatternParser {
       return construct;
     }
     return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, index, construct));
+  }
+
+  // Character.codePointOf (JDK 9+, and Android from the release whose ICU has it) is the only source of
+  // Unicode character names here: embedding the whole name table would cost far more than this rarely
+  // used escape is worth, so the running platform's own table is used, looked up reflectively because
+  // this module compiles at source level 8.
+  private static final class CharacterNames {
+    static final java.lang.reflect.Method CODE_POINT_OF;
+
+    static {
+      java.lang.reflect.Method method = null;
+      try {
+        method = Character.class.getMethod("codePointOf", String.class);
+      } catch (NoSuchMethodException e) {
+        // reported with a detailed message at the point of use
+      }
+      CODE_POINT_OF = method;
+    }
+  }
+
+  /** Parses the {@code {name}} of a {@code \N{name}} escape (peek is at the opening brace). */
+  private int parseCharacterName() {
+    if (peek != '{') {
+      throw throwUnexpectedChar(
+          "Character names are written \"\\N{name}\", e.g. \"\\N{LATIN SMALL LETTER A}\"");
+    }
+    int nameStart = index + 1;
+    int nameEnd = pattern.indexOf('}', nameStart);
+    if (nameEnd < 0) {
+      throw throwUnexpectedChar(
+          "character name escape \"\\N{name}\" is missing the closing }");
+    }
+    String name = pattern.substring(nameStart, nameEnd);
+    if (CharacterNames.CODE_POINT_OF == null) {
+      throw throwUnexpectedChar(
+          "\\N{name} needs Character.codePointOf, which this runtime (Java "
+              + System.getProperty("java.version") + ") doesn't have. Use \\x{...} with the "
+              + "code point instead");
+    }
+    int codePoint;
+    try {
+      codePoint = (Integer) CharacterNames.CODE_POINT_OF.invoke(null, name);
+    } catch (java.lang.reflect.InvocationTargetException e) {
+      throw throwUnexpectedChar(
+          "Unknown character name \"", name, "\" in \\N{name}. Names are the Unicode names, "
+              + "e.g. \"LATIN SMALL LETTER A\"; this runtime's Unicode data may predate a newer "
+              + "character");
+    } catch (IllegalAccessException e) {
+      throw new IllegalStateException(e);
+    }
+    advance(nameEnd + 1 - index);
+    return codePoint;
   }
 
   /**

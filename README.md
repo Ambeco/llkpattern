@@ -74,7 +74,10 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   negated, nested or range-bounding class is a compile error; error positions refer to the rewritten text.
   `LITERAL` overrides `CANON_EQ`, as in the JDK.
 
-Not yet implemented, and gaps to close rather than design choices: `\X` (grapheme cluster) and `\N{name}`. `\b{g}` is rejected rather than silently misread.
+Not yet implemented, and gaps to close rather than design choices: `\X` (grapheme cluster). `\b{g}` is rejected rather than silently misread.
+`\N{name}` looks the name up with the platform's `Character.codePointOf` (JDK 9+, Android with a recent enough ICU), so
+it knows exactly the characters the running platform's Unicode data does; where that method is missing it is a compile error
+suggesting `\x{...}`.
 `Matcher.reset(CharSequence)` snapshots the text with `toString()`, so later changes to a mutable sequence aren't seen.
 A quantifier with nothing to repeat (`*a`, `a**`) is a compile error, as in the JDK; one after a zero-width
 construct (`^*a`, `\b+a`) is accepted and folded away.
@@ -88,7 +91,7 @@ construct (`^*a`, `\b+a`) is accepted and folded away.
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
 - **Lookahead/lookbehind** — rejected outright at parse time, since they can't be guaranteed to run in linear time.
-- **Syntax and API gaps** — `\X`, `\b{g}`, `\N{name}`.
+- **Syntax and API gaps** — `\X`, `\b{g}`.
 - **More scraped-corpus sources planned** beyond OpenJDK — AOSP/libcore, RE2J (another non-backtracking engine, interesting as a design comparison), dregex, dk.brics.automaton, and DataDog/java-reggie are all identified candidates.
 - **`ArrayCodePointMap` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
 

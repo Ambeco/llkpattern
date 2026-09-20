@@ -76,7 +76,7 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       or forked golden files -- not yet checked against a real device.
 - [ ] Re-run the timing and sampling benchmarks on the other phones once convenient.
 
-## Core implementation
+## Optional experiments (nothing here is required work)
 
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable** (e.g. `(a?)+`).
       Today only the entry-point-computation guard (design.md's "Entry-point computation vs. matcher compilation")
@@ -84,8 +84,6 @@ Run `./gradlew :llkpattern:test` (with `JAVA_HOME` pointed at a JDK 17/21 — se
       (a third sibling to `firstCharSet()`/`lastCharSet()`). A parse-time version would only improve the
       diagnostic (an earlier, more specific message), not correctness, since the guard already catches every case
       (`NestedQuantifierCombinatorialTest`).
-- [ ] `MatcherConstruct.BoundaryMatcherConstruct.match(...)`: `InputBegin`/`InputEndExceptTerminator`/`InputEnd` (`\A`/`\Z`/`\z`) are implemented (position-and-surrounding-characters checks only, honoring `MULTILINE`/`UNIX_LINES` -- see design.md's "Boundary matching" section). `^`/`$` and `\b`/`\B` are separate, already-implemented pairs (`LineBoundaryConstruct`/`LineBoundaryMatcherConstruct`, `WordBoundaryConstruct`/`WordBoundaryMatcherConstruct`). `\G` isn't a position-based boundary at all and has no `MatcherConstruct` of its own -- see design.md's "Boundary matching" section.
-- [ ] `useTransparentBounds`/`hasTransparentBounds` (still `UnsupportedOperationException` stubs): `\b`/`\B` (`Matcher#peekPrevious`) hard-code opaque bounds (never look before `regionStart`); transparent bounds would let them see the characters just outside the region. (`useAnchoringBounds` is done -- `^`/`$`/`\A`/`\Z`/`\z` follow `Matcher.anchorStart`/`anchorEnd`.)
 - [ ] **Bracket-embedded named classes still merge, unlike a standalone escape.** Now that
       `ComplexCharacter.ranges` is immutable and `PatternParser#parseComplexEscape` is a pure
       function, a standalone escape atom (a bare `\D`/`\p{...}` in running pattern text) assigns
@@ -168,6 +166,10 @@ to keep it "vaguely reasonable" and the jar/dex small.
 - [ ] Both steps change the generator (`UnicodeAnalyzer`) output format, so re-run the regeneration
       (see notes.md's 2026-09-19 entry) and the full suite afterward, and re-measure class size, init
       time and heap with the same numbers as above.
+
+## Matcher API
+
+- [ ] `useTransparentBounds`/`hasTransparentBounds` (still `UnsupportedOperationException` stubs): `\b`/`\B` (`Matcher#peekPrevious`) hard-code opaque bounds (never look before `regionStart`); transparent bounds would let them see the characters just outside the region. (`useAnchoringBounds` is done -- `^`/`$`/`\A`/`\Z`/`\z` follow `Matcher.anchorStart`/`anchorEnd`.)
 
 ## Toolchain
 

@@ -77,7 +77,7 @@ and `Matcher`'s anchoring and transparent bounds.
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
 - **Lookahead/lookbehind** — rejected outright at parse time, since they can't be guaranteed to run in linear time.
-- **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch; `UNIX_LINES` is only partially honored (affects `^`/`$`/`\Z` but not yet `.`/`\s`/etc.'s line-terminator handling).
+- **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch.
 - **`Matcher` API gaps** — `region()`'s interaction with anchoring/transparent bounds is still a stub.
 - **More scraped-corpus sources planned** beyond OpenJDK — AOSP/libcore, RE2J (another non-backtracking engine, interesting as a design comparison), dregex, dk.brics.automaton, and DataDog/java-reggie are all identified candidates.
 - **`ArrayCodePointMap` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.

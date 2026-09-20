@@ -509,7 +509,17 @@ enum NamedCharClass {
   }
 
   enum RegexCharacterClass {
-    DOT(build(m -> m.add(+'\n')).complement()),
+    // "." without DOTALL: everything but the line terminators (all of them by default, only '\n'
+    // under UNIX_LINES -- PatternParser picks). Not reachable as an escape: valueOf() there is
+    // only ever given a single character.
+    DOT(build(
+          m -> {
+            m.add(+'\n');
+            m.add(+'\r');
+            m.add(0x0085);
+            m.add(0x2028, 0x2029 + 1);
+          }).complement()),
+    DOT_UNIX_LINES(build(m -> m.add(+'\n')).complement()),
     d(Digit),
     // \D complements `ascii` and `unicode` separately, so (like \d, \S and \W) it honors
     // UNICODE_CHARACTER_CLASS. A single-set `Digit.unicode.complement()` would be flag-insensitive.

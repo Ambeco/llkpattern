@@ -357,9 +357,8 @@ final class PatternParser {
             // Bug fix (2026-09-06): this unconditionally built "everything" (complement of the
             // empty set), i.e. always behaved as if DOTALL were on -- the DOTALL flag constant
             // existed (Ll1Pattern.DOTALL) but nothing anywhere ever actually consulted it. Without
-            // DOTALL, "." must exclude the line terminator '\n' (a fuller line-terminator set --
-            // \r, U+0085, U+2028, U+2029 -- and UNIX_LINES interaction are tracked separately in
-            // remaining_work.md, not done here) -- see NamedCharClass.RegexCharacterClass.DOT,
+            // DOTALL, "." must exclude the line terminators (only '\n' under UNIX_LINES) -- see
+            // NamedCharClass.RegexCharacterClass.DOT/DOT_UNIX_LINES,
             // reused directly below, always as "any character" regardless of
             // UNICODE_CHARACTER_CLASS -- "." matching only ASCII by default would be wrong, unlike
             // a POSIX/Unicode-property class like \s or \w where that split is exactly the point.
@@ -376,7 +375,8 @@ final class PatternParser {
               // once constructed (see its own doc) -- nothing past this point ever mutates it, so
               // there's no risk of corrupting the shared RegexCharacterClass.DOT.unicode instance,
               // and no allocation is needed at all (unlike rebuilding "\n"'s complement fresh).
-              dot = new ComplexCharacter(index, RegexCharacterClass.DOT.unicode);
+              dot = new ComplexCharacter(index, ((flags & Pattern.UNIX_LINES) != 0
+                  ? RegexCharacterClass.DOT_UNIX_LINES : RegexCharacterClass.DOT).unicode);
             }
             dot.flags = flags;
             // Bug fix (2026-09-07): parseQuantifiable(dot) used to be called BEFORE this advance(1),

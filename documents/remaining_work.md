@@ -26,10 +26,8 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 - [ ] Once implemented, add the same depth of test coverage for: positive/negative lookahead
       (`(?=...)`/`(?!...)`) and lookbehind (`(?<=...)`/`(?<!...)`) -- note both are currently
       rejected outright at parse time per design.md.
-- [ ] Remaining `java.util.regex.Pattern` compile flags: `UNIX_LINES` is only partially honored (it affects
-      `^`/`$`/`\Z` but not which characters `.`/`\s`/etc. treat as line terminators), and `LITERAL` (treat
-      the whole pattern as literal text) and `CANON_EQ` (canonical-equivalence matching) are not started: no tests
-      and no stub `flags` branch.
+- [ ] Remaining `java.util.regex.Pattern` compile flags: `LITERAL` (treat the whole pattern as literal text) and
+      `CANON_EQ` (canonical-equivalence matching) are not started: no tests and no stub `flags` branch.
 
 ## Scraped-corpus differential test harness
 

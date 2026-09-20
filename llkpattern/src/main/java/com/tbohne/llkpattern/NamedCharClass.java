@@ -227,8 +227,7 @@ enum NamedCharClass {
   Assigned(
       Source.UProperty,
       UnicodePredicates.UNASSIGNED.complement()),
-  // \p{IsWord}: the same set as \w under UNICODE_CHARACTER_CLASS (RegexCharacterClass.w.unicode,
-  // repeated here since that class may depend on this one but not the reverse -- see Space's comment).
+  // \p{IsWord}, also the set \w means under UNICODE_CHARACTER_CLASS (RegexCharacterClass.w.unicode).
   Word(
       Source.UProperty,
       unionOf(
@@ -610,14 +609,7 @@ enum NamedCharClass {
               m.add(+'0', +'9' + 1);
               m.add(+'_');
             }),
-        unionOf(
-            Alphabetic.unicode,
-            Digit.unicode,
-            UnicodePredicates.NON_SPACING_MARK,
-            UnicodePredicates.COMBINING_SPACING_MARK,
-            UnicodePredicates.ENCLOSING_MARK,
-            UnicodePredicates.CONNECTOR_PUNCTUATION,
-            Join_Control.unicode)),
+        Word.unicode),
     W(w.ascii.complement(), w.unicode.complement()),
     R(build(
           m -> {

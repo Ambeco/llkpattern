@@ -142,6 +142,14 @@ If both sides are statically known, the boundary either always holds (compiles t
 - `(?>X)` parses as `(?:X)`: with no backtracking, every group already matches atomically.
 - Inline flag groups apply as `(flags | enabled) & ~disabled`, so `(?-i)` and `(?-i:X)` are accepted.
 
+### `LITERAL` and `CANON_EQ`
+
+- `LITERAL`: `PatternParser.parse()` short-circuits to a bare `Sequence` holding one `LiteralString` of the whole pattern text (no `\Q...\E` pre-pass, no metacharacters, no inline flags). `CASE_INSENSITIVE`/`UNICODE_CASE` still apply through the literal's own flags. An empty pattern is rejected like any empty sequence. `LITERAL` takes precedence over `CANON_EQ`.
+- `CANON_EQ` is a text pre-pass (`CanonicalEquivalence.rewrite`, run right after `removeQuoting`), never a matcher feature, so `Matcher` and the compiled graph are unchanged and offsets stay in input coordinates. The pattern is NFD-normalized; each starter followed by combining marks (non-spacing marks, Hangul vowel/trailing jamo) becomes `(?:...)` over every canonically equivalent spelling: every mark ordering that NFD maps back to the same string, plus every single-code-point composition of a prefix of any such ordering followed by the remaining marks, plus any code point written in the original pattern whose decomposition is exactly the cluster (singletons and composition exclusions such as U+212B and U+0958 never come out of composing). The group wraps the whole cluster so a following quantifier applies to all of it.
+- The spellings are left-factored into a trie before being emitted. A flat alternation would have several branches starting with the same base character whenever a cluster has two or more reorderable marks, which is exactly the ambiguity this engine rejects. Spellings of one cluster are never prefixes of each other, so every trie level has disjoint first characters and the result is always LL(1)-valid on its own; ambiguity can still arise with neighbouring constructs (`e|é`, `(?:é|è)`) and is rejected as usual.
+- Inside a bracket expression a cluster can't be a member, so the clusters of one class are merged into one trie and emitted as alternatives next to the class of its plain members. A cluster in a negated class, a nested class, or next to a range `-` is a compile error with an explanation. Under `CASE_INSENSITIVE`+`UNICODE_CASE`, an original spelling that folds to an already-present single-code-point spelling is dropped (U+212B and U+00C5 would otherwise be duplicate branches).
+- The rewrite runs on raw text before escapes are decoded, so an escaped `\u00e9` is not a cluster. Classes, `.` and `\w` never consume trailing combining marks, and error positions refer to the rewritten text.
+
 ### Public API shape
 
 - `Ll1Pattern` and `Matcher` are designed to mirror `java.util.regex.Pattern`/`Matcher`'s public method surface, so callers can largely swap one for the other. See remaining_work.md for the current list of implemented vs. stubbed methods.
@@ -200,3 +208,19 @@ Let a client run `UnicodeAnalyzer` themselves, emitting script/category/property
 - **Pros**: clients could get newer Unicode data without waiting for a library release or JDK-matched regeneration; the built-in data could shrink to a minimal fallback.
 - **Cons**: a fair amount of work (a file format, a parser/loader, a discovery mechanism, versioning/validation of the file against the library); slower startup and likely slower matching/compilation, since the current sets are plain compiled-in `ArrayCodePointSet`s built by generated code while a loaded file needs a runtime parse and can't be constant-folded or class-loaded lazily the same way; a new failure mode (missing/corrupt/mismatched data file) and a shrinker/packaging question on Android; and very little practical value, since Unicode data changes rarely and regenerating `UnicodePredicates.java` (see notes.md) is already a small, documented step.
 - **Decision**: rejected (2026-09-19) -- not worth the work or the speed cost.
+
+### `CANON_EQ` by normalizing the input instead of rewriting the pattern
+
+Normalize both the pattern and the input to NFD and match the normalized forms.
+
+- **Pros**: canonical ordering makes mark permutations identical, so there is no alternation and no ambiguity at all.
+- **Cons**: every `start()`/`end()`/`group()` must be mapped back to original-input offsets; and `java.util.regex`'s own behaviour needs a rule that a match can't end in the middle of a combining sequence for a class (`[a-z]` doesn't match the `e` of `e` + U+0301) but can for `.`, which normalizing the input erases. Needs surgery across `Matcher`, regions, bounds and `hitEnd`.
+- **Decision**: rejected; the pattern rewrite needs no `Matcher` changes at all.
+
+### `CANON_EQ` with a flat alternation of spellings, as `java.util.regex` does
+
+Emit every equivalent spelling of a cluster as its own branch.
+
+- **Pros**: simplest possible rewrite.
+- **Cons**: with two or more reorderable marks, several branches begin with the same base character, so the pattern is rejected as ambiguous.
+- **Decision**: rejected in favour of the left-factored trie above, which accepts every cluster.

@@ -131,7 +131,16 @@ final class PatternParser {
   private final Map<Integer, QuantifiedUnion> closedGroupsByIndex = new HashMap<>();
 
   PatternParser(String pattern, int flags) {
-    this.pattern = removeQuoting(pattern);
+    // LITERAL wins over CANON_EQ, as in java.util.regex.
+    if ((flags & Pattern.LITERAL) != 0) {
+      this.pattern = pattern;
+    } else if ((flags & Pattern.CANON_EQ) != 0) {
+      this.pattern = CanonicalEquivalence.rewrite(
+          removeQuoting(pattern),
+          (flags & Pattern.CASE_INSENSITIVE) != 0 && (flags & Pattern.UNICODE_CASE) != 0);
+    } else {
+      this.pattern = removeQuoting(pattern);
+    }
     this.patternChars = this.pattern.toCharArray();
     index = 0;
     peek = codePointAt(0);
@@ -264,6 +273,9 @@ final class PatternParser {
   }
 
   PatternConstruct parse() {
+    if ((flags & Pattern.LITERAL) != 0) {
+      return parseLiteralPattern();
+    }
     QuantifiedUnion root = new QuantifiedUnion(pattern, 0, flags);
     root.flags = flags;
     // The whole pattern isn't a capturing group -- only parseGroup() should assign a real
@@ -276,6 +288,25 @@ final class PatternParser {
       throw throwUnexpectedChar("Too many \")\". Check that the () parenthesis match");
     }
     return (root.constructs.size() == 1) ? root.constructs.get(0) : root;
+  }
+
+  /**
+   * {@code LITERAL}: the whole pattern is plain text, with no metacharacters, escapes, quotation
+   * or inline flags. Only {@code CASE_INSENSITIVE}/{@code UNICODE_CASE} still affect matching,
+   * as in {@code java.util.regex}. Returns the same bare {@code Sequence} shape {@link #parse()}
+   * gives any single-alternative pattern.
+   */
+  private PatternConstruct parseLiteralPattern() {
+    if (pattern.isEmpty()) {
+      throw throwEmptySequence(0, 0);
+    }
+    Sequence sequence = new Sequence(0);
+    LiteralString literal = new LiteralString(0, pattern.length(), pattern);
+    literal.flags = flags;
+    sequence.patterns.add(literal);
+    sequence.endIndex = pattern.length();
+    index = pattern.length();
+    return sequence;
   }
 
   private QuantifiedUnion parseUnion(QuantifiedUnion parent) {

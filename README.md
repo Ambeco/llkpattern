@@ -65,8 +65,18 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
 - **Reluctant and possessive quantifier modifiers are accepted but are no-ops**, since there is no backtracking to be
   reluctant about. `a{2,3}?` matches `aaa` here, where `java.util.regex` matches `aa`.
 
-Not yet implemented (these will be supported eventually): the `LITERAL` and `CANON_EQ` flags,
-and `Matcher`'s anchoring and transparent bounds.
+- **`CANON_EQ` is a pattern rewrite**: each base-plus-combining-marks cluster (or precomposed character) in the
+  pattern becomes a group of every canonically equivalent spelling, left-factored so its branches stay unambiguous;
+  the input is never normalized. Differences from `java.util.regex`: a loop over a cluster (`\u00e9+`) doesn't retry
+  fewer iterations (the general no-backtracking limit); classes, `.` and `\w` never swallow trailing combining marks
+  (the JDK is inconsistent: `[^x]` and `\p{L}` do, `[a-z]` and `\w` don't); a partly composed Hangul syllable
+  (U+AC00 U+11A8 for U+AC01) matches here and not in the JDK; `\Q...\E` text is rewritten too; a cluster inside a
+  negated, nested or range-bounding class is a compile error; error positions refer to the rewritten text.
+  `LITERAL` overrides `CANON_EQ`, as in the JDK.
+
+Not yet implemented, and gaps to close rather than design choices: `\X` (grapheme cluster), `\N{name}`, the emoji
+binary properties added in JDK 21 (`\p{IsEmoji}` etc.), and `Matcher.reset(CharSequence)` (only `reset(String)`
+exists).
 
 ### Considered and deliberately not added
 
@@ -77,14 +87,13 @@ and `Matcher`'s anchoring and transparent bounds.
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
 - **Lookahead/lookbehind** — rejected outright at parse time, since they can't be guaranteed to run in linear time.
-- **`LITERAL`/`CANON_EQ` compile flags** — unimplemented from scratch.
-- **`Matcher` API gaps** — `region()`'s interaction with anchoring/transparent bounds is still a stub.
+- **Syntax and API gaps** — `\X`, `\N{name}`, JDK 21's emoji properties, `Matcher.reset(CharSequence)`.
 - **More scraped-corpus sources planned** beyond OpenJDK — AOSP/libcore, RE2J (another non-backtracking engine, interesting as a design comparison), dregex, dk.brics.automaton, and DataDog/java-reggie are all identified candidates.
 - **`ArrayCodePointMap` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
 
 ## 4. Current Progress
 
-The module compiles; its test suite passes fully: **1556 tests, 0 failing** — 365 hand-written unit/integration tests, plus **561 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite; more corpus sources are planned, see above) and 561 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
+The module compiles; its test suite passes fully: **1589 tests, 0 failing** — hand-written unit/integration/differential tests, plus **561 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite; more corpus sources are planned, see above) and 561 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
 
 In brief:
 

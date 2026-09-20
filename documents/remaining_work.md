@@ -26,8 +26,18 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 - [ ] Once implemented, add the same depth of test coverage for: positive/negative lookahead
       (`(?=...)`/`(?!...)`) and lookbehind (`(?<=...)`/`(?<!...)`) -- note both are currently
       rejected outright at parse time per design.md.
-- [ ] Remaining `java.util.regex.Pattern` compile flags: `LITERAL` (treat the whole pattern as literal text) and
-      `CANON_EQ` (canonical-equivalence matching) are not started: no tests and no stub `flags` branch.
+
+## Feature gaps versus `java.util.regex` (everything else that differs is a design choice, see README)
+
+- [ ] `\X` (extended grapheme cluster), and check whether `\b{g}` (grapheme boundary, which compiles here without
+      complaint) does anything sensible.
+- [ ] `\N{name}` (character by Unicode name, JDK 9+).
+- [ ] JDK 21's emoji binary properties: `\p{IsEmoji}`, `IsEmoji_Presentation`, `IsEmoji_Modifier`,
+      `IsEmoji_Modifier_Base`, `IsEmoji_Component`, `IsExtended_Pictographic`. `UnicodeAnalyzer` would need a JDK 21+
+      run to generate them (`Character.isEmoji` etc.), and the tests need reflection to stay compilable on JDK 17.
+- [ ] `Matcher.reset(CharSequence)`: only `reset(String)` exists.
+- [ ] `CANON_EQ` follow-ups (all compile-time rejections or documented differences, see README): a cluster inside a
+      negated/nested/range-bounding class; more than 6 consecutive marks after one base.
 
 ## Scraped-corpus differential test harness
 

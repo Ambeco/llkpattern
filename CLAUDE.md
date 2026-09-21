@@ -103,6 +103,19 @@ scratchpad, not the repo) against `llkpattern\build\classes\java\main` plus the 
 package compare `e.getClass().getSimpleName()`. A probe class holding pattern strings with
 backslashes must be written with the Write tool, not a Bash heredoc (see the global Windows notes).
 
+## Reading newer JDK regex behavior
+
+To see how a newer JDK's `java.util.regex` behaves internally, unzip just that file from its source archive, e.g.
+`unzip -o -q "C:/Program Files/Java/jdk-27/lib/src.zip" java.base/java/util/regex/Pattern.java` (and
+`java.base/jdk/internal/lang/CaseFolding.java`), then grep it. JDK-version-dependent behavior (e.g. JDK 27's
+`(?iu)` range closure) is reproduced only when a runtime probe of the host `java.util.regex` shows it, so llk
+mirrors whichever JDK runs the tests -- see `CaseFolding.HOST_CLOSES_RANGES`.
+
+## Proving a new test discriminates
+
+After writing a test for a fix, run it against the old code with `git stash push -- llkpattern/src/main`
+(keeps the new test file), then `git stash pop`. A test that also passes on old code is only a guard.
+
 ## Refreshing golden corpus rows
 
 Golden files are `llkpattern/src/test/resources/golden/*.tsv`; the `status` column is

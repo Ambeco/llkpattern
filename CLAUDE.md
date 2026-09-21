@@ -148,3 +148,12 @@ strings, assert `count == 1` per replacement, and read/write bytes with CRLF<->L
 
 This also applies to `cat <<'EOF'` heredocs that create new `.java` files: use the Write tool for any
 Java text containing `\`.
+
+## Working habits that save round trips
+
+- Never put text containing `\` through a heredoc or a Python string: create files and probes with Write, edit
+  with Edit. This includes scratch `.java` probes and Python edit scripts (`\N`, `\u`, `\b` all break).
+- Before implementing a syntax feature, write a differential matrix against `java.util.regex` (pattern shapes x
+  flags x inputs) first; it finds the surprising cases in one run.
+- Keep a scratchpad script that prints the failure message for a test class from
+  `llkpattern/build/test-results/test/TEST-*.xml` (set `PYTHONIOENCODING=utf-8`) instead of retyping it.

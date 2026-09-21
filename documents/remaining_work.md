@@ -34,10 +34,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       subclass (the pipeline already supports this cleanly):
   - [ ] **AOSP/libcore**: `https://android.googlesource.com/platform/libcore/+/refs/heads/main/ojluni/src/test/java/util/regex/`
         (note this is `libcore`, not `platform_frameworks_base`).
-  - [ ] **RE2J**: `https://github.com/google/re2j/tree/master/javatests/com/google/re2j` --
-        interesting as a comparison point since RE2J, like llk, is a deliberately linear-time
-        (non-backtracking) engine, just via a different mechanism (Thompson NFA simulation vs
-        LL(1) compile-time dispatch).
   - [ ] **dregex**: `https://github.com/marianobarrios/dregex/tree/master/src/test/java/dregex`.
   - [ ] Oracle GraalVM's regex engine tests were a candidate too -- not yet located/confirmed.
   - [ ] **dk.brics.automaton**: `https://github.com/cs-au-dk/dk.brics.automaton/tree/master/test/java/dk/brics/automaton`.
@@ -56,6 +52,27 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       rewrites only those rows, leaving every other row untouched. A flag chooses whether to also re-run
       `java.util.regex` for the selected rows (when its recorded columns are suspect) or keep the recorded regex
       columns and refresh only the llk ones. `status` is recomputed only for regenerated rows.
+
+## Gaps found by the RE2J corpus (`golden/re2j.tsv`, rows tagged `open gap`/`open bug`)
+
+Each is one or a few rows; `grep -a "open gap\|open bug" llkpattern/src/test/resources/golden/re2j.tsv` lists them.
+
+- [ ] **Crash: a quantified group whose sole body is a capturing group** -- `((x))*`, `(?:(x))*`, `((x)|y)*`,
+      `((x))?`, `((x)){0,2}` all throw `NullPointerException` at match time (`EndCaptureMatcherConstruct.next` is null,
+      via `SingleDispatchingMatcherConstruct.matchNext`). Long-standing (reproduces at 08d8791), not a recent
+      regression; `(x)*` and `((x)y)*` are fine. Hand-check `((a?b)c)?` vs `""` and `(a+b)+` vs `"ababab"` afterward
+      (CLAUDE.md). Add a differential test over nested-group shapes once fixed.
+- [ ] **A loop followed by a zero-width assertion, then a character the loop also accepts, is not rejected** --
+      `a*^a`, `a*(^a)`, `a*\ba`, `a*\Aa`, `a?^a`, `a*(^|x)a` compile, then silently fail to match `a` where
+      `java.util.regex` finds it by backtracking (`a*` takes zero iterations, so `^` holds). Should be a compile-time
+      ambiguity error like `a*a`; probably the assertion's own entry set is empty/absent when checking the loop
+      against `next`.
+- [ ] `\0600` (`\0` then up to three octal digits, at most `\0377`: here `\060` then `0`) is rejected with "Octal escapes
+      must be less than ...".
+- [ ] `\x{00000061}` (braced hex with more than 6 digits, leading zeros) is rejected.
+- [ ] An unmatched `]` outside a class (`]`, `a]`) and `[^]b]` are rejected; `java.util.regex` reads them as literals.
+- [ ] `\141` with no such group is rejected at compile time ("refers to a group that doesn't exist"); `java.util.regex`
+      compiles it and it never matches.
 
 ## Scraped-corpus microbenchmark
 

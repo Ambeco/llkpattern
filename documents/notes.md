@@ -2770,3 +2770,13 @@ Notes to self about how to work on this project, and other context that doesn't 
   small sets fixed it. `(?iu)\p{L}+9` compile: ~60 ms -> ~1.3 ms. JDK 17's sweep is skipped for property classes when its
   Unicode data differs from llk's, and for sharp s (JDK < 21 doesn't fold it with U+1E9E). `CanonEqTest` and
   `EmojiPropertyTest.isWordMatchesJdkAndUnicodeW` already fail on JDK 17 without this change.
+
+## RE2J corpus (2026-09-20)
+
+- `tools/scrape_re2j.py` -> `golden/re2j.tsv` (1790 rows; 1350 AGREES, ~400 EXPECTED_DIVERGENCE, 38 open gaps/bugs, see
+  remaining_work.md). Sources: FindTest table, AT&T `.dat` (`E` rows only), `re2-search.txt` cross product. Expected
+  results in the sources are ignored. `CorpusGenerator -Punescape=tsv` decodes GoldenTsv-escaped intermediate fields.
+- Generate golden files with the newest JDK (27), not 17: `\b`/`\w` on non-ASCII differ by JDK version and llk mirrors the
+  host (JDK 17 gave 2 spurious UNEXPECTED rows). `-Poutput` is relative to `llkpattern/`, so `src/test/resources/...`.
+- Found and fixed: `X{0}` behaved like `X{1}` (the loop only enforces `max` after a first iteration). Not added to the
+  benchmark corpus on purpose, so the benchmark numbers stay comparable.

@@ -92,12 +92,12 @@ See [documents/remaining_work.md](documents/remaining_work.md) for the full, act
 
 - **Lookahead/lookbehind** — rejected outright at parse time, since they can't be guaranteed to run in linear time.
 - **Syntax and API gaps** — `\X`, `\b{g}`.
-- **More scraped-corpus sources planned** beyond OpenJDK — AOSP/libcore, RE2J (another non-backtracking engine, interesting as a design comparison), dregex, dk.brics.automaton, and DataDog/java-reggie are all identified candidates.
+- **More scraped-corpus sources planned** beyond OpenJDK and RE2J — AOSP/libcore, dregex, dk.brics.automaton, and DataDog/java-reggie are identified candidates. The RE2J corpus turned up a match-time crash (`((x))*`) and an ambiguity-check gap (`a*^a`); see remaining_work.md.
 - **`ArrayCodePointMap` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
 
 ## 4. Current Progress
 
-The module compiles; its test suite passes fully: **1618 tests, 0 failing** — hand-written unit/integration/differential tests, plus **561 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite; more corpus sources are planned, see above) and 561 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
+The module compiles; its test suite passes fully: **2852 tests, 0 failing** — hand-written unit/integration/differential tests, plus **2351 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite (561 rows) and RE2J's tests (1790 rows); more corpus sources are planned, see above) and 2351 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
 
 In brief:
 

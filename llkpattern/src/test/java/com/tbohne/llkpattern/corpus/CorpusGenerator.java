@@ -105,9 +105,11 @@ public final class CorpusGenerator {
         return field;
       case "openjdk":
         return unescapeOpenJdk(field);
+      case "tsv":
+        return GoldenTsv.decodeField(field);
       default:
         throw new IllegalArgumentException(
-            "Unknown -Punescape value '" + mode + "' -- did you mean 'none' or 'openjdk'?");
+            "Unknown -Punescape value '" + mode + "' -- did you mean 'none', 'openjdk' or 'tsv'?");
     }
   }
 

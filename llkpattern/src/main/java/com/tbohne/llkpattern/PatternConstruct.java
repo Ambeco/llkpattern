@@ -521,6 +521,13 @@ abstract class PatternConstruct {
 		 * nested inside another loop's body resolve without forcing a cycle.
 		 */
 		void buildLoopEntryMap(List<PatternConstruct> body, PatternConstruct next) {
+			if (max == 0) {
+				// `X{0}` never matches X at all: its entry point is exactly `next`'s.
+				MergedEntries skipped = mergeEntryPoints(pattern, List.of(), next, "loop part");
+				entryMap = skipped.ranges;
+				entryElse = skipped.entryElse() != null ? this : null;
+				return;
+			}
 			for (PatternConstruct part : body) {
 				part.next = this;
 			}
@@ -569,6 +576,11 @@ abstract class PatternConstruct {
 		 * than looping back directly.
 		 */
 		void buildLoopMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
+			if (max == 0) {
+				// The body is never compiled: `X{0}` is a no-op, and its capture group (if any) stays unset.
+				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
+				return;
+			}
 			boolean capturing = captureConstructIndex != -1;
 
 			// Ambiguity check only, on entry points alone -- no compiling. Unlike the old

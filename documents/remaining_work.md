@@ -31,9 +31,11 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 - [ ] `\X` (extended grapheme cluster) and `\b{g}` (grapheme boundary; rejected at parse time for now, along with any other
       `\b{...}`/`\B{...}`, rather than read as a word boundary plus literal text).
-- [ ] **Silent wrong result:** a negated class under `CASE_INSENSITIVE` doesn't exclude the other case: `[^a]` with
-      `(?i)` matches `a` and `A` here, the JDK matches neither (`[^ab]` likewise; not specific to any escape).
-      Fold the members before complementing.
+- [ ] Non-ASCII case folding under `CASE_INSENSITIVE`, still divergent from the JDK (ASCII is fine, see
+      `NegatedClassCaseFoldTest`): (a) the JDK also matches a character whose `lower(upper(ch))` is a member, so
+      `(?iu)[^a-z]` should exclude `ſ` (long s) and the Kelvin sign but doesn't -- `containsFolded` and
+      `foldedEntrySet` only try `upper`/`lower` of each side; (b) for `\p{Lu}`-style property classes the JDK folds over all of
+      Unicode even without `UNICODE_CASE`, so non-ASCII input against `(?i)\P{Lu}` differs.
 - [ ] `CANON_EQ` follow-ups (all compile-time rejections or documented differences, see README): a cluster inside a
       negated/nested/range-bounding class; more than 6 consecutive marks after one base.
 

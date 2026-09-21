@@ -854,6 +854,16 @@ final class PatternParser {
   }
 
   /**
+   * {@code set}'s complement, as java.util.regex computes it under {@code CASE_INSENSITIVE}: the members
+   * are case-folded first and the fold complemented ({@code (?i)[^a]} excludes both {@code a} and {@code
+   * A}). Complementing first would leave {@code A} in, since the matcher's own runtime fold only ever
+   * ADDS matches.
+   */
+  private CodePointSet complementCaseFolded(CodePointSet set) {
+    return MatcherConstruct.foldedEntrySet(set, flags).complement();
+  }
+
+  /**
    * The core of {@link #parseComplexCharacter}: parses one {@code "[" IntersectionCharacter "]"}
    * (already-negated if {@code ^} was present) and returns its finished ranges, advancing {@code
    * index} past the closing {@code "]"}. Split out from {@link #parseComplexCharacter} so a nested
@@ -899,7 +909,7 @@ final class PatternParser {
                 intersectionSoFar == null
                     ? completedRun
                     : intersect(intersectionSoFar, completedRun);
-            return negate ? finalRanges.complement() : finalRanges;
+            return negate ? complementCaseFolded(finalRanges) : finalRanges;
           } else {
             ranges.add(+']', +']' + 1);
             advance(1);
@@ -1382,7 +1392,7 @@ final class PatternParser {
       if (scriptRanges == null) {
         throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
       }
-      return positive ? scriptRanges : scriptRanges.complement();
+      return positive ? scriptRanges : complementCaseFolded(scriptRanges);
     }
 
     // \p{InGreek}/\p{block=Greek} are always blocks.
@@ -1392,7 +1402,7 @@ final class PatternParser {
       if (blockRanges == null) {
         throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
       }
-      return positive ? blockRanges : blockRanges.complement();
+      return positive ? blockRanges : complementCaseFolded(blockRanges);
     }
 
     try {
@@ -1405,7 +1415,7 @@ final class PatternParser {
       // complement(), not a materialized walk: see NamedCharClass's own complement-based constants
       // for why this is O(namedRanges' entry count), not O(the domain) -- an else-value fill, not
       // an eager enumeration.
-      return positive ? namedRanges : namedRanges.complement();
+      return positive ? namedRanges : complementCaseFolded(namedRanges);
     } catch (IllegalArgumentException e) {
       throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
     }

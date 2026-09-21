@@ -366,10 +366,12 @@ abstract class PatternConstruct {
 
 	/**
 	 * Throws the first ambiguity found among {@code candidates}, checked in priority (list) order:
-	 * two candidates whose entry ranges overlap. Under CASE_INSENSITIVE each candidate's ranges are
-	 * first folded (see {@code MatcherConstruct#foldedEntrySet}), so e.g. {@code (?i:[a-z]+)X} is
-	 * rejected as ambiguous rather than resolved by chain priority; the folded sets are returned
-	 * (index-aligned with {@code candidates} then {@code extra}) for reuse as dispatch gates. For each candidate (in order), checks it pairwise
+	 * two candidates whose entry ranges overlap. Entry sets already carry any CASE_INSENSITIVE
+	 * folding (a class's at parse time, a literal's or backreference's via {@code
+	 * MatcherConstruct#foldedEntrySet}; a named class is deliberately never folded, as in the JDK), so
+	 * e.g. {@code (?i:[a-z]+)X} is rejected as ambiguous rather than resolved by chain priority; the
+	 * sets are returned (index-aligned with {@code candidates} then {@code extra}) for reuse as
+	 * dispatch gates. For each candidate (in order), checks it pairwise
 	 * against every earlier candidate via the boolean-only, allocation-free {@link
 	 * CodePointSet#intersects} -- no accumulated "claimed so far" union, and no {@code
 	 * CodePointMap<PatternConstruct>} tagging every candidate's ranges with its own identity either,
@@ -397,7 +399,7 @@ abstract class PatternConstruct {
 		int count = candidateCount(candidates, extra);
 		CodePointSet[] sets = new CodePointSet[count];
 		for (int j = 0; j < count; j++) {
-			sets[j] = MatcherConstruct.foldedEntrySet(candidateAt(candidates, extra, j).getEntryPointMap(), flags);
+			sets[j] = candidateAt(candidates, extra, j).getEntryPointMap();
 		}
 		for (int j = 1; j < count; j++) {
 			for (int i = 0; i < j; i++) {
@@ -1073,7 +1075,9 @@ abstract class PatternConstruct {
 			// (non-Mutable) CodePointSet reference now -- see its own doc.
 			MutableCodePointSet set = new ArrayCodePointSet();
 			set.add(Character.codePointAt(value, 0));
-			entryMap = set;
+			// A literal is the one leaf whose set isn't already folded (a class's is, at parse time;
+			// a named class is never folded), so it is folded here rather than in checkDisjoint.
+			entryMap = MatcherConstruct.foldedEntrySet(set, flags);
 		}
 
 		@Override
@@ -1122,7 +1126,9 @@ abstract class PatternConstruct {
 			// Aliased directly -- firstCharSet() already returns a plain CodePointSet (often itself an
 			// alias, e.g. straight through to a ComplexCharacter's own validRanges()), so there's no
 			// identity to lose by sharing it instead of copying its entries.
-			entryMap = firstChars;
+			// The backreference itself compares case-insensitively (codePointsMatch), whatever the
+			// referenced group's own flags were.
+			entryMap = MatcherConstruct.foldedEntrySet(firstChars, flags);
 		}
 
 		@Override

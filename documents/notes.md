@@ -2649,6 +2649,12 @@ Notes to self about how to work on this project, and other context that doesn't 
   `(?i:[a-z]+)X` and `(?i:a|A)` are now `PatternSyntaxException`s (documented divergence from
   `java.util.regex`); no scraped-corpus rows changed. Not re-benchmarked (CASE_INSENSITIVE-only path).
 
+- **2026-09-20: JDK 27 range closure + leaf-level entry folding.** `(?iu)[lo-hi]` also matches what folds into a
+  range (`CaseFolding#addClosing`, table copied from `jdk.internal.lang.CaseFolding`), but only when a runtime probe of the
+  host `java.util.regex` shows it does (JDK 27+), so llk mirrors the host on 17/21 too. Entry sets are now folded where
+  they originate (`LiteralString`, `BackReference`) instead of every candidate in `checkDisjoint`, so a named class
+  (never folded by the JDK) can't be rejected as ambiguous via its fold relatives (`CaseFoldClosureTest`).
+
 - **2026-09-19: Unicode scripts implemented** (`\p{IsLatin}`, `\p{script=Latin}`/`sc=`, aliases like
   `Latn`, case-insensitive). No enum constants: `NamedCharClass#scriptByName` maps
   `Character.UnicodeScript.forName(name)` to a generated `UnicodePredicates.scriptByEnumName` string switch

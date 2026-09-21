@@ -25,8 +25,9 @@ import java.util.Arrays;
  *
  * <p>Named classes ({@code \w}, {@code \p{InGreek}}, ...) are never folded by the JDK, only
  * substituted (see {@code NamedCharClass#caseInsensitive}), so they never come through here.
- * Known difference: JDK 27 adds "closing characters" (from CaseFolding.txt) to a range, which this
- * does not reproduce.
+ * JDK 27 additionally "closes" a range under simple case folding (see {@link #addClosing}); that is
+ * reproduced only when the running platform's own {@code java.util.regex} does it (see {@link
+ * #HOST_CLOSES_RANGES}), so this class always mirrors the host.
  */
 final class CaseFolding {
   private CaseFolding() {}
@@ -72,6 +73,32 @@ final class CaseFolding {
     }
   }
 
+  /**
+   * JDK 27's {@code Pattern.CIRangeU} additions: (character with a non-round-trip simple case
+   * folding, what it folds to). Copied from {@code jdk.internal.lang.CaseFolding}'s
+   * {@code expanded_case_map}, itself derived from CaseFolding.txt.
+   */
+  private static final int[] CLOSING_PAIRS = {
+    0x0131, 0x0049, 0x00B5, 0x03BC, 0x0130, 0x0069, 0x017F, 0x0073, 0x01C5, 0x01C6, 0x01C8, 0x01C9,
+    0x01CB, 0x01CC, 0x01F2, 0x01F3, 0x0345, 0x03B9, 0x03C2, 0x03C3, 0x03D0, 0x03B2, 0x03D1, 0x03B8,
+    0x03D5, 0x03C6, 0x03D6, 0x03C0, 0x03F0, 0x03BA, 0x03F1, 0x03C1, 0x03F4, 0x03B8, 0x03F5, 0x03B5,
+    0x1C80, 0x0432, 0x1C81, 0x0434, 0x1C82, 0x043E, 0x1C83, 0x0441, 0x1C84, 0x0442, 0x1C85, 0x0442,
+    0x1C86, 0x044A, 0x1C87, 0x0463, 0x1C88, 0xA64B, 0x1E9B, 0x1E61, 0x1E9E, 0x00DF, 0x1FBE, 0x03B9,
+    0x1FD3, 0x0390, 0x1FE3, 0x03B0, 0x2126, 0x03C9, 0x212A, 0x006B, 0x212B, 0x00E5, 0xFB05, 0xFB06,
+  };
+
+  /** True if the running {@code java.util.regex} closes {@code (?iu)[lo-hi]} ranges (JDK 27+). */
+  private static final boolean HOST_CLOSES_RANGES = probeHostClosesRanges();
+
+  private static boolean probeHostClosesRanges() {
+    try {
+      // U+017F folds to 's'; only a closing range lets [U+017F-U+0180] match 's'.
+      return java.util.regex.Pattern.compile("(?iu)[\\u017f-\\u0180]").matcher("s").matches();
+    } catch (RuntimeException e) {
+      return false;
+    }
+  }
+
   private static final class Holder {
     static final Tables TABLES = new Tables();
   }
@@ -111,6 +138,29 @@ final class CaseFolding {
     Tables t = Holder.TABLES;
     forEachWithValue(t.keyPairs, min, max - 1, x -> b.add(x));
     forEachWithValue(t.upperPairs, min, max - 1, x -> b.add(x));
+    if (HOST_CLOSES_RANGES) {
+      addClosing(b, min, max, t);
+    }
+  }
+
+  /**
+   * JDK 27's range closure: for each pair (c, f) with c in {@code [min, max)} and f outside it, the
+   * range also matches every {@code x} whose {@code upper(x)} or {@code key(x)} equals f.
+   */
+  private static void addClosing(CodePointSetBuilder b, int min, int max, Tables t) {
+    for (int i = 0; i < CLOSING_PAIRS.length; i += 2) {
+      int c = CLOSING_PAIRS[i];
+      int f = CLOSING_PAIRS[i + 1];
+      if (c < min || c >= max || (f >= min && f < max)) {
+        continue;
+      }
+      // x == f itself matches when upper(f) == f or key(f) == f.
+      if (Character.toUpperCase(f) == f || Character.toLowerCase(Character.toUpperCase(f)) == f) {
+        b.add(f);
+      }
+      forEachWithValue(t.keyPairs, f, f, x -> b.add(x));
+      forEachWithValue(t.upperPairs, f, f, x -> b.add(x));
+    }
   }
 
   /**

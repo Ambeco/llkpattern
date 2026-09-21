@@ -144,7 +144,7 @@ final class PatternParser {
     this.patternChars = this.pattern.toCharArray();
     index = 0;
     peek = codePointAt(0);
-    this.flags = flags;
+    this.flags = (flags & Pattern.UNICODE_CHARACTER_CLASS) != 0 ? flags | Pattern.UNICODE_CASE : flags;
     quantifiableIndex = 0;
     captureConstructIndex = 0;
   }
@@ -471,7 +471,7 @@ final class PatternParser {
                 rawText.setLength(0);
               }
             }
-            ComplexCharacter complex = new ComplexCharacter(startIndex, codePoint);
+            ComplexCharacter complex = singleCharacter(startIndex, codePoint);
             complex.flags = flags;
             complex.endIndex = index;
             sequence.patterns.add(parseQuantifiable(complex));
@@ -603,7 +603,7 @@ final class PatternParser {
               rawText.setLength(0);
             }
           }
-          ComplexCharacter complex = new ComplexCharacter(startIndex, fullChar);
+          ComplexCharacter complex = singleCharacter(startIndex, fullChar);
           complex.flags = flags;
           complex.endIndex = index;
           sequence.patterns.add(parseQuantifiable(complex));
@@ -784,6 +784,13 @@ final class PatternParser {
               advance(1);
             }
           }
+          // UNICODE_CHARACTER_CLASS implies UNICODE_CASE, on and off, as in java.util.regex.
+          if ((enableFlags & Pattern.UNICODE_CHARACTER_CLASS) != 0) {
+            enableFlags |= Pattern.UNICODE_CASE;
+          }
+          if ((disableFlags & Pattern.UNICODE_CHARACTER_CLASS) != 0) {
+            disableFlags |= Pattern.UNICODE_CASE;
+          }
           if (peek == ')') {
             union.endIndex = index;
             advance(1);
@@ -854,13 +861,36 @@ final class PatternParser {
   }
 
   /**
-   * {@code set}'s complement, as java.util.regex computes it under {@code CASE_INSENSITIVE}: the members
-   * are case-folded first and the fold complemented ({@code (?i)[^a]} excludes both {@code a} and {@code
-   * A}). Complementing first would leave {@code A} in, since the matcher's own runtime fold only ever
-   * ADDS matches.
+   * Adds {@code codePoint} to a bracket expression's members, with everything it matches under {@code
+   * CASE_INSENSITIVE} (see {@link CaseFolding}). Folding happens here, per member, rather than on
+   * the finished class, because java.util.regex never folds a named class ({@code \w}, a script,
+   * ...) or a nested class -- only literal members.
    */
-  private CodePointSet complementCaseFolded(CodePointSet set) {
-    return MatcherConstruct.foldedEntrySet(set, flags).complement();
+  private void addLiteral(CodePointSetBuilder ranges, int codePoint) {
+    if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
+      ranges.add(codePoint, codePoint + 1);
+    } else {
+      CaseFolding.addSingle(ranges, codePoint, CaseFolding.isUnicodeCase(flags));
+    }
+  }
+
+  /** {@link #addLiteral} for an explicit {@code lo-hi} range ({@code max} exclusive). */
+  private void addLiteralRange(CodePointSetBuilder ranges, int min, int max) {
+    if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
+      ranges.add(min, max);
+    } else {
+      CaseFolding.addRange(ranges, min, max, CaseFolding.isUnicodeCase(flags));
+    }
+  }
+
+  /** A one-code-point {@code ComplexCharacter} (a literal that had to become a class, e.g. to be quantified). */
+  private ComplexCharacter singleCharacter(int startIndex, int codePoint) {
+    if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
+      return new ComplexCharacter(startIndex, codePoint);
+    }
+    CodePointSetBuilder members = CodePointSetBuilder.create();
+    addLiteral(members, codePoint);
+    return new ComplexCharacter(startIndex, members.build());
   }
 
   /**
@@ -909,7 +939,7 @@ final class PatternParser {
                 intersectionSoFar == null
                     ? completedRun
                     : intersect(intersectionSoFar, completedRun);
-            return negate ? complementCaseFolded(finalRanges) : finalRanges;
+            return negate ? finalRanges.complement() : finalRanges;
           } else {
             ranges.add(+']', +']' + 1);
             advance(1);
@@ -925,7 +955,7 @@ final class PatternParser {
             if (peek == '-') {
               parseMaybeRangePredicate(ranges, eCodePoint);
             } else {
-              ranges.add(eCodePoint, eCodePoint + 1);
+              addLiteral(ranges, eCodePoint);
             }
           } else {
             // A standalone escape (\D, \p{...}, etc.) is a NamedCharClass-backed constant, often
@@ -968,7 +998,7 @@ final class PatternParser {
           if (peek == '-') {
             parseMaybeRangePredicate(ranges, codePoint);
           } else {
-            ranges.add(codePoint, codePoint + 1);
+            addLiteral(ranges, codePoint);
           }
       }
     }
@@ -1392,7 +1422,7 @@ final class PatternParser {
       if (scriptRanges == null) {
         throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
       }
-      return positive ? scriptRanges : complementCaseFolded(scriptRanges);
+      return positive ? scriptRanges : scriptRanges.complement();
     }
 
     // \p{InGreek}/\p{block=Greek} are always blocks.
@@ -1402,7 +1432,7 @@ final class PatternParser {
       if (blockRanges == null) {
         throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
       }
-      return positive ? blockRanges : complementCaseFolded(blockRanges);
+      return positive ? blockRanges : blockRanges.complement();
     }
 
     try {
@@ -1410,12 +1440,15 @@ final class PatternParser {
           ? NamedCharClass.valueOfIs(charClassName)
           : NamedCharClass.valueOf(charClassName);
       CodePointSet namedRanges = namedClass.get(prefix, flags);
+      if ((flags & Pattern.CASE_INSENSITIVE) != 0) {
+        namedRanges = namedClass.caseInsensitive(prefix, flags, namedRanges);
+      }
       // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but
       // never actually used -- "\P{...}" silently behaved exactly like "\p{...}" (always positive).
       // complement(), not a materialized walk: see NamedCharClass's own complement-based constants
       // for why this is O(namedRanges' entry count), not O(the domain) -- an else-value fill, not
       // an eager enumeration.
-      return positive ? namedRanges : complementCaseFolded(namedRanges);
+      return positive ? namedRanges : namedRanges.complement();
     } catch (IllegalArgumentException e) {
       throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
     }
@@ -1467,7 +1500,7 @@ final class PatternParser {
     }
     advance(1);
     if (peek == ']') {
-      ranges.add(startCodePoint, startCodePoint + 1);
+      addLiteral(ranges, startCodePoint);
       ranges.add(+'-', +'-' + 1);
     } else if (peek == '\\') {
       int endCodePoint = tryParseSingleCharEscape();
@@ -1480,14 +1513,14 @@ final class PatternParser {
       if (endCodePoint < startCodePoint) {
         throw throwUnexpectedChar(RANGE_MAX_BELOW_MIN);
       }
-      ranges.add(startCodePoint, endCodePoint + 1);
+      addLiteralRange(ranges, startCodePoint, endCodePoint + 1);
     } else {
       int endCodePoint = Character.codePointAt(patternChars, index);
       if (endCodePoint < startCodePoint) {
         throw throwUnexpectedChar(RANGE_MAX_BELOW_MIN);
       }
       advanceCodePoint();
-      ranges.add(startCodePoint, endCodePoint + 1);
+      addLiteralRange(ranges, startCodePoint, endCodePoint + 1);
     }
   }
 

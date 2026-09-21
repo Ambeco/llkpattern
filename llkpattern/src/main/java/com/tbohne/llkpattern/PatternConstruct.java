@@ -1167,7 +1167,7 @@ abstract class PatternConstruct {
 		 * result that could swallow {@code -1}, the sentinel {@code Matcher} uses for "no more input"
 		 * (see {@code Matcher#peek}). {@link CodePointSet}'s {@link CodePointSet#complement} is
 		 * always finite over {@code [0, MAX_CODE_POINT]} by construction (see its own doc), so no
-		 * clamping is needed here any more -- {@link MatcherConstruct#containsFolded} instead guards
+		 * clamping is needed here any more -- {@link MatcherConstruct.SingleCharMatcherConstruct} instead guards
 		 * {@code -1} directly, since an inverted {@code ranges} would otherwise report it a "member"
 		 * via the fill.
 		 */

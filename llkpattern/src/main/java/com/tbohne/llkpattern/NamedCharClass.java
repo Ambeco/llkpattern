@@ -546,6 +546,45 @@ enum NamedCharClass {
     return ((flags & Pattern.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
   }
 
+  /**
+   * What {@code java.util.regex} matches for this class under {@code CASE_INSENSITIVE}: not a fold
+   * of the class, but a substituted set -- the cased-letter families match every cased letter, and
+   * POSIX {@code Upper}/{@code Lower} match any ASCII letter (or, in Unicode mode, every cased
+   * letter). Every other class is unaffected, including scripts and blocks. {@code plain} is what
+   * {@link #get} returned.
+   */
+  CodePointSet caseInsensitive(CharacterClassPrefix prefix, int flags, CodePointSet plain) {
+    switch (this) {
+      case Lu:
+      case Ll:
+      case Lt:
+        return LC.unicode;
+      case javaLowerCase:
+      case javaUpperCase:
+      case javaTitleCase:
+      case Lowercase:
+      case Uppercase:
+      case Titlecase:
+        return CaseSets.CASED;
+      case Lower:
+      case Upper:
+        return prefix == CharacterClassPrefix.is || (flags & Pattern.UNICODE_CHARACTER_CLASS) != 0
+            ? CaseSets.CASED
+            : CaseSets.ASCII_LETTERS;
+      default:
+        return plain;
+    }
+  }
+
+  private static final class CaseSets {
+    static final CodePointSet CASED =
+        unionOf(UnicodePredicates.isLowerCase, UnicodePredicates.isUpperCase, UnicodePredicates.isTitleCase);
+    static final CodePointSet ASCII_LETTERS = build(m -> {
+      m.add('A', 'Z' + 1);
+      m.add('a', 'z' + 1);
+    });
+  }
+
   enum CharacterClassPrefix {
     none,
     java,

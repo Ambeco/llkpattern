@@ -33,16 +33,13 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * fields, read by the owner-based constructor below, so no subclass constructor needs to change
  * just to participate in a chain.
  *
- * <p>{@code entrySet} is deliberately checked with a PLAIN {@link CodePointSet#contains} (see
- * {@link #containsEntry}), never {@link #containsFolded} -- under {@code CASE_INSENSITIVE},
- * folding is baked into {@code entrySet} itself at chain-construction time (see {@code
- * MatcherConstruct#foldedEntrySet}). Because {@code checkDisjoint} rejects any fold overlap
- * between chain candidates at compile time (e.g. {@code (?i:[a-z]+)X}), no chain priority ordering
- * between folded and exact claims is ever needed. A node's OWN {@link #matchBody} still uses {@link
- * #containsFolded} on its own (unfolded) data where relevant (e.g. {@link
- * SingleCharMatcherConstruct}) -- that's what makes it independently correct when reached
- * standalone (no entry gating at all, e.g. a plain sequence element), not just as a chain
- * candidate.
+ * <p>{@code entrySet} is checked with a PLAIN {@link CodePointSet#contains} (see {@link
+ * #containsEntry}) -- under {@code CASE_INSENSITIVE}, folding is baked into {@code entrySet} itself
+ * at chain-construction time (see {@code MatcherConstruct#foldedEntrySet}). Because {@code
+ * checkDisjoint} rejects any fold overlap between chain candidates at compile time (e.g. {@code
+ * (?i:[a-z]+)X}), no chain priority ordering between folded and exact claims is ever needed. A
+ * character class's own member set has its case folding baked in at parse time too (see {@link
+ * CaseFolding}), so {@link SingleCharMatcherConstruct} is a plain membership test.
  */
 abstract class MatcherConstruct {
 	// The CASE_INSENSITIVE/UNICODE_CASE/etc. flags in effect where this node's PatternConstruct was
@@ -115,10 +112,9 @@ abstract class MatcherConstruct {
 	 * Plain (unfolded) membership in {@code entrySet}, {@code null} treated as "always matches" (no
 	 * gating at all -- the overwhelming majority of nodes). {@code -1} (Matcher's "no more input"
 	 * sentinel -- see {@code Matcher#peek}) is never a member of any real {@code entrySet}, same
-	 * guard as {@link #containsFolded} -- an inverted set's fill must not report it "in".
-	 * Deliberately not {@link #containsFolded}: {@code entrySet} already has any CASE_INSENSITIVE
-	 * folding baked in at chain-construction time -- see {@code PatternConstruct#checkDisjoint}
-	 * and this class's own doc.
+	 * guard as {@link SingleCharMatcherConstruct} -- an inverted set's fill must not report it "in".
+	 * {@code entrySet} already has any CASE_INSENSITIVE folding baked in at chain-construction time
+	 * -- see {@code PatternConstruct#checkDisjoint} and this class's own doc.
 	 */
 	private static boolean containsEntry(@Nullable CodePointSet entrySet, int peeked) {
 		return entrySet == null || (peeked != -1 && entrySet.contains(peeked));
@@ -153,38 +149,8 @@ abstract class MatcherConstruct {
 	}
 
 	/**
-	 * True if {@code peeked} (or, under {@code CASE_INSENSITIVE}, one of its other-case forms) is a
-	 * member of {@code ranges}. Used by a node's own {@link #matchBody} where it still needs a real,
-	 * runtime-folded membership test against its own (unfolded) data -- {@link
-	 * SingleCharMatcherConstruct} being the main example -- as opposed to {@link #entrySet}'s
-	 * already-fold-baked, plain-{@code contains} check (see {@link #containsEntry}).
-	 */
-	static boolean containsFolded(CodePointSet ranges, int peeked, int flags) {
-		// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is checked FIRST and
-		// unconditionally: a negated class (e.g. "[^a-z]") is an inverted set, and its fill
-		// legitimately covers every real code point it doesn't explicitly exclude -- membership
-		// here has to see that fill (hence contains(), a real query), but -1 is never a real code
-		// point, so it must never be reported a "member" of even a total (inverted) set. This is the
-		// same domain guard ComplexCharacter#validRanges() used to provide via clamping a Guava
-		// RangeSet.
-		if (peeked == -1) {
-			return false;
-		}
-		if (ranges.contains(peeked)) {
-			return true;
-		}
-		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-			return false;
-		}
-		boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
-		int upper = unicode ? Character.toUpperCase(peeked) : foldAsciiUpper(peeked);
-		int lower = unicode ? Character.toLowerCase(peeked) : foldAsciiLower(peeked);
-		return (upper != peeked && ranges.contains(upper)) || (lower != peeked && ranges.contains(lower));
-	}
-
-	/**
-	 * {@code exact}, plus (under {@code CASE_INSENSITIVE}) every other-case fold of each of its
-	 * members. This is what lets a chain-candidate node's {@link #entrySet} be checked with a plain,
+	 * {@code exact}, plus (under {@code CASE_INSENSITIVE}) every character in a case-equivalence class
+	 * with one of its members (see {@link CaseFolding#expand}). This is what lets a chain-candidate node's {@link #entrySet} be checked with a plain,
 	 * unfolded {@link #containsEntry} at match time (see this class's own doc). Also what {@code
 	 * PatternConstruct#checkDisjoint} compares, so a fold collision between two candidates is a
 	 * compile-time ambiguity like any other overlap, never resolved by chain priority.
@@ -196,22 +162,7 @@ abstract class MatcherConstruct {
 		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
 			return exact;
 		}
-		MutableCodePointSet result = new ArrayCodePointSet();
-		result.addAll(exact);
-		boolean unicode = (flags & Ll1Pattern.UNICODE_CASE) != 0;
-		exact.forEachRange((min, max) -> {
-			for (int cp = min; cp < max; cp++) {
-				int upper = unicode ? Character.toUpperCase(cp) : foldAsciiUpper(cp);
-				int lower = unicode ? Character.toLowerCase(cp) : foldAsciiLower(cp);
-				if (upper != cp) {
-					result.add(upper);
-				}
-				if (lower != cp) {
-					result.add(lower);
-				}
-			}
-		});
-		return result;
+		return CaseFolding.expand(exact, CaseFolding.isUnicodeCase(flags));
 	}
 
 	/**
@@ -310,7 +261,9 @@ abstract class MatcherConstruct {
 
 		@Override
 		boolean matchBody(Matcher matcher, int peeked) {
-			if (!containsFolded(validRanges, peeked, flags)) {
+			// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is never a real member, even
+			// of a negated class whose fill would otherwise report it "in".
+			if (peeked == -1 || !validRanges.contains(peeked)) {
 				if (peeked == -1) {
 					matcher.hitEnd = true;
 				}

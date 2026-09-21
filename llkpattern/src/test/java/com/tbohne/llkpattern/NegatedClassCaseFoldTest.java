@@ -45,13 +45,6 @@ public class NegatedClassCaseFoldTest {
     for (String p : PATTERNS) {
       for (int flags : FLAGS) {
         for (String input : INPUTS) {
-          // Not covered here (remaining_work.md): non-ASCII input outside UNICODE_CASE, or against a \p{...}
-          // class, whose fold the JDK does regardless of UNICODE_CASE; and the ſ/Kelvin special folds.
-          boolean ascii = input.chars().allMatch(c -> c < 0x80);
-          boolean property = p.contains("\\p") || p.contains("\\P");
-          if (!ascii && ((flags & Ll1Pattern.UNICODE_CASE) == 0 || property)) {
-            continue;
-          }
           String jdk = jdkFind(p, flags, input);
           String llk;
           try {

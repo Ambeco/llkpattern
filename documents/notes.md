@@ -2754,3 +2754,13 @@ Notes to self about how to work on this project, and other context that doesn't 
 - 2026-09-19: transparent bounds implemented (design.md); the statically-elided `a\Bb`-style hitEnd divergence at regionEnd is accepted rather than giving up the compile-time elision. Benchmarks not re-run (`\b` matcher gained one extra `peekForBoundary()` call).
 
 - 2026-09-20: `LITERAL` and `CANON_EQ` implemented (`LiteralFlagTest`, `CanonEqTest`). `java.util.regex`'s `CANON_EQ` is inconsistent with itself, so `CanonEqTest` leaves out what it gets oddly (see the comment above its `PATTERNS`): `[^x]`/`\p{L}` swallow trailing marks but `[a-z]`/`\w` don't, `\Q\u00e9\E` is taken literally, `\b` looks through marks, a class's rewritten alternatives aren't case-folded, and partly composed Hangul isn't matched. Its singleton handling is asymmetric (`\u212b` matches `\u212b` and `\u00c5`, but `\u00c5` doesn't match `\u212b`), which the rewrite reproduces by adding the pattern's own original code points as spellings.
+
+- 2026-09-20: non-ASCII `CASE_INSENSITIVE` folding now matches the JDK (`CaseFoldSweepTest` sweeps every code point;
+  `CaseFoldDispatchTest`). Found on the way: llk used to fold the *input* against any class, so it over-matched `\w`, scripts and
+  blocks (`\p{L}` matched U+0345) as well as under-matching `[s]` vs `ſ`; the JDK folds only literal members and swaps in
+  different sets for `Lu`/`Ll`/`Lt`/`Upper`/`Lower`. Fix: fold at parse time per member (`CaseFolding`), substitute named
+  classes, plain `contains` at match time. A/B on JDK 17 (fresh baseline): llkCompile 0.452 -> 0.444 ms, alloc +0.3%, llkMatch
+  0.046 -> 0.044. First draft scanned the whole fold table per `expand` call and cost +16% compile time; walking the members of
+  small sets fixed it. `(?iu)\p{L}+9` compile: ~60 ms -> ~1.3 ms. JDK 17's sweep is skipped for property classes when its
+  Unicode data differs from llk's, and for sharp s (JDK < 21 doesn't fold it with U+1E9E). `CanonEqTest` and
+  `EmojiPropertyTest.isWordMatchesJdkAndUnicodeW` already fail on JDK 17 without this change.

@@ -4,12 +4,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 ## Matcher dispatch
 
-- [ ] **Known cost**: `foldedEntrySet`'s fold expansion is O(set size) per chain candidate under
-      CASE_INSENSITIVE -- `(?iu)\p{L}+9` (a ~130k-codepoint class, quantified, under
-      CASE_INSENSITIVE+UNICODE_CASE) measured ~60ms just to compile. Rare pattern shape (huge class
-      + case-insensitivity combined), not exercised by the scraped corpus, but worth a targeted
-      look (e.g. skip fold-expanding a class above some size and fall back to a runtime-folded
-      check for just that candidate) if a real pattern like this ever shows up in profiling.
 - [ ] **Known gap, not currently reachable**: `buildFlattenedChain`'s handling of a chain
       candidate that is BOTH the "any other character" catch-all (`rawEntryElse`) AND separately
       claims real, non-empty explicit ranges of its own would mis-order dispatch (its own explicit
@@ -31,11 +25,10 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 - [ ] `\X` (extended grapheme cluster) and `\b{g}` (grapheme boundary; rejected at parse time for now, along with any other
       `\b{...}`/`\B{...}`, rather than read as a word boundary plus literal text).
-- [ ] Non-ASCII case folding under `CASE_INSENSITIVE`, still divergent from the JDK (ASCII is fine, see
-      `NegatedClassCaseFoldTest`): (a) the JDK also matches a character whose `lower(upper(ch))` is a member, so
-      `(?iu)[^a-z]` should exclude `ſ` (long s) and the Kelvin sign but doesn't -- `containsFolded` and
-      `foldedEntrySet` only try `upper`/`lower` of each side; (b) for `\p{Lu}`-style property classes the JDK folds over all of
-      Unicode even without `UNICODE_CASE`, so non-ASCII input against `(?i)\P{Lu}` differs.
+- [ ] Case-folding leftovers: (a) JDK 27 adds "closing characters" (from CaseFolding.txt) to a `CASE_INSENSITIVE|UNICODE_CASE` range,
+      which `CaseFolding` doesn't reproduce; (b) `checkDisjoint`/dispatch gates fold every candidate's entry set, including
+      named classes the JDK never folds, so exotic combinations (`(?iu)\p{InGreek}` next to a literal `µ`) can be rejected
+      as ambiguous when they are not.
 - [ ] `CANON_EQ` follow-ups (all compile-time rejections or documented differences, see README): a cluster inside a
       negated/nested/range-bounding class; more than 6 consecutive marks after one base.
 

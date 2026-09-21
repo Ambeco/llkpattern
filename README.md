@@ -97,7 +97,7 @@ See [documents/remaining_work.md](documents/remaining_work.md) for the full, act
 
 ## 4. Current Progress
 
-The module compiles; its test suite passes fully: **1589 tests, 0 failing** — hand-written unit/integration/differential tests, plus **561 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite; more corpus sources are planned, see above) and 561 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
+The module compiles; its test suite passes fully: **1618 tests, 0 failing** — hand-written unit/integration/differential tests, plus **561 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite; more corpus sources are planned, see above) and 561 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
 
 In brief:
 
@@ -124,14 +124,14 @@ over time.
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.146 | 0.510 | 3.50x |
+| Intel-i7-9750H | 0.123 | 0.444 | 3.60x |
 | Pixel 3a | 11.12 | 10.25 | 0.92x |
 
 **Corpus match time (each pass matches/finds/look_ats ~480 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.062 | 0.051 | 0.82x |
+| Intel-i7-9750H | 0.055 | 0.044 | 0.81x |
 | Pixel 3a | 4.43 | 0.84 | 0.19x |
 
 llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch, and further after later sessions removed the map-based ambiguity-check allocation (`entryMap`'s `CodePointMap` -> `CodePointSet` migration, then `checkDisjoint`'s allocation-free overlap check) — see notes.md for the compile-time performance history. On the Pixel 3a the two compile times currently land close to each other and vary run-to-run (see notes.md), so don't read that ratio as settled. Match time is faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).

@@ -2780,3 +2780,12 @@ Notes to self about how to work on this project, and other context that doesn't 
   host (JDK 17 gave 2 spurious UNEXPECTED rows). `-Poutput` is relative to `llkpattern/`, so `src/test/resources/...`.
 - Found and fixed: `X{0}` behaved like `X{1}` (the loop only enforces `max` after a first iteration). Not added to the
   benchmark corpus on purpose, so the benchmark numbers stay comparable.
+
+## AOSP corpus (2026-09-21)
+
+- `tools/scrape_aosp_regex.py` -> `golden/aosp.tsv` (295 rows, 252 AGREES, the rest EXPECTED_DIVERGENCE). AOSP's BMP and
+  Supplementary files are near-copies of OpenJDK's (only 4 new rows); the value is `TestCases.txt` (291 rows, the
+  original ASCII set, never scraped from OpenJDK). `GraphemeTestCases.txt` skipped (`\X`). Files come from
+  googlesource via `?format=TEXT` (base64).
+- Found and fixed: a quantifier after a backreference (`(a)\1+`) was rejected as "nothing to repeat" (backreferences
+  were never quantifiable; the dangling-quantifier commit made it a compile error). Now wrapped in a one-branch union.

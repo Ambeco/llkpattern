@@ -32,8 +32,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 - [ ] More sources, each as its own `scrape_<source>.py` + golden file + `ScrapedCorpusTestBase`
       subclass (the pipeline already supports this cleanly):
-  - [ ] **AOSP/libcore**: `https://android.googlesource.com/platform/libcore/+/refs/heads/main/ojluni/src/test/java/util/regex/`
-        (note this is `libcore`, not `platform_frameworks_base`).
   - [ ] **dregex**: `https://github.com/marianobarrios/dregex/tree/master/src/test/java/dregex`.
   - [ ] Oracle GraalVM's regex engine tests were a candidate too -- not yet located/confirmed.
   - [ ] **dk.brics.automaton**: `https://github.com/cs-au-dk/dk.brics.automaton/tree/master/test/java/dk/brics/automaton`.
@@ -67,6 +65,11 @@ Each is one or a few rows; `grep -a "open gap\|open bug" llkpattern/src/test/res
       `java.util.regex` finds it by backtracking (`a*` takes zero iterations, so `^` holds). Should be a compile-time
       ambiguity error like `a*a`; probably the assertion's own entry set is empty/absent when checking the loop
       against `next`.
+- [ ] **A loop over a backreference enters on any character its group could start with** -- `([ab])\1?`,
+      `([ab])\1*`, `([ab])\1{0,3}` vs `"ab"` find no match at 0 (the JDK finds `a`): `\1`'s entry set is the group's whole
+      first-character set, so the loop commits on `b` and the backreference then fails, with no way to back out. Same
+      shape for a multi-character group (`(ab)\1?` on `"aba"`). Needs the loop's enter/exit decision to consult the
+      captured text. Single-character groups (`(a)\1+`) are fine and covered by `QuantifiedBackReferenceTest`.
 - [ ] `\0600` (`\0` then up to three octal digits, at most `\0377`: here `\060` then `0`) is rejected with "Octal escapes
       must be less than ...".
 - [ ] `\x{00000061}` (braced hex with more than 6 digits, leading zeros) is rejected.

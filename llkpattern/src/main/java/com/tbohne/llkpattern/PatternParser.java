@@ -527,7 +527,7 @@ final class PatternParser {
           }
           PatternConstruct backReference = tryParseBackReference();
           if (backReference != null) {
-            sequence.patterns.add(backReference);
+            sequence.patterns.add(quantifyBackReference(backReference));
             continue;
           }
           PatternConstruct boundaryConstruct = tryParseBoundary();
@@ -1243,6 +1243,27 @@ final class PatternParser {
       }
     }
     return null;
+  }
+
+  /**
+   * A backreference isn't itself quantifiable, so one followed by a quantifier (e.g. a numbered
+   * reference and '+') is wrapped in a one-branch, non-capturing union; an unquantified one is
+   * returned as-is.
+   */
+  private PatternConstruct quantifyBackReference(PatternConstruct backReference) {
+    skipComments();
+    if (peek != '?' && peek != '*' && peek != '+' && peek != '{') {
+      return backReference;
+    }
+    QuantifiedUnion wrapper = new QuantifiedUnion(pattern, backReference.startIndex, flags);
+    wrapper.captureConstructIndex = -1;
+    Sequence body = new Sequence(backReference.startIndex);
+    body.patterns.add(backReference);
+    body.endIndex = backReference.endIndex;
+    wrapper.constructs.add(body);
+    wrapper.endIndex = backReference.endIndex;
+    parseQuantifiable(wrapper);
+    return wrapper.isUnquantified() ? backReference : wrapper;
   }
 
   /**

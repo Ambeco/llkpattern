@@ -137,7 +137,14 @@ If both sides are statically known, the boundary either always holds (compiles t
 - Decided: backreferences (`\1`, `\k<name>`) are supported, with disjointness checked at **compile time** using a precise, statically-computed entry set — not the current `entryElse = this` catch-all in `BackReference`. Not yet implemented; see remaining_work.md.
 - A backreference's possible first characters are exactly the *referenced group's* possible first characters, computed by a new `firstCharSet()` AST helper mirroring the existing `lastCharSet()` used for `\b`/`\B`'s prior-character classification (same recursion shape: literal → first code point, character class → its ranges, sequence → first element, unquantified union → union of branches). Feeding this into the normal `RangeMap` disjointness check makes ordinary backreference usage (e.g. `(\w+)\s+\1`) compile with no special-casing, while genuinely ambiguous uses (e.g. `(a+)\1`, where the loop's continue-branch and the backreference's entry set both include `a`) are correctly rejected as a compile error, exactly like any other ambiguous alternation.
 - Possibly-empty referenced groups (e.g. `(a*)\1`, where `\1` can be zero-width) make `firstCharSet()` return unknown, falling back to the catch-all entry set — same as `BackReference`'s original, pre-`firstCharSet()` stub. Fed into the normal disjointness check, this correctly rejects two such backreferences (or a backreference and any other catch-all construct) sharing the same alternation/loop-tail dispatch, since two catch-alls are always ambiguous; a single catch-all backreference alongside sibling branches with specific, disjoint entry sets isn't itself ambiguous (the specific branches simply take priority) and compiles fine, matching zero-width handling's existing "rare and probably not what you want, but not unsound" treatment elsewhere in this engine.
-- Forward references (`\1` before its group is defined, e.g. `\1(a)`) are rejected at compile time.
+- Forward references (`\1` before its group is defined, e.g. `\1(a)`) are rejected at compile time. So is a
+  reference to a group number with no group of that number open yet at all (e.g. `\141`, parsed the same way
+  `java.util.regex` parses it -- `\1` greedily extended by further digits only while doing so stays within the
+  number of groups opened so far, so `\141` is `\1` followed by literal `"41"`, not octal 0141): `java.util.regex`
+  compiles this as a backreference node that structurally can never match any input (`BackRef.match` bails out the
+  instant the referenced group index is out of range), the same "unsatisfiable at compile time is an error, not a
+  silent always-fail" treatment this project already gives `a\bb` (see "Boundary matching" above) and forward
+  references themselves -- so llk rejects it outright too, rather than compiling a node that's dead on arrival.
 
 ### Quotation, atomic groups, and negative-only flag groups
 

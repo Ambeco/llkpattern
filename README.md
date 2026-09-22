@@ -64,6 +64,10 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   guaranteed to run in linear time.
 - **Reluctant and possessive quantifier modifiers are accepted but are no-ops**, since there is no backtracking to be
   reluctant about. `a{2,3}?` matches `aaa` here, where `java.util.regex` matches `aa`.
+- **A backreference to a group number with no group of that number open yet — forward references (`\1(a)`) and
+  references to a group that never exists at all (`\141`, i.e. `\1` plus literal `"41"`) alike — is a compile-time
+  error**, rather than the structurally-dead-on-arrival node `java.util.regex` compiles (one that can never match
+  any input, since it always finds the referenced group unset).
 - **A multi-character loop body that matches part of itself, then fails, is not retried with fewer iterations** —
   e.g. `(ab)+` finds nothing in `"abac"` where `java.util.regex` finds `"ab"`, since there's no way to un-consume the
   `a` already read while checking the failed second iteration. This also covers a backreference to a

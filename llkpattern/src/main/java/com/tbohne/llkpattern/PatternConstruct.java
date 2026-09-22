@@ -396,10 +396,24 @@ abstract class PatternConstruct {
 	private static CodePointSet[] checkDisjoint(
 			String pattern, int flags, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
 			String candidateNounPlural) {
+		return checkDisjoint(pattern, flags, candidates, extra, null, candidateNounPlural);
+	}
+
+	/**
+	 * As the four-{@code List}/{@code PatternConstruct} overload above, but lets the caller override
+	 * {@code extra}'s own entry set with {@code extraEntrySet} (used only for the overlap comparison
+	 * below -- {@code extra} itself is still what an error message blames) -- see {@link
+	 * #skipZeroWidthEntrySet}'s own doc for why {@code QuantifiableConstruct.buildLoopMatcher} needs
+	 * this and {@link #buildFlattenedChain} doesn't.
+	 */
+	private static CodePointSet[] checkDisjoint(
+			String pattern, int flags, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+			@Nullable CodePointSet extraEntrySet, String candidateNounPlural) {
 		int count = candidateCount(candidates, extra);
 		CodePointSet[] sets = new CodePointSet[count];
 		for (int j = 0; j < count; j++) {
-			sets[j] = candidateAt(candidates, extra, j).getEntryPointMap();
+			PatternConstruct candidate = candidateAt(candidates, extra, j);
+			sets[j] = (candidate == extra && extraEntrySet != null) ? extraEntrySet : candidate.getEntryPointMap();
 		}
 		for (int j = 1; j < count; j++) {
 			for (int i = 0; i < j; i++) {
@@ -513,14 +527,14 @@ abstract class PatternConstruct {
 		/**
 		 * Computes this construct's own entry point for the quantified ({@code
 		 * !isUnquantified()}) case -- called from {@code buildEntryMap}. {@code FIRST(body)} (the
-		 * union of {@code body}'s own entry points, each body part's {@code next} pointed at {@code
-		 * this} since continuing the loop always eventually routes back here), unioned with {@code
-		 * next}'s own entry point when {@code min == 0} (skipping this construct entirely is valid).
-		 * Deliberately reads ONLY entry points, never {@code compile()}s anything -- see design.md's
-		 * "Entry-point computation vs. matcher compilation" section for why that's what lets a loop
-		 * nested inside another loop's body resolve without forcing a cycle.
+		 * union of {@code body}'s own entry points, each body part's {@code next} pointed at {@link
+		 * #loopBodyTarget} since continuing the loop always eventually routes back here), unioned with
+		 * {@code next}'s own entry point when {@code min == 0} (skipping this construct entirely is
+		 * valid). Deliberately reads ONLY entry points, never {@code compile()}s anything -- see
+		 * design.md's "Entry-point computation vs. matcher compilation" section for why that's what
+		 * lets a loop nested inside another loop's body resolve without forcing a cycle.
 		 */
-		void buildLoopEntryMap(List<PatternConstruct> body, PatternConstruct next) {
+		void buildLoopEntryMap(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
 			if (max == 0) {
 				// `X{0}` never matches X at all: its entry point is exactly `next`'s.
 				MergedEntries skipped = mergeEntryPoints(pattern, List.of(), next, "loop part");
@@ -528,8 +542,9 @@ abstract class PatternConstruct {
 				entryElse = skipped.entryElse() != null ? this : null;
 				return;
 			}
+			PatternConstruct target = loopBodyTarget(captureConstructIndex);
 			for (PatternConstruct part : body) {
-				part.next = this;
+				part.next = target;
 			}
 			// `body` handed straight to mergeEntryPoints, with `next` merged in via its own `extra`
 			// parameter instead of first being copied into a new ArrayList<>(body) just to append it
@@ -537,6 +552,40 @@ abstract class PatternConstruct {
 			MergedEntries result = mergeEntryPoints(pattern, body, min == 0 ? next : null, "loop part");
 			entryMap = result.ranges; // already Boolean-valued -- see mergeEntryPoints' own doc.
 			entryElse = result.entryElse() != null ? this : null;
+		}
+
+		@MonotonicNonNull LoopBackMarker loopBackMarker;
+		@MonotonicNonNull PatternConstruct loopBodyTargetCache;
+
+		/**
+		 * The stable stand-in for "loop back to this construct's own entry point", used as every body
+		 * part's {@code next} during entry-point computation ({@link #buildLoopEntryMap}) -- for a
+		 * capturing loop, wrapped in a {@link CaptureEndMarker} first, since finishing one iteration
+		 * must end the capture before looping back. Memoized as a field, rather than built fresh in
+		 * each of {@link #buildLoopEntryMap}/{@link #buildLoopMatcher} separately, so that a NESTED
+		 * capturing body part's own {@code CaptureEndMarker} -- constructed once, during entry-point
+		 * computation, with this object as its {@code realNext} -- resolves against the exact same
+		 * marker instance that {@link #buildLoopMatcher} later fills in with a real {@code .matcher}.
+		 * Pointing body parts at {@code this} (the loop construct itself) directly, as this used to,
+		 * meant a nested capturing group's {@code CaptureEndMarker} permanently captured {@code this}
+		 * as {@code realNext} -- but {@code this.matcher} isn't set until the whole loop has finished
+		 * compiling, well after that marker's own {@code buildMatcher()} reads it at match-build time,
+		 * throwing a {@code NullPointerException} (a quantified group whose sole body is a capturing
+		 * group, e.g. {@code ((x))*}) -- see remaining_work.md's now-fixed entry on this.
+		 */
+		private PatternConstruct loopBodyTarget(int captureConstructIndex) {
+			if (loopBodyTargetCache == null) {
+				loopBackMarker = new LoopBackMarker(startIndex, this);
+				loopBackMarker.flags = flags;
+				if (captureConstructIndex == -1) {
+					loopBodyTargetCache = loopBackMarker;
+				} else {
+					PatternConstruct captureEnd = new CaptureEndMarker(startIndex, captureConstructIndex, loopBackMarker);
+					captureEnd.flags = flags;
+					loopBodyTargetCache = captureEnd;
+				}
+			}
+			return loopBodyTargetCache;
 		}
 
 		/**
@@ -589,10 +638,17 @@ abstract class PatternConstruct {
 			// helper that compiles as a side effect. `next` is included as `extra` so this also
 			// validates that no body part is ambiguous with `next` itself, needed on every re-check,
 			// not just the min==0 entry case buildLoopEntryMap already validated.
-			CodePointSet[] gates = checkDisjoint(pattern, flags, body, next, "loop part");
+			CodePointSet[] gates =
+					checkDisjoint(pattern, flags, body, next, skipZeroWidthEntrySet(next), "loop part");
 
-			LoopBackMarker marker = new LoopBackMarker(startIndex, this);
-			marker.flags = flags;
+			// Reuses the SAME LoopBackMarker (and, when capturing, the same wrapping CaptureEndMarker)
+			// buildLoopEntryMap already handed to each body part as `next` -- see loopBodyTarget()'s own
+			// doc for why identity, not just equal content, matters here: a nested capturing body part's
+			// own CaptureEndMarker (built during entry-point computation) is permanently pointed at
+			// whichever object loopBodyTarget() returned then, so this must be the exact same instance,
+			// not a fresh one, or that nested marker's `realNext.matcher` would never get filled in.
+			PatternConstruct bodyCompileTarget = loopBodyTarget(captureConstructIndex);
+			LoopBackMarker marker = loopBackMarker;
 			LoopMatcherExit exitNode = new LoopMatcherExit(flags, quantifiableIndex, min, next.matcher);
 
 			// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
@@ -605,10 +661,7 @@ abstract class PatternConstruct {
 			continueMarker.flags = flags;
 			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(marker, quantifiableIndex, max, continueMarker, exitNode);
 
-			PatternConstruct bodyCompileTarget = marker;
 			if (capturing) {
-				bodyCompileTarget = new CaptureEndMarker(startIndex, captureConstructIndex, marker);
-				bodyCompileTarget.flags = flags;
 				bodyCompileTarget.compile(marker);
 			}
 
@@ -790,7 +843,7 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
-				buildLoopEntryMap(constructs, next);
+				buildLoopEntryMap(constructs, next, captureConstructIndex);
 				return;
 			}
 			if (constructs.isEmpty()) {
@@ -1243,7 +1296,7 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
-				buildLoopEntryMap(List.of(delegate), next);
+				buildLoopEntryMap(List.of(delegate), next, -1);
 				return;
 			}
 			// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
@@ -1515,6 +1568,55 @@ abstract class PatternConstruct {
 	 * exactly the referenced group's possible first characters. Returns null ("not statically
 	 * known") for anything that could match zero-width, same safe fallback as {@code lastCharSet}.
 	 */
+	/**
+	 * {@code pc}'s own entry point (see {@link #getEntryPointMap}), but seeing straight through any
+	 * zero-width assertion ({@code BoundaryConstruct}/{@code LineBoundaryConstruct}/{@code
+	 * WordBoundaryConstruct}) to whatever actually determines which code points can follow --
+	 * used ONLY by a loop's own ambiguity check ({@code QuantifiableConstruct.buildLoopMatcher}'s
+	 * {@link #checkDisjoint} call against its own {@code next}), never by ordinary union/dispatch
+	 * construction. A loop's body, once it decides to continue, has already (irreversibly, since
+	 * this engine never backtracks) consumed a code point -- so the real question for loop ambiguity
+	 * is "could exiting the loop, possibly through one or more zero-width assertions, eventually
+	 * require the SAME code point some body part would also accept," not "what does the very next
+	 * AST node, in isolation, claim." An ordinary union's own dispatch never commits anything before
+	 * a zero-width assertion's own runtime check can veto it, so treating such an assertion as a
+	 * low-priority catch-all (its ordinary {@code entryElse = this}, no explicit ranges) is fine
+	 * there -- see design.md's "Boundary matching" section -- but a loop can't afford that same
+	 * latitude, since it has nowhere to backtrack to once it's consumed a character (see
+	 * remaining_work.md's now-fixed "loop followed by a zero-width assertion" entry, e.g. {@code
+	 * a*^a}).
+	 *
+	 * <p>Recurses into a {@code Sequence}'s first element and an unquantified {@code
+	 * QuantifiedUnion}'s own branches (unioning them), the same shape {@link #firstCharSet}/{@link
+	 * #lastCharSet} use, so a boundary buried inside a nested group ({@code (^a)}) or alternation
+	 * ({@code (^|x)}) is still seen through. Anything else (a quantified construct, {@code
+	 * CaptureEndMarker}, a leaf) is returned via its own, already-correct {@link
+	 * #getEntryPointMap()} -- safe against the one real cycle this engine has (a loop nested in this
+	 * loop's own tail), since recursion here only ever continues through unquantified, non-looping
+	 * AST shapes.
+	 */
+	private static CodePointSet skipZeroWidthEntrySet(PatternConstruct pc) {
+		if (pc instanceof BoundaryConstruct || pc instanceof LineBoundaryConstruct
+				|| pc instanceof WordBoundaryConstruct) {
+			return skipZeroWidthEntrySet(pc.next);
+		}
+		if (pc instanceof Sequence) {
+			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
+			return patterns.isEmpty() ? pc.getEntryPointMap() : skipZeroWidthEntrySet(patterns.get(0));
+		}
+		if (pc instanceof QuantifiedUnion && ((QuantifiedUnion) pc).isUnquantified()) {
+			List<PatternConstruct> constructs = ((QuantifiedUnion) pc).constructs;
+			if (!constructs.isEmpty()) {
+				MutableCodePointSet result = new ArrayCodePointSet();
+				for (PatternConstruct branch : constructs) {
+					result.addAll(skipZeroWidthEntrySet(branch));
+				}
+				return result;
+			}
+		}
+		return pc.getEntryPointMap();
+	}
+
 	static @Nullable CodePointSet firstCharSet(PatternConstruct pc) {
 		if (pc instanceof LiteralString) {
 			CharSequence value = ((LiteralString) pc).value;

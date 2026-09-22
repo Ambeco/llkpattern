@@ -2816,3 +2816,24 @@ Notes to self about how to work on this project, and other context that doesn't 
   pass over every UNIMPLEMENTED row's *live* exception message, not just the recorded one: 8 java-
   reggie rows had wrong compile errors from doubled backslashes; re-generating with the right flag
   fixed it).
+
+## Two RE2J-corpus gaps fixed (2026-09-21)
+
+- `((x))*`-shaped crash: a quantified/optional construct whose sole body is itself a capturing
+  group threw `NullPointerException` at match time. Cause: `buildLoopEntryMap` pointed each body
+  part's `next` at the loop construct itself (`this`) for entry-point purposes, so a nested
+  capturing body part's own `CaptureEndMarker` got built (and cached) against `this` -- but
+  `this.matcher` isn't set until the whole loop finishes compiling, well after that. Fixed by
+  giving the loop a stable `loopBodyTarget` marker (a `LoopBackMarker`, wrapped in a
+  `CaptureEndMarker` when the loop itself captures) shared between entry-point computation and
+  matcher compilation, instead of two different objects. See `QuantifierAndCaptureTest`'s
+  `quantifiedGroup_soleBodyIsCapturingGroup_*` tests.
+- `a*^a`-shaped gap: a loop followed by a zero-width assertion (`^`/`\A`/`\b`/...), then a
+  character the loop's own body also accepts, compiled but silently failed to match where
+  `java.util.regex` finds it by backtracking -- this engine can't backtrack past a committed loop
+  iteration. Cause: `checkDisjoint`'s ambiguity check used the assertion's own (empty, catch-all)
+  entry set instead of what's actually reachable past it. Fixed with a new `skipZeroWidthEntrySet`
+  helper (mirrors `firstCharSet`/`lastCharSet`'s recursive shape), used only by
+  `QuantifiableConstruct.buildLoopMatcher`'s own ambiguity check -- deliberately NOT applied to
+  ordinary union dispatch, where a zero-width assertion's catch-all treatment is still correct
+  (see `LineAndInputBoundaryTest`'s new boundary tests).

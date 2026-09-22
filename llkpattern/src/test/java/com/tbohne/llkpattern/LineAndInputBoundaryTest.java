@@ -5,6 +5,7 @@ import static com.tbohne.llkpattern.SupplementaryChars.B;
 import static com.tbohne.llkpattern.SupplementaryChars.C;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertThrows;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -161,5 +162,38 @@ public class LineAndInputBoundaryTest {
     Ll1Pattern p = Ll1Pattern.compile(ABC + "\\Z", Ll1Pattern.UNIX_LINES);
     assertThat(p.matcher(ABC + "\r").find(), is(false));
     assertThat(p.matcher(ABC + "\n").find(), is(true));
+  }
+
+  // --- A loop followed by a zero-width assertion, then a character the loop also accepts, is a
+  // genuine ambiguity (this engine never backtracks, so once the loop has consumed a character
+  // it can't un-consume it to let the assertion hold instead) and must be rejected at compile
+  // time, exactly like the boundary-free "a*a" case -- see remaining_work.md's former "A loop
+  // followed by a zero-width assertion..." entry. ---
+
+  @Test
+  public void loopFollowedByZeroWidthAssertionThenAcceptedChar_rejectedAtCompileTime() {
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a*^a"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a*(^a)"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a*\\ba"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a*\\Aa"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a?^a"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a*(^|x)a"));
+  }
+
+  @Test
+  public void loopFollowedByZeroWidthAssertionThenDifferentChar_stillCompiles() {
+    // No real overlap (the loop's own body accepts 'a', but what's actually reachable past the
+    // assertion is 'b') -- must not be rejected.
+    assertThat(Ll1Pattern.compile("a*^b").matcher("b").matches(), is(true));
+    assertThat(Ll1Pattern.compile("a*\\bb").matcher("ab").matches(), is(false));
+  }
+
+  @Test
+  public void boundaryInOrdinaryAlternation_stillCompilesAndMatches() {
+    // A zero-width assertion as a plain union branch (not a loop's own tail) never commits any
+    // input before its own runtime check can veto it, so it's fine as a low-priority catch-all
+    // there -- only a loop's own ambiguity check needs the stricter treatment above.
+    assertThat(Ll1Pattern.compile("(^a|b)c").matcher("bc").matches(), is(true));
+    assertThat(Ll1Pattern.compile("(^a|b)c").matcher("ac").matches(), is(true));
   }
 }

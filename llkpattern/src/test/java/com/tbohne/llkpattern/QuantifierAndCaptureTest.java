@@ -331,4 +331,29 @@ public class QuantifierAndCaptureTest {
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(" + A + "?)+"));
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?:" + A + "?)+"));
   }
+
+  // --- A quantified/optional construct whose sole body is itself a capturing group -- see
+  // remaining_work.md's former "Crash: a quantified group whose sole body is a capturing group"
+  // entry: the nested group's own CaptureEndMarker used to be built (during entry-point
+  // computation) against the outer loop construct itself, whose `.matcher` isn't set until the
+  // whole loop finishes compiling -- throwing a NullPointerException at match time the first time
+  // that nested marker's `buildMatcher()` ran. Fixed by giving the loop body a stable
+  // (QuantifiableConstruct.loopBodyTarget) marker shared between entry-point computation and
+  // matcher compilation. ---
+
+  @Test
+  public void quantifiedGroup_soleBodyIsCapturingGroup_matches() {
+    assertThat(matches("((" + A + "))*", repeat(A, 2)), is(true));
+    assertThat(matches("(?:(" + A + "))*", repeat(A, 2)), is(true));
+    assertThat(matches("((" + A + ")|" + B + ")*", A + B), is(true));
+    assertThat(matches("((" + A + "))?", A), is(true));
+    assertThat(matches("((" + A + ")){0,2}", repeat(A, 2)), is(true));
+  }
+
+  @Test
+  public void quantifiedGroup_soleBodyIsCapturingGroup_capturesLastIteration() {
+    Matcher m = Ll1Pattern.compile("((" + A + "))*").matcher(repeat(A, 3));
+    assertThat(m.matches(), is(true));
+    assertThat(m.group(1), is(A));
+  }
 }

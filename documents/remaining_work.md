@@ -53,16 +53,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 Each is one or a few rows; `grep -a "open gap\|open bug" llkpattern/src/test/resources/golden/re2j.tsv` lists them.
 
-- [ ] **Crash: a quantified group whose sole body is a capturing group** -- `((x))*`, `(?:(x))*`, `((x)|y)*`,
-      `((x))?`, `((x)){0,2}` all throw `NullPointerException` at match time (`EndCaptureMatcherConstruct.next` is null,
-      via `SingleDispatchingMatcherConstruct.matchNext`). Long-standing (reproduces at 08d8791), not a recent
-      regression; `(x)*` and `((x)y)*` are fine. Hand-check `((a?b)c)?` vs `""` and `(a+b)+` vs `"ababab"` afterward
-      (CLAUDE.md). Add a differential test over nested-group shapes once fixed.
-- [ ] **A loop followed by a zero-width assertion, then a character the loop also accepts, is not rejected** --
-      `a*^a`, `a*(^a)`, `a*\ba`, `a*\Aa`, `a?^a`, `a*(^|x)a` compile, then silently fail to match `a` where
-      `java.util.regex` finds it by backtracking (`a*` takes zero iterations, so `^` holds). Should be a compile-time
-      ambiguity error like `a*a`; probably the assertion's own entry set is empty/absent when checking the loop
-      against `next`.
 - [ ] **A loop over a backreference enters on any character its group could start with** -- `([ab])\1?`,
       `([ab])\1*`, `([ab])\1{0,3}` vs `"ab"` find no match at 0 (the JDK finds `a`): `\1`'s entry set is the group's whole
       first-character set, so the loop commits on `b` and the backreference then fails, with no way to back out. Same

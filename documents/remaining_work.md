@@ -47,7 +47,9 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       copy the "fuzz" label.
 - [ ] **Let `CorpusGenerator` refresh a golden file in place.** Today it only writes a whole file from an
       intermediate TSV, which discards the hand-triaged `status` tags, so refreshing a few rows means writing a
-      throwaway class (see CLAUDE.md). Add a mode that reads an existing golden file, takes a selector for which
+      throwaway class in package `com.tbohne.llkpattern.corpus` (needed for `CorpusGenerator.generateRow`) that
+      reads the file with `GoldenTsv.read`, regenerates the wanted rows, and writes it back with `GoldenTsv.write`.
+      Add a mode that reads an existing golden file, takes a selector for which
       rows to regenerate (e.g. a status prefix, a pattern regex, or row numbers), re-runs llk for them, and
       rewrites only those rows, leaving every other row untouched. A flag chooses whether to also re-run
       `java.util.regex` for the selected rows (when its recorded columns are suspect) or keep the recorded regex
@@ -56,6 +58,21 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 ## Gaps found by the RE2J corpus (`golden/re2j.tsv`, rows tagged `open gap`/`open bug`)
 
 Each is one or a few rows; `grep -a "open gap\|open bug" llkpattern/src/test/resources/golden/re2j.tsv` lists them.
+
+## Benchmark methodology
+
+The committed `benchmarks/*` baselines (used by the tables in README.md) can be stale relative to the current
+code, so a delta against them may not actually come from a given change. To check whether a change affected
+performance: copy the freshly-measured JSON somewhere safe, `git stash -u` (stashing the change itself), re-run
+`./gradlew :llkpattern:jmh` to get a clean-baseline measurement, copy that JSON too, then `git stash pop` to bring
+the change back. Compare `primaryMetric.score` and `secondaryMetrics["·gc.alloc.rate.norm"]` between the two
+JSONs. `:llkpattern:jmh` is configured to never report `UP-TO-DATE` specifically so repeated runs (e.g. two
+baseline samples to estimate noise) always genuinely re-measure rather than silently returning a stale result.
+
+The **llk/regex ratio** (not either absolute number) is the metric that actually matters: absolute ms/pass varies
+run to run with background load on either device, but the ratio is comparatively stable. Judge a regression by
+whether the ratio's run-to-run noise bands (from a couple of runs each way) still overlap between baseline and
+the change, not by a single before/after data point.
 
 ## Scraped-corpus microbenchmark
 
@@ -148,8 +165,9 @@ to keep it "vaguely reasonable" and the jar/dex small.
       `CodePointSet` implementation (or making `ArrayCodePointSet`'s search work over array+offset)
       and keeps the whole ~55KB blob alive; (ii) an `IntBuffer` slice per set; (iii) copy the slice
       into a real `ArrayCodePointSet` on first use and cache it (zero match-time cost, small
-      per-used-set init cost). Settle it with a throwaway JMH microbenchmark (per the "narrow
-      hypothesis" guidance in CLAUDE.md), not the full corpus cycle: `contains` on the current
+      per-used-set init cost). Settle it with a throwaway JMH microbenchmark isolating just this comparison, not the
+      full corpus cycle (which exercises the whole parse/compile pipeline for a narrow question like this one):
+      `contains` on the current
       `ArrayCodePointSet` vs (i) vs (ii) on a large set such as `isDefined`, on the desktop AND the
       Pixel 3a; (b) resource loading via `getResourceAsStream` needs checking on the Pixel 3a / APK
       packaging, and its failure mode should be a loud, detailed exception per this project's
@@ -182,7 +200,54 @@ to keep it "vaguely reasonable" and the jar/dex small.
 
 ## Open Questions
 
-- [ ] **Reluctant/possessive quantifiers' permanent semantics**: the parser currently accepts and no-ops `?`/`+` quantifier modifiers (per its own comment, "reluctant and possessive quantifiers are no-ops in this Pattern"). Confirm this is the intended permanent semantic (i.e., this engine has one matching behavior, and the reluctant/possessive distinction from `java.util.regex` doesn't apply here) and document it prominently for users migrating from `java.util.regex`, rather than leaving it as an implicit consequence of "no backtracking."
+- [ ] **BUG (not a permanent design choice): reluctant/possessive quantifier modifiers are always-greedy for
+      `find()`/`lookingAt()`, and shouldn't be.** The parser currently accepts and no-ops `?`/`+` quantifier
+      modifiers unconditionally. That's actually fine for `matches()`: in this engine's compile-time-disjoint,
+      no-backtracking dispatch, a quantified loop's "continue vs. exit" choice is only ever genuinely
+      discretionary (not already forced by the next code point) when the exit path resolves through
+      `EndConstruct`'s `entryElse = this` catch-all -- every other exit target is a specific, disjoint entry set
+      that already forces a single correct choice regardless of greedy/reluctant, so greedy and reluctant
+      necessarily produce identical results there. And under `matches()` (`requireFullMatch = true`),
+      `EndMatcherConstruct` only succeeds at `pos == regionEnd`, so a reluctant loop still has no real
+      discretion: it must consume exactly enough to reach the end, same as greedy already does.
+      But under `find()`/`lookingAt()` (`requireFullMatch = false`), `EndMatcherConstruct` succeeds
+      unconditionally the moment it's reached, at ANY position -- so a reluctant loop immediately followed by
+      nothing (top-level, or followed only by other zero-width catch-alls) genuinely SHOULD stop as soon as
+      `min` iterations are satisfied, rather than consuming greedily. Confirmed: `a+?` against `"aaaaa"` should
+      match just `"a"` via `find()`/`lookingAt()` (matching `java.util.regex`) but currently matches `"aaaaa"`
+      here. (`matches()` is unaffected either way, per above -- `a+?` still consumes all 5 there, matching the
+      JDK.)
+      - Fix sketch (needs validation before implementing): a reluctant loop's exit decision, at the point where
+        it would otherwise unconditionally continue, needs to also ask whether taking the exit path right now
+        would succeed -- which for every non-catch-all exit target is already answered by the ordinary entry-set
+        dispatch (no change needed there), but for the `EndConstruct` catch-all case specifically depends on
+        `Matcher.requireFullMatch` at match time (checking `peeked == -1`, i.e. true end of input, alone is
+        wrong: under `requireFullMatch`, the loop may legitimately need to keep consuming even mid-string, e.g.
+        if trailing pattern content after the loop still needs to reach `regionEnd` -- though note that shape
+        already requires a specific, non-catch-all exit target, which per above already forces the correct
+        iteration count regardless of greedy/reluctant, so the only remaining case to handle is the loop being
+        the last thing in the pattern). Needs care around `LoopMatcherConstruct`/`LoopMatcherExit`'s existing
+        "no per-iteration code point check" design (see design.md's "Opcode set" section) and re-verification
+        against the ambiguity-check invariants elsewhere in this file (entrySet aliasing, `entrySet`/`failedEntry`
+        as this file and design.md currently describe them) before landing -- this touches core dispatch, so it
+        deserves its own session with the differential-test suite exercised heavily, not a quick patch.
+      - Once fixed: retag the golden-corpus rows currently marked `EXPECTED_DIVERGENCE: reluctant quantifier
+        modifier is accepted but a no-op` (`grep -a "reluctant quantifier" llkpattern/src/test/resources/golden/*.tsv`)
+        -- some may already be `matches()`-mode rows that were never actually affected (leave those as `AGREES`
+        material once behavior is fixed) and some are the real bug (fix code, then re-verify those rows agree).
+        Update README's "Intentional differences" list too -- this bullet was removed from it as part of this
+        finding, since it's a bug to fix, not a design choice.
+- [ ] **Is the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence a bug or an intended divergence?**
+      design.md's "Boundary matching" section notes that a `\b`/`\B` whose both neighboring characters are
+      statically known gets elided at compile time (folded into a zero-width no-op, or rejected as
+      unsatisfiable) -- an optimization that assumes the statically-known neighbor really is the character about
+      to be consumed. Under `useTransparentBounds(true)`, at `regionEnd`, that assumption can be wrong (there's
+      real input past the region boundary that the compile-time elision never accounted for), so `hitEnd` can
+      come out different from `java.util.regex` -- never the match result itself, only the `hitEnd` flag.
+      `TransparentBoundsTest` currently skips the `hitEnd` comparison for those patterns rather than asserting a
+      specific (dis)agreement. Analyze whether this is an acceptable, permanent consequence of the compile-time
+      elision (in which case it belongs in README's "Intentional differences" list, not just design.md prose) or
+      a fixable bug (e.g. by not eliding the boundary check specifically when transparent bounds are in play).
 
 ## `PatternParser` codepoint-array indexing
 

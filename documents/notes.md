@@ -1366,8 +1366,7 @@ Notes to self about how to work on this project, and other context that doesn't 
   `entrySet()` too, closing out that conversion completely. Added `CodePointMapTestBase` coverage
   (shared by both `ArrayCodePointMap` and `TreeCodePointMap`): match found, no match, actually stops
   after the first match (counts visits), and sees `complement()`'s gap-filled else-value ranges too.
-- 2026-09-09: default CPU-sampling depth for this project changed from 8 frames to 4 (see
-  CLAUDE.md) -- an 8-frame capture taken this same session came out too flat/diffuse (no leaf much
+- 2026-09-09: default CPU-sampling depth for this project changed from 8 frames to 4 -- an 8-frame capture taken this same session came out too flat/diffuse (no leaf much
   above 1%) to point at anything actionable; re-capturing the same code state at 4 frames surfaced a
   clear top leaf instead. Both `Intel-i7-9750H_*_sampling.txt` files now note the depth explicitly.
 - 2026-09-09: re-ran the desktop JMH corpus benchmark (no code change since the previous round --
@@ -1390,7 +1389,7 @@ Notes to self about how to work on this project, and other context that doesn't 
   being decomposed into a further chain of forks underneath a 2-way head -- it's kept as its own
   top-level class, not a `ForkingMatcherConstruct` subclass, since its "continue" successor
   genuinely isn't resolvable until after it self-registers to break the loop-body construction
-  cycle; (2) every `MatcherConstruct` field stays genuinely `final` (see CLAUDE.md's new rule) --
+  cycle; (2) every `MatcherConstruct` field stays genuinely `final` (a hard project rule from this point on) --
   no mutable field, and no bespoke `Ref`/cell indirection type either (an initial version of this
   change introduced one and was corrected): `LoopMatcherConstruct` instead holds a `final
   PatternConstruct continuation` and reads `continuation.matcher` at match time, reusing
@@ -1450,8 +1449,7 @@ Notes to self about how to work on this project, and other context that doesn't 
     `mergeEntryPoints` unconditionally meant `buildLoopMatcher`'s disjointness-only check (`body`
     vs. `next`, validated every re-check regardless of `min` -- see design.md's "Quantifier/loop
     compilation" section) started paying for a Boolean projection it immediately discards, since it
-    never reads `MergedEntries.ranges` at all -- caught by re-running the JMH benchmark per
-    CLAUDE.md's ritual and noticing `llkCompile`'s `gc.alloc.rate.norm` had gone *up* (1,337,120 ->
+    never reads `MergedEntries.ranges` at all -- caught by re-running the JMH benchmark per this project's after-a-performance-change ritual and noticing `llkCompile`'s `gc.alloc.rate.norm` had gone *up* (1,337,120 ->
     1,508,312 B/op) instead of down. Fixed by splitting the shared merge-and-ambiguity-check logic
     into a private `mergeEntryPointsRaw` helper: `mergeEntryPoints` (the two real per-construct
     callers) still projects to Boolean; a new `validateDisjointness` (replacing
@@ -1903,7 +1901,7 @@ Notes to self about how to work on this project, and other context that doesn't 
 
 ### Re-ran benchmarks after the peek/peek2 fix + test sweep (2026-09-14, same session)
 
-- Per CLAUDE.md's after-a-performance-change checklist, re-ran desktop JMH and re-captured both
+- Per this project's after-a-performance-change checklist, re-ran desktop JMH and re-captured both
   sampling files, plus the Pixel 3a (`adb devices` showed it already plugged in and unlocked, so
   ran without asking first). Desktop: llkCompile 0.372 ms/op (ratio to regexCompile 4.01x, was
   3.82x), llkMatch 0.035 ms/op (ratio 0.77x, unchanged). Pixel 3a: compileLlk 7.58 ms/pass (ratio
@@ -1939,7 +1937,7 @@ Notes to self about how to work on this project, and other context that doesn't 
 
 ### Re-ran benchmarks after the `checkDisjoint`/`CodePointMap` cleanup (2026-09-14, same session)
 
-- Per CLAUDE.md's after-a-performance-change checklist: this change removes real allocation (the
+- Per this project's after-a-performance-change checklist: this change removes real allocation (the
   `CodePointMap<PatternConstruct>` ambiguity-check merge), so re-ran desktop JMH, re-captured both
   CPU and allocation sampling, and (Pixel 3a already plugged in and unlocked per `adb devices`) the
   on-device benchmark, all committed to `benchmarks/`.
@@ -2074,7 +2072,7 @@ Notes to self about how to work on this project, and other context that doesn't 
   could still need. An escape inside that scanned span makes this an over-estimate (its raw span
   is longer than its decoded content), never an under-estimate -- fine for a capacity hint per the
   project owner's own call.
-- Benchmarks re-run per CLAUDE.md's checklist (desktop JMH timing + CPU + allocation sampling, and
+- Benchmarks re-run per this project's after-a-performance-change checklist (desktop JMH timing + CPU + allocation sampling, and
   the on-device Pixel 3a benchmark, which happened to be plugged in and unlocked already). Desktop:
   `llkCompile` 0.308 -> 0.248 ms/op (-19.5%), 897,448 -> 687,024 B/op (-23.4%); `llkMatch` 0.038 ->
   0.035 ms/op (-8.4%), 46,664 -> 37,744 B/op (-19.1%). Pixel 3a: `compileLlk` ratio 0.86x -> 0.87x,
@@ -2626,7 +2624,7 @@ Notes to self about how to work on this project, and other context that doesn't 
     query, independent of actually matching -- re-adds a per-attempt CodePointSet-membership check
     this design specifically existed to precompute once instead; (3) have a node signal "did I
     commit" back up the call chain (a boolean or non-final `next`) -- breaks the `final`-fields
-    invariant `MatcherConstruct` subclasses are required to have (see this project's CLAUDE.md).
+    invariant `MatcherConstruct` subclasses are required to have (a hard project rule).
   - Reverted (`git checkout --` on `Matcher.java`/`MatcherConstruct.java`/`PatternConstruct.java`
     and the two test files it touched) back to the `entrySet`-gated design; full suite still green
     (1498/0/561). The fold-ambiguity finding from the same investigation survives independently,
@@ -2850,8 +2848,7 @@ Notes to self about how to work on this project, and other context that doesn't 
   change. New baseline (Intel-i7-9750H): compile 0.635/1.798ms regex/llk (2.83x), match
   0.302/0.329ms (1.09x); Pixel 3a: compile 56.85/42.55ms (0.75x), match 24.13/5.02ms (0.21x).
 - Removed the README "flatten-matcher-dispatch experiment branch (2026-09-18)" paragraph while
-  touching this section -- it was dated, historical narrative (per CLAUDE.md's project-instructions
-  file, that belongs here, not README/design.md) already duplicated above at its own dated entry,
+  touching this section -- it was dated, historical narrative that belongs here, not README/design.md, and was already duplicated above at its own dated entry,
   and had gone stale once the corpus changed anyway.
 
 ## Loop-over-backreference gap fixed for single-code-point groups (2026-09-22)

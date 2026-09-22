@@ -24,7 +24,7 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   `CASE_INSENSITIVE`, branches are compared after case folding, so `(?i:a|A)` and `(?i:[a-z]+)X` are rejected too.
   This one constraint (a single, committed position with only a one-code-point look ahead/behind — see design.md)
   is also the underlying reason for the next two entries:
-  - **Lookahead, and lookbehind of more than one code point, are rejected — a side effect of the same
+  - **Lookbehind of more than one code point, and all lookaheads, are rejected — a side effect of the same
     constraint.** Neither is implemented yet; both currently throw `PatternSyntaxException` at parse time.
     General lookahead, and lookbehind longer than one code point, will continue to be rejected permanently:
     matching here is driven entirely by a single, committed position with only a one-code-point look

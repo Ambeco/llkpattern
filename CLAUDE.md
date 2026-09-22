@@ -37,7 +37,10 @@ committed `benchmarks/*` baselines can be stale, so a delta against them may not
 `git stash -u`, run `./gradlew :llkpattern:jmh` (~75 s), copy that JSON, then
 `git checkout -- benchmarks && git stash pop`. Compare `primaryMetric.score` and
 `secondaryMetrics["·gc.alloc.rate.norm"]`. The jmh task also regenerates the `*_sampling.txt` files by
-itself; the Pixel 3a run takes ~95 s.
+itself; the Pixel 3a run takes ~95 s. `:llkpattern:jmh` is configured (`llkpattern/build.gradle`,
+`outputs.upToDateWhen { false }`) to never report UP-TO-DATE, specifically so two back-to-back runs
+(e.g. two baseline samples for noise estimation) can't silently return the same stale JSON --
+no `--rerun` needed, every invocation genuinely re-measures.
 
 **The primary metric is the llk/regex ratio, not either absolute number.** Absolute ms/pass varies
 run to run with background load on either device (README.md's benchmark section), but the ratio is
@@ -135,6 +138,10 @@ read the file with `GoldenTsv.read`, replace the wanted rows with `generateRow(p
 input, mode)`, and `GoldenTsv.write` it back. Afterward verify that only the `status` column
 differs from `git show HEAD:<file>` for rows you did not mean to change.
 
+Never use the Edit tool directly on a `golden/*.tsv` file -- it reliably fails to find its match
+(CRLF, same underlying issue as `documents/*.md`) rather than corrupting anything, but it's a dead
+end, not a fallback worth trying first; go straight to the scratch-tool approach above.
+
 ## Scraped-corpus `-Punescape` must match the scraper's own escaping
 
 A scraper that GoldenTsv-escapes its intermediate output (all of `scrape_re2j.py`,
@@ -183,6 +190,16 @@ strings, assert `count == 1` per replacement, and read/write bytes with CRLF<->L
 
 This also applies to `cat <<'EOF'` heredocs that create new `.java` files: use the Write tool for any
 Java text containing `\`.
+
+## More Windows/tooling gotchas
+
+- `python3` invoked via the Bash tool does not share a filesystem view with Bash's own shell -- a
+  file just written with `cp`/`Write` in the same Bash call can 404 from `python3 -c "open(...)"`
+  even at an absolute path `ls` confirms exists. Don't shell out to python3 to read/parse a file
+  the Bash tool just produced; use `awk`/`grep` instead.
+- A Java comment containing a bare `\u` or `\x` not followed by 4 valid hex digits is a javac
+  compile error ("illegal unicode escape") -- javac unicode-escapes comments too, not just string/
+  char literals. Write "unicode escapes" or similar in prose instead of `\u` inside a comment.
 
 ## Working habits that save round trips
 

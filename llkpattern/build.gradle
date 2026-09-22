@@ -90,6 +90,14 @@ jmh {
     resultsFile = project.file("${rootDir}/benchmarks/${benchmarkMachineName}_corpus_benchmark_results.json")
 }
 
+// Never UP-TO-DATE: a benchmark run's whole point is to measure the CURRENT machine/JVM/background
+// load, so gradle's ordinary "nothing changed, skip it" caching is actively wrong here -- silently
+// returning a stale result (byte-identical to the previous run) is indistinguishable from a genuine
+// re-run unless you go check the resultsFile's own timestamp, which has already wasted a real
+// session's time (see CLAUDE.md's benchmark A/B section). This is what `--rerun` used to be needed
+// for; now every `./gradlew :llkpattern:jmh` invocation always actually runs.
+tasks.named('jmh').configure { outputs.upToDateWhen { false } }
+
 // Re-runs llkCompile/llkMatch under JMH's built-in `stack` CPU-sampling profiler and writes each
 // one straight to benchmarks/<machine>_<benchmark>_sampling.txt -- the automated equivalent of the
 // old manual "temporarily add 'stack:lines=4;detailLine=true' to jmh{}'s profilers, run, copy-paste

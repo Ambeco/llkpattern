@@ -119,7 +119,9 @@ backslashes must be written with the Write tool, not a Bash heredoc (see the glo
 
 To see how a newer JDK's `java.util.regex` behaves internally, unzip just that file from its source archive, e.g.
 `unzip -o -q "C:/Program Files/Java/jdk-27/lib/src.zip" java.base/java/util/regex/Pattern.java` (and
-`java.base/jdk/internal/lang/CaseFolding.java`), then grep it. JDK-version-dependent behavior (e.g. JDK 27's
+`java.base/jdk/internal/lang/CaseFolding.java`), then grep it. That `unzip` runs via the Bash tool, which lands
+the file under Bash's own POSIX `/tmp` view; the Grep/Read tools only see the Windows filesystem, so convert the
+path with `cygpath -w` before passing it to them, or they'll report the path doesn't exist. JDK-version-dependent behavior (e.g. JDK 27's
 `(?iu)` range closure) is reproduced only when a runtime probe of the host `java.util.regex` shows it, so llk
 mirrors whichever JDK runs the tests -- see `CaseFolding.HOST_CLOSES_RANGES`.
 

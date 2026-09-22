@@ -110,43 +110,27 @@ In brief:
 
 ### Benchmarks
 
-Both tables are milliseconds per pass over the full OpenJDK-derived test corpus (lower is better), measured via JMH on desktop (`CorpusBenchmark`, [benchmarks/Intel-i7-9750H_corpus_benchmark_results.json](benchmarks/Intel-i7-9750H_corpus_benchmark_results.json)) and an instrumented on-device benchmark on Android (`AndroidCorpusBenchmark`, [benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json](benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json)). The two harnesses don't use identical corpus subsets, so treat cross-device comparisons as approximate — see remaining_work.md's benchmark sections for the full caveats.
-
-The Intel-i7-9750H compile row was re-measured 2026-09-21 (after fixing the `((x))*` nested-capturing-loop crash and the `a*^a` missed-ambiguity gap — an A/B against a freshly-stashed baseline on the same desktop, two runs each way, showed llk compile time moving inside its own run-to-run noise band: baseline 0.449/0.451, this change 0.487/0.462ms/pass; `regexCompile`, untouched by this change, moved by a similar amount across the same runs, confirming it's machine noise, not a regression). Earlier: both tables were re-measured 2026-09-20 (after JDK 27 range closure and leaf-level entry folding, a CASE_INSENSITIVE-only change, so differences are noise; before that: 2026-09-19, after `hitEnd`/`requireEnd`, which touch only cold paths: an A/B on the same desktop showed llk match 0.0498 -> 0.0505ms/pass, inside the ~10% error bar) on a corpus that had grown from 406 to ~480 rows since the
-previous numbers (more rows triaged to `AGREES`, including large Unicode-class and bracket-intersection
-patterns that llk compiles slowly), so they are not comparable to the older figures below.
+Both tables are milliseconds per pass over the scraped-corpus golden files' `AGREES` rows (lower is better), measured via JMH on desktop (`CorpusBenchmark`, [benchmarks/Intel-i7-9750H_corpus_benchmark_results.json](benchmarks/Intel-i7-9750H_corpus_benchmark_results.json)) and an instrumented on-device benchmark on Android (`AndroidCorpusBenchmark`, [benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json](benchmarks/Google_Pixel_3a_sargo_corpus_benchmark_results.json)). As of 2026-09-21 both benchmarks pull in every golden file under `src/test/resources/golden/` (previously only `openjdk_bmp`/`openjdk_supplementary`) -- ~2300 rows now, versus ~480 before -- so the numbers below are NOT comparable to older figures in this file's history; see remaining_work.md's benchmark sections for the full caveats, and CLAUDE.md for how a future performance change should be A/B'd against this new baseline.
 
 Absolute ms/pass varies run to run with background load on either device (see notes.md); the
 llkpattern/regex **ratio** column (last, in each table below) is the more stable number to track
 over time.
 
-**Corpus compile time (each pass compiles ~480 patterns):**
+**Corpus compile time (each pass compiles ~2300 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.132 | 0.462 | 3.51x |
-| Pixel 3a | 10.03 | 10.24 | 1.02x |
+| Intel-i7-9750H | 0.635 | 1.798 | 2.83x |
+| Pixel 3a | 56.85 | 42.55 | 0.75x |
 
-**Corpus match time (each pass matches/finds/look_ats ~480 patterns):**
+**Corpus match time (each pass matches/finds/look_ats ~2300 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.056 | 0.048 | 0.85x |
-| Pixel 3a | 4.60 | 0.90 | 0.20x |
+| Intel-i7-9750H | 0.302 | 0.329 | 1.09x |
+| Pixel 3a | 24.13 | 5.02 | 0.21x |
 
-llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the gap has narrowed substantially after this project's move to fork-chain dispatch, and further after later sessions removed the map-based ambiguity-check allocation (`entryMap`'s `CodePointMap` -> `CodePointSet` migration, then `checkDisjoint`'s allocation-free overlap check) — see notes.md for the compile-time performance history. On the Pixel 3a the two compile times currently land close to each other and vary run-to-run (see notes.md), so don't read that ratio as settled. Match time is faster than `java.util.regex` on both devices, notably so on the Pixel 3a, though that device comparison isn't yet fully understood (see "Remaining Work" above).
-
-**flatten-matcher-dispatch experiment branch (2026-09-18):** both rows above are from this
-experiment (Intel re-measured on a quiet desktop once a concurrent session and browser tabs were
-closed; Pixel 3a from the same session as the code change). Desktop compile time improved slightly
-(0.243 -> 0.235ms/pass, ~3% faster) and desktop match time moved from 0.034 to 0.036ms/pass (~6%
-slower, within this measurement's own ~11% error bar, so not clearly a real regression) —
-allocation sampling (not timing-sensitive) showed match-time allocation completely unchanged in
-shape, still dominated by `Matcher.<init>`, consistent with "no real change" for match time. Pixel
-3a showed a real if modest speedup for both (compile 5.76->5.55ms/pass, match 0.77->0.76ms/pass).
-Net read: a small, real compile-time win, a wash on match time, achieved with fewer allocated node
-objects per union/loop -- see notes.md for the full numbers and remaining_work.md for what's still
-open (design.md's "Quantifier/loop compilation" section rewrite) before this merges to main.
+llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips). On the Pixel 3a compile time is now somewhat faster than `java.util.regex`, though the two land close enough together, and vary run-to-run, that this ratio shouldn't be read as settled (see notes.md). Match time is faster than `java.util.regex` on the Pixel 3a, notably so; on desktop the two are close to parity, with llkpattern landing on either side of `java.util.regex` depending on run and corpus composition. See notes.md for the compile/match-time performance history.
 
 ## 5. Authorship
 

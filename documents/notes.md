@@ -2837,3 +2837,19 @@ Notes to self about how to work on this project, and other context that doesn't 
   `QuantifiableConstruct.buildLoopMatcher`'s own ambiguity check -- deliberately NOT applied to
   ordinary union dispatch, where a zero-width assertion's catch-all treatment is still correct
   (see `LineAndInputBoundaryTest`'s new boundary tests).
+
+## Benchmark corpus widened to every golden file (2026-09-21)
+
+- `CorpusBenchmark`/`AndroidCorpusBenchmark` used to hardcode just `openjdk_bmp.tsv`/
+  `openjdk_supplementary.tsv` (~480 rows); both now list every `golden/*.tsv` file automatically
+  (`CorpusBenchmark.goldenFiles()` lists the directory; `AndroidCorpusBenchmark.setUpCorpus()`
+  lists the `golden` asset directory) so `re2j`/`aosp`/`dregex`/`java_reggie` are included too, no
+  longer requiring a code change per new scraped source. Corpus size: ~480 -> ~2300 `AGREES` rows.
+  This makes every number in README.md's benchmark tables (and the committed baseline JSON/sampling
+  files) incomparable to anything measured before this date -- not a code regression, a corpus
+  change. New baseline (Intel-i7-9750H): compile 0.635/1.798ms regex/llk (2.83x), match
+  0.302/0.329ms (1.09x); Pixel 3a: compile 56.85/42.55ms (0.75x), match 24.13/5.02ms (0.21x).
+- Removed the README "flatten-matcher-dispatch experiment branch (2026-09-18)" paragraph while
+  touching this section -- it was dated, historical narrative (per CLAUDE.md's project-instructions
+  file, that belongs here, not README/design.md) already duplicated above at its own dated entry,
+  and had gone stale once the corpus changed anyway.

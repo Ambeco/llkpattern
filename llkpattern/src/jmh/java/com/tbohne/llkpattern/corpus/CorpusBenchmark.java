@@ -83,13 +83,19 @@ public class CorpusBenchmark {
     }
   }
 
+  /** File names only -- every scraped-corpus golden file under {@code src/test/resources/golden/}
+   *  gets included automatically, so adding a new scraped-corpus source (a new {@code
+   *  Scrape*CorpusTest} + golden file, per remaining_work.md's "Scraped-corpus differential test
+   *  harness" section) doesn't also require remembering to list it here. {@link
+   *  AndroidCorpusBenchmark}'s own {@code setUpCorpus} mirrors this same directory listing for its
+   *  asset copy -- see that class if this project's golden-file layout ever changes shape. */
   private static List<Path> goldenFiles() {
-    // Mirrors OpenJdkBmpCorpusTest/OpenJdkSupplementaryCorpusTest's own golden-file paths -- see
-    // those classes if this project adds more scraped-corpus sources (remaining_work.md).
-    List<Path> paths = new ArrayList<>();
-    paths.add(Paths.get("src", "test", "resources", "golden", "openjdk_bmp.tsv"));
-    paths.add(Paths.get("src", "test", "resources", "golden", "openjdk_supplementary.tsv"));
-    return paths;
+    Path dir = Paths.get("src", "test", "resources", "golden");
+    try (java.util.stream.Stream<Path> files = java.nio.file.Files.list(dir)) {
+      return files.filter(p -> p.toString().endsWith(".tsv")).sorted().collect(java.util.stream.Collectors.toList());
+    } catch (java.io.IOException e) {
+      throw new java.io.UncheckedIOException("Failed listing golden files under " + dir, e);
+    }
   }
 
   @Benchmark

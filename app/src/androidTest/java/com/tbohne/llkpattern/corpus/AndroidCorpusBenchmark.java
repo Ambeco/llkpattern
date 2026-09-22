@@ -143,7 +143,17 @@ public class AndroidCorpusBenchmark {
   public static void setUpCorpus() throws IOException {
     Context context = InstrumentationRegistry.getInstrumentation().getContext();
     agreesRows = new ArrayList<>();
-    for (String asset : new String[] {"golden/openjdk_bmp.tsv", "golden/openjdk_supplementary.tsv"}) {
+    // Every scraped-corpus golden file gets included automatically -- mirrors
+    // CorpusBenchmark.goldenFiles()'s own directory listing, so a new scraped-corpus source
+    // doesn't also require remembering to list its file name here.
+    String[] goldenFileNames = context.getAssets().list("golden");
+    if (goldenFileNames == null || goldenFileNames.length == 0) {
+      throw new IllegalStateException("No golden/*.tsv assets found -- did app/build.gradle's "
+          + "copyGoldenAssets task not run, or the golden directory move?");
+    }
+    java.util.Arrays.sort(goldenFileNames);
+    for (String fileName : goldenFileNames) {
+      String asset = "golden/" + fileName;
       List<AndroidGoldenRow> allRows;
       try (InputStream in = context.getAssets().open(asset)) {
         allRows = AndroidGoldenTsv.read(in, asset);

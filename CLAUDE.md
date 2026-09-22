@@ -39,6 +39,15 @@ committed `benchmarks/*` baselines can be stale, so a delta against them may not
 `secondaryMetrics["·gc.alloc.rate.norm"]`. The jmh task also regenerates the `*_sampling.txt` files by
 itself; the Pixel 3a run takes ~95 s.
 
+**The primary metric is the llk/regex ratio, not either absolute number.** Absolute ms/pass varies
+run to run with background load on either device (README.md's benchmark section), but the ratio is
+comparatively stable. After the A/B above, compare each table's llk/regex ratio (not
+`primaryMetric.score` alone) between baseline and the change. If the ratio hasn't regressed by a
+statistically significant amount (i.e. the two ratios' own run-to-run noise bands overlap -- two
+runs each way, per the A/B step above, is enough to judge this), commit and push without asking
+first. Only pause to ask when the ratio shift looks real (bands don't overlap) or you're otherwise
+unsure.
+
 **While iterating on a narrow hypothesis** (e.g. "does data structure X beat Y for an N-element
 accumulation?", not yet the final design), don't run the full corpus benchmark cycle above per
 variant -- it exercises the entire parse/compile pipeline, not just the operation in question, so
@@ -125,6 +134,19 @@ refresh specific rows, write a scratch class in package `com.tbohne.llkpattern.c
 read the file with `GoldenTsv.read`, replace the wanted rows with `generateRow(pattern, flags,
 input, mode)`, and `GoldenTsv.write` it back. Afterward verify that only the `status` column
 differs from `git show HEAD:<file>` for rows you did not mean to change.
+
+## Scraped-corpus `-Punescape` must match the scraper's own escaping
+
+A scraper that GoldenTsv-escapes its intermediate output (all of `scrape_re2j.py`,
+`scrape_aosp_regex.py`'s `openjdk` mode, `scrape_dregex.py`, `scrape_java_reggie.py`) needs
+`-Punescape=tsv` on `generateCorpus`, not `none`. Passing `none` against an already-escaped
+intermediate silently doubles every backslash in the golden file -- nothing errors, `generateCorpus`
+just writes wrong-but-plausible compile exceptions for any pattern with a backslash escape. This
+happened for real (`dregex.tsv`/`java_reggie.tsv`, 2026-09-21) and wasn't caught by the auto-tagged
+`status` column at all. Before committing a new corpus, write a throwaway tool that re-runs
+`Ll1Pattern.compile(...).matcher(...).find()` directly on every non-`AGREES` row and buckets by the
+*live* exception message (see `Bucket.java` in that session's scratchpad) -- this is what actually
+surfaced the mismatch.
 
 ## Editing `documents/*.md`
 

@@ -53,11 +53,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 Each is one or a few rows; `grep -a "open gap\|open bug" llkpattern/src/test/resources/golden/re2j.tsv` lists them.
 
-- [ ] **A loop over a backreference enters on any character its group could start with** -- `([ab])\1?`,
-      `([ab])\1*`, `([ab])\1{0,3}` vs `"ab"` find no match at 0 (the JDK finds `a`): `\1`'s entry set is the group's whole
-      first-character set, so the loop commits on `b` and the backreference then fails, with no way to back out. Same
-      shape for a multi-character group (`(ab)\1?` on `"aba"`). Needs the loop's enter/exit decision to consult the
-      captured text. Single-character groups (`(a)\1+`) are fine and covered by `QuantifiedBackReferenceTest`.
 - [ ] `\0600` (`\0` then up to three octal digits, at most `\0377`: here `\060` then `0`) is rejected with "Octal escapes
       must be less than ...".
 - [ ] `\x{00000061}` (braced hex with more than 6 digits, leading zeros) is rejected.

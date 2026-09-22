@@ -386,8 +386,11 @@ abstract class MatcherConstruct {
 			if (start < 0) {
 				// The referenced group never participated in the match (e.g. it's in a sibling
 				// alternation branch that wasn't taken) -- java.util.regex treats an unparticipated
-				// group's backreference as never matching, not as matching the empty string.
-				return false;
+				// group's backreference as never matching, not as matching the empty string. Nothing
+				// has been consumed yet, so -- as below -- it's safe to defer to failedEntry (this
+				// node's own loop-exit/next-union-candidate, when it's a chain candidate at all)
+				// rather than failing the whole match outright.
+				return failedEntry != null && failedEntry.match(matcher, peeked);
 			}
 			if (start == end) {
 				return matchNext(matcher, peeked);
@@ -409,7 +412,20 @@ abstract class MatcherConstruct {
 					if (matcher.pos + (end - i) > matcher.regionEnd) {
 						matcher.hitEnd = true;
 					}
-					return false;
+					// A mismatch on the very FIRST code point of this attempt (i == start) hasn't
+					// consumed anything yet, so it's exactly as safe to defer to failedEntry (this
+					// backreference's own loop-exit, when it's compiled as a loop body part -- see
+					// QuantifiableConstruct.buildLoopMatcher's per-part dispatchFailedEntry wiring,
+					// unchanged by this) as an entrySet miss would have been -- entrySet only gates on
+					// the group's overall (possibly multi-valued) first-character set, e.g.
+					// `([ab])\1?`, so this is the actual, precise check that set was too coarse to
+					// make. A mismatch AFTER already consuming one or more matching code points of a
+					// multi-character captured group, by contrast, has irreversibly committed input
+					// this engine can't un-consume -- deliberately a hard failure here (`return
+					// false`), the exact same "no backtracking" limitation as a plain multi-character
+					// loop body failing mid-iteration (see KnownDivergenceTest's
+					// multiCharLoopBodyThatFailsMidIterationIsNotRetried, and `ab(ab)?` vs "aba").
+					return i == start && failedEntry != null && failedEntry.match(matcher, peeked);
 				}
 				peeked = matcher.consumeCodeUnits(units);
 				i += units;

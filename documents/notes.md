@@ -2853,3 +2853,21 @@ Notes to self about how to work on this project, and other context that doesn't 
   touching this section -- it was dated, historical narrative (per CLAUDE.md's project-instructions
   file, that belongs here, not README/design.md) already duplicated above at its own dated entry,
   and had gone stale once the corpus changed anyway.
+
+## Loop-over-backreference gap fixed for single-code-point groups (2026-09-22)
+
+- `([ab])\1?`-shaped gap: a loop's dispatch gate on a backreference body part only had the
+  REFERENCED GROUP's overall (possibly multi-valued) first-character set to go on at compile time,
+  so it could admit a peeked character that turned out not to match what was actually captured --
+  and, with no fallback, failed the whole match rather than exiting the loop. Fixed by having
+  `BackReferenceMatcherConstruct.matchBody` fall through to its own `failedEntry` (already wired by
+  `buildLoopMatcher`'s ordinary per-part dispatch, unchanged) when the mismatch is caught on the
+  very first code point of the referenced text -- i.e. before this attempt has consumed anything,
+  the same condition that makes an entrySet-miss deferral safe.
+- Deliberately NOT extended to a multi-CODE-POINT captured group (`(ab)\1?`): a mismatch partway
+  through a multi-character comparison has already irreversibly consumed the earlier matching
+  code points, so it reduces to the exact same "no backtracking" shape as
+  `KnownDivergenceTest.multiCharLoopBodyThatFailsMidIterationIsNotRetried` (`(ab)+` vs `"abac"`) --
+  the project owner's own call, once this was raised, was to treat it identically rather than build
+  new machinery for one construct type. Now documented as an intentional divergence in README
+  rather than an open gap.

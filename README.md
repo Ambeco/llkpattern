@@ -64,6 +64,12 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   guaranteed to run in linear time.
 - **Reluctant and possessive quantifier modifiers are accepted but are no-ops**, since there is no backtracking to be
   reluctant about. `a{2,3}?` matches `aaa` here, where `java.util.regex` matches `aa`.
+- **A multi-character loop body that matches part of itself, then fails, is not retried with fewer iterations** —
+  e.g. `(ab)+` finds nothing in `"abac"` where `java.util.regex` finds `"ab"`, since there's no way to un-consume the
+  `a` already read while checking the failed second iteration. This also covers a backreference to a
+  multi-code-point group used in a loop (`(ab)\1?` doesn't match `"aba"`); a backreference to a single-code-point
+  group (including a multi-valued one, e.g. `([ab])\1?`) isn't affected, since a mismatch there is always caught
+  before anything is consumed.
 
 - **`CANON_EQ` is a pattern rewrite**: each base-plus-combining-marks cluster (or precomposed character) in the
   pattern becomes a group of every canonically equivalent spelling, left-factored so its branches stay unambiguous;

@@ -53,10 +53,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 Each is one or a few rows; `grep -a "open gap\|open bug" llkpattern/src/test/resources/golden/re2j.tsv` lists them.
 
-- [ ] `\0600` (`\0` then up to three octal digits, at most `\0377`: here `\060` then `0`) is rejected with "Octal escapes
-      must be less than ...".
-- [ ] `\x{00000061}` (braced hex with more than 6 digits, leading zeros) is rejected.
-- [ ] An unmatched `]` outside a class (`]`, `a]`) and `[^]b]` are rejected; `java.util.regex` reads them as literals.
 - [ ] `\141` with no such group is rejected at compile time ("refers to a group that doesn't exist"); `java.util.regex`
       compiles it and it never matches.
 

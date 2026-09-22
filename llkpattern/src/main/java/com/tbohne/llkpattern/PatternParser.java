@@ -341,7 +341,11 @@ final class PatternParser {
       // the project owner's own hedge) the JIT may already optimize the short constant-string scan
       // well enough that this makes no measurable difference -- kept for its own sake regardless,
       // since it's no less readable.
-      if (peek == '(' || peek == ')' || peek == '[' || peek == ']' || peek == '|' || peek == '.'
+      // ']' is deliberately NOT one of these -- outside a bracket expression it has no special
+      // meaning at all, and falls through to the ordinary-character path below (same as
+      // java.util.regex, which reads an unmatched ']' as a literal); see
+      // remaining_work.md's former entry on this.
+      if (peek == '(' || peek == ')' || peek == '[' || peek == '|' || peek == '.'
           || peek == '^' || peek == '$' || peek == EOF) {
         if (rawTextStartIndex >= 0) {
           // rawTextPureEnd, not `index`: this iteration's own skipComments() call just above may
@@ -367,9 +371,6 @@ final class PatternParser {
           case '[':
             sequence.patterns.add(parseQuantifiable(parseComplexCharacter()));
             break;
-          case ']':
-            throw throwUnexpectedChar(
-                "Not currently in a bracket group. Check that the [] parenthesis match");
           case '|':
             if (sequence.patterns.isEmpty()) {
               throw throwEmptySequence(sequence.startIndex, parent.startIndex);
@@ -909,6 +910,11 @@ final class PatternParser {
       negate = true;
       advance(1);
     }
+    // The position of this class's first real content character -- i.e. right after "[" and, if
+    // present, "^". A ']' seen exactly here is a literal member (java.util.regex's standard
+    // "]-as-first-character" bracket convention, e.g. "[]b]"/"[^]b]" both include ']' itself as a
+    // member), not the closing bracket; anywhere else it closes the class as usual.
+    int firstContentIndex = index;
     CodePointSetBuilder ranges = CodePointSetBuilder.create();
     // Large sets unioned into the current operand run (a NamedCharClass-backed escape, or a nested
     // "[...]" class) are kept HERE by reference, not copied into `ranges` -- see UnionCodePointSet's
@@ -932,7 +938,7 @@ final class PatternParser {
         case EOF:
           throw throwUnexpectedChar("expected \"]\" to match ", new CodePointReference(startIndex));
         case ']':
-          if (index > startIndex + 1) {
+          if (index > firstContentIndex) {
             advance(1); // consume the ']' -- callers expect peek to be past this construct
             CodePointSet completedRun = mergeRun(ranges, runUnion);
             CodePointSet finalRanges =
@@ -1091,14 +1097,21 @@ final class PatternParser {
         int octal = peek - '0';
         advance(1);
         if (peek >= '0' && peek <= '7') {
+          // A second digit is always safe -- the largest 2-digit octal value (077) is 63, well
+          // under the 255 (0377) ceiling -- so it's consumed unconditionally.
           octal = octal * 8 + peek - '0';
           advance(1);
           if (peek >= '0' && peek <= '7') {
-            octal = octal * 8 + peek - '0';
-            advance(1);
-            if (octal > 255) {
-              throw throwUnexpectedChar(
-                  "Octal escapes \\0 must be less than 0400 (decimal 256). Use a unicode hex escape instead \"\\u\".");
+            // A third digit is only consumed if it wouldn't push the value past 0377 (255) --
+            // otherwise it's left as a separate literal character, exactly like
+            // java.util.regex's own \0nnn: "\0600" is "\060" (48, ASCII '0') followed by a
+            // literal '0', not an error. Peeking the would-be value before advancing (rather
+            // than advancing then checking, as this used to) is what makes the "leave it
+            // unconsumed" branch possible at all.
+            int withThirdDigit = octal * 8 + peek - '0';
+            if (withThirdDigit <= 255) {
+              octal = withThirdDigit;
+              advance(1);
             }
           }
         }
@@ -1124,29 +1137,36 @@ final class PatternParser {
           advance(1);
         }
         int codePointStart = index;
-        int maxDigits = unicodeMode ? 4 : (braces ? 6 : 2);
+        // Braced form has no real digit-count limit in java.util.regex -- only the resulting VALUE
+        // is bounded (checked below via MAX_CODE_POINT), so e.g. "\x{00000061}" (10 digits, all but
+        // the last two of them leading zeros) is valid. Integer.MAX_VALUE stands in for "unbounded"
+        // for the loop bound below; codePoint accumulation itself is frozen (see the `<=
+        // MAX_CODE_POINT` guard inside the loop) once it's already out of range, so an arbitrarily
+        // long digit run can never overflow it.
+        int maxDigits = unicodeMode ? 4 : (braces ? Integer.MAX_VALUE : 2);
         int digitCount;
         for (digitCount = 0; digitCount < maxDigits; ++digitCount) {
+          int digit;
           if (peek >= '0' && peek <= '9') {
-            codePoint = codePoint * 16 + peek - '0';
-            advance(1);
+            digit = peek - '0';
           } else if (peek >= 'a' && peek <= 'f') {
-            codePoint = codePoint * 16 + 10 + peek - 'a';
-            advance(1);
+            digit = 10 + peek - 'a';
           } else if (peek >= 'A' && peek <= 'F') {
-            codePoint = codePoint * 16 + 10 + peek - 'A';
-            advance(1);
+            digit = 10 + peek - 'A';
           } else {
             break;
           }
+          if (codePoint <= Character.MAX_CODE_POINT) {
+            codePoint = codePoint * 16 + digit;
+          }
+          advance(1);
         }
         if (braces) {
           if (peek == '}') {
             advance(1);
           } else {
             throw throwUnexpectedChar(
-                "braced hexadecimal escapes \"\\x{h...h}\" can have no more than 6 hexidecmal "
-                    + "digits, and must end in }");
+                "braced hexadecimal escapes \"\\x{h...h}\" must end in }");
           }
           if (digitCount == 0) {
             throw throwUnexpectedChar(

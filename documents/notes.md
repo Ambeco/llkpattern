@@ -2871,3 +2871,30 @@ Notes to self about how to work on this project, and other context that doesn't 
   the project owner's own call, once this was raised, was to treat it identically rather than build
   new machinery for one construct type. Now documented as an intentional divergence in README
   rather than an open gap.
+
+## Three RE2J-corpus parser edge cases fixed (2026-09-22)
+
+- **Octal escape's third digit**: `\0nnn` used to unconditionally consume a third octal digit,
+  then throw if the 3-digit value exceeded 255 -- but `java.util.regex` just declines to consume
+  that third digit and leaves it as a separate literal character (e.g. `\0600` is `\060` (48,
+  `'0'`) followed by literal `'0'`). Fixed by peeking the would-be 3-digit value before advancing
+  past it, only consuming when it's `<= 255`.
+- **Braced hex escape digit count**: `\x{h...h}` had an artificial 6-digit cap (`\x{00000061}`,
+  10 digits, was rejected) -- `java.util.regex` has no digit-count limit at all, only a value
+  bound (`<= 0x10FFFF`, checked after accumulation). Fixed by removing the cap and instead
+  freezing `codePoint` accumulation once it's already `> MAX_CODE_POINT` (a plain `if (codePoint
+  <= MAX_CODE_POINT) codePoint = codePoint * 16 + digit;` guard), so an arbitrarily long digit
+  run can't overflow the accumulator before the existing out-of-range check runs.
+- **Unmatched `]`**: outside any bracket expression, `]` was an unconditional parse error;
+  `java.util.regex` reads it as a literal. Fixed by removing `]` from `parseUnion`'s meta-character
+  list entirely, so it falls through to the same ordinary-character path every other literal
+  character (and its own quantifier-suffix handling) already uses -- no new logic needed. Inside a
+  class, `[]b]`/`[^]b]` (a `]` as the very first content character, POSIX's own "leading `]` is a
+  literal member" convention) was ALSO silently wrong for the negated form specifically:
+  `parseComplexCharacterRanges`'s own "is this the first character" check
+  (`index > startIndex + 1`) didn't account for `^` having advanced `index` one further, so
+  `[^]b]` mis-parsed as an early-closing (empty, negated => "matches anything") class followed by
+  stray literal text. Fixed by capturing the true first-content position once, right after the
+  optional `^` is consumed, instead of deriving it from `startIndex`.
+- All three found via `Re2jCorpusTest` rows now flipping from `UNIMPLEMENTED`/`UNEXPECTED` to
+  `AGREES` (20 rows refreshed); new direct tests in `EscapeTest`/`CharacterClassTest`.

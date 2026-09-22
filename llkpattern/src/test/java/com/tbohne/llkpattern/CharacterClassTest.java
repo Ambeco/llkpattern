@@ -111,4 +111,53 @@ public class CharacterClassTest {
     assertThat(p.matcher(E).matches(), is(true));
     assertThat(p.matcher(B).matches(), is(false));
   }
+
+  // --- A ']' as the very first character of a class (right after "[" or "[^") is a literal
+  // member, not the closing bracket -- java.util.regex's standard bracket-expression convention
+  // (POSIX-derived), matching "[]b]"/"[^]b]" against a literal ']'/'b' -- see
+  // remaining_work.md's former entry on this. ---
+
+  @Test
+  public void leadingCloseBracket_isLiteralMember() {
+    Ll1Pattern p = Ll1Pattern.compile("[]b]");
+    assertThat(p.matcher("]").matches(), is(true));
+    assertThat(p.matcher("b").matches(), is(true));
+    assertThat(p.matcher("x").matches(), is(false));
+  }
+
+  @Test
+  public void negated_leadingCloseBracket_isLiteralMember() {
+    Ll1Pattern p = Ll1Pattern.compile("[^]b]");
+    assertThat(p.matcher("]").matches(), is(false));
+    assertThat(p.matcher("b").matches(), is(false));
+    assertThat(p.matcher("x").matches(), is(true));
+  }
+
+  @Test
+  public void closeBracket_afterAMember_stillClosesTheClass() {
+    // Sanity check that the fix above didn't loosen the ordinary "]" closes the class rule for
+    // any ']' that isn't the very first character.
+    Ll1Pattern p = Ll1Pattern.compile("[ab]c");
+    assertThat(p.matcher("ac").matches(), is(true));
+    assertThat(p.matcher("bc").matches(), is(true));
+    assertThat(p.matcher("]c").matches(), is(false));
+  }
+
+  // --- An unmatched ']' OUTSIDE any bracket expression is a plain literal character in
+  // java.util.regex, not a syntax error -- see remaining_work.md's former entry on this. ---
+
+  @Test
+  public void unmatchedCloseBracket_outsideClass_isLiteral() {
+    assertThat(Ll1Pattern.compile("]").matcher("]").matches(), is(true));
+    assertThat(Ll1Pattern.compile("a]").matcher("a]").matches(), is(true));
+  }
+
+  @Test
+  public void unmatchedCloseBracket_outsideClass_isQuantifiable() {
+    // A literal is quantifiable like any other atom -- confirms ']' falls through to the
+    // ordinary single-character parsing path now, rather than needing special-case handling.
+    Ll1Pattern p = Ll1Pattern.compile("]+");
+    assertThat(p.matcher("]]]").matches(), is(true));
+    assertThat(p.matcher("").matches(), is(false));
+  }
 }

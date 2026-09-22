@@ -54,6 +54,16 @@ public class EscapeTest {
   }
 
   @Test
+  public void octal_thirdDigitWouldOverflow_leftAsLiteral() {
+    // "\0600": a third octal digit is only consumed if the resulting value stays <= 0377 (255).
+    // 0600 octal would be 384, so only "\060" (48, ASCII '0') is read, leaving the final '0' as
+    // its own literal character -- matching java.util.regex, not an "octal escapes must be less
+    // than 0400" compile error (see remaining_work.md's former entry on this).
+    assertThat(Ll1Pattern.compile("\\0600").matcher("00").matches(), is(true));
+    assertThat(Ll1Pattern.compile("\\0600").matcher("000").matches(), is(false));
+  }
+
+  @Test
   public void hex_twoDigit() {
     assertThat(Ll1Pattern.compile("\\x41").matcher("A").matches(), is(true));
   }
@@ -73,6 +83,24 @@ public class EscapeTest {
     // U+1F4A9 PILE OF POO, outside the BMP -- exercises the full-codepoint (not just char) path.
     Ll1Pattern p = Ll1Pattern.compile("\\x{1F4A9}");
     assertThat(p.matcher(new String(Character.toChars(0x1F4A9))).matches(), is(true));
+  }
+
+  @Test
+  public void hex_braced_leadingZerosBeyondSixDigits_accepted() {
+    // Unlike the fixed-width, unbraced hex/unicode forms, the braced form has no real digit-COUNT limit in
+    // java.util.regex -- only the resulting value is bounded -- so extra leading zeros (here, 10
+    // digits total) are fine (see remaining_work.md's former entry on this).
+    assertThat(Ll1Pattern.compile("\\x{00000061}").matcher("a").matches(), is(true));
+    // A pathologically long digit run must not overflow the accumulator either.
+    assertThat(Ll1Pattern.compile("\\x{0000000000000061}").matcher("a").matches(), is(true));
+  }
+
+  @Test
+  public void hex_braced_outOfRangeValue_stillRejectedRegardlessOfLeadingZeros() {
+    org.junit.Assert.assertThrows(
+        PatternSyntaxException.class, () -> Ll1Pattern.compile("\\x{110000}"));
+    org.junit.Assert.assertThrows(
+        PatternSyntaxException.class, () -> Ll1Pattern.compile("\\x{00000000110000}"));
   }
 
   @Test

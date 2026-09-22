@@ -2789,3 +2789,30 @@ Notes to self about how to work on this project, and other context that doesn't 
   googlesource via `?format=TEXT` (base64).
 - Found and fixed: a quantifier after a backreference (`(a)\1+`) was rejected as "nothing to repeat" (backreferences
   were never quantifiable; the dangling-quantifier commit made it a compile error). Now wrapped in a one-branch union.
+
+## dregex and java-reggie corpora (2026-09-21)
+
+- `tools/scrape_dregex.py` -> `golden/dregex.tsv` (412 rows: dregex's `MatchTest.java` is Java
+  source, not a data file -- each `{ var r = Regex.compile("pat"); assertTrue/False(r.matches
+  ("in")); ... }` block is one pattern with several MATCHES-mode inputs). 176 AGREES; the rest is
+  almost entirely lookaround (dregex's own headline feature, rejected here by design) plus the
+  usual ambiguity/nullable-body rejections.
+- `tools/scrape_java_reggie.py` -> `golden/java_reggie.tsv` (247 rows, from java-reggie's RE2/PCRE
+  `pattern;input;should_match;features` text files and its `common/patterns.json`). Its two
+  capturing-group text files were deliberately skipped: their pattern column is double-backslash-
+  escaped in a way their own parser never undoes, so as literal regex source it means something
+  different from the file's intent (see the scraper's own docstring).
+- dk.brics.automaton skipped: its test suite is small and uses `RegExp`'s own dialect (`&`/`~`
+  intersection/complement), not `java.util.regex` syntax.
+- Found a real gap already documented, not new: `\d{5}(-\d{4})?` on `"12345-678"` (regex finds
+  `"12345"`, llk finds nothing) is the same "multi-character loop/optional body commits on its
+  first character, can't back out if the rest fails" limitation `KnownDivergenceTest` already pins
+  (`multiCharLoopBodyThatFailsMidIterationIsNotRetried`) -- retagged EXPECTED_DIVERGENCE, not a new
+  bug.
+- Gotcha: `CorpusGenerator -Punescape=tsv` is for an intermediate file that's *already*
+  GoldenTsv-escaped (as the RE2J/AOSP/dregex/java-reggie scrapers all now do, so patterns with
+  their own backslashes round-trip through the TSV correctly) -- `-Punescape=none` on such a file
+  silently doubles every backslash in the golden patterns (caught here via a bucket-and-reprobe
+  pass over every UNIMPLEMENTED row's *live* exception message, not just the recorded one: 8 java-
+  reggie rows had wrong compile errors from doubled backslashes; re-generating with the right flag
+  fixed it).

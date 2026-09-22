@@ -1,0 +1,248 @@
+pattern	flags	input	mode	regexCompileException	regexMatchException	regexMatchResult	llkCompileException	llkMatchException	llkMatchResult	status	originalPathologicalInput
+abc		abc	FIND			MATCHabc			MATCHabc	AGREES	
+abc		xbc	FIND			NOMATCH			NOMATCH	AGREES	
+abc		axc	FIND			NOMATCH			NOMATCH	AGREES	
+abc		xabcy	FIND			MATCHabc			MATCHabc	AGREES	
+xyz		xyz	FIND			MATCHxyz			MATCHxyz	AGREES	
+[a-z]		a	FIND			MATCHa			MATCHa	AGREES	
+[a-z]		z	FIND			MATCHz			MATCHz	AGREES	
+[a-z]		A	FIND			NOMATCH			NOMATCH	AGREES	
+[0-9]		5	FIND			MATCH5			MATCH5	AGREES	
+[0-9]		a	FIND			NOMATCH			NOMATCH	AGREES	
+[a-zA-Z]		M	FIND			MATCHM			MATCHM	AGREES	
+[^a-z]		A	FIND			MATCHA			MATCHA	AGREES	
+[^a-z]		a	FIND			NOMATCH			NOMATCH	AGREES	
+[abc]		b	FIND			MATCHb			MATCHb	AGREES	
+[abc]		d	FIND			NOMATCH			NOMATCH	AGREES	
+a*		aaa	FIND			MATCHaaa			MATCHaaa	AGREES	
+a*			FIND			MATCH			MATCH	AGREES	
+ab*c		ac	FIND			MATCHac			MATCHac	AGREES	
+ab*c		abbc	FIND			MATCHabbc			MATCHabbc	AGREES	
+a+		aaa	FIND			MATCHaaa			MATCHaaa	AGREES	
+a+		a	FIND			MATCHa			MATCHa	AGREES	
+a+			FIND			NOMATCH			NOMATCH	AGREES	
+ab+c		abc	FIND			MATCHabc			MATCHabc	AGREES	
+ab+c		ac	FIND			NOMATCH			NOMATCH	AGREES	
+a?		a	FIND			MATCHa			MATCHa	AGREES	
+a?			FIND			MATCH			MATCH	AGREES	
+ab?c		ac	FIND			MATCHac			MATCHac	AGREES	
+ab?c		abc	FIND			MATCHabc			MATCHabc	AGREES	
+ab?c		abbc	FIND			NOMATCH			NOMATCH	AGREES	
+a{2}		aa	FIND			MATCHaa			MATCHaa	AGREES	
+a{2}		a	FIND			NOMATCH			NOMATCH	AGREES	
+a{2}		aaa	FIND			MATCHaa			MATCHaa	AGREES	
+a{2,4}		aa	FIND			MATCHaa			MATCHaa	AGREES	
+a{2,4}		aaaa	FIND			MATCHaaaa			MATCHaaaa	AGREES	
+a{2,4}		aaaaa	FIND			MATCHaaaa			MATCHaaaa	AGREES	
+a{2,}		aa	FIND			MATCHaa			MATCHaa	AGREES	
+a{2,}		aaaaaa	FIND			MATCHaaaaaa			MATCHaaaaaa	AGREES	
+a|b		a	FIND			MATCHa			MATCHa	AGREES	
+a|b		b	FIND			MATCHb			MATCHb	AGREES	
+a|b		c	FIND			NOMATCH			NOMATCH	AGREES	
+cat|dog		cat	FIND			MATCHcat			MATCHcat	AGREES	
+cat|dog		dog	FIND			MATCHdog			MATCHdog	AGREES	
+(abc)		abc	FIND			MATCHabcabc			MATCHabcabc	AGREES	
+(a)(b)(c)		abc	FIND			MATCHabcabc			MATCHabcabc	AGREES	
+(abc)+		abcabc	FIND			MATCHabcabcabc			MATCHabcabcabc	AGREES	
+(abc)+		ab	FIND			NOMATCH			NOMATCH	AGREES	
+(a|b)c		ac	FIND			MATCHaca			MATCHaca	AGREES	
+(a|b)c		bc	FIND			MATCHbcb			MATCHbcb	AGREES	
+^abc		abc	FIND			MATCHabc			MATCHabc	AGREES	
+^abc		xabc	FIND			NOMATCH			NOMATCH	AGREES	
+^a		a	FIND			MATCHa			MATCHa	AGREES	
+abc$		abc	FIND			MATCHabc			MATCHabc	AGREES	
+abc$		abcx	FIND			NOMATCH			NOMATCH	AGREES	
+a$		a	FIND			MATCHa			MATCHa	AGREES	
+^abc$		abc	FIND			MATCHabc			MATCHabc	AGREES	
+^abc$		abcx	FIND			NOMATCH			NOMATCH	AGREES	
+^abc$		xabc	FIND			NOMATCH			NOMATCH	AGREES	
+a.c		abc	FIND			MATCHabc			MATCHabc	AGREES	
+a.c		axc	FIND			MATCHaxc			MATCHaxc	AGREES	
+a.c		ac	FIND			NOMATCH			NOMATCH	AGREES	
+.+		abc	FIND			MATCHabc			MATCHabc	AGREES	
+.+			FIND			NOMATCH			NOMATCH	AGREES	
+\\d		0	FIND			MATCH0			MATCH0	AGREES	
+\\d		5	FIND			MATCH5			MATCH5	AGREES	
+\\d		a	FIND			NOMATCH			NOMATCH	AGREES	
+\\d+		123	FIND			MATCH123			MATCH123	AGREES	
+\\w		a	FIND			MATCHa			MATCHa	AGREES	
+\\w		Z	FIND			MATCHZ			MATCHZ	AGREES	
+\\w		_	FIND			MATCH_			MATCH_	AGREES	
+\\w		-	FIND			NOMATCH			NOMATCH	AGREES	
+\\w+		hello_world	FIND			MATCHhello_world			MATCHhello_world	AGREES	
+\\s		 	FIND			MATCH 			MATCH 	AGREES	
+\\s		a	FIND			NOMATCH			NOMATCH	AGREES	
+\\s+		   	FIND			MATCH   			MATCH   	AGREES	
+\\D		a	FIND			MATCHa			MATCHa	AGREES	
+\\D		0	FIND			NOMATCH			NOMATCH	AGREES	
+\\W		-	FIND			MATCH-			MATCH-	AGREES	
+\\W		a	FIND			NOMATCH			NOMATCH	AGREES	
+\\S		a	FIND			MATCHa			MATCHa	AGREES	
+\\S		 	FIND			NOMATCH			NOMATCH	AGREES	
+\\d{3}-\\d{3}-\\d{4}		555-123-4567	FIND			MATCH555-123-4567			MATCH555-123-4567	AGREES	
+[a-z]+@[a-z]+\\.[a-z]+		test@example.com	FIND			MATCHtest@example.com			MATCHtest@example.com	AGREES	
+https?://[^\\s]+		https://example.com	FIND			MATCHhttps://example.com			MATCHhttps://example.com	AGREES	
+\\btest\\b		test	FIND			MATCHtest			MATCHtest	AGREES	
+\\btest\\b		testing	FIND			NOMATCH			NOMATCH	AGREES	
+\\btest\\b		a test here	FIND			MATCHtest			MATCHtest	AGREES	
+(?:abc)+		abcabc	FIND			MATCHabcabc			MATCHabcabc	AGREES	
+(?:a|b)+		abab	FIND			MATCHabab			MATCHabab	AGREES	
+a.*b		aXXXb	FIND			MATCHaXXXb	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+a.*?b		aXXXb	FIND			MATCHaXXXb	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[\\d]+		123	FIND			MATCH123			MATCH123	AGREES	
+[\\w]+		abc_123	FIND			MATCHabc_123			MATCHabc_123	AGREES	
+[\\s]+		   	FIND			MATCH   			MATCH   	AGREES	
+a*		b	FIND			MATCH			MATCH	AGREES	
+a?		b	FIND			MATCH			MATCH	AGREES	
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}		test@example.com	FIND			MATCHtest@example.com	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}		user.name+tag@sub.domain.co.uk	FIND			MATCHuser.name+tag@sub.domain.co.uk	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}		not-email	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}		@example.com	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+https?://[^\\s]+		https://example.com/path	FIND			MATCHhttps://example.com/path			MATCHhttps://example.com/path	AGREES	
+https?://[^\\s]+		http://sub.domain.example.com/path?query=value	FIND			MATCHhttp://sub.domain.example.com/path?query=value			MATCHhttp://sub.domain.example.com/path?query=value	AGREES	
+https?://[^\\s]+		ftp://example.com	FIND			NOMATCH			NOMATCH	AGREES	
+https?://[a-zA-Z0-9.-]+		https://example.com	FIND			MATCHhttps://example.com			MATCHhttps://example.com	AGREES	
+\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}		192.168.1.1	FIND			MATCH192.168.1.1			MATCH192.168.1.1	AGREES	
+\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}		10.0.0.255	FIND			MATCH10.0.0.255			MATCH10.0.0.255	AGREES	
+\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}		999.999.999.999	FIND			MATCH999.999.999.999			MATCH999.999.999.999	AGREES	
+\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}		192.168.1	FIND			NOMATCH			NOMATCH	AGREES	
+\\d{4}-\\d{2}-\\d{2}		2024-01-15	FIND			MATCH2024-01-15			MATCH2024-01-15	AGREES	
+\\d{4}-\\d{2}-\\d{2}		24-01-15	FIND			NOMATCH			NOMATCH	AGREES	
+\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}.*\\d{4}-\\d{2}-\\d{2}		192.168.1.1 - - 2024-01-15	FIND			MATCH192.168.1.1 - - 2024-01-15	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\[([^\\]]+)\\]		[15/Jan/2024:10:30:45]	FIND			MATCH[15/Jan/2024:10:30:45]15/Jan/2024:10:30:45			MATCH[15/Jan/2024:10:30:45]15/Jan/2024:10:30:45	AGREES	
+\\d{3}-\\d{3}-\\d{4}		123-456-7890	FIND			MATCH123-456-7890			MATCH123-456-7890	AGREES	
+\\d{3}-\\d{3}-\\d{4}		555-12-4567	FIND			NOMATCH			NOMATCH	AGREES	
+\\(?\\d{3}\\)?[\\s-]?\\d{3}[\\s-]?\\d{4}		(555) 123-4567	FIND			MATCH(555) 123-4567	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\(?\\d{3}\\)?[\\s-]?\\d{3}[\\s-]?\\d{4}		5551234567	FIND			MATCH5551234567	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+/[a-zA-Z0-9_/.-]+		/var/log/system.log	FIND			MATCH/var/log/system.log			MATCH/var/log/system.log	AGREES	
+/[a-zA-Z0-9_/.-]+		/home/user/documents/file.txt	FIND			MATCH/home/user/documents/file.txt			MATCH/home/user/documents/file.txt	AGREES	
+/[a-zA-Z0-9_/.-]+		relative/path	FIND			MATCH/path			MATCH/path	AGREES	
+[a-zA-Z]:\\\\[a-zA-Z0-9_\\\\\\./-]+		C:\\\\Windows\\\\System32	FIND			MATCHC:\\\\\\\\Windows\\\\\\\\System32			MATCHC:\\\\\\\\Windows\\\\\\\\System32	AGREES	
+"[^"]*"		"hello world"	FIND			MATCH"hello world"			MATCH"hello world"	AGREES	
+"[^"]*"		""	FIND			MATCH""			MATCH""	AGREES	
+"[^"]*"		broken	FIND			NOMATCH			NOMATCH	AGREES	
+\\{[^}]*\\}		{key:value}	FIND			MATCH{key:value}			MATCH{key:value}	AGREES	
+\\[[^\\]]*\\]		[1,2,3]	FIND			MATCH[1,2,3]			MATCH[1,2,3]	AGREES	
+<[a-zA-Z][^>]*>		<div>	FIND			MATCH<div>			MATCH<div>	AGREES	
+<[a-zA-Z][^>]*>		<a href='test'>	FIND			MATCH<a href='test'>			MATCH<a href='test'>	AGREES	
+<[a-zA-Z][^>]*>.*?</[a-zA-Z]+>		<div>content</div>	FIND			MATCH<div>content</div>	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+<([a-zA-Z]+)[^>]*>.*?</\\1>		<div>content</div>	FIND			MATCH<div>content</div>div	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\d+\\.\\d+\\.\\d+		1.0.0	FIND			MATCH1.0.0			MATCH1.0.0	AGREES	
+\\d+\\.\\d+\\.\\d+		12.34.56	FIND			MATCH12.34.56			MATCH12.34.56	AGREES	
+\\d+\\.\\d+\\.\\d+		1.0	FIND			NOMATCH			NOMATCH	AGREES	
+v?\\d+\\.\\d+\\.\\d+		v1.2.3	FIND			MATCHv1.2.3			MATCHv1.2.3	AGREES	
+[0-9a-f]{32}		5d41402abc4b2a76b9719d911017c592	FIND			MATCH5d41402abc4b2a76b9719d911017c592			MATCH5d41402abc4b2a76b9719d911017c592	AGREES	
+[0-9a-f]{40}		356a192b7913b04c54574d18c28d46e6395428ab	FIND			MATCH356a192b7913b04c54574d18c28d46e6395428ab			MATCH356a192b7913b04c54574d18c28d46e6395428ab	AGREES	
+[0-9a-f]{64}		e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855	FIND			MATCHe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855			MATCHe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855	AGREES	
+[0-9a-fA-F]+		1A2B3c4d	FIND			MATCH1A2B3c4d			MATCH1A2B3c4d	AGREES	
+[a-zA-Z_][a-zA-Z0-9_]*		variableName	FIND			MATCHvariableName			MATCHvariableName	AGREES	
+[a-zA-Z_][a-zA-Z0-9_]*		_private	FIND			MATCH_private			MATCH_private	AGREES	
+[a-zA-Z_][a-zA-Z0-9_]*		123invalid	FIND			MATCHinvalid			MATCHinvalid	AGREES	
+\\b(if|while|for|return)\\b		if	FIND			MATCHifif			MATCHifif	AGREES	
+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}		00:1A:2B:3C:4D:5E	FIND			MATCH00:1A:2B:3C:4D:5E4D:	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}		aa-bb-cc-dd-ee-ff	FIND			MATCHaa-bb-cc-dd-ee-ffee-	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.([a-zA-Z]{2,}))+		example.com	FIND			MATCHexample.comxample.comcom	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.([a-zA-Z]{2,}))+		sub.domain.example.co.uk	FIND			MATCHsub.domain.example.co.ukub.ukuk	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+.*abc.*		this contains abc inside	FIND			MATCHthis contains abc inside	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+.*abc.*		no match	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\w+@\\w+\\.\\w+		simple@email.com	FIND			MATCHsimple@email.com			MATCHsimple@email.com	AGREES	
+\\d+		12345	FIND			MATCH12345			MATCH12345	AGREES	
+[a-z]+		lowercase	FIND			MATCHlowercase			MATCHlowercase	AGREES	
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}		user.name+tag@example.co.uk	FIND			MATCHuser.name+tag@example.co.uk	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}		not-an-email	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+https?://[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}(/[^\\s]*)?		https://example.com	FIND			MATCHhttps://example.com 	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+https?://[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}(/[^\\s]*)?		http://example.com/path	FIND			MATCHhttp://example.com/path/path	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+https?://[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}(/[^\\s]*)?		ftp://example.com	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+https?://[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}(/[^\\s]*)?		https://sub.domain.example.com/path/to/page	FIND			MATCHhttps://sub.domain.example.com/path/to/page/path/to/page	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}		255.255.255.0	FIND			MATCH255.255.255.0			MATCH255.255.255.0	AGREES	
+\\d{3}-\\d{3}-\\d{4}		abc-def-ghij	FIND			NOMATCH			NOMATCH	AGREES	
+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}		550e8400-e29b-41d4-a716-446655440000	FIND			MATCH550e8400-e29b-41d4-a716-446655440000			MATCH550e8400-e29b-41d4-a716-446655440000	AGREES	
+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}		123e4567-e89b-12d3-a456-426614174000	FIND			MATCH123e4567-e89b-12d3-a456-426614174000			MATCH123e4567-e89b-12d3-a456-426614174000	AGREES	
+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}		not-a-uuid	FIND			NOMATCH			NOMATCH	AGREES	
+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}		550e8400-e29b-41d4-a716	FIND			NOMATCH			NOMATCH	AGREES	
+#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})		#FFF	FIND			MATCH#FFFFFF	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})		#FFFFFF	FIND			MATCH#FFFFFF	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})		#a1b2c3	FIND			MATCH#a1ba1b	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})		#12	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})		FFFFFF	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\d{4}-\\d{2}-\\d{2}		2023-12-31	FIND			MATCH2023-12-31			MATCH2023-12-31	AGREES	
+\\d{4}-\\d{2}-\\d{2}		2024/01/15	FIND			NOMATCH			NOMATCH	AGREES	
+\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}		1234567890123456	FIND			MATCH1234567890123456	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}		1234-5678-9012-3456	FIND			MATCH1234-5678-9012-3456	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}		1234 5678 9012 3456	FIND			MATCH1234 5678 9012 3456	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}		1234-5678	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+<[a-zA-Z][^>]*>		<img src='x' />	FIND			MATCH<img src='x' />			MATCH<img src='x' />	AGREES	
+<[a-zA-Z][^>]*>		<123>	FIND			NOMATCH			NOMATCH	AGREES	
+\\*\\*[^*]+\\*\\*		**bold**	FIND			MATCH**bold**			MATCH**bold**	AGREES	
+\\*\\*[^*]+\\*\\*		**some text**	FIND			MATCH**some text**			MATCH**some text**	AGREES	
+\\*\\*[^*]+\\*\\*		*not bold*	FIND			NOMATCH			NOMATCH	AGREES	
+\\*\\*[^*]+\\*\\*		****	FIND			NOMATCH			NOMATCH	AGREES	
+/[a-zA-Z0-9_/.-]+		/home/user/file.txt	FIND			MATCH/home/user/file.txt			MATCH/home/user/file.txt	AGREES	
+/[a-zA-Z0-9_/.-]+		/	FIND			NOMATCH			NOMATCH	AGREES	
+[a-zA-Z]:\\\\[^:*?"<>|]+		C:\\\\Users\\\\file.txt	FIND			MATCHC:\\\\\\\\Users\\\\\\\\file.txt			MATCHC:\\\\\\\\Users\\\\\\\\file.txt	AGREES	
+[a-zA-Z]:\\\\[^:*?"<>|]+		D:\\\\Documents\\\\test	FIND			MATCHD:\\\\\\\\Documents\\\\\\\\test			MATCHD:\\\\\\\\Documents\\\\\\\\test	AGREES	
+[a-zA-Z]:\\\\[^:*?"<>|]+		/unix/path	FIND			NOMATCH			NOMATCH	AGREES	
+[a-zA-Z]:\\\\[^:*?"<>|]+		C:	FIND			NOMATCH			NOMATCH	AGREES	
+([01]?[0-9]|2[0-3]):[0-5][0-9]		23:59	FIND			MATCH23:5923	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+([01]?[0-9]|2[0-3]):[0-5][0-9]		00:00	FIND			MATCH00:0000	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+([01]?[0-9]|2[0-3]):[0-5][0-9]		9:30	FIND			MATCH9:309	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+([01]?[0-9]|2[0-3]):[0-5][0-9]		25:00	FIND			MATCH5:005	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+([01]?[0-9]|2[0-3]):[0-5][0-9]		12:60	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9_-]{3,16}		user123	FIND			MATCHuser123			MATCHuser123	AGREES	
+[a-zA-Z0-9_-]{3,16}		test_user	FIND			MATCHtest_user			MATCHtest_user	AGREES	
+[a-zA-Z0-9_-]{3,16}		ab	FIND			NOMATCH			NOMATCH	AGREES	
+[a-zA-Z0-9_-]{3,16}		this_is_too_long_username	FIND			MATCHthis_is_too_long			MATCHthis_is_too_long	AGREES	
+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}		00:1A:2B:3C:4D	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}		ZZ:YY:XX:WW:VV:UU	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+\\d{5}(-\\d{4})?		12345	FIND			MATCH12345 			MATCH12345 	AGREES	
+\\d{5}(-\\d{4})?		12345-6789	FIND			MATCH12345-6789-6789			MATCH12345-6789-6789	AGREES	
+\\d{5}(-\\d{4})?		1234	FIND			NOMATCH			NOMATCH	AGREES	
+\\d{5}(-\\d{4})?		12345-678	FIND			MATCH12345 			NOMATCH	EXPECTED_DIVERGENCE: general no-backtracking limit -- a multi-character loop/optional body that fails partway through is not retried as zero iterations, unlike java.util.regex's backtracking (KnownDivergenceTest#multiCharLoopBodyThatFailsMidIterationIsNotRetried)	
+\\d+\\.\\d+\\.\\d+		v1.0.0	FIND			MATCH1.0.0			MATCH1.0.0	AGREES	
+#[a-zA-Z][a-zA-Z0-9_]*		#test	FIND			MATCH#test			MATCH#test	AGREES	
+#[a-zA-Z][a-zA-Z0-9_]*		#Programming123	FIND			MATCH#Programming123			MATCH#Programming123	AGREES	
+#[a-zA-Z][a-zA-Z0-9_]*		#123	FIND			NOMATCH			NOMATCH	AGREES	
+#[a-zA-Z][a-zA-Z0-9_]*		test	FIND			NOMATCH			NOMATCH	AGREES	
+[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z]{2,})+		example.com	FIND			MATCHexample.comxample.com	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z]{2,})+		sub.domain.example.co.uk	FIND			MATCHsub.domain.example.co.ukub.uk	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z]{2,})+		-invalid.com	FIND			MATCHinvalid.comnvalid.com	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z]{2,})+		example	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+-?\\d+		123	FIND			MATCH123			MATCH123	AGREES	
+-?\\d+		-456	FIND			MATCH-456			MATCH-456	AGREES	
+-?\\d+		0	FIND			MATCH0			MATCH0	AGREES	
+-?\\d+		12.34	FIND			MATCH12			MATCH12	AGREES	
+-?\\d+		abc	FIND			NOMATCH			NOMATCH	AGREES	
+-?\\d+\\.\\d+		3.14	FIND			MATCH3.14			MATCH3.14	AGREES	
+-?\\d+\\.\\d+		-2.5	FIND			MATCH-2.5			MATCH-2.5	AGREES	
+-?\\d+\\.\\d+		0.001	FIND			MATCH0.001			MATCH0.001	AGREES	
+-?\\d+\\.\\d+		123	FIND			NOMATCH			NOMATCH	AGREES	
+[a-zA-Z_][a-zA-Z0-9_]*		myVariable	FIND			MATCHmyVariable			MATCHmyVariable	AGREES	
+[a-zA-Z_][a-zA-Z0-9_]*		var123	FIND			MATCHvar123			MATCHvar123	AGREES	
+[a-zA-Z_][a-zA-Z0-9_]*		123var	FIND			MATCHvar			MATCHvar	AGREES	
+\\.[a-zA-Z][a-zA-Z0-9_-]*		.container	FIND			MATCH.container			MATCH.container	AGREES	
+\\.[a-zA-Z][a-zA-Z0-9_-]*		.my-class_123	FIND			MATCH.my-class_123			MATCH.my-class_123	AGREES	
+\\.[a-zA-Z][a-zA-Z0-9_-]*		.123	FIND			NOMATCH			NOMATCH	AGREES	
+\\.[a-zA-Z][a-zA-Z0-9_-]*		container	FIND			NOMATCH			NOMATCH	AGREES	
+0x[0-9a-fA-F]+		0x1A2B	FIND			MATCH0x1A2B			MATCH0x1A2B	AGREES	
+0x[0-9a-fA-F]+		0xFF	FIND			MATCH0xFF			MATCH0xFF	AGREES	
+0x[0-9a-fA-F]+		0xabc123	FIND			MATCH0xabc123			MATCH0xabc123	AGREES	
+0x[0-9a-fA-F]+		1A2B	FIND			NOMATCH			NOMATCH	AGREES	
+"[^"]*"		"test	FIND			NOMATCH			NOMATCH	AGREES	
+"[^"]*"		hello	FIND			NOMATCH			NOMATCH	AGREES	
+^\\s*$			FIND			MATCH			MATCH	AGREES	
+^\\s*$		   	FIND			MATCH   			MATCH   	AGREES	
+^\\s*$		  text  	FIND			NOMATCH			NOMATCH	AGREES	
+\\btest\\b		contest	FIND			NOMATCH			NOMATCH	AGREES	
+\\b(\\w+)\\s+\\1\\b		the the	FIND			MATCHthe thethe			MATCHthe thethe	AGREES	
+\\b(\\w+)\\s+\\1\\b		test test	FIND			MATCHtest testtest			MATCHtest testtest	AGREES	
+\\b(\\w+)\\s+\\1\\b		the then	FIND			NOMATCH			NOMATCH	AGREES	
+\\b(\\w+)\\s+\\1\\b		test	FIND			NOMATCH			NOMATCH	AGREES	
+\\[([^\\]]+)\\]\\(([^)]+)\\)		[text](url)	FIND			MATCH[text](url)texturl			MATCH[text](url)texturl	AGREES	
+\\[([^\\]]+)\\]\\(([^)]+)\\)		[link](https://example.com)	FIND			MATCH[link](https://example.com)linkhttps://example.com			MATCH[link](https://example.com)linkhttps://example.com	AGREES	
+\\[([^\\]]+)\\]\\(([^)]+)\\)		[broken](	FIND			NOMATCH			NOMATCH	AGREES	
+\\[([^\\]]+)\\]\\(([^)]+)\\)		text(url)	FIND			NOMATCH			NOMATCH	AGREES	
+-?(0|[1-9]\\d*)(\\.\\d+)?([eE][+-]?\\d+)?		123	FIND			MATCH123123  			MATCH123123  	AGREES	
+-?(0|[1-9]\\d*)(\\.\\d+)?([eE][+-]?\\d+)?		-45.67	FIND			MATCH-45.6745.67 			MATCH-45.6745.67 	AGREES	
+-?(0|[1-9]\\d*)(\\.\\d+)?([eE][+-]?\\d+)?		1.23e10	FIND			MATCH1.23e101.23e10			MATCH1.23e101.23e10	AGREES	
+-?(0|[1-9]\\d*)(\\.\\d+)?([eE][+-]?\\d+)?		01	FIND			MATCH00  			MATCH00  	AGREES	
+-?(0|[1-9]\\d*)(\\.\\d+)?([eE][+-]?\\d+)?		.5	FIND			MATCH55  			MATCH55  	AGREES	

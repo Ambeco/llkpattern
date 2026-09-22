@@ -32,10 +32,8 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 - [ ] More sources, each as its own `scrape_<source>.py` + golden file + `ScrapedCorpusTestBase`
       subclass (the pipeline already supports this cleanly):
-  - [ ] **dregex**: `https://github.com/marianobarrios/dregex/tree/master/src/test/java/dregex`.
+  - [ ] **dk.brics.automaton**: skipped for now -- its own test suite (`RunAutomatonTest`) is small (~10 scenarios) and uses `RegExp`'s own extended dialect (`&`, `~`, ...), not `java.util.regex` syntax, so scraping it would need a dialect translation layer for very little corpus size in return.
   - [ ] Oracle GraalVM's regex engine tests were a candidate too -- not yet located/confirmed.
-  - [ ] **dk.brics.automaton**: `https://github.com/cs-au-dk/dk.brics.automaton/tree/master/test/java/dk/brics/automaton`.
-  - [ ] **DataDog/java-reggie**: `https://github.com/DataDog/java-reggie/tree/main/reggie-integration-tests/src/test/java/com/datadoghq/reggie/integration`.
 - [ ] **Investigate java-reggie's `FuzzTest`** (`https://github.com/DataDog/java-reggie` --
       look under its integration-tests module) to see how it picks fuzzed inputs and decides
       pass/fail. This project considered a fuzz test for `Ll1Pattern` before and shelved it for

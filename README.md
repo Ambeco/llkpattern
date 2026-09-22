@@ -1,6 +1,6 @@
 # llkpattern
 
-A regex-like pattern matching library designed to be faster and lower-memory than traditional regex, by compiling patterns using LL(1) parsing techniques instead of backtracking.
+A regex-like pattern matching library that exists to trade away backtracking, lookahead, and lookbehind — regex features that are real but uncommonly used — for significantly faster, lower-memory matching, particularly on Android, by compiling patterns using LL(1) parsing techniques instead.
 
 ## 1. Overview
 
@@ -60,8 +60,11 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   start with the same character, `Ll1Pattern.compile` throws `PatternSyntaxException` instead of backtracking.
   `a|ab`, `(aaa)?aaa`, `.+b` and `a(b){4,5}b` are rejected; `a(b){4,5}c` and `a|b` are fine. Under
   `CASE_INSENSITIVE`, branches are compared after case folding, so `(?i:a|A)` and `(?i:[a-z]+)X` are rejected too.
-- **Lookahead and lookbehind are rejected** (`(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`), since they cannot be
-  guaranteed to run in linear time.
+- **Lookahead, and lookbehind of more than one code point, are rejected** (`(?=...)`, `(?!...)`, `(?<=...)`,
+  `(?<!...)`) — matching here is driven entirely by a single position and a one-code-point-ahead/behind peek
+  (see design.md), so anything requiring a look further ahead or behind than that, before committing to a branch,
+  is out of scope by design, not merely unimplemented. A lookbehind of exactly one code point (`(?<=x)`/`(?<!x)`)
+  is planned, as a direct generalization of the one-code-point-back check `\b`/`\B` already do.
 - **Reluctant and possessive quantifier modifiers are accepted but are no-ops**, since there is no backtracking to be
   reluctant about. `a{2,3}?` matches `aaa` here, where `java.util.regex` matches `aa`.
 - **A backreference to a group number with no group of that number open yet — forward references (`\1(a)`) and

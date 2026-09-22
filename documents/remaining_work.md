@@ -17,9 +17,13 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 ## Also remember for later (currently-unimplemented/deferred features)
 
-- [ ] Once implemented, add the same depth of test coverage for: positive/negative lookahead
-      (`(?=...)`/`(?!...)`) and lookbehind (`(?<=...)`/`(?<!...)`) -- note both are currently
-      rejected outright at parse time per design.md.
+- [ ] **1-codepoint lookbehind** (`(?<=x)`/`(?<!x)`, where the lookbehind body matches exactly one code point) is
+      planned -- it's a direct generalization of `\b`/`\B`'s existing single-code-point `peekPrevious()` check, per
+      design.md's "single-pass architecture" note. Add the same depth of test coverage as other boundary constructs
+      once it lands. Positive lookahead (`(?=...)`/`(?!...)`), negative lookahead (`(?!...)`), and lookbehind of more
+      than one code point (`(?<=...)`/`(?<!...)` in general) are NOT planned -- they're permanently out of scope per
+      that same design.md note, not merely unimplemented, since supporting them in general would give up the
+      single-pass guarantee this engine exists for.
 
 ## Feature gaps versus `java.util.regex` (everything else that differs is a design choice, see README)
 

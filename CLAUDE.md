@@ -42,6 +42,19 @@ itself; the Pixel 3a run takes ~95 s. `:llkpattern:jmh` is configured (`llkpatte
 (e.g. two baseline samples for noise estimation) can't silently return the same stale JSON --
 no `--rerun` needed, every invocation genuinely re-measures.
 
+**After the A/B, re-run `:llkpattern:jmh` once more on the final code before updating README.**
+`git checkout -- benchmarks && git stash pop` discards the "change" run's own JSON/sampling files
+(they get overwritten with the pre-change baseline's), so the numbers you A/B'd against are no
+longer the ones sitting in `benchmarks/` afterward -- and README's tables must match what's actually
+committed there. A single JMH run also has real run-to-run noise (seen: one run's error bars were
+50%+ of the score, from unrelated background CPU load); if a run looks noisy, just re-run rather than
+trusting it.
+
+**Never start a Gradle job with a trailing `&` inside a Bash tool call.** It orphans a background
+process this session loses track of, which then races later `:llkpattern:jmh` invocations for the
+`jmh.lock` file and fails one of them with "Another JMH instance might be running". Use the Bash
+tool's own `run_in_background: true` instead, which is tracked and notifies on completion.
+
 **The primary metric is the llk/regex ratio, not either absolute number.** Absolute ms/pass varies
 run to run with background load on either device (README.md's benchmark section), but the ratio is
 comparatively stable. After the A/B above, compare each table's llk/regex ratio (not

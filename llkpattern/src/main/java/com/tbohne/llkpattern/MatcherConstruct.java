@@ -806,6 +806,98 @@ abstract class MatcherConstruct {
 		}
 	}
 
+	/**
+	 * A reluctant loop's own "prefer to stop here" check -- inserted (see {@code
+	 * QuantifiableConstruct.buildLoopMatcher}) in place of an unconditional continue/loop-back, for
+	 * exactly the cases where stopping early is provably safe: {@code min} has been satisfied AND
+	 * {@link #exitNode}'s own continuation is a zero-width path that unconditionally reaches {@link
+	 * EndMatcherConstruct} (see {@link #exitIsPureEnd}) -- so whether the exit actually succeeds
+	 * only depends on {@link Matcher#requireFullMatch}, read here at match time since one compiled
+	 * pattern serves {@code matches()}, {@code find()}, and {@code lookingAt()} alike. Never
+	 * speculative: unlike a backtracking engine's "try the shorter match, undo if it fails" reluctant
+	 * loop, this never runs {@link #exitNode} unless success is already guaranteed, so none of
+	 * {@code exitNode}'s side effects (resetting the loop counter, ending an enclosing capture) ever
+	 * need undoing.
+	 */
+	static final class ReluctantLoopGate extends MatcherConstruct {
+		final int quantifiableIndex;
+		final int min;
+		final MatcherConstruct exitNode;
+		final MatcherConstruct bodyHead;
+
+		ReluctantLoopGate(
+				int flags, int quantifiableIndex, int min, MatcherConstruct exitNode, MatcherConstruct bodyHead) {
+			super(flags);
+			this.quantifiableIndex = quantifiableIndex;
+			this.min = min;
+			this.exitNode = exitNode;
+			this.bodyHead = bodyHead;
+		}
+
+		@Override
+		boolean matchBody(Matcher matcher, int peeked) {
+			// Under requireFullMatch (matches()), exiting is still safe once pos already reached
+			// regionEnd -- exitIsPureEnd(next) already guarantees the rest of the pattern needs no
+			// further input, so if there's none left to require, stopping here is exactly what a
+			// backtracking engine's reluctant loop does too, and (unlike letting the body run one more,
+			// doomed attempt) avoids spuriously peeking past the end and setting Matcher#hitEnd.
+			if (matcher.quantifiableCounts[quantifiableIndex] >= min
+					&& (!matcher.requireFullMatch || matcher.pos == matcher.regionEnd)) {
+				return exitNode.match(matcher, peeked);
+			}
+			return bodyHead.match(matcher, peeked);
+		}
+	}
+
+	/**
+	 * Conservative check for whether {@code node} is a zero-width path that unconditionally reaches
+	 * {@link EndMatcherConstruct} without depending on the next input code point -- i.e. whether
+	 * taking it right now is guaranteed to succeed (modulo {@code requireFullMatch}, which the caller
+	 * checks separately). Used only by {@link ReluctantLoopGate}'s construction, to decide whether a
+	 * reluctant loop's exit path is safe to try eagerly instead of always continuing greedily.
+	 * Deliberately conservative -- returns {@code false} (rather than trying to reason further) for
+	 * anything not provably safe, such as a zero-width assertion ({@code $}, {@code \b}), a
+	 * lookaround, or another loop that isn't a guaranteed no-op: a false negative here just leaves
+	 * that shape greedy, this engine's existing (correct-for-{@code matches()}) default, never wrong.
+	 */
+	static boolean exitIsPureEnd(MatcherConstruct node) {
+		// Checked FIRST, before any type-specific case below: a chain-candidate node's own entrySet
+		// (e.g. the head of a following `b?`'s own body, OR a PassThroughMatcherConstruct standing in
+		// for a gated owner -- see aliasOrPassThrough) always takes precedence over what that node
+		// would otherwise do when its own gate misses. That entrySet was itself checked for
+		// disjointness against OUR loop's body by the very checkDisjoint call that is about to gate
+		// this loop (see QuantifiableConstruct#buildLoopMatcher's `extraEntrySet`) -- so whenever this
+		// exit path is actually taken with a peeked code point that's in our body's own entry set,
+		// this node's entrySet is guaranteed to miss, and the match cascades to failedEntry exactly as
+		// if the body itself had failed to match and fallen through to this same exitNode naturally.
+		// (For any OTHER peeked code point -- one our body wouldn't have consumed either -- taking
+		// this node's own gated path directly, rather than falling through to it, is exactly what
+		// should happen; either way, `failedEntry`'s own safety, not this node's `matchBody`, is what
+		// this recursion needs to prove.) Recursing into failedEntry rather than stopping here is what
+		// lets this see past an intervening optional part (`a+?b?`, `[ab]+?c?`) to the real zero-width
+		// tail beyond it.
+		if (node.entrySet != null) {
+			return node.failedEntry != null && exitIsPureEnd(node.failedEntry);
+		}
+		if (node instanceof EndMatcherConstruct) {
+			return true;
+		}
+		if (node instanceof EndCaptureMatcherConstruct) {
+			return exitIsPureEnd(((EndCaptureMatcherConstruct) node).next);
+		}
+		if (node instanceof PassThroughMatcherConstruct) {
+			return exitIsPureEnd(((PassThroughMatcherConstruct) node).next);
+		}
+		if (node instanceof LoopMatcherExit) {
+			LoopMatcherExit exit = (LoopMatcherExit) node;
+			return exit.min == 0 && exitIsPureEnd(exit.next);
+		}
+		if (node instanceof ReluctantLoopGate) {
+			return exitIsPureEnd(((ReluctantLoopGate) node).exitNode);
+		}
+		return false;
+	}
+
 	static final class BeginCaptureMatcherConstruct extends SingleDispatchingMatcherConstruct {
 		final int captureConstructIndex;
 

@@ -2895,3 +2895,18 @@ Notes to self about how to work on this project, and other context that doesn't 
   optional `^` is consumed, instead of deriving it from `startIndex`.
 - All three found via `Re2jCorpusTest` rows now flipping from `UNIMPLEMENTED`/`UNEXPECTED` to
   `AGREES` (20 rows refreshed); new direct tests in `EscapeTest`/`CharacterClassTest`.
+
+- **2026-09-22: reluctant quantifiers now honored** (were always-greedy no-ops for
+  `find()`/`lookingAt()` -- see the now-removed remaining_work.md bug entry). Fix: a new
+  `MatcherConstruct.ReluctantLoopGate`, inserted only when `MatcherConstruct.exitIsPureEnd(next.matcher)`
+  proves stopping early can never fail (see design.md's "Quantifier/loop compilation" and "Alternatives
+  considered" sections). Also fixed a related `hitEnd`-under-`matches()` divergence the same gate exposed
+  (exiting once `pos == regionEnd`, instead of always trying one more doomed body iteration first).
+  A speculative-exit-with-rollback alternative was considered and rejected -- see design.md. Golden rows
+  retagged via the scratch `GoldenTsv` tool (6 rows, 3 files); `KnownDivergenceTest` updated. Review
+  caught an ordering bug in the first cut of `exitIsPureEnd`: it checked node type (PassThrough, etc.)
+  before checking `entrySet` gating, so a gated `PassThroughMatcherConstruct` was treated as an
+  unconditional forward -- fixed by checking `entrySet != null` first, uniformly, before any
+  type-specific case. Also found two genuine residual divergences (a reluctant loop before `\B` or a
+  MULTILINE `^`/`$` that can succeed mid-run, not just at the end) -- `exitIsPureEnd` deliberately
+  doesn't reason about those, so they're pinned in `KnownDivergenceTest` rather than fixed.

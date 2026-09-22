@@ -120,10 +120,12 @@ See [documents/remaining_work.md](documents/remaining_work.md) for the full, act
 
 - **1-codepoint lookbehind is planned**; general lookahead/lookbehind is permanently out of scope (see "Intentional
   differences" above).
-- **BUG: reluctant/possessive quantifiers are always-greedy for `find()`/`lookingAt()`** (`matches()` is
-  unaffected) — e.g. `a+?` should match just `"a"` in `"aaaaa"` via `find()`, matching `java.util.regex`, but
-  currently matches all 5; see remaining_work.md for the root cause and fix sketch. Needs its own careful pass,
-  since it touches core loop dispatch.
+- **BUG: a reluctant loop immediately followed only by `\B`/`\b`/a `MULTILINE` `^`/`$` stays greedy** even where
+  that assertion is genuinely satisfiable before the true end of input — e.g. `a+?\B` should stop after one `a`
+  via `find()`, matching `java.util.regex`, but currently consumes more. Every other reluctant-loop shape already
+  matches `java.util.regex` (see design.md's "Quantifier/loop compilation" section); this is the one gap left, and
+  isn't inherently unfixable (these checks are side-effect-free and single-code-point) — see remaining_work.md for
+  the fix sketch and a related, more general `\B`-near-`regionEnd` match-result bug found while testing this.
 - **Whether the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence (design.md's "Boundary matching"
   section) is an acceptable, permanent consequence of the compile-time `\b`/`\B` elision, or a bug to fix** — not
   yet analyzed in depth; see remaining_work.md.
@@ -133,7 +135,7 @@ See [documents/remaining_work.md](documents/remaining_work.md) for the full, act
 
 ## 4. Current Progress
 
-The module compiles; its test suite passes fully: **3808 tests, 0 failing** — hand-written unit/integration/differential tests, plus **3305 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite (561 rows) RE2J's tests (1790 rows), AOSP libcore's extra rows (295, mostly the original ASCII `TestCases.txt`), dregex's own test table (412 rows, heavy on lookaround) and DataDog/java-reggie's RE2/PCRE/common-pattern test data (247 rows); more corpus sources are planned, see above) and 3305 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
+The module compiles; its test suite passes fully: **3830 tests, 0 failing** — hand-written unit/integration/differential tests, plus **3305 tests from a scraped-corpus differential harness** (compares `Ll1Pattern` against real test data mined from OpenJDK's own `java.util.regex` test suite (561 rows) RE2J's tests (1790 rows), AOSP libcore's extra rows (295, mostly the original ASCII `TestCases.txt`), dregex's own test table (412 rows, heavy on lookaround) and DataDog/java-reggie's RE2/PCRE/common-pattern test data (247 rows); more corpus sources are planned, see above) and 3305 further reference-only checks (re-verifying `java.util.regex`'s own recorded behavior against the installed JDK) that are disabled by default, hence "skipped" rather than run. See [documents/remaining_work.md](documents/remaining_work.md) for the JDK version required to run the suite and the full TODO list, and [documents/notes.md](documents/notes.md) for the bugs this harness has already found and fixed.
 
 In brief:
 
@@ -156,15 +158,15 @@ over time.
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.635 | 1.798 | 2.83x |
-| Pixel 3a | 56.85 | 42.55 | 0.75x |
+| Intel-i7-9750H | 0.659 | 1.873 | 2.84x |
+| Pixel 3a | 57.16 | 42.60 | 0.75x |
 
 **Corpus match time (each pass matches/finds/look_ats ~2300 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.302 | 0.329 | 1.09x |
-| Pixel 3a | 24.13 | 5.02 | 0.21x |
+| Intel-i7-9750H | 0.318 | 0.349 | 1.10x |
+| Pixel 3a | 22.81 | 4.80 | 0.21x |
 
 llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips). On the Pixel 3a compile time is now somewhat faster than `java.util.regex`, though the two land close enough together, and vary run-to-run, that this ratio shouldn't be read as settled (see notes.md). Match time is faster than `java.util.regex` on the Pixel 3a, notably so; on desktop the two are close to parity, with llkpattern landing on either side of `java.util.regex` depending on run and corpus composition. See notes.md for the compile/match-time performance history.
 

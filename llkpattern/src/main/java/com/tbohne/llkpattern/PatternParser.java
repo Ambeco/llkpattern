@@ -1758,7 +1758,11 @@ final class PatternParser {
       // quantifier-suffix character (only '?' for reluctant and '+' for possessive are), so a
       // possessive suffix ("a*+", "a++", "a?+", "a{2,3}+") was never actually consumed, leaving a
       // stray literal '+' in the pattern that broke matching. See remaining_work.md.
-      advance(1); // reluctant and possessive quantifers are no-ops in this Pattern
+      // Possessive ('+') stays a no-op: this engine's no-backtrack greedy loop already behaves as
+      // possessive (nothing to backtrack into). Reluctant ('?') is recorded on the construct --
+      // see QuantifiableConstruct#reluctant.
+      construct.reluctant = peek == '?';
+      advance(1);
       construct.endIndex = index;
     }
     return construct;

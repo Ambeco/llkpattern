@@ -508,6 +508,11 @@ abstract class PatternConstruct {
 		int min = 1;
 		int max = 1;
 		int quantifiableIndex = -1;
+		// Set by PatternParser#parseQuantifiable when a trailing '?' follows the quantifier itself
+		// (e.g. "a+?"). Possessive '+' stays a no-op: this engine's no-backtrack greedy loop already
+		// makes the greedy/possessive choice unobservable (nothing to backtrack into), so possessive
+		// syntax is accepted purely for compatibility, not compiled differently.
+		boolean reluctant = false;
 
 		QuantifiableConstruct(String pattern, int startIndex) {
 			super(startIndex);
@@ -697,12 +702,27 @@ abstract class PatternConstruct {
 				}
 			}
 			MatcherConstruct bodyHead = bodyTail;
-			continueMarker.matcher = bodyHead;
+
+			// A reluctant loop should stop as soon as `min` is satisfied whenever doing so is provably
+			// safe -- see MatcherConstruct.ReluctantLoopGate's own doc. Gated on exitIsPureEnd(next.matcher)
+			// (not just `reluctant`) so a reluctant loop followed by something that itself needs a real
+			// code-point decision (`a+?b`, `a+?$`) is left exactly as greedy loops already are: that
+			// decision is already forced correctly by the body/next disjointness check above, with no
+			// runtime choice left to make either way (see remaining_work.md's now-fixed bug entry).
+			MatcherConstruct entryPoint = bodyHead;
+			if (reluctant && MatcherConstruct.exitIsPureEnd(next.matcher)) {
+				MatcherConstruct.ReluctantLoopGate gate =
+						new MatcherConstruct.ReluctantLoopGate(flags, quantifiableIndex, min, exitNode, bodyHead);
+				continueMarker.matcher = gate;
+				entryPoint = gate;
+			} else {
+				continueMarker.matcher = bodyHead;
+			}
 
 			// This construct's own externally-visible entry point is exactly the same node used for a
 			// loop-back -- see the class doc above for why no separate entry-only chain is needed any
 			// more.
-			MatcherConstruct.aliasOrPassThrough(this, bodyHead);
+			MatcherConstruct.aliasOrPassThrough(this, entryPoint);
 		}
 	}
 

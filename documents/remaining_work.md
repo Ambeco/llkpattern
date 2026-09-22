@@ -199,44 +199,30 @@ to keep it "vaguely reasonable" and the jar/dex small.
 - [ ] Fill in section 2 (High-Level Design) and section 3 (Current Progress) of [README.md](../README.md) in more depth as the design solidifies (still not a full design writeup in the README itself, which continues to point at design.md).
 
 ## Open Questions
-
-- [ ] **BUG (not a permanent design choice): reluctant/possessive quantifier modifiers are always-greedy for
-      `find()`/`lookingAt()`, and shouldn't be.** The parser currently accepts and no-ops `?`/`+` quantifier
-      modifiers unconditionally. That's actually fine for `matches()`: in this engine's compile-time-disjoint,
-      no-backtracking dispatch, a quantified loop's "continue vs. exit" choice is only ever genuinely
-      discretionary (not already forced by the next code point) when the exit path resolves through
-      `EndConstruct`'s `entryElse = this` catch-all -- every other exit target is a specific, disjoint entry set
-      that already forces a single correct choice regardless of greedy/reluctant, so greedy and reluctant
-      necessarily produce identical results there. And under `matches()` (`requireFullMatch = true`),
-      `EndMatcherConstruct` only succeeds at `pos == regionEnd`, so a reluctant loop still has no real
-      discretion: it must consume exactly enough to reach the end, same as greedy already does.
-      But under `find()`/`lookingAt()` (`requireFullMatch = false`), `EndMatcherConstruct` succeeds
-      unconditionally the moment it's reached, at ANY position -- so a reluctant loop immediately followed by
-      nothing (top-level, or followed only by other zero-width catch-alls) genuinely SHOULD stop as soon as
-      `min` iterations are satisfied, rather than consuming greedily. Confirmed: `a+?` against `"aaaaa"` should
-      match just `"a"` via `find()`/`lookingAt()` (matching `java.util.regex`) but currently matches `"aaaaa"`
-      here. (`matches()` is unaffected either way, per above -- `a+?` still consumes all 5 there, matching the
-      JDK.)
-      - Fix sketch (needs validation before implementing): a reluctant loop's exit decision, at the point where
-        it would otherwise unconditionally continue, needs to also ask whether taking the exit path right now
-        would succeed -- which for every non-catch-all exit target is already answered by the ordinary entry-set
-        dispatch (no change needed there), but for the `EndConstruct` catch-all case specifically depends on
-        `Matcher.requireFullMatch` at match time (checking `peeked == -1`, i.e. true end of input, alone is
-        wrong: under `requireFullMatch`, the loop may legitimately need to keep consuming even mid-string, e.g.
-        if trailing pattern content after the loop still needs to reach `regionEnd` -- though note that shape
-        already requires a specific, non-catch-all exit target, which per above already forces the correct
-        iteration count regardless of greedy/reluctant, so the only remaining case to handle is the loop being
-        the last thing in the pattern). Needs care around `LoopMatcherConstruct`/`LoopMatcherExit`'s existing
-        "no per-iteration code point check" design (see design.md's "Opcode set" section) and re-verification
-        against the ambiguity-check invariants elsewhere in this file (entrySet aliasing, `entrySet`/`failedEntry`
-        as this file and design.md currently describe them) before landing -- this touches core dispatch, so it
-        deserves its own session with the differential-test suite exercised heavily, not a quick patch.
-      - Once fixed: retag the golden-corpus rows currently marked `EXPECTED_DIVERGENCE: reluctant quantifier
-        modifier is accepted but a no-op` (`grep -a "reluctant quantifier" llkpattern/src/test/resources/golden/*.tsv`)
-        -- some may already be `matches()`-mode rows that were never actually affected (leave those as `AGREES`
-        material once behavior is fixed) and some are the real bug (fix code, then re-verify those rows agree).
-        Update README's "Intentional differences" list too -- this bullet was removed from it as part of this
-        finding, since it's a bug to fix, not a design choice.
+- [ ] **BUG: a `\B`/word-boundary check near `regionEnd` can wrongly fail the whole match, not just
+      `hitEnd`.** Found while testing the reluctant-loop fix below: plain GREEDY `a+\B` against
+      `"aab"` with the region restricted to `[0,2)` (i.e. matching is confined to just `"aa"`) fails
+      to match at all here, while `java.util.regex` matches (`""`, since \B holds between the two
+      'a's and greedy backs off there once 'b' is out of the region). This is a genuine match-result
+      divergence -- unlike the `useTransparentBounds`/`hitEnd` entry just below, which is explicitly
+      only about the `hitEnd` flag, never the match result itself. Not yet root-caused; likely
+      related to the same compile-time `\b`/`\B` elision design.md's "Boundary matching" section
+      describes, interacting badly with a region boundary that isn't the true end of the underlying
+      `CharSequence`. Needs its own investigation session with a differential matrix over regions
+      (see `ReluctantQuantifierDifferentialTest`'s `regionsOf` for a starting point), since a
+      one-off fix risks being as narrow as the bug report that found it.
+      - **Downstream effect on reluctant loops**: `MatcherConstruct.exitIsPureEnd` (see design.md's
+        "Quantifier/loop compilation" section) conservatively refuses to reason about `\B`/`\b` or a
+        MULTILINE `^`/`$` as a loop's own `next`, so a reluctant loop immediately followed only by
+        one of these stays greedy even where it's genuinely satisfiable mid-run (`a+?\B` on `"aab"`
+        should stop after one `'a'`, matching `java.util.regex`, but currently consumes both --
+        pinned in `KnownDivergenceTest`). Unlike the general reluctant-loop bug this was split off
+        from (now fixed), this ISN'T inherently unfixable without runtime rollback: `\B`/`\b`/`^`/`$`
+        are side-effect-free, single-code-point-each-way checks that `ReluctantLoopGate` could
+        evaluate directly via `Matcher#peek`/`peekPrevious` instead of only asking `exitIsPureEnd`
+        about the unconditional-catch-all case -- but that's a second, separate feature on top of the
+        current gate, not attempted here, and the `\B`-near-`regionEnd` bug above should probably be
+        fixed first so the two don't get tangled together in the same differential run.
 - [ ] **Is the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence a bug or an intended divergence?**
       design.md's "Boundary matching" section notes that a `\b`/`\B` whose both neighboring characters are
       statically known gets elided at compile time (folded into a zero-width no-op, or rejected as

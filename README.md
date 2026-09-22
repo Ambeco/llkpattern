@@ -77,6 +77,14 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   multi-code-point group used in a loop (`(ab)\1?` doesn't match `"aba"`); a backreference to a single-code-point
   group (including a multi-valued one, e.g. `([ab])\1?`) isn't affected, since a mismatch there is always caught
   before anything is consumed.
+- **A pattern that can never match any input is a compile-time error**, rather than something `java.util.regex`
+  compiles successfully and then simply never matches — e.g. a nullable loop body (`(a*)*`), `a\bb` (no word
+  boundary can ever sit between two word characters), or the nonexistent-group backreferences above. Consistent
+  with the rest of this list: an unsatisfiable pattern is treated as a mistake to report, not a silent no-op.
+- **Unicode data is pinned to whichever JDK generated `UnicodePredicates`** — currently JDK 27's tables (Unicode
+  Character Database version 17.0, Unicode Consortium CLDR version 48.2; see `CLAUDE.md`'s "Regenerating
+  `UnicodePredicates.java`" note). Named classes (`\p{...}`, scripts, blocks, categories) and case folding may
+  disagree with `java.util.regex` when running on a JRE whose own Unicode version is older or newer than that.
 
 - **`CANON_EQ` is a pattern rewrite**: each base-plus-combining-marks cluster (or precomposed character) in the
   pattern becomes a group of every canonically equivalent spelling, left-factored so its branches stay unambiguous;
@@ -86,6 +94,8 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   (U+AC00 U+11A8 for U+AC01) matches here and not in the JDK; `\Q...\E` text is rewritten too; a cluster inside a
   negated, nested or range-bounding class is a compile error; error positions refer to the rewritten text.
   `LITERAL` overrides `CANON_EQ`, as in the JDK.
+
+Except for the divergences listed above, llkpattern matches the same results as JDK 27's `java.util.regex`.
 
 Not yet implemented, and gaps to close rather than design choices: `\X` (grapheme cluster). `\b{g}` is rejected rather than silently misread.
 `\N{name}` looks the name up with the platform's `Character.codePointOf` (JDK 9+, Android with a recent enough ICU), so

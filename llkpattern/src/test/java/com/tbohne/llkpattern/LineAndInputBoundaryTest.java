@@ -188,6 +188,46 @@ public class LineAndInputBoundaryTest {
     assertThat(Ll1Pattern.compile("a*\\bb").matcher("ab").matches(), is(false));
   }
 
+  // --- A greedy loop followed only by \B, or a MULTILINE ^/$, whose truth value can genuinely
+  // depend on how many iterations the loop just consumed, is ALSO a genuine LL(1) ambiguity, same
+  // family as the boundary-free "a*a" case above -- see remaining_work.md's former "\B-near-
+  // regionEnd match-result divergence"/"residual reluctant-loop-before-\B" entries (root-caused to
+  // this gap, not a regionEnd-specific bug). \b and a non-MULTILINE $ never admit a real interior
+  // exit character this way (see WordBoundaryConstruct/LineBoundaryConstruct's own
+  // admittedInteriorExitPeekSet docs), so they must keep compiling; possessive and reluctant loops
+  // are exempt too (see QuantifiableConstruct#possessive/#buildLoopMatcher) since a possessive loop
+  // never backtracks in java.util.regex either, and a reluctant loop is instead fixed at match time
+  // -- see ReluctantQuantifierDifferentialTest/KnownDivergenceTest.
+
+  @Test
+  public void greedyLoopFollowedByPositionDependentAssertionThenPureEnd_rejectedAtCompileTime() {
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a+\\B"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("\\w+\\B\\w"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?m)\\n+^"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?m)\\n+$"));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("[a!]+\\B"));
+  }
+
+  @Test
+  public void greedyLoopFollowedByAssertionThatNeverAdmitsAnInteriorExit_stillCompiles() {
+    // \b and a non-MULTILINE $ can never hold right after a body iteration that could also
+    // continue, so these must NOT be rejected.
+    assertThat(Ll1Pattern.compile("a+\\b").matcher("aa").find(), is(true));
+    assertThat(Ll1Pattern.compile("(?m)a+$").matcher("aa\n").find(), is(true));
+    assertThat(Ll1Pattern.compile("a+$").matcher("aa").find(), is(true));
+  }
+
+  @Test
+  public void possessiveAndReluctantLoopsAreExemptFromTheAssertionAmbiguityCheck() {
+    // Possessive already agrees with java.util.regex's own possessive (neither backtracks), and a
+    // reluctant loop's early exit is instead proven safe/unsafe at match time -- see
+    // MatcherConstruct#exitAssertionChain.
+    assertThat(Ll1Pattern.compile("a++\\B").matcher("aa").find(), is(false));
+    Matcher reluctant = Ll1Pattern.compile("a+?\\B").matcher("aab");
+    assertThat(reluctant.find(), is(true));
+    assertThat(reluctant.group(), is("a"));
+  }
+
   @Test
   public void boundaryInOrdinaryAlternation_stillCompilesAndMatches() {
     // A zero-width assertion as a plain union branch (not a loop's own tail) never commits any

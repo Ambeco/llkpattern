@@ -5,6 +5,8 @@ import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
 import com.tbohne.llkpattern.PatternConstruct.QuantifiedUnion;
+import java.util.ArrayList;
+import java.util.List;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
@@ -550,6 +552,22 @@ abstract class MatcherConstruct {
 	}
 
 	/**
+	 * A zero-width, side-effect-free match-time predicate for a construct that also has a full
+	 * {@code SingleDispatchingMatcherConstruct#matchBody} of its own (which additionally sets
+	 * {@code hitEnd}/{@code requireEnd} and dispatches to {@code next}) -- implemented by {@link
+	 * WordBoundaryMatcherConstruct}, {@link LineBoundaryMatcherConstruct}, and {@link
+	 * LookbehindMatcherConstruct}, the assertion types position-dependent enough that {@link
+	 * #exitAssertionChain} needs to evaluate them directly, in ADVANCE of actually committing to the
+	 * exit path they gate (see that method's own doc, and {@link ReluctantLoopMatcherConstruct}'s).
+	 * Never called from ordinary dispatch -- {@code matchBody} keeps its own independent (and
+	 * pre-existing, differentially tested) logic rather than being rewritten in terms of this, to
+	 * keep this addition isolated from that hot, already-correct path.
+	 */
+	interface ZeroWidthAssertionGuard {
+		boolean holdsHere(Matcher matcher, int peeked);
+	}
+
+	/**
 	 * {@code ^} (line begin) / {@code $} (line end): without {@code MULTILINE}, exactly {@code \A}/
 	 * {@code \Z} (see {@link #matchesEndExceptTerminator}); under {@code MULTILINE}, {@code ^} also
 	 * matches immediately after any line terminator ({@link #lineTerminatorLengthBefore}, a
@@ -557,7 +575,8 @@ abstract class MatcherConstruct {
 	 * line terminator ({@link #lineTerminatorLengthAt}). See design.md's "Boundary matching"
 	 * section.
 	 */
-	static final class LineBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class LineBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct
+			implements ZeroWidthAssertionGuard {
 		final boolean isLineBegin; // true: ^, false: $
 
 		LineBoundaryMatcherConstruct(PatternConstruct owner, boolean isLineBegin) {
@@ -596,6 +615,28 @@ abstract class MatcherConstruct {
 			}
 			return matchesHere && matchNext(matcher, peeked);
 		}
+
+		/**
+		 * As {@link #matchBody}, but only the "does ^/$ hold here" question -- no {@code hitEnd}/
+		 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
+		 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
+		 * logic.
+		 */
+		@Override
+		public boolean holdsHere(Matcher matcher, int peeked) {
+			if (isLineBegin) {
+				if ((flags & Ll1Pattern.MULTILINE) != 0 && matcher.pos == matcher.anchorEnd) {
+					return false;
+				}
+				return matcher.pos == matcher.anchorStart
+						|| ((flags & Ll1Pattern.MULTILINE) != 0
+								&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.anchorStart, matcher.anchorEnd, flags) > 0);
+			}
+			if ((flags & Ll1Pattern.MULTILINE) == 0) {
+				return matchesEndExceptTerminator(matcher, flags);
+			}
+			return matcher.pos == matcher.anchorEnd || lineTerminatorLengthAt(matcher, flags) > 0;
+		}
 	}
 
 	/**
@@ -611,7 +652,8 @@ abstract class MatcherConstruct {
 	 * constructing one of these) -- this class just interprets whichever of the two enums below ended
 	 * up not {@code Unchecked}.
 	 */
-	static final class WordBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class WordBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct
+			implements ZeroWidthAssertionGuard {
 		/** Whether {@code matchBody()} needs to independently check {@code matcher.peekPrevious()}. */
 		enum PriorWordBoundaryMatchType {
 			Unchecked,
@@ -712,6 +754,101 @@ abstract class MatcherConstruct {
 				return false;
 			}
 			return matchNext(matcher, peeked);
+		}
+
+		/**
+		 * As {@link #matchBody}, but only the "does \b/\B hold here" question -- no {@code hitEnd}/
+		 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
+		 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
+		 * logic.
+		 */
+		@Override
+		public boolean holdsHere(Matcher matcher, int peeked) {
+			int ahead = matcher.peekForBoundary();
+			if (peeked == -1 && ahead != -1) {
+				boolean boundary = isWordChar(wordSet, matcher.peekPrevious()) != isWordChar(wordSet, ahead);
+				return boundary == isWordBoundary;
+			}
+			boolean checkPrior = priorMustBeWord != PriorWordBoundaryMatchType.Unchecked
+					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
+					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;
+			boolean priorIsWord = checkPrior && isWordChar(wordSet, matcher.peekPrevious());
+			boolean checkPeek = peekMustBeWord != PeekWordBoundaryMatchType.Unchecked;
+			boolean peekIsWord = checkPeek && isWordChar(wordSet, ahead);
+
+			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
+				return false;
+			}
+			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeNonWord && priorIsWord) {
+				return false;
+			}
+			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeWord && !peekIsWord) {
+				return false;
+			}
+			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustNotBeWord && peekIsWord) {
+				return false;
+			}
+			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior && peekIsWord != priorIsWord) {
+				return false;
+			}
+			return peekMustBeWord != PeekWordBoundaryMatchType.PeekMustBeOppositePrior || peekIsWord != priorIsWord;
+		}
+	}
+
+	/**
+	 * {@code (?<=X)}/{@code (?<!X)}, restricted at parse time to a body {@code X} that always
+	 * matches exactly one code point -- see {@code PatternConstruct.LookbehindConstruct}'s own doc
+	 * and design.md's "Boundary matching" section. Unlike {@code WordBoundaryMatcherConstruct}, this
+	 * never sets {@code hitEnd}/{@code requireEnd}: it only ever looks backward via {@code
+	 * matcher.peekPrevious()}, so (unlike \b/\B, which also peeks forward) nothing about its result
+	 * can change with more input ahead. When the body was wrapped in a capturing group ({@code
+	 * captureConstructIndex >= 0}), this node "self-captures" the one code point behind {@code
+	 * matcher.pos} directly -- writing {@code captureGroups[]} itself -- rather than going through
+	 * the general {@code BeginCaptureMatcherConstruct}/{@code EndCaptureMatcherConstruct} machinery;
+	 * that's safe here specifically because the body is provably exactly one code point wide, so
+	 * there's no possibility of a partial (begin-without-end) write the way a general capturing
+	 * construct has to guard against.
+	 */
+	static final class LookbehindMatcherConstruct extends SingleDispatchingMatcherConstruct
+			implements ZeroWidthAssertionGuard {
+		final boolean isPositive; // true: (?<=X), false: (?<!X)
+		final CodePointSet lookSet;
+		final int captureConstructIndex; // -1 if the body wasn't wrapped in a capturing group
+
+		LookbehindMatcherConstruct(
+				PatternConstruct owner, boolean isPositive, CodePointSet lookSet, int captureConstructIndex) {
+			super(owner, owner.next.matcher);
+			this.isPositive = isPositive;
+			this.lookSet = lookSet;
+			this.captureConstructIndex = captureConstructIndex;
+		}
+
+		private boolean holds(int prior) {
+			return (prior != -1 && lookSet.contains(prior)) == isPositive;
+		}
+
+		@Override
+		boolean matchBody(Matcher matcher, int peeked) {
+			int prior = matcher.peekPrevious();
+			if (!holds(prior)) {
+				return false;
+			}
+			if (captureConstructIndex >= 0) {
+				int base = captureConstructIndex * 2;
+				matcher.captureGroups[base] = matcher.pos - Character.charCount(prior);
+				matcher.captureGroups[base + 1] = matcher.pos;
+			}
+			return matchNext(matcher, peeked);
+		}
+
+		/**
+		 * As {@link #matchBody}, but only the "does this lookbehind hold here" question -- no
+		 * capture-group write, no dispatch to {@code next}. See {@link ZeroWidthAssertionGuard}'s own
+		 * doc for why this duplicates rather than shares matchBody's logic.
+		 */
+		@Override
+		public boolean holdsHere(Matcher matcher, int peeked) {
+			return holds(matcher.peekPrevious());
 		}
 	}
 
@@ -846,6 +983,14 @@ abstract class MatcherConstruct {
 	 * match, undo if it fails" reluctant loop, this never runs {@link #exitNode} unless success is
 	 * already guaranteed, so none of {@code exitNode}'s side effects (resetting the loop counter,
 	 * ending an enclosing capture) ever need undoing.
+	 *
+	 * <p>{@link #exitAssertionChain} (possibly empty, possibly {@code null} -- see {@link
+	 * MatcherConstruct#exitAssertionChain}'s own doc) is this node's own extra, non-speculative
+	 * safety check for the case where {@code exitNode}'s guaranteed-success proof runs through one
+	 * or more {@code \b}/{@code \B}/{@code ^}/{@code $} assertions rather than reaching {@code End}
+	 * directly: each guard is evaluated (side-effect-free, via {@code peek}/{@code peekPrevious})
+	 * BEFORE this node commits to the exit, so a false result here just means try again -- continue
+	 * greedily like any other not-yet-provable-safe iteration, never a rollback of anything.
 	 */
 	static final class ReluctantLoopMatcherConstruct extends MatcherConstruct {
 		final int quantifiableIndex;
@@ -853,16 +998,19 @@ abstract class MatcherConstruct {
 		final int shiftedMax;
 		final PatternConstruct continuation;
 		final MatcherConstruct exitNode;
+		final @Nullable List<ZeroWidthAssertionGuard> exitAssertionChain;
 
 		ReluctantLoopMatcherConstruct(
 				PatternConstruct owner, int quantifiableIndex, int shiftedMin, int shiftedMax,
-				PatternConstruct continuation, MatcherConstruct exitNode) {
+				PatternConstruct continuation, MatcherConstruct exitNode,
+				@Nullable List<ZeroWidthAssertionGuard> exitAssertionChain) {
 			super(owner);
 			this.quantifiableIndex = quantifiableIndex;
 			this.shiftedMin = shiftedMin;
 			this.shiftedMax = shiftedMax;
 			this.continuation = continuation;
 			this.exitNode = exitNode;
+			this.exitAssertionChain = exitAssertionChain;
 		}
 
 		@Override
@@ -872,22 +1020,37 @@ abstract class MatcherConstruct {
 			// shiftedMin/shiftedMax corrects for).
 			int count = ++matcher.quantifiableCounts[quantifiableIndex];
 			// Under requireFullMatch (matches()), exiting is still safe once pos already reached
-			// regionEnd -- exitIsPureEnd(next) already guarantees the rest of the pattern needs no
-			// further input, so if there's none left to require, stopping here is exactly what a
-			// backtracking engine's reluctant loop does too, and (unlike letting the body run one more,
-			// doomed attempt) avoids spuriously peeking past the end and setting Matcher#hitEnd. This
-			// condition, if true, is checked BEFORE the ordinary max comparison below on purpose: since
-			// min <= max always holds (so shiftedMin <= shiftedMax too), whenever count has already
-			// reached shiftedMax this condition is either already true (exit either way) or blocked
-			// only by requireFullMatch/regionEnd, in which case the max comparison below forces exactly
-			// the same exitNode call anyway -- so the two branches always agree on the max-reached case,
-			// and checking this one first just lets a reluctant loop stop before max when it can.
-			if (count >= shiftedMin && (!matcher.requireFullMatch || matcher.pos == matcher.regionEnd)) {
+			// regionEnd -- exitAssertionChain(next) already guarantees the rest of the pattern needs no
+			// further input once its own guards (if any) hold, so if there's none left to require,
+			// stopping here is exactly what a backtracking engine's reluctant loop does too, and (unlike
+			// letting the body run one more, doomed attempt) avoids spuriously peeking past the end and
+			// setting Matcher#hitEnd. This condition, if true, is checked BEFORE the ordinary max
+			// comparison below on purpose: since min <= max always holds (so shiftedMin <= shiftedMax
+			// too), whenever count has already reached shiftedMax this condition is either already true
+			// (exit either way) or blocked only by requireFullMatch/regionEnd/an unsatisfied assertion
+			// guard, in which case the max comparison below forces exactly the same exitNode call anyway
+			// (which then independently re-derives and correctly fails on the same unsatisfied guard, if
+			// that's what's blocking) -- so the two branches always agree on the max-reached case, and
+			// checking this one first just lets a reluctant loop stop before max when it can.
+			if (count >= shiftedMin && (!matcher.requireFullMatch || matcher.pos == matcher.regionEnd)
+					&& assertionChainHolds(matcher, peeked)) {
 				return exitNode.match(matcher, peeked);
 			}
 			return count < shiftedMax
 					? continuation.matcher.match(matcher, peeked)
 					: exitNode.match(matcher, peeked);
+		}
+
+		private boolean assertionChainHolds(Matcher matcher, int peeked) {
+			if (exitAssertionChain == null) {
+				return true;
+			}
+			for (ZeroWidthAssertionGuard guard : exitAssertionChain) {
+				if (!guard.holdsHere(matcher, peeked)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		@VisibleForTesting
@@ -896,18 +1059,34 @@ abstract class MatcherConstruct {
 
 	/**
 	 * Conservative check for whether {@code node} is a zero-width path that unconditionally reaches
-	 * {@link EndMatcherConstruct} without depending on the next input code point -- i.e. whether
-	 * taking it right now is guaranteed to succeed (modulo {@code requireFullMatch}, which the caller
-	 * checks separately). Used only when deciding whether to build a {@link
-	 * ReluctantLoopMatcherConstruct} (instead of a plain {@link LoopMatcherConstruct}) for a
-	 * reluctant loop, i.e. whether its exit path is safe to try eagerly instead of always continuing
-	 * greedily. Deliberately conservative -- returns {@code false} (rather than trying to reason
-	 * further) for anything not provably safe, such as a zero-width assertion ({@code $}, {@code
-	 * \b}), a lookaround, or another loop that isn't a guaranteed no-op: a false negative here just
-	 * leaves that shape greedy, this engine's existing (correct-for-{@code matches()}) default,
-	 * never wrong.
+	 * {@link EndMatcherConstruct} without depending on the next input code point (the empty-chain
+	 * case) OR reaches it after only a chain of {@code \b}/{@code \B}/{@code ^}/{@code $}/lookbehind
+	 * zero-width assertions (the non-empty-chain case) -- i.e. whether taking it right now, or right after
+	 * those assertions independently check out, is guaranteed to succeed (modulo {@code
+	 * requireFullMatch}, which the caller checks separately). Used only when deciding whether to
+	 * build a {@link ReluctantLoopMatcherConstruct} (instead of a plain {@link
+	 * LoopMatcherConstruct}) for a reluctant loop, i.e. whether its exit path is safe to try eagerly
+	 * instead of always continuing greedily -- see that class's own doc for how the returned chain
+	 * is then evaluated at match time, via {@link ZeroWidthAssertionGuard#holdsHere}, BEFORE
+	 * actually committing to the exit ({@code exitNode} in {@link ReluctantLoopMatcherConstruct}),
+	 * never speculatively: design.md's "Speculative reluctant-loop exit with rollback" alternative
+	 * explains why check-then-commit is safe here where a genuinely speculative try/roll-back
+	 * wouldn't be.
+	 *
+	 * <p>Deliberately conservative -- returns {@code null} (rather than trying to reason further)
+	 * for anything not provably safe, such as a lookaround or another loop that isn't a guaranteed
+	 * no-op, or an assertion type other than the four handled below (e.g. {@code \A}/{@code \z}/
+	 * {@code \Z}, whose own admission at an interior exit position isn't analyzed here -- out of
+	 * scope for now, see remaining_work.md): a {@code null} result here just leaves that shape
+	 * greedy, this engine's existing (correct-for-{@code matches()}) default, never wrong.
 	 */
-	static boolean exitIsPureEnd(MatcherConstruct node) {
+	static @Nullable List<ZeroWidthAssertionGuard> exitAssertionChain(MatcherConstruct node) {
+		List<ZeroWidthAssertionGuard> chain = new ArrayList<>();
+		return collectExitAssertionChain(node, chain) ? chain : null;
+	}
+
+	private static boolean collectExitAssertionChain(
+			MatcherConstruct node, List<ZeroWidthAssertionGuard> chain) {
 		// Checked FIRST, before any type-specific case below: a chain-candidate node's own entrySet
 		// (e.g. the head of a following `b?`'s own body, OR a PassThroughMatcherConstruct standing in
 		// for a gated owner -- see aliasOrPassThrough) always takes precedence over what that node
@@ -924,23 +1103,38 @@ abstract class MatcherConstruct {
 		// lets this see past an intervening optional part (`a+?b?`, `[ab]+?c?`) to the real zero-width
 		// tail beyond it.
 		if (node.entrySet != null) {
-			return node.failedEntry != null && exitIsPureEnd(node.failedEntry);
+			return node.failedEntry != null && collectExitAssertionChain(node.failedEntry, chain);
 		}
 		if (node instanceof EndMatcherConstruct) {
 			return true;
 		}
 		if (node instanceof EndCaptureMatcherConstruct) {
-			return exitIsPureEnd(((EndCaptureMatcherConstruct) node).next);
+			return collectExitAssertionChain(((EndCaptureMatcherConstruct) node).next, chain);
 		}
 		if (node instanceof PassThroughMatcherConstruct) {
-			return exitIsPureEnd(((PassThroughMatcherConstruct) node).next);
+			return collectExitAssertionChain(((PassThroughMatcherConstruct) node).next, chain);
 		}
 		if (node instanceof LoopMatcherExit) {
 			LoopMatcherExit exit = (LoopMatcherExit) node;
-			return exit.minIsZero && exitIsPureEnd(exit.next);
+			return exit.minIsZero && collectExitAssertionChain(exit.next, chain);
 		}
 		if (node instanceof ReluctantLoopMatcherConstruct) {
-			return exitIsPureEnd(((ReluctantLoopMatcherConstruct) node).exitNode);
+			return collectExitAssertionChain(((ReluctantLoopMatcherConstruct) node).exitNode, chain);
+		}
+		if (node instanceof WordBoundaryMatcherConstruct) {
+			WordBoundaryMatcherConstruct wb = (WordBoundaryMatcherConstruct) node;
+			chain.add(wb);
+			return collectExitAssertionChain(wb.next, chain);
+		}
+		if (node instanceof LineBoundaryMatcherConstruct) {
+			LineBoundaryMatcherConstruct lb = (LineBoundaryMatcherConstruct) node;
+			chain.add(lb);
+			return collectExitAssertionChain(lb.next, chain);
+		}
+		if (node instanceof LookbehindMatcherConstruct) {
+			LookbehindMatcherConstruct lb = (LookbehindMatcherConstruct) node;
+			chain.add(lb);
+			return collectExitAssertionChain(lb.next, chain);
 		}
 		return false;
 	}

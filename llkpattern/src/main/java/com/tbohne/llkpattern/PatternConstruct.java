@@ -513,6 +513,13 @@ abstract class PatternConstruct {
 		// makes the greedy/possessive choice unobservable (nothing to backtrack into), so possessive
 		// syntax is accepted purely for compatibility, not compiled differently.
 		boolean reluctant = false;
+		// Set by PatternParser#parseQuantifiable when a trailing '+' follows the quantifier itself
+		// (e.g. "a++"). Unlike reluctant, this doesn't change buildLoopMatcher's own matcher graph --
+		// see `reluctant`'s doc above -- but it DOES exempt the loop from the zero-width-assertion
+		// ambiguity check buildLoopMatcher runs for plain greedy syntax (see that method's own doc):
+		// java.util.regex's possessive quantifier never backtracks either, so this engine's
+		// always-non-backtracking compilation already agrees with it, with nothing to reject.
+		boolean possessive = false;
 
 		QuantifiableConstruct(String pattern, int startIndex) {
 			super(startIndex);
@@ -650,8 +657,15 @@ abstract class PatternConstruct {
 			// helper that compiles as a side effect. `next` is included as `extra` so this also
 			// validates that no body part is ambiguous with `next` itself, needed on every re-check,
 			// not just the min==0 entry case buildLoopEntryMap already validated.
+			// Plain greedy only (never reluctant or possessive -- see skipZeroWidthEntrySet's own
+			// `checkAssertions` doc): computing bodyLastCharSet is wasted work for the other two cases,
+			// since skipZeroWidthEntrySet(..., false, ...) never reads it.
+			boolean checkAssertionAmbiguity = !reluctant && !possessive;
+			CodePointSet bodyLastCharSet = checkAssertionAmbiguity ? unionLastCharSet(body) : null;
 			CodePointSet[] gates =
-					checkDisjoint(pattern, flags, body, next, skipZeroWidthEntrySet(next), "loop part");
+					checkDisjoint(pattern, flags, body, next,
+							skipZeroWidthEntrySet(next, checkAssertionAmbiguity, bodyLastCharSet),
+							"loop part");
 
 			// Reuses the SAME LoopBackMarker (and, when capturing, the same wrapping CaptureEndMarker)
 			// buildLoopEntryMap already handed to each body part as `next` -- see loopBodyTarget()'s own
@@ -669,7 +683,9 @@ abstract class PatternConstruct {
 			// slot counts VISITS, not completed iterations, and LoopMatcherExit's `min` check (reached
 			// directly via the body's own failedEntry, bypassing the marker-owned node entirely) has to
 			// agree on that same shifted meaning to stay consistent.
-			boolean reluctantSafe = reluctant && MatcherConstruct.exitIsPureEnd(next.matcher);
+			@Nullable List<MatcherConstruct.ZeroWidthAssertionGuard> exitAssertionChain =
+					reluctant ? MatcherConstruct.exitAssertionChain(next.matcher) : null;
+			boolean reluctantSafe = exitAssertionChain != null;
 			int shiftedMin = plusOneCapped(min);
 			int shiftedMax = plusOneCapped(max);
 			LoopMatcherExit exitNode = new LoopMatcherExit(
@@ -685,7 +701,8 @@ abstract class PatternConstruct {
 			continueMarker.flags = flags;
 			MatcherConstruct loopNode = reluctantSafe
 					? new MatcherConstruct.ReluctantLoopMatcherConstruct(
-							marker, quantifiableIndex, shiftedMin, shiftedMax, continueMarker, exitNode)
+							marker, quantifiableIndex, shiftedMin, shiftedMax, continueMarker, exitNode,
+							exitAssertionChain)
 					: new LoopMatcherConstruct(marker, quantifiableIndex, max, continueMarker, exitNode);
 
 			if (capturing) {
@@ -1416,6 +1433,50 @@ abstract class PatternConstruct {
 		void buildMatcher() {
 			new LineBoundaryMatcherConstruct(this, isLineBegin);
 		}
+
+		/**
+		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s
+		 * {@code checkAssertions} doc, and only ever consulted there under {@code MULTILINE} (a
+		 * non-MULTILINE ^/$ only ever holds at the true input edges, never at an interior loop-exit
+		 * position, so the caller never needs this otherwise). {@code $} holds whenever the PEEK
+		 * character itself is a line terminator, regardless of what the loop body's last-consumed
+		 * character was, so its admitted set is exactly the terminator-starting code points,
+		 * unconditionally. {@code ^} holds whenever the PRIOR character was a line terminator,
+		 * regardless of peek, so its admitted set is "any code point" whenever the body could
+		 * plausibly have just consumed one, and empty (no interior exit possible via ^) otherwise;
+		 * returns {@code null} ("not statically known") when {@code bodyLastCharSet} itself is
+		 * {@code null}, same safe fallback {@code WordBoundaryConstruct}'s own version uses.
+		 */
+		static @Nullable CodePointSet admittedInteriorExitPeekSet(
+				boolean isLineBegin, @Nullable CodePointSet bodyLastCharSet, int flags) {
+			CodePointSet terminatorStarts = lineTerminatorStartCodePoints(flags);
+			if (!isLineBegin) {
+				return terminatorStarts;
+			}
+			if (bodyLastCharSet == null) {
+				return null;
+			}
+			return bodyLastCharSet.intersects(terminatorStarts) ? universalCodePointSet() : null;
+		}
+
+		/**
+		 * The code points that can BEGIN a line terminator (matching {@code MatcherConstruct}'s own
+		 * runtime {@code lineTerminatorLengthAt}/{@code lineTerminatorLengthBefore} scans, honoring
+		 * {@code UNIX_LINES}) -- sufficient for a single-code-point admitted-peek-set check, since
+		 * every terminator this engine recognizes ({@code \n}, {@code \r}, {@code "\r\n"} as one
+		 * unit, {@code \u0085}, {@code  }, {@code  }) is uniquely identified by its own
+		 * first code point.
+		 */
+		private static CodePointSet lineTerminatorStartCodePoints(int flags) {
+			MutableCodePointSet result = new ArrayCodePointSet();
+			result.add('\n', '\n' + 1);
+			result.add('\r', '\r' + 1);
+			if ((flags & Ll1Pattern.UNIX_LINES) == 0) {
+				result.add(0x0085, 0x0086);
+				result.add(0x2028, 0x202A);
+			}
+			return result;
+		}
 	}
 
 	/**
@@ -1479,6 +1540,34 @@ abstract class PatternConstruct {
 				return Wordness.NON_WORD;
 			}
 			return Wordness.UNKNOWN;
+		}
+
+		/**
+		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s
+		 * {@code checkAssertions} doc. The set of peek code points for which a \b/\B sitting right
+		 * after a loop body could hold, given that the body's own last-consumed character is
+		 * somewhere in {@code bodyLastCharSet} -- i.e. the code points an interior exit through this
+		 * assertion could be ambiguous with the loop simply continuing on. Returns {@code null}
+		 * ("not statically known", same safe fallback as {@code lastCharSet}/{@code classify}) only
+		 * when {@code bodyLastCharSet} itself is {@code null}; a non-null but WORD-ness-mixed
+		 * {@code bodyLastCharSet} still resolves, to {@link PatternConstruct#universalCodePointSet}
+		 * (since some prior character in it always matches whatever word-ness the peek character
+		 * has, \b/\B can then hold for ANY peek).
+		 */
+		static @Nullable CodePointSet admittedInteriorExitPeekSet(
+				boolean isWordBoundary, @Nullable CodePointSet bodyLastCharSet, int flags) {
+			if (bodyLastCharSet == null) {
+				return null;
+			}
+			CodePointSet wordSet = RegexCharacterClass.w.get(flags);
+			Wordness prior = classify(bodyLastCharSet, wordSet);
+			if (prior == Wordness.UNKNOWN) {
+				return universalCodePointSet();
+			}
+			// Same "wantsWordPeek" formula buildMatcher() uses for its own statically-known-prior case.
+			boolean priorIsWord = prior == Wordness.WORD;
+			boolean wantsWordPeek = isWordBoundary != priorIsWord;
+			return wantsWordPeek ? wordSet : wordSet.complement();
 		}
 
 		@Override
@@ -1549,6 +1638,148 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * {@code (?<=X)}/{@code (?<!X)}, restricted to a body {@code X} that always matches exactly one
+	 * code point -- a direct generalization of {@code \b}/{@code \B}'s own single-code-point {@code
+	 * peekPrevious()} check (see design.md's "Boundary matching" section); wider lookbehind, and any
+	 * lookahead, are permanently out of scope (can't be evaluated in O(1) per position). {@code
+	 * lookSet} and {@code captureConstructIndex} are both fully resolved at parse time by {@link
+	 * #resolveSingleCodePointBody} -- unlike {@code WordBoundaryConstruct}, there's no neighbor
+	 * context to wait for, so this construct needs no {@code buildEntryMap}-time classification step.
+	 */
+	static final class LookbehindConstruct extends PatternConstruct {
+		final String pattern;
+		final boolean isPositive; // true: (?<=X), false: (?<!X)
+		final CodePointSet lookSet;
+		final int captureConstructIndex; // -1 if the body wasn't wrapped in a capturing group
+
+		LookbehindConstruct(
+				String pattern, int startIndex, int endIndex, boolean isPositive,
+				CodePointSet lookSet, int captureConstructIndex) {
+			super(startIndex, endIndex);
+			this.pattern = pattern;
+			this.isPositive = isPositive;
+			this.lookSet = lookSet;
+			this.captureConstructIndex = captureConstructIndex;
+		}
+
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			entryElse = this;
+		}
+
+		@Override
+		void buildMatcher() {
+			// Always a real check -- unlike \b/\B, there's no "peek" side to statically classify
+			// away: the previous character is never known at compile time, so this never collapses
+			// to a no-op or a compile-time error the way WordBoundaryConstruct sometimes does.
+			new MatcherConstruct.LookbehindMatcherConstruct(this, isPositive, lookSet, captureConstructIndex);
+		}
+
+		/** The result of {@link #resolveSingleCodePointBody}: the body's statically-known
+		 *  code point set, plus which capturing group (if any) wraps the whole body. */
+		static final class SingleCodePointBody {
+			final CodePointSet codePoints;
+			final int captureConstructIndex; // -1 if none
+
+			SingleCodePointBody(CodePointSet codePoints, int captureConstructIndex) {
+				this.codePoints = codePoints;
+				this.captureConstructIndex = captureConstructIndex;
+			}
+		}
+
+		/**
+		 * Statically resolves a lookbehind body to "always matches exactly one code point, optionally
+		 * wrapped in a single capturing group around the whole body" -- or {@code null} if it doesn't
+		 * (e.g. more than one code point wide, optional/repeated, or more than one capturing group).
+		 * Same recursive shape as {@link #lastCharSet}/{@link #firstCharSet} but stricter (needs total
+		 * width exactly 1, not just "last/first character known") and threads a capture index too.
+		 */
+		static @Nullable SingleCodePointBody resolveSingleCodePointBody(PatternConstruct pc) {
+			if (pc instanceof LiteralString) {
+				CharSequence value = ((LiteralString) pc).value;
+				if (Character.codePointCount(value, 0, value.length()) != 1) {
+					return null;
+				}
+				MutableCodePointSet set = new ArrayCodePointSet();
+				set.add(Character.codePointAt(value, 0));
+				// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
+				// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
+				// UNICODE_CASE, exactly like LiteralString.buildEntryMap's own entryMap.
+				return new SingleCodePointBody(MatcherConstruct.foldedEntrySet(set, pc.flags), -1);
+			}
+			if (pc instanceof ComplexCharacter) {
+				return new SingleCodePointBody(((ComplexCharacter) pc).validRanges(), -1);
+			}
+			if (pc instanceof ComplexQuantifiedCharacter) {
+				ComplexQuantifiedCharacter cqc = (ComplexQuantifiedCharacter) pc;
+				return cqc.min == 1 && cqc.max == 1
+						? new SingleCodePointBody(cqc.delegate.validRanges(), -1)
+						: null;
+			}
+			if (pc instanceof QuantifiedUnion) {
+				QuantifiedUnion union = (QuantifiedUnion) pc;
+				if (union.min != 1 || union.max != 1 || union.constructs.isEmpty()) {
+					return null;
+				}
+				boolean isCapturing = union.captureConstructIndex >= 0;
+				if (union.constructs.size() == 1) {
+					SingleCodePointBody inner = resolveSingleCodePointBody(union.constructs.get(0));
+					if (inner == null) {
+						return null;
+					}
+					if (!isCapturing) {
+						return inner;
+					}
+					// A capturing group can't itself wrap another capturing group here -- there's only
+					// one code point behind this position for at most one group to claim.
+					return inner.captureConstructIndex == -1
+							? new SingleCodePointBody(inner.codePoints, union.captureConstructIndex)
+							: null;
+				}
+				// A real alternation: every branch must resolve with no capturing group of its own --
+				// only the whole alternation (via an enclosing capturing group on this union) may
+				// capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
+				MutableCodePointSet result = new ArrayCodePointSet();
+				for (PatternConstruct branch : union.constructs) {
+					SingleCodePointBody inner = resolveSingleCodePointBody(branch);
+					if (inner == null || inner.captureConstructIndex != -1) {
+						return null;
+					}
+					result.addAll(inner.codePoints);
+				}
+				return new SingleCodePointBody(result, union.captureConstructIndex);
+			}
+			if (pc instanceof Sequence) {
+				List<PatternConstruct> patterns = ((Sequence) pc).patterns;
+				return patterns.size() == 1 ? resolveSingleCodePointBody(patterns.get(0)) : null;
+			}
+			return null;
+		}
+
+		/**
+		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s {@code
+		 * checkAssertions} doc, and {@code WordBoundaryConstruct#admittedInteriorExitPeekSet}'s own
+		 * doc for why the coarse catch-all entry point ({@code entryElse = this}) isn't safe for a
+		 * loop's own continue-vs-exit ambiguity check. Simpler than that method's version: a
+		 * lookbehind's truth depends ONLY on the prior character, never on peek at all, so once {@code
+		 * bodyLastCharSet} shows this assertion COULD hold right after a body iteration, exiting
+		 * through it is ambiguous with continuing for literally every peek code point; otherwise it
+		 * contributes nothing.
+		 */
+		static @Nullable CodePointSet admittedInteriorExitPeekSet(
+				boolean isPositive, CodePointSet lookSet, @Nullable CodePointSet bodyLastCharSet) {
+			if (bodyLastCharSet == null) {
+				return null;
+			}
+			// first(), not entrySet(), so a violation short-circuits -- same technique as
+			// WordBoundaryConstruct's own isSubsetOf/isDisjointFrom helpers.
+			boolean subsetOfLookSet = !bodyLastCharSet.first((min, max) -> !lookSet.containsAll(min, max));
+			boolean couldHold = isPositive ? bodyLastCharSet.intersects(lookSet) : !subsetOfLookSet;
+			return couldHold ? universalCodePointSet() : new ArrayCodePointSet();
+		}
+	}
+
+	/**
 	 * The set of code points that could be the LAST one consumed if {@code pc} matches here, if
 	 * that's statically known regardless of runtime input -- used by WordBoundaryConstruct's \b/\B
 	 * compile-time optimization (see design.md's "Boundary matching" section) to classify the
@@ -1602,6 +1833,42 @@ abstract class PatternConstruct {
 		return result;
 	}
 
+	/** Every code point -- used by the {@code admittedInteriorExitPeekSet} methods below for the
+	 *  "any peek could be ambiguous" case (e.g. a loop body with both word and non-word last
+	 *  characters, against \b/\B). */
+	static CodePointSet universalCodePointSet() {
+		MutableCodePointSet result = new ArrayCodePointSet();
+		result.add(0, CodePointSet.MAX_CODE_POINT + 1);
+		return result;
+	}
+
+	private static CodePointSet union(CodePointSet a, CodePointSet b) {
+		MutableCodePointSet result = new ArrayCodePointSet();
+		result.addAll(a);
+		result.addAll(b);
+		return result;
+	}
+
+	/**
+	 * The union of {@link #lastCharSet} over every candidate in a loop's own {@code body} list, or
+	 * {@code null} if any candidate's own last-character set isn't statically known -- used only by
+	 * {@code QuantifiableConstruct.buildLoopMatcher}'s greedy-loop zero-width-assertion ambiguity
+	 * check (see {@link #skipZeroWidthEntrySet}'s {@code checkAssertions} doc). Deliberately
+	 * all-or-nothing (one unknown candidate gives up entirely, rather than unioning what the KNOWN
+	 * candidates contribute) -- same conservative-fallback philosophy as {@code lastCharSet} itself.
+	 */
+	private static @Nullable CodePointSet unionLastCharSet(List<PatternConstruct> body) {
+		MutableCodePointSet result = new ArrayCodePointSet();
+		for (PatternConstruct part : body) {
+			CodePointSet partLast = lastCharSet(part);
+			if (partLast == null) {
+				return null;
+			}
+			result.addAll(partLast);
+		}
+		return result;
+	}
+
 	/**
 	 * The set of code points that could be the FIRST one consumed if {@code pc} matches here, if
 	 * that's statically known regardless of runtime input -- the mirror image of {@link
@@ -1636,22 +1903,73 @@ abstract class PatternConstruct {
 	 * #getEntryPointMap()} -- safe against the one real cycle this engine has (a loop nested in this
 	 * loop's own tail), since recursion here only ever continues through unquantified, non-looping
 	 * AST shapes.
+	 *
+	 * <p>{@code checkAssertions} (when {@code true}, with {@code bodyLastCharSet} the union of
+	 * {@code lastCharSet()} over the loop's own body candidates, or {@code null} if that's not
+	 * statically known) additionally unions in whatever code points a {@code \b}/{@code \B}/
+	 * {@code MULTILINE ^}/{@code MULTILINE $} passed through could themselves admit at an INTERIOR
+	 * exit -- i.e. right after one more body iteration, not just once the whole tail is otherwise
+	 * forced. Plain seeing-through (the {@code false} case above) is exactly right for the "what
+	 * does the tail eventually require" question, but these four assertion types are
+	 * position-dependent (their truth value depends on which character the loop body just
+	 * consumed), so treating them as a low-priority catch-all -- correct for the "what does the
+	 * tail eventually require" question the {@code false} case answers -- misses that exiting
+	 * through them can ALSO be valid at exactly the same code points the body would keep consuming
+	 * on (e.g. {@code a+\B}: after consuming an 'a', \B holds precisely when the next 'a' is also
+	 * there, since a word character never differs in word-ness from another word character -- see
+	 * {@code WordBoundaryConstruct#admittedInteriorExitPeekSet}/{@code
+	 * LineBoundaryConstruct#admittedInteriorExitPeekSet}). Only used for a plain greedy loop's own
+	 * check (never reluctant, whose early exit is instead proven safe/unsafe at MATCH time by
+	 * {@code MatcherConstruct#exitAssertionChain}, and never possessive, which -- like
+	 * {@code java.util.regex}'s own possessive quantifier -- never backtracks either, so this
+	 * engine's already-non-backtracking compilation can't newly disagree with it) -- see
+	 * {@code QuantifiableConstruct#buildLoopMatcher}.
 	 */
-	private static CodePointSet skipZeroWidthEntrySet(PatternConstruct pc) {
-		if (pc instanceof BoundaryConstruct || pc instanceof LineBoundaryConstruct
-				|| pc instanceof WordBoundaryConstruct) {
-			return skipZeroWidthEntrySet(pc.next);
+	private static CodePointSet skipZeroWidthEntrySet(
+			PatternConstruct pc, boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		if (pc instanceof WordBoundaryConstruct) {
+			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
+			if (!checkAssertions) {
+				return rest;
+			}
+			CodePointSet admitted = WordBoundaryConstruct.admittedInteriorExitPeekSet(
+					((WordBoundaryConstruct) pc).isWordBoundary, bodyLastCharSet, pc.flags);
+			return admitted == null ? rest : union(rest, admitted);
+		}
+		if (pc instanceof LineBoundaryConstruct) {
+			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
+			if (!checkAssertions || (pc.flags & Ll1Pattern.MULTILINE) == 0) {
+				return rest;
+			}
+			CodePointSet admitted = LineBoundaryConstruct.admittedInteriorExitPeekSet(
+					((LineBoundaryConstruct) pc).isLineBegin, bodyLastCharSet, pc.flags);
+			return admitted == null ? rest : union(rest, admitted);
+		}
+		if (pc instanceof BoundaryConstruct) {
+			return skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
+		}
+		if (pc instanceof LookbehindConstruct) {
+			LookbehindConstruct lb = (LookbehindConstruct) pc;
+			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
+			if (!checkAssertions) {
+				return rest;
+			}
+			CodePointSet admitted =
+					LookbehindConstruct.admittedInteriorExitPeekSet(lb.isPositive, lb.lookSet, bodyLastCharSet);
+			return admitted == null ? rest : union(rest, admitted);
 		}
 		if (pc instanceof Sequence) {
 			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
-			return patterns.isEmpty() ? pc.getEntryPointMap() : skipZeroWidthEntrySet(patterns.get(0));
+			return patterns.isEmpty()
+					? pc.getEntryPointMap()
+					: skipZeroWidthEntrySet(patterns.get(0), checkAssertions, bodyLastCharSet);
 		}
 		if (pc instanceof QuantifiedUnion && ((QuantifiedUnion) pc).isUnquantified()) {
 			List<PatternConstruct> constructs = ((QuantifiedUnion) pc).constructs;
 			if (!constructs.isEmpty()) {
 				MutableCodePointSet result = new ArrayCodePointSet();
 				for (PatternConstruct branch : constructs) {
-					result.addAll(skipZeroWidthEntrySet(branch));
+					result.addAll(skipZeroWidthEntrySet(branch, checkAssertions, bodyLastCharSet));
 				}
 				return result;
 			}

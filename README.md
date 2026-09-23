@@ -1,6 +1,6 @@
 # llkpattern
 
-A regex-like pattern matching library that exists to trade away backtracking, lookahead, and lookbehind — regex features that are real but uncommonly used — for significantly faster, lower-memory matching, particularly on Android, by compiling patterns using LL(1) parsing techniques instead.
+A regex-like pattern matching library that exists to trade away backtracking, lookahead, and general lookbehind — regex features that are real but uncommonly used — for significantly faster, lower-memory matching, particularly on Android, by compiling patterns using LL(1) parsing techniques instead.
 
 ## 1. Overview
 
@@ -22,16 +22,24 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   start with the same character, `Ll1Pattern.compile` throws `PatternSyntaxException` instead of backtracking.
   `a|ab`, `(aaa)?aaa`, `.+b` and `a(b){4,5}b` are rejected; `a(b){4,5}c` and `a|b` are fine. Under
   `CASE_INSENSITIVE`, branches are compared after case folding, so `(?i:a|A)` and `(?i:[a-z]+)X` are rejected too.
-  This one constraint (a single, committed position with only a one-code-point look ahead/behind — see design.md)
-  is also the underlying reason for the next two entries:
-  - **Lookbehind of more than one code point, and all lookaheads, are rejected — a side effect of the same
-    constraint.** Neither is implemented yet; both currently throw `PatternSyntaxException` at parse time.
-    General lookahead, and lookbehind longer than one code point, will continue to be rejected permanently:
-    matching here is driven entirely by a single, committed position with only a one-code-point look
-    ahead/behind, so anything requiring a longer look before committing to a branch is out of scope by design,
-    not merely unimplemented. A lookbehind of exactly one code point (`(?<=x)`/`(?<!x)`) is planned, as a direct
-    generalization of the one-code-point-back check `\b`/`\B` already do; lookahead has no equivalent carve-out
-    and stays permanently rejected in every form.
+  This also covers a GREEDY loop followed only by `\b`/`\B`/a `MULTILINE` `^`/`$`/a 1-codepoint lookbehind whose
+  truth value depends on how many iterations the loop just consumed — e.g. `a+\B` (`\B` holds right after any
+  `a`, exactly when the loop could also keep consuming) and `(?m)\n+^` are rejected, since a backtracking engine's
+  own greedy loop would retry with fewer iterations there in a way this engine's non-backtracking one can't;
+  `a+\b` and `(?m)a+$` still compile, since those two never actually admit an interior exit this way; `a+(?<=a)b`
+  is rejected the same way `a+\B` is, while `a+(?<!a)b` compiles (the assertion can never hold right after
+  consuming an `a`, so there's no real ambiguity). A possessive loop (`a++\B`) is exempt — it already agrees with
+  `java.util.regex`'s own non-backtracking possessive — and so is a reluctant loop (`a+?\B`), whose early exit is
+  instead resolved correctly at match time (see design.md's "Quantifier/loop compilation" section). This one
+  constraint (a single, committed position with only a one-code-point look ahead/behind — see design.md) is also
+  the underlying reason for the next entry:
+  - **Lookahead, and lookbehind of more than one code point, are rejected — a side effect of the same
+    constraint.** Matching here is driven entirely by a single, committed position with only a one-code-point look
+    ahead/behind, so anything requiring a longer look before committing to a branch is out of scope by design, not
+    merely unimplemented; both throw `PatternSyntaxException` at parse time. A lookbehind of exactly one code
+    point (`(?<=x)`/`(?<!x)`, optionally wrapped in one capturing group, e.g. `(?<=(x))`) IS supported, as a
+    direct generalization of the one-code-point-back check `\b`/`\B` already do; lookahead has no equivalent
+    carve-out and stays permanently rejected in every form.
   - **A multi-character loop body that matches part of itself, then fails, is not retried with fewer iterations —
     a side effect of the same constraint.** E.g. `(ab)+` finds nothing in `"abac"` where `java.util.regex` finds
     `"ab"`, since there's no way to un-consume the `a` already read while checking the failed second iteration.
@@ -118,14 +126,6 @@ construct (`^*a`, `\b+a`) is accepted and folded away.
 
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
-- **1-codepoint lookbehind is planned**; general lookahead/lookbehind is permanently out of scope (see "Intentional
-  differences" above).
-- **BUG: a reluctant loop immediately followed only by `\B`/`\b`/a `MULTILINE` `^`/`$` stays greedy** even where
-  that assertion is genuinely satisfiable before the true end of input — e.g. `a+?\B` should stop after one `a`
-  via `find()`, matching `java.util.regex`, but currently consumes more. Every other reluctant-loop shape already
-  matches `java.util.regex` (see design.md's "Quantifier/loop compilation" section); this is the one gap left, and
-  isn't inherently unfixable (these checks are side-effect-free and single-code-point) — see remaining_work.md for
-  the fix sketch and a related, more general `\B`-near-`regionEnd` match-result bug found while testing this.
 - **Whether the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence (design.md's "Boundary matching"
   section) is an acceptable, permanent consequence of the compile-time `\b`/`\B` elision, or a bug to fix** — not
   yet analyzed in depth; see remaining_work.md.

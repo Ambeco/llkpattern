@@ -2918,3 +2918,41 @@ Notes to self about how to work on this project, and other context that doesn't 
   reluctant-safe loop's now-shifted `LoopMatcherExit.min` directly instead of its true value
   (`a+?b*?` on `"aa"` regressed to `[0,2)` instead of `[0,1)`) -- fixed with a separate
   `minIsZero` field. See design.md's "Alternatives Considered" for the rejected two-node design.
+
+- **2026-09-23: fixed the two residual `\b`/`\B`/MULTILINE-`^`/`$` divergences from 2026-09-22**
+  (the "`\B`-near-`regionEnd` match-result bug" and "reluctant loop stays greedy" remaining_work.md
+  entries). Root cause was the SAME for both, and not `regionEnd`-specific as first suspected: a
+  loop's continue-vs-exit ambiguity check treated these four assertions as an unconditional
+  catch-all, even though their truth value is position-dependent (e.g. `\B` genuinely holds right
+  after any `'a'` in `a+\B`, exactly where the loop could also keep going). Fix, two parts -- see
+  design.md's "Boundary matching"/"Quantifier/loop compilation" sections:
+  1. Greedy loops: `skipZeroWidthEntrySet`'s new `checkAssertions` mode computes each assertion's
+     actual admitted peek set from the body's own `lastCharSet` and folds it into the ambiguity
+     check, so `a+\B`/`(?m)\n+^`/`(?m)\n+$` now correctly reject at compile time (new README
+     "Intentional differences" entry) while `a+\b`/`(?m)a+$` still compile. Possessive loops are
+     exempt (needed a new `QuantifiableConstruct.possessive` field, since the parser previously
+     didn't distinguish `a++` from `a+` at all) since they already agree with `java.util.regex`'s
+     own non-backtracking possessive.
+  2. Reluctant loops: `exitIsPureEnd` generalized into `exitAssertionChain`, returning the chain of
+     assertions to check (not just a boolean); `ReluctantLoopMatcherConstruct` evaluates them via a
+     new side-effect-free `ZeroWidthAssertionGuard.holdsHere` (deliberately duplicated from each
+     assertion's own `matchBody`, not shared, to keep this off that hot path) BEFORE committing to
+     the exit -- check-then-commit, not the speculative-rollback alternative design.md already
+     rejected. `a+?\B` on `"aab"` now correctly stops after one `'a'`.
+  Both parts confirmed via ad-hoc differential probes before implementing (per CLAUDE.md's
+  differential-test workflow) and the two CLAUDE.md hand-check cases; full suite unchanged (same 2
+  pre-existing failures as before, both Unicode-version-drift, unrelated).
+
+## 1-codepoint lookbehind implemented (2026-09-23)
+
+`LookbehindConstruct`/`LookbehindMatcherConstruct`, self-capturing (no `BeginCapture`/`EndCapture`),
+loop-ambiguity handled via `admittedInteriorExitPeekSet` same shape as `\b`/`\B`'s. Flipped ~24
+scraped-corpus golden rows from `EXPECTED_DIVERGENCE` to `AGREES` (aosp/dregex/openjdk_bmp/
+openjdk_supplementary -- see CLAUDE.md's "Refreshing golden corpus rows").
+
+Refreshing those rows by hand-reconstructing a non-ASCII pattern/input as a Java `\uXXXX` string to
+match against went wrong once (typo'd `ぁ` "ぁ" for `ぃ` "ぃ" in a Japanese golden row, so the
+row silently failed to match and was skipped rather than refreshed) -- caught only because the
+refresher throws if any target row isn't found, not silently. For non-ASCII rows, prefer dumping the
+file's rows with their exact code points first (`row.pattern.codePoints()...`) and selecting by
+0-based row index instead of retyping the text.

@@ -141,11 +141,20 @@ public class KnownDivergenceTest {
     assertRejected("\\2(a)", 0);
   }
 
-  // --- Rejected by design: they can't be guaranteed to run in linear time.
+  // --- Lookahead is rejected by design: it can't be guaranteed to run in linear time. Lookbehind
+  // is too, EXCEPT when its body always matches exactly one code point (see LookbehindTest) -- a
+  // direct generalization of \b/\B's own single-code-point peekPrevious() check.
 
   @Test
-  public void lookaroundIsRejectedByDesign() {
-    for (String p : new String[] {"(?=a)a", "(?!b)a", "(?<=a)b", "(?<!a)b"}) {
+  public void lookaheadIsRejectedByDesign() {
+    for (String p : new String[] {"(?=a)a", "(?!b)a"}) {
+      assertRejected(p, 0);
+    }
+  }
+
+  @Test
+  public void multiCodePointLookbehindIsRejectedByDesign() {
+    for (String p : new String[] {"(?<=ab)c", "(?<!ab)c"}) {
       assertRejected(p, 0);
     }
   }
@@ -166,34 +175,29 @@ public class KnownDivergenceTest {
   // a construct that FORCES a specific next code point (e.g. "a+?b") still can't diverge from
   // greedy at all -- see design.md's "Quantifier/loop compilation" section.
 
-  // --- BUG, not yet fixed (see remaining_work.md): a reluctant modifier followed only by a
-  // CONDITIONAL zero-width construct (one that can succeed mid-run, not just at true
-  // end-of-input/region-end -- \b, \B, MULTILINE ^/$) stays greedy. MatcherConstruct.exitIsPureEnd
-  // conservatively doesn't reason about these, so nothing ever tries the early-exit path for them.
-  // Pinned here (this class also pins known-open gaps, not just permanent divergences) so a future
-  // fix is noticed; see design.md's "Quantifier/loop compilation" section and
-  // ReluctantQuantifierDifferentialTest, which exercises these same shapes across a full
-  // input/region matrix, not just the one case each pinned below.
+  // --- A reluctant modifier followed only by a CONDITIONAL zero-width construct (one that can
+  // succeed mid-run, not just at true end-of-input/region-end -- \b, \B, MULTILINE ^/$) now stops
+  // as soon as it's genuinely satisfiable, matching java.util.regex -- MatcherConstruct's
+  // exitAssertionChain (generalizing the old exitIsPureEnd) evaluates the assertion chain itself,
+  // via peek/peekPrevious, before committing to the early exit. See design.md's "Quantifier/loop
+  // compilation" section and ReluctantQuantifierDifferentialTest, which exercises these same
+  // shapes across a full input/region matrix, not just the one case each asserted below.
 
   @Test
-  public void reluctantLoopBeforeWordBoundaryStaysGreedy() {
-    // java.util.regex: "a+?\B" against "aab" matches just "a" (\B is already satisfiable right
-    // after the first 'a', since both neighbors -- 'a' and 'a' -- are word characters); this
-    // engine consumes a second 'a' since \B can succeed at more than one position, which
-    // MatcherConstruct.exitIsPureEnd doesn't reason about.
+  public void reluctantLoopBeforeWordBoundaryStopsAssoonAsSatisfiable() {
+    // \B is already satisfiable right after the first 'a', since both neighbors -- 'a' and 'a' --
+    // are word characters.
     Matcher m = Ll1Pattern.compile("a+?\\B").matcher("aab");
     assertThat(m.find(), is(true));
-    assertThat(m.group(), is("aa"));
+    assertThat(m.group(), is("a"));
   }
 
   @Test
-  public void reluctantLoopBeforeMultilineDollarStaysGreedy() {
-    // java.util.regex: "(?m)[a\n]+?$" against "aa\naa" matches just "aa" (stops right before the
-    // '\n', the first position where a MULTILINE $ is satisfiable); this engine consumes through
-    // both lines since $ can succeed at more than one position, same reason as above.
+  public void reluctantLoopBeforeMultilineDollarStopsAssoonAsSatisfiable() {
+    // The MULTILINE $ is first satisfiable right before the '\n'.
     Matcher m = Ll1Pattern.compile("(?m)[a\\n]+?$").matcher("aa\naa");
     assertThat(m.find(), is(true));
-    assertThat(m.group(), is("aa\naa"));
+    assertThat(m.group(), is("aa"));
   }
 
   @Test

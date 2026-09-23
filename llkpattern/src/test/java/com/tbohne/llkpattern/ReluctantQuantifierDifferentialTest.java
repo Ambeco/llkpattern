@@ -33,13 +33,12 @@ public class ReluctantQuantifierDifferentialTest {
     // reproducing the same failure with a plain greedy `a+(?:bc)?`/`a+(?:b+|c)?` -- so they're not a
     // reluctant-quantifier question at all; see README's "Intentional differences" list.)
     "a+?(?:b|c)?", "a+?(b)?",
+    // A reluctant loop immediately followed only by a conditional zero-width construct that CAN
+    // succeed mid-run (not just at end-of-string) -- MatcherConstruct#exitAssertionChain evaluates
+    // \b/\B/^/$ directly via peek/peekPrevious before committing to the early exit; see
+    // KnownDivergenceTest for the single-case version of this same fix.
+    "\\w+?\\B", "a+?\\B", "(?m)[a\\n]+?$", "(?m)[a\\n]+?^",
   };
-
-  // Deliberately NOT in REAL_PATTERNS above: "\w+?\B", "a+?\B", "(?m)[a\n]+?$", "(?m)[a\n]+?^" --
-  // a reluctant loop immediately followed only by a conditional zero-width construct that CAN
-  // succeed mid-run (not just at end-of-string). MatcherConstruct.exitIsPureEnd conservatively
-  // leaves these greedy (see its own doc) -- a known, NOT-yet-fixed gap (not a design choice; see
-  // remaining_work.md), pinned in KnownDivergenceTest instead of asserted here.
 
   private static final String[] INPUTS = {
     "", "a", "aa", "aaa", "aaaa", "aaaaa", "b", "ab", "aab", "aaab", "aaaab",

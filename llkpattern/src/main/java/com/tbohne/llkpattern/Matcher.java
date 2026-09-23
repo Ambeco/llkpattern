@@ -730,8 +730,9 @@ public class Matcher implements MatchResult {
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
 	}
 
-	// Used by WordBoundaryMatcherConstruct (\b/\B), which is the only construct that needs to look
-	// backward instead of forward -- see design.md's "Boundary matching" section. Bounded at
+	// Used by WordBoundaryMatcherConstruct (\b/\B) and LookbehindMatcherConstruct ((?<=X)/(?<!X)),
+	// the constructs that need to look backward instead of forward -- see design.md's "Boundary
+	// matching" section. Bounded at
 	// lookFloor (regionStart unless transparent bounds are on), so with opaque bounds a region's
 	// start is treated the same as true start-of-input, same as -1 is peek()'s "no more input"
 	// sentinel. codePointBefore (not charAt(pos-1)) to not split a surrogate pair.

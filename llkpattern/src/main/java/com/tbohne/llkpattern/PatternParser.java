@@ -30,8 +30,8 @@ final class PatternParser {
   // Group -> "?" ":" UnionConstruct
   // Group -> "?" "=" UnionConstruct   // rejected at parse time: can't run in linear time
   // Group -> "?" "!" UnionConstruct   // rejected at parse time: can't run in linear time
-  // Group -> "?" "<=" UnionConstruct  // rejected at parse time: can't run in linear time
-  // Group -> "?" "<!" UnionConstruct  // rejected at parse time: can't run in linear time
+  // Group -> "?" "<=" UnionConstruct  // only when UnionConstruct always matches exactly one code point
+  // Group -> "?" "<!" UnionConstruct  // only when UnionConstruct always matches exactly one code point
   // Group -> "?" ">" UnionConstruct   // atomic group: not implemented
   // Group -> UnionConstruct
   // QuantifierConstruct -> "?" ReluctantQuantifier?
@@ -366,7 +366,13 @@ final class PatternParser {
         }
         switch (peek) {
           case '(':
-            sequence.patterns.add(parseGroup());
+            // Usually non-null; only a lookbehind whose trailing quantifier resolves to a
+            // "0 times" bound (see keepZeroWidthAfterQuantifier, used the same way for \b/\B/^/$)
+            // elides itself entirely, same as those other zero-width constructs do.
+            PatternConstruct group = parseGroup();
+            if (group != null) {
+              sequence.patterns.add(group);
+            }
             break;
           case '[':
             sequence.patterns.add(parseQuantifiable(parseComplexCharacter()));
@@ -680,7 +686,7 @@ final class PatternParser {
         Pattern.UNICODE_CHARACTER_CLASS
       };
 
-  private QuantifiedUnion parseGroup() {
+  private @Nullable PatternConstruct parseGroup() {
     if (peek != '(') {
       throw new IllegalStateException("entered parseGroup at illegal start point");
     }
@@ -692,10 +698,7 @@ final class PatternParser {
         case '<':
           advance(1);
           if (peek == '=' || peek == '!') {
-            // Technically it *can* be supported in non-linear time, so this is more "feature
-            // request".
-            throw throwUnexpectedChar(
-                "lookbehind not supported because it cannot execute in linear time");
+            return parseLookbehind(union.startIndex, /* isPositive= */ peek == '=');
           }
           int startName = index;
           while ((peek >= '0' && peek <= '9')
@@ -848,6 +851,49 @@ final class PatternParser {
       flags = union.parentFlags;
     }
     return union;
+  }
+
+  /**
+   * {@code (?<=X)}/{@code (?<!X)}, entered right after the {@code '='}/{@code '!'} has been peeked
+   * (not yet consumed) -- see design.md's "Boundary matching" section for why only a body that
+   * ALWAYS matches exactly one code point is supported (a direct generalization of {@code \b}/
+   * {@code \B}'s own single-code-point {@code peekPrevious()} check; anything wider can't be
+   * evaluated in O(1) per position the way this engine requires). The body is parsed with the exact
+   * same machinery an ordinary non-capturing group uses, so a real capturing group nested inside it
+   * (e.g. {@code (?<=(a))}) is numbered/registered completely normally -- only afterward is the
+   * parsed body statically checked for the one-code-point restriction.
+   */
+  private @Nullable PatternConstruct parseLookbehind(int startIndex, boolean isPositive) {
+    advance(1); // consume '=' or '!'
+    QuantifiedUnion body = new QuantifiedUnion(pattern, index, flags);
+    body.captureConstructIndex = -1;
+    QuantifiedUnion ignored = parseUnion(body);
+    if (index == pattern.length()) {
+      throw throwUnexpectedChar(
+          "expected \")\" to match ", new CodePointReference(startIndex));
+    }
+    if (peek != ')') {
+      throw new IllegalStateException("compileBody returned but not at end of the lookbehind group");
+    }
+    body.endIndex = index;
+    advance(1);
+    LookbehindConstruct.SingleCodePointBody resolved =
+        LookbehindConstruct.resolveSingleCodePointBody(body);
+    if (resolved == null) {
+      throw throwUnexpectedChar(
+          "lookbehind is only supported when its body always matches exactly one code point (a "
+              + "single character or character class, or an alternation of such, optionally "
+              + "wrapped in one capturing group around the whole body) -- did you mean a "
+              + "single-character class like [ab] instead of \"",
+          pattern.substring(startIndex, index),
+          "\"?");
+    }
+    LookbehindConstruct lookbehind = new LookbehindConstruct(
+        pattern, startIndex, index, isPositive, resolved.codePoints, resolved.captureConstructIndex);
+    lookbehind.flags = flags;
+    // Not itself quantifiable in this engine, same as \b/\B/^/$ -- see keepZeroWidthAfterQuantifier's
+    // own doc. A "{0}" bound elides it entirely (returns null), same as those other constructs.
+    return keepZeroWidthAfterQuantifier() ? lookbehind : null;
   }
 
   private ComplexCharacter parseComplexCharacter() {
@@ -1758,10 +1804,15 @@ final class PatternParser {
       // quantifier-suffix character (only '?' for reluctant and '+' for possessive are), so a
       // possessive suffix ("a*+", "a++", "a?+", "a{2,3}+") was never actually consumed, leaving a
       // stray literal '+' in the pattern that broke matching. See remaining_work.md.
-      // Possessive ('+') stays a no-op: this engine's no-backtrack greedy loop already behaves as
-      // possessive (nothing to backtrack into). Reluctant ('?') is recorded on the construct --
-      // see QuantifiableConstruct#reluctant.
+      // Possessive ('+') is still compiled identically to plain greedy (this engine's no-backtrack
+      // greedy loop already behaves as possessive -- nothing to backtrack into), but is recorded on
+      // the construct anyway -- see QuantifiableConstruct#possessive -- since the two are no longer
+      // interchangeable for the loop/zero-width-assertion ambiguity check buildLoopMatcher runs:
+      // possessive genuinely never backtracks in java.util.regex either, so it's exempt from a
+      // rejection that greedy syntax needs (see that field's own doc). Reluctant ('?') is recorded
+      // on the construct too -- see QuantifiableConstruct#reluctant.
       construct.reluctant = peek == '?';
+      construct.possessive = peek == '+';
       advance(1);
       construct.endIndex = index;
     }

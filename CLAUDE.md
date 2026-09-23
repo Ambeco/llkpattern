@@ -128,6 +128,14 @@ scratchpad, not the repo) against `llkpattern\build\classes\java\main` plus the 
 package compare `e.getClass().getSimpleName()`. A probe class holding pattern strings with
 backslashes must be written with the Write tool, not a Bash heredoc (see the global Windows notes).
 
+**Every `-cp` entry, for both `javac` and `java`, must be `cygpath -w`'d and joined with `;`** when
+invoked from the Bash tool (Windows `javac`/`java`, POSIX-style Bash) -- not just the guava jar.
+Leaving even one entry (e.g. the scratchpad output dir or `llkpattern\build\classes\java\main`) as a
+raw `/c/...`-style path makes Windows `java` fail with a misleading `NoClassDefFoundError`/
+`ClassNotFoundException` for an unrelated class (e.g. guava's `ImmutableSet$Builder`, pulled in by
+`NamedCharClass`'s static init) rather than a path-not-found error, which reads like a missing
+dependency, not a path-format problem, and wastes a round trip chasing the wrong fix.
+
 ## Reading newer JDK regex behavior
 
 To see how a newer JDK's `java.util.regex` behaves internally, unzip just that file from its source archive, e.g.
@@ -156,6 +164,30 @@ differs from `git show HEAD:<file>` for rows you did not mean to change.
 Never use the Edit tool directly on a `golden/*.tsv` file -- it reliably fails to find its match
 (CRLF, same underlying issue as `documents/*.md`) rather than corrupting anything, but it's a dead
 end, not a fallback worth trying first; go straight to the scratch-tool approach above.
+
+For a non-ASCII pattern/input, don't hand-retype it as a `\uXXXX` Java string to select the row --
+a mistyped escape (e.g. `ぁ` "ぁ" for `ぃ` "ぃ") silently selects the wrong row instead of
+erroring, and the mismatch just quietly skips the intended refresh. Dump the file's rows with their
+actual code points first (`row.pattern.codePoints().forEach(...)`) and select by 0-based row index
+instead of retyping the text.
+
+## Adding a new zero-width assertion construct (`\b`, `^`/`$`, lookbehind, ...)
+
+A new zero-width `PatternConstruct`/`MatcherConstruct` pair needs wiring into four places, not just
+its own `buildEntryMap`/`buildMatcher`:
+
+1. `buildEntryMap`: `entryElse = this` (the ordinary catch-all -- safe for plain union dispatch).
+2. `PatternConstruct#skipZeroWidthEntrySet`'s `checkAssertions` branch, via an
+   `admittedInteriorExitPeekSet` static helper -- without this, a loop whose exit passes through
+   the new construct can silently compile an unsound ambiguity (see design.md's "Boundary matching"
+   section).
+3. `MatcherConstruct#collectExitAssertionChain` -- add an `instanceof` branch so a reluctant loop's
+   early exit can check it.
+4. Implement `MatcherConstruct.ZeroWidthAssertionGuard` (`holdsHere`) for #3 to call.
+
+Grep existing `WordBoundaryConstruct`/`WordBoundaryMatcherConstruct` references across
+`PatternConstruct.java`/`MatcherConstruct.java` for the full pattern to mirror -- none of these four
+are cross-referenced from a single doc comment, so it's easy to add the construct pair and miss one.
 
 ## Scraped-corpus `-Punescape` must match the scraper's own escaping
 

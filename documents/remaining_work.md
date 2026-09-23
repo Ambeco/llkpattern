@@ -17,13 +17,10 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 ## Also remember for later (currently-unimplemented/deferred features)
 
-- [ ] **1-codepoint lookbehind** (`(?<=x)`/`(?<!x)`, where the lookbehind body matches exactly one code point) is
-      planned -- it's a direct generalization of `\b`/`\B`'s existing single-code-point `peekPrevious()` check, per
-      design.md's "single-pass architecture" note. Add the same depth of test coverage as other boundary constructs
-      once it lands. Positive lookahead (`(?=...)`/`(?!...)`), negative lookahead (`(?!...)`), and lookbehind of more
-      than one code point (`(?<=...)`/`(?<!...)` in general) are NOT planned -- they're permanently out of scope per
-      that same design.md note, not merely unimplemented, since supporting them in general would give up the
-      single-pass guarantee this engine exists for.
+- [ ] Lookahead (`(?=...)`/`(?!...)`) and lookbehind of more than one code point (`(?<=...)`/`(?<!...)` in
+      general) remain permanently out of scope, not merely unimplemented -- see design.md's "Boundary matching"
+      section. 1-codepoint lookbehind is implemented (`LookbehindConstruct`/`LookbehindMatcherConstruct`), covered
+      by `LookbehindTest`.
 
 ## Feature gaps versus `java.util.regex` (everything else that differs is a design choice, see README)
 
@@ -199,31 +196,7 @@ to keep it "vaguely reasonable" and the jar/dex small.
 - [ ] Fill in section 2 (High-Level Design) and section 3 (Current Progress) of [README.md](../README.md) in more depth as the design solidifies (still not a full design writeup in the README itself, which continues to point at design.md).
 
 ## Open Questions
-- [ ] **BUG: a `\B`/word-boundary check near `regionEnd` can wrongly fail the whole match, not just
-      `hitEnd`.** Found while testing the reluctant-loop fix below: plain GREEDY `a+\B` against
-      `"aab"` with the region restricted to `[0,2)` (i.e. matching is confined to just `"aa"`) fails
-      to match at all here, while `java.util.regex` matches (`""`, since \B holds between the two
-      'a's and greedy backs off there once 'b' is out of the region). This is a genuine match-result
-      divergence -- unlike the `useTransparentBounds`/`hitEnd` entry just below, which is explicitly
-      only about the `hitEnd` flag, never the match result itself. Not yet root-caused; likely
-      related to the same compile-time `\b`/`\B` elision design.md's "Boundary matching" section
-      describes, interacting badly with a region boundary that isn't the true end of the underlying
-      `CharSequence`. Needs its own investigation session with a differential matrix over regions
-      (see `ReluctantQuantifierDifferentialTest`'s `regionsOf` for a starting point), since a
-      one-off fix risks being as narrow as the bug report that found it.
-      - **Downstream effect on reluctant loops**: `MatcherConstruct.exitIsPureEnd` (see design.md's
-        "Quantifier/loop compilation" section) conservatively refuses to reason about `\B`/`\b` or a
-        MULTILINE `^`/`$` as a loop's own `next`, so a reluctant loop immediately followed only by
-        one of these stays greedy even where it's genuinely satisfiable mid-run (`a+?\B` on `"aab"`
-        should stop after one `'a'`, matching `java.util.regex`, but currently consumes both --
-        pinned in `KnownDivergenceTest`). Unlike the general reluctant-loop bug this was split off
-        from (now fixed), this ISN'T inherently unfixable without runtime rollback: `\B`/`\b`/`^`/`$`
-        are side-effect-free, single-code-point-each-way checks that `ReluctantLoopMatcherConstruct`
-        could evaluate directly via `Matcher#peek`/`peekPrevious` instead of only asking
-        `exitIsPureEnd` about the unconditional-catch-all case -- but that's a second, separate
-        feature on top of the current node, not attempted here, and the `\B`-near-`regionEnd` bug
-        above should probably be fixed first so the two don't get tangled together in the same
-        differential run.
+
 - [ ] **Is the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence a bug or an intended divergence?**
       design.md's "Boundary matching" section notes that a `\b`/`\B` whose both neighboring characters are
       statically known gets elided at compile time (folded into a zero-width no-op, or rejected as

@@ -609,15 +609,22 @@ abstract class PatternConstruct {
 		 *       first attempt (where a {@code min == 0} loop skipping itself entirely is just
 		 *       {@code exitNode} immediately allowing that, since its own {@code min} check doesn't
 		 *       care how it was reached) exactly as much as a later re-check.
-		 *   <li>{@link MatcherConstruct.LoopMatcherConstruct}, reached only as a completed body
-		 *       iteration's own continuation (via a {@link LoopBackMarker} self-registered onto it
-		 *       BEFORE the body compiles against it, breaking the construction-time cycle every loop
-		 *       body creates -- the same self-registration-first trick {@code MatcherConstruct}'s
-		 *       class doc describes). Its whole job is now just enforcing {@code max}: dispatch back
-		 *       to the body's own head (another attempt) if under it, or straight to {@code exitNode}
-		 *       (forcing a stop) if not -- no code-point membership test of its own at all.
+		 *   <li>{@link MatcherConstruct.LoopMatcherConstruct} (greedy) or {@link
+		 *       MatcherConstruct.ReluctantLoopMatcherConstruct} (reluctant, only when {@link
+		 *       MatcherConstruct#exitIsPureEnd} proves stopping early is safe -- see that class's own
+		 *       doc), self-registered onto a {@link LoopBackMarker} BEFORE the body compiles against
+		 *       it, breaking the construction-time cycle every loop body creates (the same
+		 *       self-registration-first trick {@code MatcherConstruct}'s class doc describes). The
+		 *       greedy node is reached only as a completed body iteration's own continuation, and its
+		 *       whole job is enforcing {@code max}: dispatch back to the body's own head (another
+		 *       attempt) if under it, or straight to {@code exitNode} (forcing a stop) if not. The
+		 *       reluctant node is ALSO this construct's own externally-visible entry point (see its own
+		 *       doc for why, and for the {@code min}/{@code max} "+1" shift that makes reusing one node
+		 *       for both roles safe) -- neither tests code-point membership at all.
 		 *   <li>{@link MatcherConstruct.LoopMatcherExit}, this loop's "stop iterating" node --
-		 *       enforces {@code min} and, on success, dispatches to {@code next}'s own matcher.
+		 *       enforces {@code min} (the reluctant-safe case's own {@code min} pre-shifted the same
+		 *       way, to stay consistent with the counter's shifted meaning) and, on success, dispatches
+		 *       to {@code next}'s own matcher.
 		 * </ol>
 		 *
 		 * <p>When {@code captureConstructIndex != -1} (the construct is <i>also</i> a capturing group,
@@ -654,17 +661,32 @@ abstract class PatternConstruct {
 			// not a fresh one, or that nested marker's `realNext.matcher` would never get filled in.
 			PatternConstruct bodyCompileTarget = loopBodyTarget(captureConstructIndex);
 			LoopBackMarker marker = loopBackMarker;
-			LoopMatcherExit exitNode = new LoopMatcherExit(flags, quantifiableIndex, min, next.matcher);
+
+			// Decided once, here, before either the exit node or the marker-owned node is built --
+			// both need to already know which case they're in. See ReluctantLoopMatcherConstruct's own
+			// doc for the "+1" shift this drives: reached both as the loop's fresh entry (zero
+			// iterations done) and as the post-iteration continuation, so its own quantifiableCounts
+			// slot counts VISITS, not completed iterations, and LoopMatcherExit's `min` check (reached
+			// directly via the body's own failedEntry, bypassing the marker-owned node entirely) has to
+			// agree on that same shifted meaning to stay consistent.
+			boolean reluctantSafe = reluctant && MatcherConstruct.exitIsPureEnd(next.matcher);
+			int shiftedMin = plusOneCapped(min);
+			int shiftedMax = plusOneCapped(max);
+			LoopMatcherExit exitNode = new LoopMatcherExit(
+					flags, quantifiableIndex, reluctantSafe ? shiftedMin : min, min == 0, next.matcher);
 
 			// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
-			// `loopNode` itself; this one's `.matcher` is where LoopMatcherConstruct's "continue"
+			// the marker-owned node itself; this one's `.matcher` is where that node's "continue"
 			// successor (the body chain's own head, not resolvable until after the body compiles)
 			// ends up, resolved via ordinary direct assignment further down, exactly like every other
-			// forward reference in this file -- no bespoke mutable field needed on
-			// LoopMatcherConstruct itself (see its own class doc).
+			// forward reference in this file -- no bespoke mutable field needed on either
+			// LoopMatcherConstruct or ReluctantLoopMatcherConstruct (see their own class docs).
 			LoopContinueMarker continueMarker = new LoopContinueMarker(startIndex);
 			continueMarker.flags = flags;
-			LoopMatcherConstruct loopNode = new LoopMatcherConstruct(marker, quantifiableIndex, max, continueMarker, exitNode);
+			MatcherConstruct loopNode = reluctantSafe
+					? new MatcherConstruct.ReluctantLoopMatcherConstruct(
+							marker, quantifiableIndex, shiftedMin, shiftedMax, continueMarker, exitNode)
+					: new LoopMatcherConstruct(marker, quantifiableIndex, max, continueMarker, exitNode);
 
 			if (capturing) {
 				bodyCompileTarget.compile(marker);
@@ -702,27 +724,27 @@ abstract class PatternConstruct {
 				}
 			}
 			MatcherConstruct bodyHead = bodyTail;
+			continueMarker.matcher = bodyHead;
 
-			// A reluctant loop should stop as soon as `min` is satisfied whenever doing so is provably
-			// safe -- see MatcherConstruct.ReluctantLoopGate's own doc. Gated on exitIsPureEnd(next.matcher)
-			// (not just `reluctant`) so a reluctant loop followed by something that itself needs a real
-			// code-point decision (`a+?b`, `a+?$`) is left exactly as greedy loops already are: that
-			// decision is already forced correctly by the body/next disjointness check above, with no
-			// runtime choice left to make either way (see remaining_work.md's now-fixed bug entry).
-			MatcherConstruct entryPoint = bodyHead;
-			if (reluctant && MatcherConstruct.exitIsPureEnd(next.matcher)) {
-				MatcherConstruct.ReluctantLoopGate gate =
-						new MatcherConstruct.ReluctantLoopGate(flags, quantifiableIndex, min, exitNode, bodyHead);
-				continueMarker.matcher = gate;
-				entryPoint = gate;
-			} else {
-				continueMarker.matcher = bodyHead;
-			}
-
-			// This construct's own externally-visible entry point is exactly the same node used for a
-			// loop-back -- see the class doc above for why no separate entry-only chain is needed any
-			// more.
+			// A greedy loop's own externally-visible entry point is exactly the body chain's head --
+			// see the class doc above for why no separate entry-only chain is needed. A reluctant-safe
+			// loop's entry point is `loopNode` itself instead (built above, before the body even
+			// compiled) -- ReluctantLoopMatcherConstruct's own doc explains why it needs to run before
+			// the very first iteration too, not just after each completed one.
+			MatcherConstruct entryPoint = reluctantSafe ? loopNode : bodyHead;
 			MatcherConstruct.aliasOrPassThrough(this, entryPoint);
+		}
+
+		/**
+		 * {@code n + 1}, capped (not wrapped) at {@link Integer#MAX_VALUE} -- the "+1" shift {@link
+		 * MatcherConstruct.ReluctantLoopMatcherConstruct} needs for both {@code min} and {@code max}
+		 * (see its own doc). A literal {@code n + 1} would silently overflow to {@link
+		 * Integer#MIN_VALUE} for an unbounded {@code max} (e.g. {@code a+?}/{@code a*?}, where {@code
+		 * max == Integer.MAX_VALUE}), which would make every {@code count < shiftedMax} comparison
+		 * false immediately and break every unbounded reluctant loop.
+		 */
+		private static int plusOneCapped(int n) {
+			return n == Integer.MAX_VALUE ? Integer.MAX_VALUE : n + 1;
 		}
 	}
 

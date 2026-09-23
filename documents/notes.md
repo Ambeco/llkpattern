@@ -2910,3 +2910,11 @@ Notes to self about how to work on this project, and other context that doesn't 
   type-specific case. Also found two genuine residual divergences (a reluctant loop before `\B` or a
   MULTILINE `^`/`$` that can succeed mid-run, not just at the end) -- `exitIsPureEnd` deliberately
   doesn't reason about those, so they're pinned in `KnownDivergenceTest` rather than fixed.
+
+- **2026-09-22: merged `ReluctantLoopGate` into `LoopMatcherConstruct` as
+  `ReluctantLoopMatcherConstruct`**, cutting a reluctant-safe loop's post-iteration dispatch from
+  two hops to one, via a "+1" shift on its own counter slot (see design.md). The matrix caught a
+  bug in the shift's OTHER consumer: `exitIsPureEnd`'s `min == 0` check, reading a nested
+  reluctant-safe loop's now-shifted `LoopMatcherExit.min` directly instead of its true value
+  (`a+?b*?` on `"aa"` regressed to `[0,2)` instead of `[0,1)`) -- fixed with a separate
+  `minIsZero` field. See design.md's "Alternatives Considered" for the rejected two-node design.

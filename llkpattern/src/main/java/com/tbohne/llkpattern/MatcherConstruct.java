@@ -716,10 +716,13 @@ abstract class MatcherConstruct {
 	}
 
 	/**
-	 * Compiled as a loop body's own continuation -- reached only that way (see {@code
-	 * QuantifiableConstruct.buildLoopMatcher}), never as the loop's actual entry point (a loop's
-	 * body chain head IS its own entry point in this flattened design -- see this class's own doc
-	 * and {@code QuantifiableConstruct.buildLoopMatcher}'s doc for why no separate entry chain is
+	 * A loop's own "continue or stop at max" node, used for a GREEDY loop and also for a reluctant
+	 * loop where stopping early isn't provably safe (see {@link ReluctantLoopMatcherConstruct} for
+	 * the reluctant-safe counterpart, used instead of this one -- never both -- when it is).
+	 * Compiled as a loop body's own continuation -- reached only that way (see
+	 * {@code QuantifiableConstruct.buildLoopMatcher}), never as the loop's actual entry point (a
+	 * loop's body chain head IS its own entry point in this flattened design -- see this class's own
+	 * doc and {@code QuantifiableConstruct.buildLoopMatcher}'s doc for why no separate entry chain is
 	 * needed any more). Conceptually: "one more body iteration just finished -- continue (retry the
 	 * body) if under {@code max}, otherwise force an exit (via {@link #exitNode}, which itself
 	 * enforces {@code min})." Neither this node nor {@link #exitNode} test code-point membership at
@@ -784,12 +787,20 @@ abstract class MatcherConstruct {
 	static final class LoopMatcherExit extends MatcherConstruct {
 		final int quantifiableIndex;
 		final int min;
+		// True iff the loop's TRUE min (before ReluctantLoopMatcherConstruct's own "+1" counting
+		// shift, if this exit belongs to a reluctant-safe loop) is 0 -- kept as its own field, rather
+		// than inferred from `min == 0` directly, because `min` itself may already be shifted (see
+		// QuantifiableConstruct.buildLoopMatcher), and exitIsPureEnd needs to ask about the real,
+		// unshifted quantifier semantics regardless of which counting convention this exit's owning
+		// loop happens to use for its own runtime check below.
+		final boolean minIsZero;
 		final MatcherConstruct next;
 
-		LoopMatcherExit(int flags, int quantifiableIndex, int min, MatcherConstruct next) {
+		LoopMatcherExit(int flags, int quantifiableIndex, int min, boolean minIsZero, MatcherConstruct next) {
 			super(flags);
 			this.quantifiableIndex = quantifiableIndex;
 			this.min = min;
+			this.minIsZero = minIsZero;
 			this.next = next;
 		}
 
@@ -807,58 +818,94 @@ abstract class MatcherConstruct {
 	}
 
 	/**
-	 * A reluctant loop's own "prefer to stop here" check -- inserted (see {@code
-	 * QuantifiableConstruct.buildLoopMatcher}) in place of an unconditional continue/loop-back, for
-	 * exactly the cases where stopping early is provably safe: {@code min} has been satisfied AND
-	 * {@link #exitNode}'s own continuation is a zero-width path that unconditionally reaches {@link
-	 * EndMatcherConstruct} (see {@link #exitIsPureEnd}) -- so whether the exit actually succeeds
-	 * only depends on {@link Matcher#requireFullMatch}, read here at match time since one compiled
-	 * pattern serves {@code matches()}, {@code find()}, and {@code lookingAt()} alike. Never
-	 * speculative: unlike a backtracking engine's "try the shorter match, undo if it fails" reluctant
-	 * loop, this never runs {@link #exitNode} unless success is already guaranteed, so none of
-	 * {@code exitNode}'s side effects (resetting the loop counter, ending an enclosing capture) ever
-	 * need undoing.
+	 * The reluctant counterpart to {@link LoopMatcherConstruct}, used INSTEAD of it (never both)
+	 * for a reluctant loop where stopping early is provably safe -- {@code min} has been satisfied
+	 * AND {@link #exitNode}'s own continuation is a zero-width path that unconditionally reaches
+	 * {@link EndMatcherConstruct} (see {@link #exitIsPureEnd}), decided once at compile time by
+	 * {@code QuantifiableConstruct.buildLoopMatcher}. Unlike {@link LoopMatcherConstruct}, this node
+	 * IS the loop's own externally-visible entry point as well as the body's loop-back continuation
+	 * target (both roles resolve to the exact same instance) -- merging the two roles this way is
+	 * what lets the "should I stop here" check run before the very first iteration too (needed for
+	 * {@code min == 0} loops like {@code a*?}/{@code a??}, which must be able to skip the body
+	 * entirely on the very first attempt), not just after each completed one.
+	 *
+	 * <p>Because this node is reached both as the fresh entry point (zero iterations done) and as
+	 * the post-iteration continuation, {@link #quantifiableCounts}[idx] no longer counts completed
+	 * iterations directly -- every VISIT increments it unconditionally, so its value is always
+	 * {@code completedIterations + 1}. {@link #shiftedMin}/{@link #shiftedMax} are {@code min}/
+	 * {@code max} pre-shifted by that same +1 (capped, not wrapped, for an unbounded {@code max})
+	 * so every comparison against the shifted count stays correct without ever needing to tell the
+	 * two invocation paths apart. The loop's own {@link LoopMatcherExit} (reached directly via the
+	 * body's own {@code failedEntry} when it doesn't match at all, bypassing this node) is built
+	 * with the SAME shifted {@code min} for consistency -- see
+	 * {@code QuantifiableConstruct.buildLoopMatcher}.
+	 *
+	 * <p>Whether the exit actually succeeds also depends on {@link Matcher#requireFullMatch}, read
+	 * here at match time since one compiled pattern serves {@code matches()}, {@code find()}, and
+	 * {@code lookingAt()} alike. Never speculative: unlike a backtracking engine's "try the shorter
+	 * match, undo if it fails" reluctant loop, this never runs {@link #exitNode} unless success is
+	 * already guaranteed, so none of {@code exitNode}'s side effects (resetting the loop counter,
+	 * ending an enclosing capture) ever need undoing.
 	 */
-	static final class ReluctantLoopGate extends MatcherConstruct {
+	static final class ReluctantLoopMatcherConstruct extends MatcherConstruct {
 		final int quantifiableIndex;
-		final int min;
+		final int shiftedMin;
+		final int shiftedMax;
+		final PatternConstruct continuation;
 		final MatcherConstruct exitNode;
-		final MatcherConstruct bodyHead;
 
-		ReluctantLoopGate(
-				int flags, int quantifiableIndex, int min, MatcherConstruct exitNode, MatcherConstruct bodyHead) {
-			super(flags);
+		ReluctantLoopMatcherConstruct(
+				PatternConstruct owner, int quantifiableIndex, int shiftedMin, int shiftedMax,
+				PatternConstruct continuation, MatcherConstruct exitNode) {
+			super(owner);
 			this.quantifiableIndex = quantifiableIndex;
-			this.min = min;
+			this.shiftedMin = shiftedMin;
+			this.shiftedMax = shiftedMax;
+			this.continuation = continuation;
 			this.exitNode = exitNode;
-			this.bodyHead = bodyHead;
 		}
 
 		@Override
 		boolean matchBody(Matcher matcher, int peeked) {
+			// Unconditional on every visit -- see class doc: this represents "one more visit to this
+			// decision point", not "one more completed iteration" (that's what the +1 shift in
+			// shiftedMin/shiftedMax corrects for).
+			int count = ++matcher.quantifiableCounts[quantifiableIndex];
 			// Under requireFullMatch (matches()), exiting is still safe once pos already reached
 			// regionEnd -- exitIsPureEnd(next) already guarantees the rest of the pattern needs no
 			// further input, so if there's none left to require, stopping here is exactly what a
 			// backtracking engine's reluctant loop does too, and (unlike letting the body run one more,
-			// doomed attempt) avoids spuriously peeking past the end and setting Matcher#hitEnd.
-			if (matcher.quantifiableCounts[quantifiableIndex] >= min
-					&& (!matcher.requireFullMatch || matcher.pos == matcher.regionEnd)) {
+			// doomed attempt) avoids spuriously peeking past the end and setting Matcher#hitEnd. This
+			// condition, if true, is checked BEFORE the ordinary max comparison below on purpose: since
+			// min <= max always holds (so shiftedMin <= shiftedMax too), whenever count has already
+			// reached shiftedMax this condition is either already true (exit either way) or blocked
+			// only by requireFullMatch/regionEnd, in which case the max comparison below forces exactly
+			// the same exitNode call anyway -- so the two branches always agree on the max-reached case,
+			// and checking this one first just lets a reluctant loop stop before max when it can.
+			if (count >= shiftedMin && (!matcher.requireFullMatch || matcher.pos == matcher.regionEnd)) {
 				return exitNode.match(matcher, peeked);
 			}
-			return bodyHead.match(matcher, peeked);
+			return count < shiftedMax
+					? continuation.matcher.match(matcher, peeked)
+					: exitNode.match(matcher, peeked);
 		}
+
+		@VisibleForTesting
+		MatcherConstruct getContinuation() { return continuation.matcher; }
 	}
 
 	/**
 	 * Conservative check for whether {@code node} is a zero-width path that unconditionally reaches
 	 * {@link EndMatcherConstruct} without depending on the next input code point -- i.e. whether
 	 * taking it right now is guaranteed to succeed (modulo {@code requireFullMatch}, which the caller
-	 * checks separately). Used only by {@link ReluctantLoopGate}'s construction, to decide whether a
-	 * reluctant loop's exit path is safe to try eagerly instead of always continuing greedily.
-	 * Deliberately conservative -- returns {@code false} (rather than trying to reason further) for
-	 * anything not provably safe, such as a zero-width assertion ({@code $}, {@code \b}), a
-	 * lookaround, or another loop that isn't a guaranteed no-op: a false negative here just leaves
-	 * that shape greedy, this engine's existing (correct-for-{@code matches()}) default, never wrong.
+	 * checks separately). Used only when deciding whether to build a {@link
+	 * ReluctantLoopMatcherConstruct} (instead of a plain {@link LoopMatcherConstruct}) for a
+	 * reluctant loop, i.e. whether its exit path is safe to try eagerly instead of always continuing
+	 * greedily. Deliberately conservative -- returns {@code false} (rather than trying to reason
+	 * further) for anything not provably safe, such as a zero-width assertion ({@code $}, {@code
+	 * \b}), a lookaround, or another loop that isn't a guaranteed no-op: a false negative here just
+	 * leaves that shape greedy, this engine's existing (correct-for-{@code matches()}) default,
+	 * never wrong.
 	 */
 	static boolean exitIsPureEnd(MatcherConstruct node) {
 		// Checked FIRST, before any type-specific case below: a chain-candidate node's own entrySet
@@ -890,10 +937,10 @@ abstract class MatcherConstruct {
 		}
 		if (node instanceof LoopMatcherExit) {
 			LoopMatcherExit exit = (LoopMatcherExit) node;
-			return exit.min == 0 && exitIsPureEnd(exit.next);
+			return exit.minIsZero && exitIsPureEnd(exit.next);
 		}
-		if (node instanceof ReluctantLoopGate) {
-			return exitIsPureEnd(((ReluctantLoopGate) node).exitNode);
+		if (node instanceof ReluctantLoopMatcherConstruct) {
+			return exitIsPureEnd(((ReluctantLoopMatcherConstruct) node).exitNode);
 		}
 		return false;
 	}

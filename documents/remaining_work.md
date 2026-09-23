@@ -218,11 +218,12 @@ to keep it "vaguely reasonable" and the jar/dex small.
         should stop after one `'a'`, matching `java.util.regex`, but currently consumes both --
         pinned in `KnownDivergenceTest`). Unlike the general reluctant-loop bug this was split off
         from (now fixed), this ISN'T inherently unfixable without runtime rollback: `\B`/`\b`/`^`/`$`
-        are side-effect-free, single-code-point-each-way checks that `ReluctantLoopGate` could
-        evaluate directly via `Matcher#peek`/`peekPrevious` instead of only asking `exitIsPureEnd`
-        about the unconditional-catch-all case -- but that's a second, separate feature on top of the
-        current gate, not attempted here, and the `\B`-near-`regionEnd` bug above should probably be
-        fixed first so the two don't get tangled together in the same differential run.
+        are side-effect-free, single-code-point-each-way checks that `ReluctantLoopMatcherConstruct`
+        could evaluate directly via `Matcher#peek`/`peekPrevious` instead of only asking
+        `exitIsPureEnd` about the unconditional-catch-all case -- but that's a second, separate
+        feature on top of the current node, not attempted here, and the `\B`-near-`regionEnd` bug
+        above should probably be fixed first so the two don't get tangled together in the same
+        differential run.
 - [ ] **Is the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence a bug or an intended divergence?**
       design.md's "Boundary matching" section notes that a `\b`/`\B` whose both neighboring characters are
       statically known gets elided at compile time (folded into a zero-width no-op, or rejected as

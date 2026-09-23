@@ -13,8 +13,8 @@ import org.junit.runners.JUnit4;
 /**
  * Differential tests of reluctant (and possessive) quantifier modifiers against java.util.regex,
  * across matches()/lookingAt()/find() and a matrix of inputs/regions. See design.md's
- * "Quantifier/loop compilation" section (the {@code ReluctantLoopGate}/{@code exitIsPureEnd} part)
- * for what this is checking.
+ * "Quantifier/loop compilation" section (the {@code ReluctantLoopMatcherConstruct}/{@code
+ * exitIsPureEnd} part) for what this is checking.
  */
 @RunWith(JUnit4.class)
 public class ReluctantQuantifierDifferentialTest {

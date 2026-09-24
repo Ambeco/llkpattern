@@ -57,6 +57,19 @@ abstract class MatcherConstruct {
 	final @Nullable CodePointSet entrySet;
 	final @Nullable MatcherConstruct failedEntry;
 
+	// Folded in from the former SingleDispatchingMatcherConstruct (merged 2026-09-24 -- see that
+	// class's old doc, kept below on the constructors that fill this in explicitly): the single,
+	// statically-known successor for the large majority of nodes, whose own matchBody() calls
+	// `next.match(matcher, peeked)` directly (no separate matchNext() wrapper -- one less frame on
+	// the match-time call stack). A node with no single successor of its own (a loop's own
+	// LoopMatcherConstruct/LoopMatcherExit/ReluctantLoopMatcherConstruct, each of which dispatches
+	// via its own differently-named field(s) instead -- continuation/exitNode -- since it has more
+	// than one possible successor; or EndMatcherConstruct, which has none at all) uses one of the
+	// two below constructors that don't take a next, and gets `this` as a harmless, never-read
+	// default -- see those constructors' own doc for why `this` (rather than `null`) is exactly
+	// right here, including for EndMatcherConstruct specifically.
+	final MatcherConstruct next;
+
 	/**
 	 * @param owner the PatternConstruct this MatcherConstruct implements. Assigning {@code
 	 *     owner.matcher = this} here, before subclass constructors resolve any dependencies, is
@@ -72,6 +85,12 @@ abstract class MatcherConstruct {
 		this.flags = owner.flags;
 		this.entrySet = owner.dispatchEntrySet;
 		this.failedEntry = owner.dispatchFailedEntry;
+		// `this` here is legal (unlike as an ARGUMENT to a super(...) call): we're already inside
+		// MatcherConstruct's own constructor body, past Object's own super() call, so `this` refers
+		// to the concrete subclass instance under construction -- e.g. EndMatcherConstruct, whose
+		// matchBody() never reads `next` at all, making `next = this` a self-loop that's simply
+		// never taken rather than a null a careless future reader might dereference.
+		this.next = this;
 	}
 
 	/**
@@ -87,7 +106,32 @@ abstract class MatcherConstruct {
 		this.flags = flags;
 		this.entrySet = null;
 		this.failedEntry = null;
+		this.next = this; // see the (PatternConstruct) constructor's own doc for why `this`.
 	}
+
+	/** Like {@link #MatcherConstruct(PatternConstruct)}, for a node whose own single, statically-
+	 *  known successor is {@code next} -- folded in from the former SingleDispatchingMatcherConstruct
+	 *  (see {@link #next}'s own doc). */
+	MatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
+		owner.matcher = this;
+		this.flags = owner.flags;
+		this.entrySet = owner.dispatchEntrySet;
+		this.failedEntry = owner.dispatchFailedEntry;
+		this.next = next;
+	}
+
+	/** Like {@link #MatcherConstruct(int)}, for a synthetic node whose own single, statically-known
+	 *  successor is {@code next} -- folded in from the former SingleDispatchingMatcherConstruct (see
+	 *  {@link #next}'s own doc). */
+	MatcherConstruct(int flags, MatcherConstruct next) {
+		this.flags = flags;
+		this.entrySet = null;
+		this.failedEntry = null;
+		this.next = next;
+	}
+
+	@VisibleForTesting
+	MatcherConstruct getNext() { return next; }
 
 	/**
 	 * Checks {@link #entrySet} (if any), deferring to {@link #failedEntry} on a miss, then runs
@@ -191,69 +235,41 @@ abstract class MatcherConstruct {
 	 * A zero-width forwarding node -- see {@link #aliasOrPassThrough}'s own doc for when this is
 	 * needed instead of a plain alias.
 	 */
-	static final class PassThroughMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class PassThroughMatcherConstruct extends MatcherConstruct {
 		PassThroughMatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
 			super(owner, next);
 		}
 
 		@Override
 		boolean matchBody(Matcher matcher, int peeked) {
-			return matchNext(matcher, peeked);
-		}
-	}
-
-	/**
-	 * Base class for the (large majority of) nodes that only ever have one possible successor,
-	 * known at construction time -- matching input at that node never depends on *which* character
-	 * was seen to decide where to go next, only whether matching succeeded at all.
-	 *
-	 * <p>{@code next} is safe to be a plain {@code final MatcherConstruct} here because none of this
-	 * class's subclasses are ever the self-referential node in a cycle -- that role belongs
-	 * exclusively to a loop's own {@link LoopMatcherConstruct} (which sidesteps needing a mutable
-	 * field of its own by indirecting through a {@code PatternConstruct}'s {@code matcher} field
-	 * instead -- see its own doc) -- so a Single-dispatching node's successor is always some other
-	 * node that's already fully built (or at least already self-registered) by the time this
-	 * constructor runs.
-	 *
-	 * <p>{@code next.match(...)} is called as a plain virtual call ({@link #matchNext}), not via a
-	 * {@code MethodHandle} -- an earlier version of this class bound one via {@code findSpecial}
-	 * per successor, on the theory that an {@code invokespecial}-style direct call would let the
-	 * JIT inline it more readily than an ordinary virtual dispatch. Reverted 2026-09-07 (per the
-	 * project owner, after discussion elsewhere): a {@code MethodHandle} invocation on a
-	 * non-static receiver isn't reliably inlined by any JVM, and is frequently *slower* than a
-	 * plain virtual call even on newer Android runtimes -- there was no actual benefit to trade
-	 * against the construction-time cost and the Java-8/Android-API-26 compatibility contortions
-	 * (see design.md's "Direct-call MethodHandle binding" section for that history, kept for the
-	 * record even though the conclusion was to not do this).
-	 */
-	abstract static class SingleDispatchingMatcherConstruct extends MatcherConstruct {
-		final MatcherConstruct next;
-
-		SingleDispatchingMatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
-			super(owner);
-			this.next = next;
-		}
-
-		SingleDispatchingMatcherConstruct(int flags, MatcherConstruct next) {
-			super(flags);
-			this.next = next;
-		}
-
-		/** Invokes {@code next.match(matcher, peeked)}. */
-		final boolean matchNext(Matcher matcher, int peeked) {
 			return next.match(matcher, peeked);
 		}
-
-		@VisibleForTesting
-		MatcherConstruct getNext() { return next; }
 	}
+
+	// A single-successor node (the large majority of nodes below) just extends MatcherConstruct
+	// directly, via the (PatternConstruct, MatcherConstruct)/(int, MatcherConstruct) constructors --
+	// see MatcherConstruct's own class doc's "Flattened dispatch" section and #next's own doc
+	// (former SingleDispatchingMatcherConstruct, merged into the base class 2026-09-24: matching
+	// input at one of these nodes never depends on *which* character was seen to decide where to go
+	// next, only whether matching succeeded at all, so there was no real behavior these classes
+	// needed that MatcherConstruct itself couldn't just provide directly).
+	//
+	// next.match(...) is called as a plain virtual call, not via a MethodHandle -- an earlier version
+	// of this design bound one via findSpecial per successor, on the theory that an
+	// invokespecial-style direct call would let the JIT inline it more readily than an ordinary
+	// virtual dispatch. Reverted 2026-09-07 (per the project owner, after discussion elsewhere): a
+	// MethodHandle invocation on a non-static receiver isn't reliably inlined by any JVM, and is
+	// frequently *slower* than a plain virtual call even on newer Android runtimes -- there was no
+	// actual benefit to trade against the construction-time cost and the Java-8/Android-API-26
+	// compatibility contortions (see design.md's "Direct-call MethodHandle binding" section for that
+	// history, kept for the record even though the conclusion was to not do this).
 
 	/**
 	 * Matches exactly one code point against {@code validRanges} (a character class -- {@code .}, a
 	 * literal single character, or {@code [...]}), then advances to whatever comes next. A pure
 	 * membership test, not a dispatch: every member character leads to the same single successor.
 	 */
-	static final class SingleCharMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class SingleCharMatcherConstruct extends MatcherConstruct {
 		final CodePointSet validRanges;
 
 		SingleCharMatcherConstruct(ComplexCharacter owner) {
@@ -271,7 +287,7 @@ abstract class MatcherConstruct {
 				}
 				return false;
 			}
-			return matchNext(matcher, matcher.consume1CodePoint());
+			return next.match(matcher, matcher.consume1CodePoint());
 		}
 	}
 
@@ -285,7 +301,7 @@ abstract class MatcherConstruct {
 	 * the consumed cluster happens to reach {@code regionEnd} (a faithful port, not a considered
 	 * choice -- see that class's own doc for why).
 	 */
-	static final class GraphemeClusterMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class GraphemeClusterMatcherConstruct extends MatcherConstruct {
 		GraphemeClusterMatcherConstruct(PatternConstruct.GraphemeClusterConstruct owner) {
 			super(owner, owner.next.matcher);
 		}
@@ -297,7 +313,7 @@ abstract class MatcherConstruct {
 				return false;
 			}
 			int boundary = GraphemeCluster.nextBoundary(matcher.input, matcher.pos, matcher.regionEnd);
-			return matchNext(matcher, matcher.consumeCodeUnits(boundary - matcher.pos));
+			return next.match(matcher, matcher.consumeCodeUnits(boundary - matcher.pos));
 		}
 	}
 
@@ -317,7 +333,7 @@ abstract class MatcherConstruct {
 	 * A-Z}, so treating a surrogate pair as two separate {@code char}s compares correctly without
 	 * ever needing to decode one).
 	 */
-	static final class LiteralMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class LiteralMatcherConstruct extends MatcherConstruct {
 		// A real String, not the CharSequence LiteralString.value itself may be (a zero-copy
 		// CharBuffer view, for a literal run PatternParser could read straight off the pattern
 		// text -- see that field's own doc): LiteralString.buildMatcher() calls value.toString()
@@ -368,7 +384,7 @@ abstract class MatcherConstruct {
 				// stop looking one unit before it would matter.
 				return false;
 			}
-			return matchNext(matcher, matcher.consumeCodeUnits(value.length()));
+			return next.match(matcher, matcher.consumeCodeUnits(value.length()));
 		}
 
 		private boolean remainingInputIsPrefixOfValue(Matcher matcher) {
@@ -398,7 +414,7 @@ abstract class MatcherConstruct {
 	 * to whatever comes next -- {@code \1}/{@code \k<name>}, resolved to a fixed
 	 * {@code captureConstructIndex} at parse time (see {@code PatternConstruct.BackReference}).
 	 */
-	static final class BackReferenceMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class BackReferenceMatcherConstruct extends MatcherConstruct {
 		final int captureConstructIndex;
 
 		BackReferenceMatcherConstruct(PatternConstruct owner, int captureConstructIndex) {
@@ -421,7 +437,7 @@ abstract class MatcherConstruct {
 				return failedEntry != null && failedEntry.match(matcher, peeked);
 			}
 			if (start == end) {
-				return matchNext(matcher, peeked);
+				return next.match(matcher, peeked);
 			}
 			// Compared straight against matcher.input by index rather than materializing the
 			// captured text as its own String/CharSequence first -- there's nothing here that needs
@@ -458,7 +474,7 @@ abstract class MatcherConstruct {
 				peeked = matcher.consumeCodeUnits(units);
 				i += units;
 			} while (i < end);
-			return matchNext(matcher, peeked);
+			return next.match(matcher, peeked);
 		}
 	}
 
@@ -542,7 +558,7 @@ abstract class MatcherConstruct {
 		return len > 0 && matcher.pos + len == matcher.anchorEnd;
 	}
 
-	static final class BoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class BoundaryMatcherConstruct extends MatcherConstruct {
 		final BoundaryEnum type;
 
 		BoundaryMatcherConstruct(PatternConstruct owner, BoundaryEnum type) {
@@ -573,7 +589,7 @@ abstract class MatcherConstruct {
 				matcher.hitEnd = true;
 				matcher.requireEnd |= type == BoundaryEnum.InputEndExceptTerminator;
 			}
-			return matchesHere && matchNext(matcher, peeked);
+			return matchesHere && next.match(matcher, peeked);
 		}
 	}
 
@@ -602,7 +618,7 @@ abstract class MatcherConstruct {
 	 * line terminator ({@link #lineTerminatorLengthAt}). See design.md's "Boundary matching"
 	 * section.
 	 */
-	static final class LineBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct
+	static final class LineBoundaryMatcherConstruct extends MatcherConstruct
 			implements ZeroWidthAssertionGuard {
 		final boolean isLineBegin; // true: ^, false: $
 
@@ -640,7 +656,7 @@ abstract class MatcherConstruct {
 				matcher.hitEnd = true;
 				matcher.requireEnd = true;
 			}
-			return matchesHere && matchNext(matcher, peeked);
+			return matchesHere && next.match(matcher, peeked);
 		}
 
 		/**
@@ -679,7 +695,7 @@ abstract class MatcherConstruct {
 	 * constructing one of these) -- this class just interprets whichever of the two enums below ended
 	 * up not {@code Unchecked}.
 	 */
-	static final class WordBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct
+	static final class WordBoundaryMatcherConstruct extends MatcherConstruct
 			implements ZeroWidthAssertionGuard {
 		/** Whether {@code matchBody()} needs to independently check {@code matcher.peekPrevious()}. */
 		enum PriorWordBoundaryMatchType {
@@ -753,7 +769,7 @@ abstract class MatcherConstruct {
 				// character next consumed is the one at pos, but nothing can consume past the region, so
 				// test the real boundary here; whatever follows then fails (and flags hitEnd) on its own.
 				boolean boundary = isWordChar(wordSet, matcher.peekPrevious()) != isWordChar(wordSet, ahead);
-				return boundary == isWordBoundary && matchNext(matcher, peeked);
+				return boundary == isWordBoundary && next.match(matcher, peeked);
 			}
 			boolean checkPrior = priorMustBeWord !=PriorWordBoundaryMatchType.Unchecked
 					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
@@ -780,7 +796,7 @@ abstract class MatcherConstruct {
 			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior && peekIsWord == priorIsWord) {
 				return false;
 			}
-			return matchNext(matcher, peeked);
+			return next.match(matcher, peeked);
 		}
 
 		/**
@@ -836,7 +852,7 @@ abstract class MatcherConstruct {
 	 * there's no possibility of a partial (begin-without-end) write the way a general capturing
 	 * construct has to guard against.
 	 */
-	static final class LookbehindMatcherConstruct extends SingleDispatchingMatcherConstruct
+	static final class LookbehindMatcherConstruct extends MatcherConstruct
 			implements ZeroWidthAssertionGuard {
 		final boolean isPositive; // true: (?<=X), false: (?<!X)
 		final CodePointSet lookSet;
@@ -865,7 +881,7 @@ abstract class MatcherConstruct {
 				matcher.captureGroups[base] = matcher.pos - Character.charCount(prior);
 				matcher.captureGroups[base + 1] = matcher.pos;
 			}
-			return matchNext(matcher, peeked);
+			return next.match(matcher, peeked);
 		}
 
 		/**
@@ -890,7 +906,7 @@ abstract class MatcherConstruct {
 	 * always change a grapheme-boundary answer, unlike a 1-code-point lookbehind, which only ever
 	 * looks backward); anywhere strictly between the two delegates to the real check.
 	 */
-	static final class GraphemeBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct
+	static final class GraphemeBoundaryMatcherConstruct extends MatcherConstruct
 			implements ZeroWidthAssertionGuard {
 		GraphemeBoundaryMatcherConstruct(PatternConstruct owner) {
 			super(owner, owner.next.matcher);
@@ -912,7 +928,7 @@ abstract class MatcherConstruct {
 				matcher.hitEnd = true;
 				matcher.requireEnd = true;
 			}
-			return holds(matcher) && matchNext(matcher, peeked);
+			return holds(matcher) && next.match(matcher, peeked);
 		}
 
 		/**
@@ -1005,7 +1021,7 @@ abstract class MatcherConstruct {
 	 * QuantifiableConstruct.buildLoopMatcher}'s {@code continueMarker.matcher = bodyHead}) still goes
 	 * straight to it, since THAT path has no such outer guarantee.
 	 */
-	static final class LoopFirstEntryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class LoopFirstEntryMatcherConstruct extends MatcherConstruct {
 		LoopFirstEntryMatcherConstruct(int flags, MatcherConstruct bodyHead) {
 			super(flags, bodyHead);
 		}
@@ -1036,14 +1052,12 @@ abstract class MatcherConstruct {
 		// unshifted quantifier semantics regardless of which counting convention this exit's owning
 		// loop happens to use for its own runtime check below.
 		final boolean minIsZero;
-		final MatcherConstruct next;
 
 		LoopMatcherExit(int flags, int quantifiableIndex, int min, boolean minIsZero, MatcherConstruct next) {
-			super(flags);
+			super(flags, next);
 			this.quantifiableIndex = quantifiableIndex;
 			this.min = min;
 			this.minIsZero = minIsZero;
-			this.next = next;
 		}
 
 		@Override
@@ -1249,7 +1263,7 @@ abstract class MatcherConstruct {
 		return false;
 	}
 
-	static final class BeginCaptureMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class BeginCaptureMatcherConstruct extends MatcherConstruct {
 		final int captureConstructIndex;
 
 		BeginCaptureMatcherConstruct(PatternConstruct owner, int captureConstructIndex, MatcherConstruct next) {
@@ -1275,11 +1289,11 @@ abstract class MatcherConstruct {
 			// iteration would linger if (impossibly, given this engine's forward-only structure) this
 			// iteration's own EndCaptureMatcherConstruct somehow didn't run.
 			matcher.captureGroups[base + 1] = -1;
-			return matchNext(matcher, peeked);
+			return next.match(matcher, peeked);
 		}
 	}
 
-	static final class EndCaptureMatcherConstruct extends SingleDispatchingMatcherConstruct {
+	static final class EndCaptureMatcherConstruct extends MatcherConstruct {
 		final int captureConstructIndex;
 
 		EndCaptureMatcherConstruct(PatternConstruct.CaptureEndMarker owner, int captureConstructIndex, MatcherConstruct next) {
@@ -1295,7 +1309,7 @@ abstract class MatcherConstruct {
 			// BackReferenceMatcherConstruct above compares directly against these indices without
 			// ever needing a String/CharSequence view at all.
 			matcher.captureGroups[captureConstructIndex * 2 + 1] = matcher.pos;
-			return matchNext(matcher, peeked);
+			return next.match(matcher, peeked);
 		}
 	}
 

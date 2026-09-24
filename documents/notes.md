@@ -2956,3 +2956,17 @@ row silently failed to match and was skipped rather than refreshed) -- caught on
 refresher throws if any target row isn't found, not silently. For non-ASCII rows, prefer dumping the
 file's rows with their exact code points first (`row.pattern.codePoints()...`) and selecting by
 0-based row index instead of retyping the text.
+
+## `\X`/`\b{g}` (extended grapheme cluster / grapheme boundary) implemented (2026-09-23)
+
+Ported JDK 27's `Grapheme`/`IndicConjunctBreak` directly (`GraphemeCluster.java`); GCB classification
+added as 13 new generated `GCB_*` sets in `UnicodePredicates.java` (`UnicodeAnalyzer.graphemeClusterBreak()`).
+
+`\X` first (pure forward scan, no architectural conflict). `\b{g}` initially deferred -- determining a
+grapheme BOUNDARY needs backward context `\b`/`\B`'s one-code-point `peekPrevious()` can't give -- but
+after discussion with the user (who'd separately consulted Gemini) implemented it too, via bounded
+backward walks scoped to exactly the three context-dependent UAX #29 rules (GB9c Indic conjunct, GB11
+ZWJ emoji, GB12/13 regional-indicator parity) rather than porting JDK's own `matcher.last`-anchored
+rescan approach. See design.md's "Extended grapheme clusters" section for the full design and the
+worked regional-indicator example. No golden-corpus rows reference either construct, so no
+corpus/benchmark refresh was needed for either.

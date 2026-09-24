@@ -124,7 +124,6 @@ public class KnownDivergenceTest {
   // fails: move the pattern into AGREE_ON_COMPILING and drop it from remaining_work.md.
 
   private static final String[] OPEN_GAPS = {
-    "\\X", "\\b{g}",
   };
 
   @Test

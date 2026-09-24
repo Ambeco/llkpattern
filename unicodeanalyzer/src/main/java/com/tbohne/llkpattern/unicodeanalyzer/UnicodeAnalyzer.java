@@ -45,7 +45,156 @@ public class UnicodeAnalyzer {
 		categories();
 		scripts();
 		blocks();
+		graphemeClusterBreak();
 		printFooter();
+	}
+
+	// Extended grapheme cluster break (UAX #29) classification, ported from JDK 27's
+	// jdk.internal.util.regex.Grapheme#getType so \X/\b{g} see the same JDK-27-pinned Unicode data
+	// as every other named class here (see UnicodePredicates.java's own doc and README's "Unicode
+	// data is currently pinned to JDK 27's tables" entry). EXTENDED_PICTOGRAPHIC isn't emitted here
+	// -- it's already the generated isExtendedPictographic predicate above, and getType() itself
+	// checks Character.isExtendedPictographic first, before any of the classification below, so
+	// callers must do the same. OTHER isn't emitted either: it's the default for every code point
+	// this method doesn't otherwise classify, i.e. "member of none of the GCB_* sets".
+	private static final int GCB_OTHER = 0;
+	private static final int GCB_CR = 1;
+	private static final int GCB_LF = 2;
+	private static final int GCB_CONTROL = 3;
+	private static final int GCB_EXTEND = 4;
+	private static final int GCB_ZWJ = 5;
+	private static final int GCB_RI = 6;
+	private static final int GCB_PREPEND = 7;
+	private static final int GCB_SPACINGMARK = 8;
+	private static final int GCB_L = 9;
+	private static final int GCB_V = 10;
+	private static final int GCB_T = 11;
+	private static final int GCB_LV = 12;
+	private static final int GCB_LVT = 13;
+
+	public static void graphemeClusterBreak() {
+		intPredicate("GCB_CR", cp -> graphemeClusterBreakType(cp) == GCB_CR);
+		intPredicate("GCB_LF", cp -> graphemeClusterBreakType(cp) == GCB_LF);
+		intPredicate("GCB_CONTROL", cp -> graphemeClusterBreakType(cp) == GCB_CONTROL);
+		intPredicate("GCB_EXTEND", cp -> graphemeClusterBreakType(cp) == GCB_EXTEND);
+		intPredicate("GCB_ZWJ", cp -> graphemeClusterBreakType(cp) == GCB_ZWJ);
+		intPredicate("GCB_RI", cp -> graphemeClusterBreakType(cp) == GCB_RI);
+		intPredicate("GCB_PREPEND", cp -> graphemeClusterBreakType(cp) == GCB_PREPEND);
+		intPredicate("GCB_SPACINGMARK", cp -> graphemeClusterBreakType(cp) == GCB_SPACINGMARK);
+		intPredicate("GCB_L", cp -> graphemeClusterBreakType(cp) == GCB_L);
+		intPredicate("GCB_V", cp -> graphemeClusterBreakType(cp) == GCB_V);
+		intPredicate("GCB_T", cp -> graphemeClusterBreakType(cp) == GCB_T);
+		intPredicate("GCB_LV", cp -> graphemeClusterBreakType(cp) == GCB_LV);
+		intPredicate("GCB_LVT", cp -> graphemeClusterBreakType(cp) == GCB_LVT);
+	}
+
+	// Hangul syllables (mirrors Grapheme.java's own constants).
+	private static final int SYLLABLE_BASE = 0xAC00;
+	private static final int LCOUNT = 19;
+	private static final int VCOUNT = 21;
+	private static final int TCOUNT = 28;
+	private static final int NCOUNT = VCOUNT * TCOUNT;
+	private static final int SCOUNT = LCOUNT * NCOUNT;
+
+	// #tr29: SpacingMark exceptions -- ported verbatim from Grapheme.java.
+	private static boolean isExcludedSpacingMark(int cp) {
+		return cp == 0x102B || cp == 0x102C || cp == 0x1038 ||
+				cp >= 0x1062 && cp <= 0x1064 ||
+				cp >= 0x1067 && cp <= 0x106D ||
+				cp == 0x1083 ||
+				cp >= 0x1087 && cp <= 0x108C ||
+				cp == 0x108F ||
+				cp >= 0x109A && cp <= 0x109C ||
+				cp == 0x1A61 || cp == 0x1A63 || cp == 0x1A64 ||
+				cp == 0xAA7B || cp == 0xAA7D;
+	}
+
+	// Ported verbatim from jdk.internal.util.regex.Grapheme#getType (JDK 27), minus the leading
+	// Character.isExtendedPictographic(cp) check -- callers (GraphemeCluster.java) do that first.
+	@SuppressWarnings("fallthrough")
+	private static int graphemeClusterBreakType(int cp) {
+		if (cp < 0x007F) {
+			if (cp < 32) {
+				if (cp == 0x000D) return GCB_CR;
+				if (cp == 0x000A) return GCB_LF;
+				return GCB_CONTROL;
+			}
+			return GCB_OTHER;
+		}
+		if (Character.isExtendedPictographic(cp)) {
+			// Handled separately by callers via the existing isExtendedPictographic set; excluded
+			// from every GCB_* set here so the two classifications never overlap.
+			return GCB_OTHER;
+		}
+		int type = Character.getType(cp);
+		switch (type) {
+		case Character.UNASSIGNED:
+			if (cp == 0x0378) return GCB_OTHER;
+			// fallthrough
+		case Character.CONTROL:
+		case Character.LINE_SEPARATOR:
+		case Character.PARAGRAPH_SEPARATOR:
+		case Character.SURROGATE:
+			return GCB_CONTROL;
+		case Character.FORMAT:
+			if (cp == 0x200C || cp >= 0xE0020 && cp <= 0xE007F) return GCB_EXTEND;
+			if (cp == 0x200D) return GCB_ZWJ;
+			if (cp >= 0x0600 && cp <= 0x0605 ||
+					cp == 0x06DD || cp == 0x070F ||
+					cp == 0x0890 || cp == 0x0891 ||
+					cp == 0x08E2 || cp == 0x110BD || cp == 0x110CD)
+				return GCB_PREPEND;
+			return GCB_CONTROL;
+		case Character.NON_SPACING_MARK:
+		case Character.ENCLOSING_MARK:
+			return GCB_EXTEND;
+		case Character.COMBINING_SPACING_MARK:
+			if (isExcludedSpacingMark(cp)) return GCB_OTHER;
+			return GCB_SPACINGMARK;
+		case Character.OTHER_SYMBOL:
+			if (cp >= 0x1F1E6 && cp <= 0x1F1FF) return GCB_RI;
+			return GCB_OTHER;
+		case Character.MODIFIER_LETTER:
+		case Character.MODIFIER_SYMBOL:
+			if (cp == 0xFF9E || cp == 0xFF9F || cp >= 0x1F3FB && cp <= 0x1F3FF) return GCB_EXTEND;
+			return GCB_OTHER;
+		case Character.OTHER_LETTER:
+			if (cp == 0x0E33 || cp == 0x0EB3) return GCB_SPACINGMARK;
+			if (cp >= 0x1100 && cp <= 0x11FF) {
+				if (cp <= 0x115F) return GCB_L;
+				if (cp <= 0x11A7) return GCB_V;
+				return GCB_T;
+			}
+			int sindex = cp - SYLLABLE_BASE;
+			if (sindex >= 0 && sindex < SCOUNT) {
+				if (sindex % TCOUNT == 0) return GCB_LV;
+				return GCB_LVT;
+			}
+			if (cp >= 0xA960 && cp <= 0xA97C) return GCB_L;
+			if (cp >= 0xD7B0 && cp <= 0xD7C6 ||
+					cp == 0x16D63 ||
+					cp >= 0x16D67 && cp <= 0x16D6A)
+				return GCB_V;
+			if (cp >= 0xD7CB && cp <= 0xD7FB) return GCB_T;
+			switch (cp) {
+			case 0x0D4E:
+			case 0x111C2:
+			case 0x111C3:
+			case 0x113D1:
+			case 0x1193F:
+			case 0x11941:
+			case 0x11A84:
+			case 0x11A85:
+			case 0x11A86:
+			case 0x11A87:
+			case 0x11A88:
+			case 0x11A89:
+			case 0x11D46:
+			case 0x11F02:
+				return GCB_PREPEND;
+			}
+		}
+		return GCB_OTHER;
 	}
 
 	public static void printHeader() {

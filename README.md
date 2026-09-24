@@ -28,7 +28,12 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
   own greedy loop would retry with fewer iterations there in a way this engine's non-backtracking one can't;
   `a+\b` and `(?m)a+$` still compile, since those two never actually admit an interior exit this way; `a+(?<=a)b`
   is rejected the same way `a+\B` is, while `a+(?<!a)b` compiles (the assertion can never hold right after
-  consuming an `a`, so there's no real ambiguity). A possessive loop (`a++\B`) is exempt — it already agrees with
+  consuming an `a`, so there's no real ambiguity). `a+\b{g}b` (grapheme boundary) is rejected too, but more
+  conservatively than the others: rather than precisely classifying which peek code points could trigger it, ANY
+  loop whose last-consumed character is statically known at all is treated as ambiguous with `\b{g}` — a deliberate
+  over-rejection (see design.md's "Extended grapheme clusters" section) since `\b{g}`'s truth can depend on a whole
+  backward chain (regional-indicator runs, Indic conjuncts, ZWJ emoji sequences), not just one prior character. A
+  possessive loop (`a++\B`) is exempt — it already agrees with
   `java.util.regex`'s own non-backtracking possessive — and so is a reluctant loop (`a+?\B`), whose early exit is
   instead resolved correctly at match time (see design.md's "Quantifier/loop compilation" section). This one
   constraint (a single, committed position with only a one-code-point look ahead/behind — see design.md) is also
@@ -110,7 +115,9 @@ if (matcher.find()) {
 Ll1Pattern.compile("a|ab"); // throws PatternSyntaxException: both branches start with 'a'
 ```
 
-Not yet implemented, and gaps to close rather than design choices: `\X` (grapheme cluster). `\b{g}` is rejected rather than silently misread.
+Intentional divergence: `\X` claims every code point as its own entry point (unlike `.`, which only claims
+"whatever a sibling doesn't"), since a cluster's width isn't statically known -- so `a|\X` and `\X*a` are rejected
+as ambiguous, the same way `.+b` is (see documents/design.md).
 `\N{name}` looks the name up with the platform's `Character.codePointOf` (JDK 9+, Android with a recent enough ICU), so
 it knows exactly the characters the running platform's Unicode data does; where that method is missing it is a compile error
 suggesting `\x{...}`.
@@ -129,7 +136,6 @@ See [documents/remaining_work.md](documents/remaining_work.md) for the full, act
 - **Whether the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence (design.md's "Boundary matching"
   section) is an acceptable, permanent consequence of the compile-time `\b`/`\B` elision, or a bug to fix** — not
   yet analyzed in depth; see remaining_work.md.
-- **Syntax and API gaps** — `\X`, `\b{g}`.
 - **More scraped-corpus sources planned** beyond these four — Oracle GraalVM's regex engine tests are an unconfirmed candidate; dk.brics.automaton was considered and skipped (see remaining_work.md). The RE2J corpus turned up a match-time crash (`((x))*`) and an ambiguity-check gap (`a*^a`); see remaining_work.md.
 - **`ArrayCodePointSet` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
 
@@ -141,7 +147,7 @@ In brief:
 
 - **Parsing** (`PatternParser`, `PatternConstruct`): a recursive-descent parser turns a pattern string into an AST of `PatternConstruct` nodes (unions, sequences, literals, character classes, quantifiers, boundaries, backreferences, groups). This layer is fairly mature; several real parsing bugs were found and fixed while building out the compiler (see [documents/notes.md](documents/notes.md)).
 - **Code point range representation** (`CodePointSet`/`ArrayCodePointSet`): done and tested. A `RangeSet`-style pure-membership interface over Unicode code points, backed by a specialized flat-array implementation.
-- **Compilation** (`PatternConstruct` → `MatcherConstruct`): working for literals, character classes, sequences, alternation (with real ambiguity detection — two `|` branches that could match the same next character are a compile-time error), quantifiers/loops (`?`, `*`, `+`, `{n,m}`), and capturing groups — including a group that's both capturing and quantified at once (e.g. `(a)*`), which correctly captures whichever iteration matched last, per real regex semantics. Boundary matching is implemented for `\b`/`\B` (with a compile-time optimization for the common case where a boundary sits next to a statically-word/non-word literal or character class), `^`/`$`/`\A`/`\Z`/`\z` (honoring `MULTILINE`/`UNIX_LINES`). Backreferences (`\1`-`\9`, `\k<name>`) are implemented, using a precise compile-time entry set computed from the referenced group so ordinary usage stays fully LL(1)-checked (see [documents/design.md](documents/design.md)'s "Backreferences" section). `\G` doesn't match a position at all — see design.md's "Boundary matching" section.
+- **Compilation** (`PatternConstruct` → `MatcherConstruct`): working for literals, character classes, sequences, alternation (with real ambiguity detection — two `|` branches that could match the same next character are a compile-time error), quantifiers/loops (`?`, `*`, `+`, `{n,m}`), and capturing groups — including a group that's both capturing and quantified at once (e.g. `(a)*`), which correctly captures whichever iteration matched last, per real regex semantics. Boundary matching is implemented for `\b`/`\B` (with a compile-time optimization for the common case where a boundary sits next to a statically-word/non-word literal or character class), `^`/`$`/`\A`/`\Z`/`\z` (honoring `MULTILINE`/`UNIX_LINES`). Backreferences (`\1`-`\9`, `\k<name>`) are implemented, using a precise compile-time entry set computed from the referenced group so ordinary usage stays fully LL(1)-checked (see [documents/design.md](documents/design.md)'s "Backreferences" section). `\X` (extended grapheme cluster) is implemented, consuming one whole cluster per JDK 27's own UAX #29 rules, and `\b{g}` (grapheme boundary) is implemented alongside it, via bounded backward scans rather than JDK's own match-start-anchored rescan (see design.md's "Extended grapheme clusters" section for both); `\G` doesn't match a position at all — see design.md's "Boundary matching" section.
 - **Matching** (`Matcher`): core API implemented and tested — `matches()`, `lookingAt()`, `find()`/`find(int)`, numbered and named group accessors, regions, `reset()`. Replacement (`replaceAll`/`replaceFirst`/`appendReplacement`/etc.), `split`, `toMatchResult` and `results` are implemented and differentially tested against `java.util.regex`, as are `hitEnd`/`requireEnd`; the bounds methods (`useAnchoringBounds`, `useTransparentBounds` and their `has...` getters) are implemented.
 - **Supporting pieces**: `NamedCharClass`/`UnicodePredicates` (Unicode category/script/block support) and the `unicodeanalyzer` module (its code generator) are largely built out.
 - `oldllkpattern/` holds an earlier version of the implementation, kept for reference during the ongoing refactor.
@@ -158,15 +164,15 @@ over time.
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.619 | 1.819 | 2.94x |
-| Pixel 3a | 58.37 | 44.86 | 0.77x |
+| Intel-i7-9750H | 0.622 | 1.987 | 3.20x |
+| Pixel 3a | 56.65 | 45.62 | 0.81x |
 
 **Corpus match time (each pass matches/finds/look_ats ~2300 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.284 | 0.328 | 1.16x |
-| Pixel 3a | 21.87 | 5.11 | 0.23x |
+| Intel-i7-9750H | 0.288 | 0.318 | 1.10x |
+| Pixel 3a | 23.25 | 5.16 | 0.22x |
 
 llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips). On the Pixel 3a compile time is now somewhat faster than `java.util.regex`, though the two land close enough together, and vary run-to-run, that this ratio shouldn't be read as settled (see notes.md). Match time is faster than `java.util.regex` on the Pixel 3a, notably so; on desktop the two are close to parity, with llkpattern landing on either side of `java.util.regex` depending on run and corpus composition. See notes.md for the compile/match-time performance history.
 

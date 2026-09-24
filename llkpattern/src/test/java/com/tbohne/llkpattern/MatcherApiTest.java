@@ -144,7 +144,9 @@ public class MatcherApiTest {
 
   @Test
   public void boundaryTypeSuffixIsRejected() {
-    for (String p : new String[] {"\\b{g}", "a\\B{g}", "\\b{"}) {
+    // \b{g} IS supported (see GraphemeBoundaryTest) -- \B{g} isn't special syntax at all (matching
+    // java.util.regex: only \b recognizes a "{" suffix), and \b{ with no closing brace is malformed.
+    for (String p : new String[] {"a\\B{g}", "\\b{"}) {
       assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(p));
     }
   }

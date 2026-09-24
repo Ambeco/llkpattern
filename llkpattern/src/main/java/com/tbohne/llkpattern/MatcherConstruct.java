@@ -276,6 +276,32 @@ abstract class MatcherConstruct {
 	}
 
 	/**
+	 * Matches {@code \X} -- one whole extended grapheme cluster starting at the current position,
+	 * via {@link GraphemeCluster#nextBoundary}, then advances to whatever comes next. Always
+	 * consumes at least one code point when there's any input left (a cluster is never empty), so
+	 * {@code entrySet} is always a hit here -- this node's own membership test is really just "is
+	 * there any input left at all," mirroring JDK 27's {@code Pattern.XGrapheme#match}: {@code
+	 * hitEnd} is set only when there's no input left to start a cluster with, never merely because
+	 * the consumed cluster happens to reach {@code regionEnd} (a faithful port, not a considered
+	 * choice -- see that class's own doc for why).
+	 */
+	static final class GraphemeClusterMatcherConstruct extends SingleDispatchingMatcherConstruct {
+		GraphemeClusterMatcherConstruct(PatternConstruct.GraphemeClusterConstruct owner) {
+			super(owner, owner.next.matcher);
+		}
+
+		@Override
+		boolean matchBody(Matcher matcher, int peeked) {
+			if (peeked == -1) {
+				matcher.hitEnd = true;
+				return false;
+			}
+			int boundary = GraphemeCluster.nextBoundary(matcher.input, matcher.pos, matcher.regionEnd);
+			return matchNext(matcher, matcher.consumeCodeUnits(boundary - matcher.pos));
+		}
+	}
+
+	/**
 	 * Matches a fixed literal string exactly, then advances to whatever comes next. Compares the
 	 * whole {@code value} against the input in one call rather than code-point-at-a-time:
 	 * {@code String#regionMatches} is a JIT intrinsic on every JVM this project targets, so this is
@@ -555,8 +581,9 @@ abstract class MatcherConstruct {
 	 * A zero-width, side-effect-free match-time predicate for a construct that also has a full
 	 * {@code SingleDispatchingMatcherConstruct#matchBody} of its own (which additionally sets
 	 * {@code hitEnd}/{@code requireEnd} and dispatches to {@code next}) -- implemented by {@link
-	 * WordBoundaryMatcherConstruct}, {@link LineBoundaryMatcherConstruct}, and {@link
-	 * LookbehindMatcherConstruct}, the assertion types position-dependent enough that {@link
+	 * WordBoundaryMatcherConstruct}, {@link LineBoundaryMatcherConstruct}, {@link
+	 * LookbehindMatcherConstruct}, and {@link GraphemeBoundaryMatcherConstruct}, the assertion
+	 * types position-dependent enough that {@link
 	 * #exitAssertionChain} needs to evaluate them directly, in ADVANCE of actually committing to the
 	 * exit path they gate (see that method's own doc, and {@link ReluctantLoopMatcherConstruct}'s).
 	 * Never called from ordinary dispatch -- {@code matchBody} keeps its own independent (and
@@ -853,6 +880,54 @@ abstract class MatcherConstruct {
 	}
 
 	/**
+	 * {@code \b{g}} (grapheme boundary) -- see {@code PatternConstruct.GraphemeBoundaryConstruct}'s
+	 * own doc and design.md's "Extended grapheme clusters" section. Unlike {@code
+	 * WordBoundaryMatcherConstruct}, there's no statically-known-neighbor optimization: the general
+	 * check is always run. Three positions are handled without ever calling {@link
+	 * GraphemeCluster#isBoundary} at all, mirroring JDK 27's own {@code Pattern.GraphemeBound}
+	 * exactly: the true (region) start is always a boundary; past the true (region) end is always a
+	 * boundary too, but additionally sets {@code hitEnd}/{@code requireEnd} (a longer suffix could
+	 * always change a grapheme-boundary answer, unlike a 1-code-point lookbehind, which only ever
+	 * looks backward); anywhere strictly between the two delegates to the real check.
+	 */
+	static final class GraphemeBoundaryMatcherConstruct extends SingleDispatchingMatcherConstruct
+			implements ZeroWidthAssertionGuard {
+		GraphemeBoundaryMatcherConstruct(PatternConstruct owner) {
+			super(owner, owner.next.matcher);
+		}
+
+		private static boolean holds(Matcher matcher) {
+			if (matcher.pos <= matcher.lookFloor) {
+				return true;
+			}
+			if (matcher.pos < matcher.lookCeil) {
+				return GraphemeCluster.isBoundary(matcher.input, matcher.pos, matcher.lookFloor);
+			}
+			return true;
+		}
+
+		@Override
+		boolean matchBody(Matcher matcher, int peeked) {
+			if (matcher.pos >= matcher.lookCeil) {
+				matcher.hitEnd = true;
+				matcher.requireEnd = true;
+			}
+			return holds(matcher) && matchNext(matcher, peeked);
+		}
+
+		/**
+		 * As {@link #matchBody}, but only the "does \b{g} hold here" question -- no {@code hitEnd}/
+		 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
+		 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
+		 * logic.
+		 */
+		@Override
+		public boolean holdsHere(Matcher matcher, int peeked) {
+			return holds(matcher);
+		}
+	}
+
+	/**
 	 * A loop's own "continue or stop at max" node, used for a GREEDY loop and also for a reluctant
 	 * loop where stopping early isn't provably safe (see {@link ReluctantLoopMatcherConstruct} for
 	 * the reluctant-safe counterpart, used instead of this one -- never both -- when it is).
@@ -1135,6 +1210,11 @@ abstract class MatcherConstruct {
 			LookbehindMatcherConstruct lb = (LookbehindMatcherConstruct) node;
 			chain.add(lb);
 			return collectExitAssertionChain(lb.next, chain);
+		}
+		if (node instanceof GraphemeBoundaryMatcherConstruct) {
+			GraphemeBoundaryMatcherConstruct gb = (GraphemeBoundaryMatcherConstruct) node;
+			chain.add(gb);
+			return collectExitAssertionChain(gb.next, chain);
 		}
 		return false;
 	}

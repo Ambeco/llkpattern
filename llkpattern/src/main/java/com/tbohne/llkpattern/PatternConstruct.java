@@ -1383,6 +1383,90 @@ abstract class PatternConstruct {
 		}
 	}
 
+	/**
+	 * {@code \X} (extended grapheme cluster, UAX #29) -- consumes one full cluster starting at the
+	 * current position, via {@link GraphemeCluster#nextBoundary}, a direct forward-only port of
+	 * JDK 27's {@code jdk.internal.util.regex.Grapheme#nextBoundary}: it never looks more than
+	 * forward from the current position, so it fits this engine's single-pass model without any
+	 * new architectural capability (unlike {@code \b{g}}, deliberately left unimplemented for now
+	 * -- see remaining_work.md -- since determining a grapheme BOUNDARY, rather than consuming a
+	 * whole cluster, needs unbounded backward context: e.g. telling apart two adjacent regional
+	 * indicators that continue one flag emoji from two adjacent ones that start a new one requires
+	 * counting every regional indicator back to the last real boundary, not just looking at the
+	 * immediately adjacent code points).
+	 *
+	 * <p>Like {@code .}, entry is universal -- but unlike {@code .} (which claims only "whatever a
+	 * sibling branch doesn't"), {@code \X} claims EVERY code point explicitly, so it can never
+	 * safely coexist with any other branch/loop-exit candidate (a plain union {@code a|\X} or a
+	 * loop {@code \X*a} is rejected as ambiguous, same as {@code .+b} -- see README's "Intentional
+	 * differences" list). This is the conservative, always-correct choice: a grapheme cluster's own
+	 * width isn't statically known, so there's no way to carve out "whatever \X wouldn't otherwise
+	 * claim" the way {@code .}'s dotElse mechanism does.
+	 */
+	static final class GraphemeClusterConstruct extends PatternConstruct {
+		GraphemeClusterConstruct(int startIndex, int endIndex) {
+			super(startIndex, endIndex);
+		}
+
+		@Override
+		boolean needsEntryPointBeforeMatcher() {
+			// buildMatcher() below doesn't read entryMap/entryElse at all.
+			return false;
+		}
+
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			entryMap = universalCodePointSet();
+		}
+
+		@Override
+		void buildMatcher() {
+			new MatcherConstruct.GraphemeClusterMatcherConstruct(this);
+		}
+	}
+
+	/**
+	 * {@code \b{g}} (grapheme boundary) -- unlike {@code \b}/{@code \B}, only the positive form
+	 * exists (JDK 27 doesn't recognize {@code \B{g}} as special syntax either; see design.md).
+	 * Always a real, match-time check -- like {@link LookbehindConstruct}, there's no compile-time
+	 * elision to a no-op or a compile error, since neither neighbor's grapheme-boundary-ness is
+	 * ever fully statically known the way \b/\B's word-ness sometimes is.
+	 */
+	static final class GraphemeBoundaryConstruct extends PatternConstruct {
+		GraphemeBoundaryConstruct(int startIndex, int endIndex) {
+			super(startIndex, endIndex);
+		}
+
+		@Override
+		void buildEntryMap(PatternConstruct next) {
+			entryElse = this;
+		}
+
+		@Override
+		void buildMatcher() {
+			new MatcherConstruct.GraphemeBoundaryMatcherConstruct(this);
+		}
+
+		/**
+		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s {@code
+		 * checkAssertions} doc and {@code LookbehindConstruct#admittedInteriorExitPeekSet}'s own doc
+		 * for the general shape. Deliberately conservative rather than precise: unlike \b/\B (whose
+		 * truth depends on a simple word/non-word classification of exactly one neighbor at a time)
+		 * or a 1-code-point lookbehind, \b{g}'s truth can depend on a whole chain of prior code
+		 * points (GB9c/GB11/GB12-13 -- see {@code GraphemeCluster#isBoundary}), which this loop-
+		 * ambiguity check has no way to reason about precisely. So whenever the loop body could
+		 * plausibly have just consumed ANY character at all ({@code bodyLastCharSet != null}), this
+		 * treats \b{g} as potentially holding for every peek code point -- i.e. always ambiguous with
+		 * continuing the loop. This over-rejects some loops that would actually be fine at match time
+		 * (e.g. {@code \X+\b{g}}, since a loop of whole clusters can never stop mid-cluster) in
+		 * exchange for never under-rejecting a genuinely ambiguous one -- the same tradeoff this
+		 * project already accepts for {@code \X} itself (see README's "Intentional differences").
+		 */
+		static @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
+			return bodyLastCharSet == null ? null : universalCodePointSet();
+		}
+	}
+
 	static final class BoundaryConstruct extends PatternConstruct {
 		enum BoundaryEnum {
 			InputBegin,
@@ -1956,6 +2040,15 @@ abstract class PatternConstruct {
 			}
 			CodePointSet admitted =
 					LookbehindConstruct.admittedInteriorExitPeekSet(lb.isPositive, lb.lookSet, bodyLastCharSet);
+			return admitted == null ? rest : union(rest, admitted);
+		}
+		if (pc instanceof GraphemeBoundaryConstruct) {
+			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
+			if (!checkAssertions) {
+				return rest;
+			}
+			CodePointSet admitted =
+					GraphemeBoundaryConstruct.admittedInteriorExitPeekSet(bodyLastCharSet);
 			return admitted == null ? rest : union(rest, admitted);
 		}
 		if (pc instanceof Sequence) {

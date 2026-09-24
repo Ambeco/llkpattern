@@ -537,6 +537,15 @@ final class PatternParser {
             sequence.patterns.add(quantifyBackReference(backReference));
             continue;
           }
+          if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'X') {
+            int graphemeStartIndex = index;
+            advance(2);
+            GraphemeClusterConstruct graphemeCluster =
+                new GraphemeClusterConstruct(graphemeStartIndex, index);
+            graphemeCluster.flags = flags;
+            sequence.patterns.add(quantifySingleConstruct(graphemeCluster));
+            continue;
+          }
           PatternConstruct boundaryConstruct = tryParseBoundary();
           if (boundaryConstruct != null) {
             if (keepZeroWidthAfterQuantifier()) {
@@ -1259,13 +1268,15 @@ final class PatternParser {
     return (afterBrace >= '0' && afterBrace <= '9') || afterBrace == ',';
   }
 
-  /** {@code \\b{g}} (grapheme boundary) and other {@code \\b{...}} forms aren't supported; without
-   *  this the "{g}" (a "{" not starting a quantifier) would silently be read as literal text after a plain word boundary. */
+  /** Any {@code \\b{...}}/{@code \\B{...}} boundary-type suffix other than the plain {@code \\b{g}}
+   *  already handled by this method's caller (grapheme boundary -- {@code \\B{g}} is NOT special
+   *  syntax, matching java.util.regex) isn't supported; without this the "{...}" (a "{" not
+   *  starting a quantifier) would silently be read as literal text after a plain word boundary. */
   private void rejectBoundaryType() {
     if (peek == '{' && !(index + 1 < pattern.length() && isQuantifierStart(pattern.charAt(index + 1)))) {
       throw throwUnexpectedChar(
-          " boundary type. Only \\b and \\B are supported: grapheme boundaries (\\b{g}) aren't, "
-              + "and \\X (extended grapheme cluster) doesn't exist here either");
+          " boundary type. Only \\b, \\B, and \\b{g} (grapheme boundary) are supported -- "
+              + "\\X (extended grapheme cluster) is also supported, just not as a boundary type");
     }
   }
 
@@ -1276,7 +1287,15 @@ final class PatternParser {
     int peek2 = peekAfter();
     switch (peek2) {
       case 'b': {
+        int startIndex = index;
         advance(2);
+        if (peek == '{' && index + 2 < pattern.length()
+            && pattern.charAt(index + 1) == 'g' && pattern.charAt(index + 2) == '}') {
+          advance(3);
+          GraphemeBoundaryConstruct g = new GraphemeBoundaryConstruct(startIndex, index);
+          g.flags = flags;
+          return g;
+        }
         rejectBoundaryType();
         WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
         b.flags = flags;
@@ -1317,19 +1336,28 @@ final class PatternParser {
    * returned as-is.
    */
   private PatternConstruct quantifyBackReference(PatternConstruct backReference) {
+    return quantifySingleConstruct(backReference);
+  }
+
+  /**
+   * Wraps a construct that isn't itself a {@code QuantifiableConstruct} (a backreference, or
+   * {@code \X}) in a one-branch, non-capturing union so a following quantifier (e.g. {@code \X+})
+   * has somewhere to attach; returns the construct as-is if nothing follows.
+   */
+  private PatternConstruct quantifySingleConstruct(PatternConstruct construct) {
     skipComments();
     if (peek != '?' && peek != '*' && peek != '+' && peek != '{') {
-      return backReference;
+      return construct;
     }
-    QuantifiedUnion wrapper = new QuantifiedUnion(pattern, backReference.startIndex, flags);
+    QuantifiedUnion wrapper = new QuantifiedUnion(pattern, construct.startIndex, flags);
     wrapper.captureConstructIndex = -1;
-    Sequence body = new Sequence(backReference.startIndex);
-    body.patterns.add(backReference);
-    body.endIndex = backReference.endIndex;
+    Sequence body = new Sequence(construct.startIndex);
+    body.patterns.add(construct);
+    body.endIndex = construct.endIndex;
     wrapper.constructs.add(body);
-    wrapper.endIndex = backReference.endIndex;
+    wrapper.endIndex = construct.endIndex;
     parseQuantifiable(wrapper);
-    return wrapper.isUnquantified() ? backReference : wrapper;
+    return wrapper.isUnquantified() ? construct : wrapper;
   }
 
   /**

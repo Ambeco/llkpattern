@@ -69,6 +69,15 @@ run to run with background load on either device, but the ratio is comparatively
 whether the ratio's run-to-run noise bands (from a couple of runs each way) still overlap between baseline and
 the change, not by a single before/after data point.
 
+- [ ] **Possible small compile-time regression from `\X`/`\b{g}` (2026-09-23).** The Intel llk/regex
+      compile ratio A/B'd as baseline 2.92-3.00x vs changed 2.99-3.18x -- the bands technically
+      overlap (2.99-3.00), but only barely, not the comfortable overlap this project usually treats
+      as "clearly noise." Plausible cause: the new `instanceof GraphemeBoundaryConstruct`/
+      `GraphemeClusterConstruct` branches added to `skipZeroWidthEntrySet`/`collectExitAssertionChain`
+      run for every compile, whether or not the pattern uses either construct. Deferred per the
+      project owner (2026-09-23): revisit once the grapheme-cluster feature work is feature-complete,
+      with a proper multi-run A/B (more than two runs each way) rather than the quick check done here.
+
 ## Scraped-corpus microbenchmark
 
 - [ ] `jmhAllocSampling`'s fixed 3000-iteration count (`llkpattern/build.gradle`) was sized for

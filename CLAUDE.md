@@ -31,6 +31,16 @@ the desktop quiet; (3) by the time it finishes, the other session's "ready" shou
 arrived -- if so, start the Intel run right away, otherwise wait for it, never start without it;
 (4) message the other session when the Intel run is done so it can resume.
 
+**The Pixel 3a run also can't overlap your OWN `git stash`/`pop` (the A/B step below), even though
+it "doesn't need the desktop quiet."** "Doesn't need the desktop quiet" is about CPU contention
+only -- `:app:connectedAndroidTest` still builds the APK from the CURRENT working tree, so stashing
+source out from under it mid-build (or popping back) can let it compile against a source state that
+shifted partway through, without any error -- the result silently looks like a normal run (seen:
+2026-09-24, a Pixel run kicked off just before an Intel A/B's `git stash` came back byte-identical
+to the already-committed baseline, i.e. it measured nothing new; had to be discarded and rerun after
+the stash/pop settled). Either run the Pixel step fully before/after the Intel A/B's stash window,
+or confirm no stash/checkout touches `llkpattern/src/main`/`unicodeanalyzer` while it's in flight.
+
 **A/B against a fresh baseline, after any change that could potentially affect performance.** The
 committed `benchmarks/*` baselines can be stale, so a delta against them may not come from your change
 (seen: a committed 44,616 B/op vs 48,488 B/op measured on unchanged code). Copy the new JSON somewhere,

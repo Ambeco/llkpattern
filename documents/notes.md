@@ -2970,3 +2970,46 @@ ZWJ emoji, GB12/13 regional-indicator parity) rather than porting JDK's own `mat
 rescan approach. See design.md's "Extended grapheme clusters" section for the full design and the
 worked regional-indicator example. No golden-corpus rows reference either construct, so no
 corpus/benchmark refresh was needed for either.
+
+## `Matcher` match-time hot-path cleanup: fewer `charAt`/`syncPeeked`/`codePointBefore` calls (2026-09-24)
+
+Prompted by Pixel 3a CPU sampling showing `Matcher.search` calling `String.charAt` twice per scanned
+position (a surrogate-pair guard) before `attemptMatch`'s own `syncPeeked()` call did a third
+`codePointAt`, plus `syncPeeked` itself at 7.7% of `matchLlk` CPU.
+
+- `search()`'s scan loop now decodes each candidate position's code point once (`codePointAt`) and
+  threads it straight into a new `attemptMatch(from, requireFullMatch, precomputedPeeked)` overload,
+  stepping `i` forward by that code point's own width -- this also makes the explicit low-surrogate
+  skip check unnecessary for every position after the first (stepping by `charCount` can never land
+  back on a surrogate's low half). `syncPeeked()` is no longer called at all from this loop.
+- `Matcher.peekPrevious()` (backing `\b`/`\B`/lookbehind/`\b{g}`) is now cached rather than
+  recomputing `codePointBefore(pos)` on every call: `consume1CodePoint()` updates it for free (the
+  code point it just consumed IS the new previous), while `syncPeeked()`/`consumeCodeUnits()`
+  (literal/grapheme-cluster consumes, which may span more than one code point) just invalidate it to
+  an `UNKNOWN_PREVIOUS` sentinel, computed lazily on the next actual `peekPrevious()` call -- eagerly
+  recomputing there would cost exactly what the on-demand computation costs, for a value most matches
+  never read at all.
+- Deleted `Matcher.consumeLiteral` (dead code, zero callers, and it never updated `peeked` -- would
+  have been a latent bug if ever called).
+- Full suite green (7198/0/3308, was 7197/0/3308 -- one new regression-guard test added:
+  `LookbehindTest.find_startingOnLowSurrogateHalf_skipsToNextCodePoint`); 5 pre-existing failures
+  (`CanonEqTest`/`EmojiPropertyTest`/`GraphemeBoundaryTest` x2/`GraphemeClusterTest`) confirmed
+  identical on unmodified code too -- JDK-17-vs-27 Unicode table drift (running JDK is 17, see
+  remaining_work.md's new flag-the-golden-rows item), not a regression from this change.
+- Desktop A/B (stash-based): llk/regex ratios essentially flat (compile 3.09x -> 2.95x, match
+  1.14-1.18x -> 1.13x, both within run-to-run noise). Pixel 3a (not A/B'd, see README): match ratio
+  0.21x -> 0.22x, compile 0.79x -> 0.76x, both noise-sized moves. As expected for a change that mostly
+  removes *redundant* work in a loop that in this corpus rarely iterates many times per `find()` --
+  the CPU-sampling win (search's own `syncPeeked` share dropping to ~0.2%, from being folded into the
+  previously-dominant per-scan cost) is real, but the corpus's typical few-scan-position `find()`
+  calls don't move the aggregate ms/pass number much. `Matcher`'s one-time per-construction
+  `syncPeeked()` call (unrelated to this fix) still shows up in sampling as expected.
+- **Item 4 (skip a redundant downstream `entrySet` check when an upstream node already proved it)
+  deliberately NOT attempted this session** -- scoped out after review: this project already has one
+  reverted experiment in exactly this area (`entrySet` elimination, 2026-09-18 above) that failed on
+  a non-obvious nullable-prefix interaction, and the "loop entry" case the idea was motivated by is
+  likely NOT redundant in general (a loop's own entry set folds in the exit's FIRST set only when
+  `min == 0`, per `buildLoopEntryMap` -- see design.md's `entrySet` doc). Needs its own
+  measurement pass (per-node hit/miss counters over the corpus, to find nodes whose `entrySet` check
+  never actually misses) before any code changes, which is a big enough chunk of work to deserve its
+  own session rather than folding into this one.

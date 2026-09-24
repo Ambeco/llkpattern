@@ -35,6 +35,15 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       what the "correct" outcome even is without an oracle to compare against. java-reggie
       apparently found an answer worth copying -- read it before building anything, don't just
       copy the "fuzz" label.
+- [ ] **Add a golden-row flag for "may differ when the running JDK's Unicode version != 27."** Some rows
+      (CanonEq, emoji/grapheme-cluster-boundary, word-boundary-on-emoji) currently fail when the suite runs
+      on a JDK whose bundled Unicode tables are older/newer than 27 (README's "Unicode data is currently
+      pinned to JDK 27's tables" divergence) -- confirmed 2026-09-24: `CanonEqTest`, `EmojiPropertyTest`,
+      `GraphemeBoundaryTest` (x2), `GraphemeClusterTest` all fail identically on both pre- and post-change
+      code when run under JDK 17, so this is pre-existing JDK-version drift, not a real regression. A
+      golden-row (or test-level) flag would let CI/local runs on a non-27 JDK distinguish "expected to
+      possibly diverge here" from a genuine new failure, instead of requiring a manual stash-and-rerun to
+      tell the two apart each time (as done ad hoc this session).
 - [ ] **Let `CorpusGenerator` refresh a golden file in place.** Today it only writes a whole file from an
       intermediate TSV, which discards the hand-triaged `status` tags, so refreshing a few rows means writing a
       throwaway class in package `com.tbohne.llkpattern.corpus` (needed for `CorpusGenerator.generateRow`) that

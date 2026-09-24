@@ -75,6 +75,16 @@ public class Matcher implements MatchResult {
 	// this project's own Android CPU sampling (String.codePointAt was 11.8% of matchLlk time,
 	// Matcher.consume1CodePoint's two internal calls to it 4.1%/1.9% of that on their own).
 	int peeked;
+	// Cached answer for peekPrevious() (the code point immediately before `pos`), computed lazily:
+	// only \b/\B, lookbehind and \b{g} ever read it, so most match attempts never pay for it at all.
+	// UNKNOWN_PREVIOUS means "not yet computed for the current pos" -- distinct from -1
+	// (peekPrevious()'s own "no previous input" sentinel at/before lookFloor). consume1CodePoint()
+	// updates this for free (the code point it just consumed IS the new previous); every other
+	// method that moves `pos` directly (syncPeeked(), consumeCodeUnits()) instead invalidates it
+	// back to UNKNOWN_PREVIOUS, since eagerly recomputing codePointBefore for a multi-code-unit jump
+	// would cost exactly as much as peekPrevious() computing it on demand.
+	private static final int UNKNOWN_PREVIOUS = Integer.MIN_VALUE;
+	private int previousPeeked = UNKNOWN_PREVIOUS;
 	int[] quantifiableCounts;
 	// Two slots (start, end -- input code-unit indices) per capture-group construct in the
 	// pattern, indexed by captureConstructIndex*2. BeginCaptureMatcherConstruct overwrites the
@@ -313,23 +323,30 @@ public class Matcher implements MatchResult {
 			}
 			return success;
 		}
-		for (int i = start; i <= regionEnd; i++) {
-			// Unicode code points, not UTF-16 code units, are the atomic matching unit (see
-			// java.util.regex's own behavior, and JDK-8149446): a valid high+low surrogate pair must
-			// never be split, so `i` landing on the low half of one is not a legal place to *start* a
-			// match, even though it's a legal char index. Skipping it here (rather than in
-			// attemptMatch/peek, which is also used for internal within-match advancement that's
-			// already code-point-aware via consume1CodePoint) keeps this fix scoped to exactly the
-			// bug: find()'s scan treating every char index as a candidate start position.
-			if (i > 0
-					&& i < input.length()
-					&& Character.isLowSurrogate(input.charAt(i))
-					&& Character.isHighSurrogate(input.charAt(i - 1))) {
-				continue;
-			}
-			if (attemptMatch(i, false)) {
+		// Unicode code points, not UTF-16 code units, are the atomic matching unit (see
+		// java.util.regex's own behavior, and JDK-8149446): a valid high+low surrogate pair must
+		// never be split, so a candidate start position landing on the low half of one is illegal,
+		// even though it's a legal char index. Only `start` itself needs an explicit check for this:
+		// every later candidate position below is derived by stepping forward from a just-decoded
+		// code point's own width, which can never land back on that code point's own low half.
+		int i = start;
+		if (i > 0
+				&& i < input.length()
+				&& Character.isLowSurrogate(input.charAt(i))
+				&& Character.isHighSurrogate(input.charAt(i - 1))) {
+			i++;
+		}
+		// One input.codePointAt() call per candidate position (was two input.charAt() calls for the
+		// surrogate check above, plus a third inside attemptMatch()'s own syncPeeked() call) -- the
+		// decoded code point is threaded straight into attemptMatch() instead, and used again to
+		// step `i` forward by its own width, which is also what makes the low-surrogate check above
+		// unnecessary for every position past the first.
+		for (; i <= regionEnd; ) {
+			int cp = i < regionEnd ? input.codePointAt(i) : -1;
+			if (attemptMatch(i, false, cp)) {
 				return true;
 			}
+			i += cp == -1 ? 1 : Character.charCount(cp);
 		}
 		hasMatch = false;
 		matchStart = -1;
@@ -643,6 +660,20 @@ public class Matcher implements MatchResult {
 	private boolean attemptMatch(int from, boolean requireFullMatch) {
 		pos = from;
 		syncPeeked();
+		return finishAttemptMatch(from, requireFullMatch);
+	}
+
+	/** Like {@link #attemptMatch(int, boolean)}, but for a caller (search()'s scan loop) that has
+	 *  already decoded the code point at {@code from} itself -- skips the redundant syncPeeked()
+	 *  re-decode. */
+	private boolean attemptMatch(int from, boolean requireFullMatch, int precomputedPeeked) {
+		pos = from;
+		peeked = precomputedPeeked;
+		previousPeeked = UNKNOWN_PREVIOUS;
+		return finishAttemptMatch(from, requireFullMatch);
+	}
+
+	private boolean finishAttemptMatch(int from, boolean requireFullMatch) {
 		this.requireFullMatch = requireFullMatch;
 		// Bug fix (2026-09-07): quantifiableCounts/captureGroups used to only get reset by
 		// reset()/reset(CharSequence) -- never per attempt -- so a loop's iteration counter (incremented by
@@ -728,6 +759,7 @@ public class Matcher implements MatchResult {
 	 *  know and can update {@code peeked} more cheaply themselves). */
 	private void syncPeeked() {
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
+		previousPeeked = UNKNOWN_PREVIOUS;
 	}
 
 	// Used by WordBoundaryMatcherConstruct (\b/\B) and LookbehindMatcherConstruct ((?<=X)/(?<!X)),
@@ -737,24 +769,19 @@ public class Matcher implements MatchResult {
 	// start is treated the same as true start-of-input, same as -1 is peek()'s "no more input"
 	// sentinel. codePointBefore (not charAt(pos-1)) to not split a surrogate pair.
 	int peekPrevious() {
-		return pos <= lookFloor ? -1 : input.codePointBefore(pos);
+		if (pos <= lookFloor) {
+			return -1;
+		}
+		if (previousPeeked == UNKNOWN_PREVIOUS) {
+			previousPeeked = input.codePointBefore(pos);
+		}
+		return previousPeeked;
 	}
 
 	/** The code point at {@code pos} as {@code \b}/{@code \B} see it: like {@link #peek()}, except that
 	 *  with transparent bounds it looks past regionEnd (-1 only at the true end of input). */
 	int peekForBoundary() {
 		return peeked != -1 || pos >= lookCeil ? peeked : input.codePointAt(pos);
-	}
-
-	boolean consumeLiteral(String value) {
-		if (pos + value.length() >= input.length()) {
-			return false;
-		}
-		if (!input.startsWith(value, pos)) {
-			return false;
-		}
-		pos += value.length();
-		return true;
 	}
 
 	int consume1CodePoint() {
@@ -764,6 +791,9 @@ public class Matcher implements MatchResult {
 		// very common case of consuming the last character of a match. Character.charCount(peeked)
 		// here, not a second input.codePointAt(pos) call, since `peeked` (about to be overwritten
 		// below) is already exactly the code point at the current `pos`.
+		// previousPeeked is updated for free too: the code point about to be overwritten IS the new
+		// previous, exactly one code point back from the new pos -- see previousPeeked's own doc.
+		previousPeeked = peeked;
 		pos += Character.charCount(peeked);
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
 		return peeked;
@@ -772,6 +802,11 @@ public class Matcher implements MatchResult {
 	int consumeCodeUnits(int width) {
 		pos += width;
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
+		// Unlike consume1CodePoint(), `width` may span more than one code point (a literal, a
+		// grapheme cluster), so the code point immediately before the new pos isn't necessarily
+		// anything already in hand -- invalidate rather than pay for a codePointBefore() call that
+		// peekPrevious() would only need to make anyway if something actually reads it.
+		previousPeeked = UNKNOWN_PREVIOUS;
 		return peeked;
 	}
 }

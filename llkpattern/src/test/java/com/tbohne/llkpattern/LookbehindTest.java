@@ -61,6 +61,18 @@ public class LookbehindTest {
     assertThat(Ll1Pattern.compile("(?<!" + A + ")" + B).matcher(A + B).find(), is(false));
   }
 
+  @Test
+  public void find_startingOnLowSurrogateHalf_skipsToNextCodePoint() {
+    // find(int) landing squarely on the low half of a surrogate pair (a legal char index, but not a
+    // legal code-point-start) must skip that index and try the next one, same as java.util.regex --
+    // regression guard for search()'s codePointAt-driven stepping (see Matcher#search).
+    String in = "x" + A + "y"; // A is a 2-char supplementary code point; its low half is at index 2.
+    Matcher m = Ll1Pattern.compile(".").matcher(in);
+    assertThat(m.find(2), is(true));
+    assertThat(m.start(), is(3));
+    assertThat(m.group(), is("y"));
+  }
+
   // --- CASE_INSENSITIVE/UNICODE_CASE folds a literal body, same as any other literal match ---
 
   @Test

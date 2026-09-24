@@ -3013,3 +3013,28 @@ position (a surrogate-pair guard) before `attemptMatch`'s own `syncPeeked()` cal
   measurement pass (per-node hit/miss counters over the corpus, to find nodes whose `entrySet` check
   never actually misses) before any code changes, which is a big enough chunk of work to deserve its
   own session rather than folding into this one.
+
+## Loop first-entry `entrySet` skip experiment (2026-09-24)
+
+Per the project owner's request, tried the narrow case remaining_work.md's "bodyHead re-checks..."
+entry (same day) identified as the one place the outer and inner entrySet checks are provably
+identical: a single-alternative, non-capturing, `min >= 1` loop's own external entry point. New
+`MatcherConstruct.LoopFirstEntryMatcherConstruct` calls `bodyHead.matchBody(...)` directly (skipping
+`bodyHead.match()`'s own `entrySet` check) instead of `bodyHead.match(...)`; the loop-back re-entry
+path (`continueMarker.matcher = bodyHead`) is untouched and still goes through the real, gated
+`bodyHead`, since that path has no outer guarantee. Full suite green throughout (7208/0/3308 --
+5 pre-existing JDK-17-vs-27 Unicode failures unrelated, see above), both CLAUDE.md hand-checks pass,
+plus a dedicated `LoopFirstEntryOptimizationTest` covering the eligibility matrix (ungated top-level,
+outer-gated union branch, `min > 1`, and the excluded capturing/multi-alternative/`min == 0` cases).
+
+Measured, as the project owner predicted going in ("I don't expect it to make a measurable
+difference"): no statistically significant change either device. Desktop A/B (stash-based):
+compile ratio 3.05x -> 2.94x, match ratio 1.11x -> 1.15x, both within run-to-run noise. Pixel 3a
+(not A/B'd): match ratio 0.22x -> 0.23x -- also flat. The new node doesn't even show up by name in
+either device's CPU sampling output (0 occurrences), meaning it's too cheap/rarely-hit relative to
+everything else in the corpus to register as its own line -- consistent with a real but small
+per-call saving (one `CodePointSet.contains`/`ArrayCodePointSet.floorIndex` binary-search call
+avoided on first loop entry) that this particular corpus's mix of patterns doesn't exercise often
+enough to move the aggregate number. Kept the change anyway: correctness-neutral, real (if small)
+saving on the paths it does hit, and worth having now that the safe eligibility boundary is already
+carefully worked out (see remaining_work.md) rather than re-deriving it if this ever comes up again.

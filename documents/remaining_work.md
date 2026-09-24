@@ -15,43 +15,23 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       `PassThroughMatcherConstruct` gated on its own explicit entry set at its natural chain
       position, in addition to (not instead of) the ungated node used as the tail fallback.
 
-- [ ] **A greedy loop's `bodyHead` re-checks an entrySet its own caller may have already verified,
-      but can't currently skip it -- investigate splitting entry from re-entry to actually make this
-      redundant.** Investigated 2026-09-24 per the project owner's request to look for cases where a
-      node could signal "my caller already duplicates my own check" and skip assigning its own
-      `dispatchEntrySet`. Found the general mechanism already exists and is already applied
-      everywhere it's safe: `Sequence.buildMatcher` forwards its `dispatchEntrySet`/
-      `dispatchFailedEntry` straight onto its first element instead of building a separate node
-      (`patterns.get(0).dispatchEntrySet = dispatchEntrySet`), and `buildFlattenedChain` leaves a
-      single ungated candidate's own `dispatchEntrySet` `null` entirely when there's no fallback --
-      both rely on the target being reachable through exactly ONE call site, so there's nothing to
-      duplicate.
-      A `QuantifiableConstruct.buildLoopMatcher` loop's `bodyHead` (the compiled head of `body.get(0)`,
-      when the body is a single alternative) is different: it's reached through TWO call sites, not
-      one -- (1) the loop's own externally-visible entry point, wrapped in a
-      `PassThroughMatcherConstruct` when `dispatchEntrySet` is non-null (i.e. this loop is itself a
-      chain candidate for some outer union/sequence), and (2) `continueMarker.matcher = bodyHead`,
-      the loop-back target `LoopMatcherConstruct` dispatches to directly after each completed
-      iteration, with NO outer check in between. Even in the one case where the outer and inner sets
-      are byte-for-byte identical -- a single-alternative body with `min >= 1` (so `next` isn't
-      merged into the loop's own exposed `entryMap`, per `buildLoopEntryMap`'s `min == 0 ? next :
-      null`) -- `bodyHead`'s own check is still load-bearing on the loop-back path, where it's the
-      only thing distinguishing "continue iterating" from "this iteration is over, fall through to
-      `exitNode`." Eliding it would break re-entry, not just skip a redundant recheck.
-      (The `min == 0` case the project owner specifically asked about is a second, separate reason
-      the sets aren't even equal to begin with: `this.entryMap` folds in `next`'s own entry point
-      too then, so the outer check the loop's own ancestor applies is strictly BROADER than
-      `bodyHead`'s own gate -- passing the outer check doesn't imply passing the inner one, so this
-      was never a case of "duplicate work," just a genuinely different, wider condition.)
-      To actually make the `min >= 1`/single-alternative case redundant would mean giving the loop's
-      external entry point and its internal loop-back target two DIFFERENT compiled nodes instead of
-      reusing `bodyHead` for both -- an ungated one for external entry (relying on the caller's own
-      guarantee) and a still-gated one for re-entry -- rather than the combinatorial "two matchers
-      per nullable element" blowup the 2026-09-18 `entrySet`-elimination experiment hit (notes.md):
-      here it's exactly one extra node per eligible loop, not one per nullable prefix element. Not
-      attempted this session -- real graph-shape change, needs its own measurement pass (how many
-      real-world loops are single-alternative AND themselves chain candidates with `min >= 1`) to
-      justify the added compile-time node before building it.
+- [x] ~~A greedy loop's `bodyHead` re-checks an entrySet its own caller may have already
+      verified~~ -- implemented 2026-09-24 as `MatcherConstruct.LoopFirstEntryMatcherConstruct`
+      (only for the byte-for-byte-identical case: single-alternative body, non-capturing,
+      `min >= 1`; see that class's own doc and `QuantifiableConstruct.buildLoopMatcher`). Measured
+      as expected: no statistically significant ms/pass change on either device (see notes.md) --
+      kept anyway since it's a real, if small, dispatch-cost reduction with no correctness downside,
+      confirmed by the full suite (including the two CLAUDE.md hand-checks) plus a dedicated
+      `LoopFirstEntryOptimizationTest`.
+      Still NOT generalized to a multi-alternative body (`(a|b)+`) or a `min == 0` loop (`a*`) --
+      the multi-alternative case still needs each branch's own check to pick the right one, and
+      `min == 0`'s own exposed entry set folds in `next`'s too (broader than any single branch's),
+      so passing the outer check there doesn't imply passing the inner one. Also not generalized to
+      a capturing single-alternative loop (`(a)+`) -- skipping the check there would let a capture
+      start get recorded on unverified input for an ungated top-level loop, the same shape of bug
+      this project already hit and fixed once (notes.md's "recorded a capture start even on a
+      min==0 loop's very first... attempt" entry) -- deliberately not risked for a change this
+      session already expected to be perf-neutral.
 
 ## Also remember for later (currently-unimplemented/deferred features)
 

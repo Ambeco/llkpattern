@@ -987,6 +987,36 @@ abstract class MatcherConstruct {
 	}
 
 	/**
+	 * EXPERIMENT (2026-09-24): a loop's own externally-visible entry point, used INSTEAD OF the body
+	 * chain's head ({@code bodyHead}) directly, for the narrow case where {@code bodyHead}'s own
+	 * {@link #entrySet} check is provably redundant on first entry -- see {@code
+	 * QuantifiableConstruct.buildLoopMatcher}'s own doc for the eligibility conditions (a single-
+	 * alternative, non-capturing, {@code min >= 1} loop) and remaining_work.md's "bodyHead
+	 * re-checks..." entry for why those conditions matter and can't currently be relaxed.
+	 *
+	 * <p>Calls {@code bodyHead.matchBody(...)} directly -- not {@code bodyHead.match(...)} -- so
+	 * {@code bodyHead}'s own {@link #entrySet}/{@link #failedEntry} check never runs on this path.
+	 * This node itself carries no gate of its own ({@code entrySet}/{@code failedEntry} both {@code
+	 * null}, via the synthetic-node constructor) -- whatever already got THIS node its own call (an
+	 * outer chain candidate's entrySet check via {@link #aliasOrPassThrough}, or nothing at all for
+	 * an ungated top-level loop) already establishes everything {@code bodyHead}'s own check would
+	 * have reconfirmed, by the eligibility conditions above. {@code bodyHead} itself is unchanged
+	 * and keeps its own gate -- the loop-back re-entry path ({@code
+	 * QuantifiableConstruct.buildLoopMatcher}'s {@code continueMarker.matcher = bodyHead}) still goes
+	 * straight to it, since THAT path has no such outer guarantee.
+	 */
+	static final class LoopFirstEntryMatcherConstruct extends SingleDispatchingMatcherConstruct {
+		LoopFirstEntryMatcherConstruct(int flags, MatcherConstruct bodyHead) {
+			super(flags, bodyHead);
+		}
+
+		@Override
+		boolean matchBody(Matcher matcher, int peeked) {
+			return next.matchBody(matcher, peeked);
+		}
+	}
+
+	/**
 	 * A loop's own "stop iterating" node -- reached either because the body chain (see {@link
 	 * LoopMatcherConstruct}'s doc) naturally didn't match at all, or because {@link
 	 * LoopMatcherConstruct} forced a stop after {@code max} iterations. Enforces {@code min}

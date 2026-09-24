@@ -748,7 +748,26 @@ abstract class PatternConstruct {
 			// loop's entry point is `loopNode` itself instead (built above, before the body even
 			// compiled) -- ReluctantLoopMatcherConstruct's own doc explains why it needs to run before
 			// the very first iteration too, not just after each completed one.
-			MatcherConstruct entryPoint = reluctantSafe ? loopNode : bodyHead;
+			//
+			// EXPERIMENT (2026-09-24, see remaining_work.md's "bodyHead re-checks an entrySet..."
+			// entry): for a single-alternative, non-capturing, min>=1 loop, bodyHead's own entrySet
+			// check is PROVABLY redundant on first entry specifically -- buildLoopEntryMap's own
+			// `min == 0 ? next : null` means this loop's externally-exposed entry point (whatever an
+			// outer chain candidate's own gate, or an ungated top-level loop's own lack of one,
+			// already established before calling here) is EXACTLY gates[0], the same set bodyHead
+			// would re-check. Re-entry (the loop-back path via continueMarker/LoopMatcherConstruct,
+			// wired above) is UNAFFECTED -- it still goes straight to the real bodyHead, which keeps
+			// its own gate, since that path has no outer guarantee at all. LoopFirstEntryMatcherConstruct
+			// calls bodyHead.matchBody() directly (bypassing bodyHead.match()'s own entrySet check)
+			// rather than becoming a full duplicate node -- see its own doc for why this can't
+			// currently be generalized to a multi-alternative body or a min==0 loop.
+			boolean singleAlternativeUngatedFirstEntryEligible =
+					!reluctantSafe && !capturing && body.size() == 1 && min >= 1;
+			MatcherConstruct entryPoint = reluctantSafe
+					? loopNode
+					: singleAlternativeUngatedFirstEntryEligible
+							? new MatcherConstruct.LoopFirstEntryMatcherConstruct(flags, bodyHead)
+							: bodyHead;
 			MatcherConstruct.aliasOrPassThrough(this, entryPoint);
 		}
 

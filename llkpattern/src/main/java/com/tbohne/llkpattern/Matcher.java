@@ -330,23 +330,33 @@ public class Matcher implements MatchResult {
 		// every later candidate position below is derived by stepping forward from a just-decoded
 		// code point's own width, which can never land back on that code point's own low half.
 		int i = start;
+		int cp = i < regionEnd ? input.codePointAt(i) : -1;
+		// Derived from `cp` (already decoded above) plus one look at the PRECEDING code unit, not two
+		// separate input.charAt(i)/input.charAt(i - 1) calls: codePointAt only ever combines FORWARD
+		// with i+1, so a genuine pair starting at `i` would already show up as one supplementary `cp`
+		// value (well outside the low-surrogate range) rather than needing its own check here -- a
+		// plain int comparison against `cp` itself tells us whether char `i` is a lone low surrogate,
+		// with no unsafe narrowing cast (a real supplementary `cp`'s low 16 bits can coincidentally
+		// fall in the low-surrogate range, so this must stay an int comparison, not `(char) cp`).
 		if (i > 0
 				&& i < input.length()
-				&& Character.isLowSurrogate(input.charAt(i))
+				&& cp >= Character.MIN_LOW_SURROGATE
+				&& cp <= Character.MAX_LOW_SURROGATE
 				&& Character.isHighSurrogate(input.charAt(i - 1))) {
 			i++;
+			cp = i < regionEnd ? input.codePointAt(i) : -1;
 		}
-		// One input.codePointAt() call per candidate position (was two input.charAt() calls for the
-		// surrogate check above, plus a third inside attemptMatch()'s own syncPeeked() call) -- the
-		// decoded code point is threaded straight into attemptMatch() instead, and used again to
-		// step `i` forward by its own width, which is also what makes the low-surrogate check above
-		// unnecessary for every position past the first.
-		for (; i <= regionEnd; ) {
-			int cp = i < regionEnd ? input.codePointAt(i) : -1;
+		// One input.codePointAt() call per candidate position visited -- `cp` above already covers
+		// the first one (previously recomputed a second time here, redundantly), so the loop only
+		// (re)computes it for every position after that. The decoded code point is threaded straight
+		// into attemptMatch() instead of a fresh syncPeeked() re-decode, and reused again to step `i`
+		// forward by its own width.
+		while (i <= regionEnd) {
 			if (attemptMatch(i, false, cp)) {
 				return true;
 			}
 			i += cp == -1 ? 1 : Character.charCount(cp);
+			cp = i < regionEnd ? input.codePointAt(i) : -1;
 		}
 		hasMatch = false;
 		matchStart = -1;

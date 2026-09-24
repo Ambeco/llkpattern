@@ -73,6 +73,21 @@ public class LookbehindTest {
     assertThat(m.group(), is("y"));
   }
 
+  @Test
+  public void find_startingOnRealSupplementaryCharacter_notMistakenForLowSurrogateHalf() {
+    // Regression guard for the int-range check in search() (not a `(char) cp` narrowing cast): U+1DC00
+    // is a genuine supplementary code point whose own low 16 bits (0xDC00) fall inside the
+    // low-surrogate numeric range, so a buggy narrowing-cast version of the "is this a lone low
+    // surrogate" check would wrongly treat find()'s legitimate start position here as illegal and
+    // skip it.
+    String supplementary = new String(Character.toChars(0x1DC00));
+    String in = "x" + supplementary + "y";
+    Matcher m = Ll1Pattern.compile(".").matcher(in);
+    assertThat(m.find(1), is(true));
+    assertThat(m.start(), is(1));
+    assertThat(m.group(), is(supplementary));
+  }
+
   // --- CASE_INSENSITIVE/UNICODE_CASE folds a literal body, same as any other literal match ---
 
   @Test

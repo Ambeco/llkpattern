@@ -22,11 +22,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       section. 1-codepoint lookbehind is implemented (`LookbehindConstruct`/`LookbehindMatcherConstruct`), covered
       by `LookbehindTest`.
 
-## Feature gaps versus `java.util.regex` (everything else that differs is a design choice, see README)
-
-- [ ] `CANON_EQ` follow-ups (all compile-time rejections or documented differences, see README): a cluster inside a
-      negated/nested/range-bounding class; more than 6 consecutive marks after one base.
-
 ## Scraped-corpus differential test harness
 
 - [ ] More sources, each as its own `scrape_<source>.py` + golden file + `ScrapedCorpusTestBase`

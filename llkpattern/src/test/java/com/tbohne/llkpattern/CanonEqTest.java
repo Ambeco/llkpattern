@@ -168,4 +168,54 @@ public class CanonEqTest {
       assertThat(expected.getMessage().contains("negated"), is(true));
     }
   }
+
+  @Test
+  public void canonEq_nestedClassWithClusterIsRejectedWithExplanation() {
+    try {
+      Ll1Pattern.compile("[a[\u00e9]]", Ll1Pattern.CANON_EQ);
+      fail("expected PatternSyntaxException");
+    } catch (PatternSyntaxException expected) {
+      assertThat(expected.getMessage().contains("nested"), is(true));
+    }
+  }
+
+  @Test
+  public void canonEq_rangeBoundingClassWithClusterIsRejectedWithExplanation() {
+    try {
+      Ll1Pattern.compile("[\u00e9-z]", Ll1Pattern.CANON_EQ);
+      fail("expected PatternSyntaxException");
+    } catch (PatternSyntaxException expected) {
+      assertThat(expected.getMessage().contains("range-bounding"), is(true));
+    }
+    try {
+      Ll1Pattern.compile("[a-\u00e9]", Ll1Pattern.CANON_EQ);
+      fail("expected PatternSyntaxException");
+    } catch (PatternSyntaxException expected) {
+      assertThat(expected.getMessage().contains("range-bounding"), is(true));
+    }
+  }
+
+  @Test
+  public void canonEq_tooManyConsecutiveMarksIsRejectedWithExplanation() {
+    StringBuilder cluster = new StringBuilder("a");
+    for (int i = 0; i < 7; i++) {
+      cluster.append('\u0323'); // 7 combining marks after the base, one more than MAX_MARKS
+    }
+    try {
+      Ll1Pattern.compile(cluster.toString(), Ll1Pattern.CANON_EQ);
+      fail("expected PatternSyntaxException");
+    } catch (PatternSyntaxException expected) {
+      assertThat(expected.getMessage().contains("consecutive combining marks"), is(true));
+    }
+  }
+
+  @Test
+  public void canonEq_maxConsecutiveMarksCompilesAndMatches() {
+    StringBuilder cluster = new StringBuilder("a");
+    for (int i = 0; i < 6; i++) {
+      cluster.append('\u0323'); // exactly MAX_MARKS: still allowed
+    }
+    Ll1Pattern p = Ll1Pattern.compile(cluster.toString(), Ll1Pattern.CANON_EQ);
+    assertThat(p.matcher(cluster.toString()).matches(), is(true));
+  }
 }

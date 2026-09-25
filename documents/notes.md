@@ -3038,3 +3038,30 @@ avoided on first loop entry) that this particular corpus's mix of patterns doesn
 enough to move the aggregate number. Kept the change anyway: correctness-neutral, real (if small)
 saving on the paths it does hit, and worth having now that the safe eligibility boundary is already
 carefully worked out (see remaining_work.md) rather than re-deriving it if this ever comes up again.
+
+## `search()` double-decode fix and `SingleDispatchingMatcherConstruct` merge benchmarked (2026-09-25)
+
+Confirmed both structural changes from the previous session (search()'s first-scanned-position
+double-decode fix, and folding `SingleDispatchingMatcherConstruct` into `MatcherConstruct` with
+`matchNext()` eliminated) are performance-neutral, as expected going in for both. Full suite green
+throughout re-verification (7209/0/3308, same 5 pre-existing JDK-17-vs-27 Unicode failures), both
+CLAUDE.md hand-checks pass. Desktop A/B (this session, against the commit right before the
+`SingleDispatchingMatcherConstruct` merge): compile ratio 2.92x -> 3.02x, match ratio 1.17x -> 1.14x,
+both within run-to-run noise -- one llkCompile-only measurement pass was badly noisy (2.15ms +-0.68)
+while a peer Claude session on this machine was momentarily busy (confirmed via `ListAgents`); waited
+for it to go idle and re-measured clean. Pixel 3a: match ratio 0.22x -> 0.24x, compile ratio
+0.84x -> 0.91x -- the compile-ratio move is bigger than the desktop's, but in line with this
+project's already-documented Pixel compile-time noise (see the "compile time is now somewhat faster
+... shouldn't be read as settled" line in this file's benchmark history) rather than anything this
+session's changes plausibly explain, since neither touches compile-time code at all.
+- **Gotcha hit while re-baselining**: `git stash` does nothing useful once the change under test is
+  already committed -- there's no uncommitted diff left to stash. Had to `git checkout <prior-commit>
+  -- <file>` instead to get the old code temporarily, then `git reset HEAD -- <file>` (to un-stage
+  it) followed by `git checkout -- <file>` (to restore the working tree from HEAD) to get back --
+  `git checkout -- <file>` alone after a `git checkout <ref> -- <file>` restores from the INDEX
+  (which still held the old-commit content), not from HEAD, so the first attempt silently left the
+  working tree on the wrong version. Also cost a wasted Pixel run: a `git checkout -- benchmarks` run
+  to clean up the Intel side accidentally discarded that same day's freshly-captured Pixel JSON/
+  sampling files too (unrelated to the stash mixup, but same root cause -- an overly broad
+  `checkout -- <dir>` while multiple unrelated pending changes shared that directory), which had to
+  be re-run from scratch to recover.

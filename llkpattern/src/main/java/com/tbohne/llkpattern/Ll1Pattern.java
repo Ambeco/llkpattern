@@ -1,5 +1,7 @@
 package com.tbohne.llkpattern;
 
+import androidx.collection.ObjectIntMap;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
@@ -119,7 +121,7 @@ public final class Ll1Pattern {
 	// which Matcher tracks separately (matchStart/matchEnd).
 	final int quantifiableCount;
 	final int captureGroupCount;
-	final Map<String, Integer> namedGroups;
+	final ObjectIntMap<String> namedGroups;
 	// \G doesn't match any specific position, so it has no MatcherConstruct representation at all
 	// -- it's purely a flag telling Matcher#find() to anchor to exactly where the previous match
 	// ended (Matcher#matchEnd), rather than scanning forward for a later match. See
@@ -133,7 +135,7 @@ public final class Ll1Pattern {
 			MatcherConstruct compiled,
 			int quantifiableCount,
 			int captureGroupCount,
-			Map<String, Integer> namedGroups,
+			ObjectIntMap<String> namedGroups,
 			boolean anchorsToPreviousMatchEnd,
 			boolean startsWithBeginAnchor) {
 		this.pattern = pattern;
@@ -141,11 +143,11 @@ public final class Ll1Pattern {
 		this.compiled = compiled;
 		this.quantifiableCount = quantifiableCount;
 		this.captureGroupCount = captureGroupCount;
-		// Not Collections.unmodifiableMap: `namedGroups` is package-private, and the only caller
+		// No copy/wrapper: `namedGroups` is package-private, and the only caller
 		// (PatternParser.getNamedGroups(), in Ll1Pattern.compile() above) hands over its own live
-		// HashMap right as the throwaway parser instance that built it is discarded -- nothing ever
-		// holds a mutable reference to it afterward, so the wrapper bought no real safety, just an
-		// allocation on every compile().
+		// MutableObjectIntMap right as the throwaway parser instance that built it is discarded --
+		// nothing ever holds a mutable reference to it afterward, so a defensive copy would buy no
+		// real safety, just an allocation on every compile().
 		this.namedGroups = namedGroups;
 		this.anchorsToPreviousMatchEnd = anchorsToPreviousMatchEnd;
 		this.startsWithBeginAnchor = startsWithBeginAnchor;
@@ -164,10 +166,15 @@ public final class Ll1Pattern {
 	/** Named group to its 1-based group number, unmodifiable (java.util.regex.Pattern#namedGroups). */
 	public Map<String, Integer> namedGroups() {
 		Map<String, Integer> result = new java.util.LinkedHashMap<>();
-		for (Map.Entry<String, Integer> e : namedGroups.entrySet()) {
+		// androidx.collection's Kotlin-defined forEach takes a Function2 (single abstract method,
+		// so a Java lambda can implement it), whose return type is Kotlin's Unit -- Java has no
+		// implicit-Unit sugar for that (unlike calling it from Kotlin), so the lambda body returns
+		// Unit.INSTANCE explicitly.
+		namedGroups.forEach((name, index) -> {
 			// namedGroups stores the 0-based capture index; the public numbering is 1-based.
-			result.put(e.getKey(), e.getValue() + 1);
-		}
+			result.put(name, index + 1);
+			return kotlin.Unit.INSTANCE;
+		});
 		return java.util.Collections.unmodifiableMap(result);
 	}
 

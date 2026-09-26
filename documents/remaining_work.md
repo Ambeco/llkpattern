@@ -322,3 +322,10 @@ builder or pre-sized.
       as the three rejected `CodePointSetBuilder` conversions, so a `CodePointSetBuilder`-based fix
       specifically is NOT the presumed answer here -- a pre-sized `ArrayCodePointSet` is more likely
       the right shape, same as before the `mergeEntryPointsRaw` deletion).
+- [ ] **Duplicate named capturing groups aren't rejected.** `(?<dup>a)(?<dup>b)` compiles fine
+      here (the second name silently overwrites the first in `namedGroups`), where
+      `java.util.regex` throws `PatternSyntaxException: Named capturing group <dup> is already
+      defined`. Found while checking the `androidx.collection.ObjectIntMap` swap for `namedGroups`
+      (2026-09-25) -- pre-existing, not caused by that swap (a `java.util.HashMap.put` would have
+      silently overwritten too). Fix: check `namedGroups.containsKey(captureName)` in `parseGroup`
+      before assigning, and throw if already present.

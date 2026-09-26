@@ -3157,3 +3157,35 @@ session's changes plausibly explain, since neither touches compile-time code at 
   `CodePointSetBuilder` (pure function, no parser state).
 - Intel-i7-9750H A/B: `llkCompile` alloc rate ~4.09M -> ~3.33M B/op (~19%), llk/regex compile ratio
   ~2.55x -> ~2.23x. Match-time and Pixel 3a unaffected (compile-time-only, allocation-only change).
+
+### `PatternParser` alternation/named-group/backreference allocations (2026-09-25, same day)
+
+- `parseUnion`'s per-alternative `Sequence` (5.6% of compile-time allocation, sampling-confirmed)
+  is now built lazily too: a one-element alternative is tracked as a bare local (`Object
+  accumulator`, either null/a single `PatternConstruct`/a real `Sequence`) via a new
+  `addToAlternative` helper, and only promoted to an actual `Sequence` once a second element shows
+  up (or, for the final alternative, unconditionally -- see CLAUDE.md's "Parser root shape" note).
+- `flagValues` (an `int[]` field reallocated on every `PatternParser` construction regardless of
+  whether the pattern has an inline flag group) made `static`: 10.9% of compile-time allocation for
+  a constant that never varied per instance.
+- `namedGroups`/`closedGroupsByIndex` switched from `java.util.HashMap` to
+  `androidx.collection.MutableObjectIntMap`/`MutableIntObjectMap` (already a project dependency,
+  previously unused) -- `closedGroupsByIndex`'s bare `HashMap` was 9.4% of compile-time allocation
+  by itself, paid on every compile whether or not the pattern has backreferences. **Trap:**
+  androidx.collection's no-arg constructor defaults to capacity 6 (rounded up to a 7-8-slot backing
+  array, allocated eagerly in the constructor) -- regressed allocation for the common case of zero
+  named groups/backreferences until fixed by passing an explicit `0` (which does get the same
+  "no backing storage until first insert" laziness `HashMap`'s own no-arg constructor has).
+  `Ll1Pattern`/`Matcher`'s downstream `Integer`-boxed null-check idiom became an `int`
+  `getOrDefault(key, -1)` sentinel check (a real captureConstructIndex is always >= 0); the public
+  `Matcher#namedGroups()`/`Ll1Pattern#namedGroups()` API (mirroring `java.util.regex`) still returns
+  a boxed `Map<String, Integer>`, built via `ObjectIntMap#forEach` (a Kotlin `Function2` -- the
+  lambda must return `kotlin.Unit.INSTANCE` explicitly, since only Kotlin's own call sites get the
+  implicit-Unit sugar).
+- Also found and logged (not fixed): duplicate named groups (`(?<dup>a)(?<dup>b)`) silently compile
+  instead of erroring like `java.util.regex` does -- pre-existing, not caused by this change (a
+  `HashMap.put` silently overwrites too) -- see remaining_work.md.
+- Intel-i7-9750H A/B (alloc rate is deterministic run-to-run, unlike ms/op): `llkCompile`
+  ~3.35M -> ~3.24M B/op on top of this same day's earlier ~4.09M -> ~3.35M reduction. Full suite
+  green throughout (same 5 pre-existing Unicode/grapheme failures each time).
+

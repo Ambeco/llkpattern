@@ -7,10 +7,12 @@ import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 
+import androidx.collection.MutableIntObjectMap;
+import androidx.collection.MutableObjectIntMap;
+import androidx.collection.ObjectIntMap;
+
 import java.nio.CharBuffer;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -121,14 +123,31 @@ final class PatternParser {
   private boolean anchorsToPreviousMatchEnd = false;
   // Name -> captureConstructIndex, populated as each named group's real index is assigned (see
   // parseGroup). Exposed via getNamedGroups() for Ll1Pattern to carry forward for group(String).
-  private final Map<String, Integer> namedGroups = new HashMap<>();
+  // androidx.collection.MutableObjectIntMap instead of java.util.HashMap<String, Integer>: no
+  // per-entry Integer boxing, and (like closedGroupsByIndex below) a flat open-addressed table
+  // instead of a linked Node per entry -- most patterns have zero or one named group, so this is
+  // usually either empty or a single small insert, not a data structure worth a java.util.HashMap's
+  // per-instance overhead.
+  // Explicit 0, not the default no-arg constructor: androidx.collection's default initial capacity
+  // (6, rounded up to 7/8-slot backing arrays) allocates those arrays unconditionally in the
+  // constructor, even for the common case of a pattern with no named groups at all -- 0 gets the
+  // same "no backing storage until the first real insert" laziness java.util.HashMap's own no-arg
+  // constructor already had, which the array-eager default here would otherwise have regressed.
+  private final MutableObjectIntMap<String> namedGroups = new MutableObjectIntMap<>(0);
   // captureConstructIndex -> the already-fully-parsed QuantifiedUnion for that group, populated at
   // the same point as namedGroups (parseGroup, once a group's ")" is reached). Backreferences
   // (tryParseBackReference) look a referenced group up here: only a group already present -- i.e.
   // already closed, textually before the "\1"/"\k<name>" -- can be referenced; anything else is a
   // forward reference or an undefined group, both rejected at parse time. See design.md's
   // "Backreferences" section.
-  private final Map<Integer, QuantifiedUnion> closedGroupsByIndex = new HashMap<>();
+  //
+  // androidx.collection.MutableIntObjectMap instead of java.util.HashMap<Integer, QuantifiedUnion>:
+  // this used to show up at 9.4% of compile-time allocation just for the HashMap itself (every
+  // compile() paid for one, whether or not the pattern has any backreferences at all -- see
+  // benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt), plus a boxed Integer key and a
+  // HashMap.Node per capturing group. A primitive-int-keyed open-addressed map needs neither.
+  // Explicit 0 -- see namedGroups' own doc just above for why.
+  private final MutableIntObjectMap<QuantifiedUnion> closedGroupsByIndex = new MutableIntObjectMap<>(0);
 
   PatternParser(String pattern, int flags) {
     // LITERAL wins over CANON_EQ, as in java.util.regex.
@@ -197,7 +216,7 @@ final class PatternParser {
   }
 
   /** Named capturing groups' names mapped to their captureConstructIndex. */
-  Map<String, Integer> getNamedGroups() {
+  ObjectIntMap<String> getNamedGroups() {
     return namedGroups;
   }
 
@@ -325,7 +344,13 @@ final class PatternParser {
    */
   private PatternConstruct parseUnion(
       int unionStartIndex, int unionFlags, int captureConstructIndex, String captureName) {
-    Sequence sequence = new Sequence(index);
+    // The current alternative's contents, built up lazily -- see #addToAlternative's own doc for
+    // why this saves an allocation (the Sequence itself, plus its ArrayList) for the very common
+    // case of a single-element alternative (before a "|", or the only alternative in a
+    // non-capturing group/pattern with none at all): null (empty), a bare PatternConstruct (one
+    // element so far), or a real Sequence (2+ elements, already flattened into it).
+    Object accumulator = null;
+    int altStartIndex = index;
     // Lazily built: null until a second alternative is seen. `firstAlternative` holds the first
     // alternative (already unwrapped to its bare construct if it was a single-element sequence) so
     // that a pattern with exactly one "|" still only allocates the union once, right when the
@@ -378,7 +403,7 @@ final class PatternParser {
               : rawText.toString();
           LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
           literal.flags = flags;
-          sequence.patterns.add(literal);
+          accumulator = addToAlternative(accumulator, literal, altStartIndex);
           if (rawText != null) {
             rawText.setLength(0);
           }
@@ -392,22 +417,23 @@ final class PatternParser {
             // elides itself entirely, same as those other zero-width constructs do.
             PatternConstruct group = parseGroup();
             if (group != null) {
-              sequence.patterns.add(group);
+              accumulator = addToAlternative(accumulator, group, altStartIndex);
             }
             break;
           case '[':
-            sequence.patterns.add(parseQuantifiable(parseComplexCharacter()));
+            accumulator = addToAlternative(
+                accumulator, parseQuantifiable(parseComplexCharacter()), altStartIndex);
             break;
           case '|':
-            if (sequence.patterns.isEmpty()) {
-              throw throwEmptySequence(sequence.startIndex, unionStartIndex);
+            if (accumulator == null) {
+              throw throwEmptySequence(altStartIndex, unionStartIndex);
             }
             PatternConstruct altConstruct;
-            if (sequence.patterns.size() == 1) {
-              altConstruct = sequence.patterns.get(0);
+            if (accumulator instanceof Sequence) {
+              ((Sequence) accumulator).endIndex = index;
+              altConstruct = (Sequence) accumulator;
             } else {
-              sequence.endIndex = index;
-              altConstruct = sequence;
+              altConstruct = (PatternConstruct) accumulator;
             }
             if (union != null) {
               union.constructs.add(altConstruct);
@@ -422,7 +448,8 @@ final class PatternParser {
               union.constructs.add(firstAlternative);
               union.constructs.add(altConstruct);
             }
-            sequence = new Sequence(index);
+            accumulator = null;
+            altStartIndex = index;
             advance(1);
             break;
           case '.':
@@ -462,14 +489,14 @@ final class PatternParser {
             // behavior divergence). Fixed by advancing first, matching every other call site's
             // convention.
             advance(1);
-            sequence.patterns.add(parseQuantifiable(dot));
+            accumulator = addToAlternative(accumulator, parseQuantifiable(dot), altStartIndex);
             break;
           case '^':
             LineBoundaryConstruct lineBegin = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ true);
             lineBegin.flags = flags;
             advance(1);
             if (keepZeroWidthAfterQuantifier()) {
-              sequence.patterns.add(lineBegin);
+              accumulator = addToAlternative(accumulator, lineBegin, altStartIndex);
             }
             break;
           case '$':
@@ -477,17 +504,28 @@ final class PatternParser {
             lineEnd.flags = flags;
             advance(1);
             if (keepZeroWidthAfterQuantifier()) {
-              sequence.patterns.add(lineEnd);
+              accumulator = addToAlternative(accumulator, lineEnd, altStartIndex);
             }
             break;
           case ')':
           case EOF:
-            if (sequence.patterns.isEmpty()) {
-              throw throwEmptySequence(sequence.startIndex, unionStartIndex);
+            if (accumulator == null) {
+              throw throwEmptySequence(altStartIndex, unionStartIndex);
             }
-            sequence.endIndex = index;
+            // The final alternative is always kept as a real Sequence, even if it turns out to
+            // have just one element -- unlike an alternative before a "|" (see #addToAlternative's
+            // doc), this one's shape is a contract other code relies on (see CLAUDE.md's "Parser
+            // root shape" note and Ll1Pattern#startsWithBeginAnchor).
+            Sequence finalSequence;
+            if (accumulator instanceof Sequence) {
+              finalSequence = (Sequence) accumulator;
+            } else {
+              finalSequence = new Sequence(altStartIndex);
+              finalSequence.patterns.add((PatternConstruct) accumulator);
+            }
+            finalSequence.endIndex = index;
             if (union != null) {
-              union.constructs.add(sequence);
+              union.constructs.add(finalSequence);
               union.endIndex = index;
               return union;
             }
@@ -499,7 +537,7 @@ final class PatternParser {
               twoBranch.captureConstructIndex = captureConstructIndex;
               twoBranch.captureName = captureName;
               twoBranch.constructs.add(firstAlternative);
-              twoBranch.constructs.add(sequence);
+              twoBranch.constructs.add(finalSequence);
               twoBranch.endIndex = index;
               return twoBranch;
             }
@@ -509,14 +547,14 @@ final class PatternParser {
               QuantifiedUnion singleBranch = new QuantifiedUnion(pattern, unionStartIndex);
               singleBranch.captureConstructIndex = captureConstructIndex;
               singleBranch.captureName = captureName;
-              singleBranch.constructs.add(sequence);
+              singleBranch.constructs.add(finalSequence);
               singleBranch.endIndex = index;
               return singleBranch;
             }
             // No "|", non-capturing: the bare Sequence is the whole result -- no QuantifiedUnion
             // needed at all, deferring that allocation to the caller in case it needs one later
             // (quantifyGroupBody) or not at all (the common case).
-            return sequence;
+            return finalSequence;
         }
       } else if (peek == '\\') {
         int startIndex = index;
@@ -534,7 +572,7 @@ final class PatternParser {
                   : rawText.toString();
               LiteralString literal = new LiteralString(rawTextStartIndex, startIndex, literalValue);
               literal.flags = flags;
-              sequence.patterns.add(literal);
+              accumulator = addToAlternative(accumulator, literal, altStartIndex);
               if (rawText != null) {
                 rawText.setLength(0);
               }
@@ -542,7 +580,7 @@ final class PatternParser {
             ComplexCharacter complex = singleCharacter(startIndex, codePoint);
             complex.flags = flags;
             complex.endIndex = index;
-            sequence.patterns.add(parseQuantifiable(complex));
+            accumulator = addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
             rawTextStartIndex = -1;
             rawTextIsPure = true;
             continue;
@@ -568,7 +606,7 @@ final class PatternParser {
                 : rawText.toString();
             LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
-            sequence.patterns.add(literal);
+            accumulator = addToAlternative(accumulator, literal, altStartIndex);
             if (rawText != null) {
               rawText.setLength(0);
             }
@@ -595,7 +633,7 @@ final class PatternParser {
           }
           PatternConstruct backReference = tryParseBackReference();
           if (backReference != null) {
-            sequence.patterns.add(quantifyBackReference(backReference));
+            accumulator = addToAlternative(accumulator, quantifyBackReference(backReference), altStartIndex);
             continue;
           }
           if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'X') {
@@ -604,13 +642,13 @@ final class PatternParser {
             GraphemeClusterConstruct graphemeCluster =
                 new GraphemeClusterConstruct(graphemeStartIndex, index);
             graphemeCluster.flags = flags;
-            sequence.patterns.add(quantifySingleConstruct(graphemeCluster));
+            accumulator = addToAlternative(accumulator, quantifySingleConstruct(graphemeCluster), altStartIndex);
             continue;
           }
           PatternConstruct boundaryConstruct = tryParseBoundary();
           if (boundaryConstruct != null) {
             if (keepZeroWidthAfterQuantifier()) {
-              sequence.patterns.add(boundaryConstruct);
+              accumulator = addToAlternative(accumulator, boundaryConstruct, altStartIndex);
             }
           } else {
             // parseComplexEscape()'s result is assigned straight into ComplexCharacter.ranges (now
@@ -621,7 +659,7 @@ final class PatternParser {
             CodePointSet escapeRanges = parseComplexEscape(); // advances past the escape
             ComplexCharacter escapeChar = new ComplexCharacter(escapeStartIndex, index, escapeRanges);
             escapeChar.flags = flags;
-            sequence.patterns.add(parseQuantifiable(escapeChar));
+            accumulator = addToAlternative(accumulator, parseQuantifiable(escapeChar), altStartIndex);
           }
         }
       } else {
@@ -675,7 +713,7 @@ final class PatternParser {
                 : rawText.toString();
             LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
-            sequence.patterns.add(literal);
+            accumulator = addToAlternative(accumulator, literal, altStartIndex);
             if (rawText != null) {
               rawText.setLength(0);
             }
@@ -683,7 +721,7 @@ final class PatternParser {
           ComplexCharacter complex = singleCharacter(startIndex, fullChar);
           complex.flags = flags;
           complex.endIndex = index;
-          sequence.patterns.add(parseQuantifiable(complex));
+          accumulator = addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
           rawTextStartIndex = -1;
           rawTextIsPure = true;
         } else if (rawTextIsPure) {
@@ -693,6 +731,37 @@ final class PatternParser {
         }
       }
     }
+  }
+
+  /**
+   * Appends {@code pc} to the current alternative's lazily-built accumulator (see {@link
+   * #parseUnion}'s own doc on {@code accumulator}), allocating the real {@link Sequence} (and its
+   * backing {@code ArrayList}) only once a second element actually shows up. Alloc sampling
+   * showed this constructor (unconditional, once per alternative, in the old design) at 5.6% of
+   * compile-time allocation -- a real cost for the common case of a single-element alternative
+   * (a lone atom before a "|", or the sole element of a non-capturing group/pattern with no "|"
+   * at all), which never needed a wrapping {@code Sequence} in the first place.
+   *
+   * @param accumulator the alternative's contents so far: {@code null} (empty), a bare {@code
+   *     PatternConstruct} (exactly one element, no {@code Sequence} needed yet), or a {@code
+   *     Sequence} (2+ elements, already flattened into it)
+   * @param altStartIndex the current alternative's start position, used as the {@code Sequence}'s
+   *     {@code startIndex} if/when one actually needs allocating
+   * @return the updated accumulator, in the same three-shape encoding
+   */
+  private static Object addToAlternative(
+      @Nullable Object accumulator, PatternConstruct pc, int altStartIndex) {
+    if (accumulator instanceof Sequence) {
+      ((Sequence) accumulator).patterns.add(pc);
+      return accumulator;
+    }
+    if (accumulator == null) {
+      return pc;
+    }
+    Sequence sequence = new Sequence(altStartIndex);
+    sequence.patterns.add((PatternConstruct) accumulator);
+    sequence.patterns.add(pc);
+    return sequence;
   }
 
   // StringBuilder.appendCodePoint's own JDK implementation calls Character.toChars(codePoint) for
@@ -742,10 +811,14 @@ final class PatternParser {
         : new StringBuilder(pureCharsCarriedOver + literalRunCapacityHint(fromIndex));
   }
 
-  @SuppressWarnings("FieldCanBeLocal")
-  private final String flagNames = "idmsuxU";
+  // static: these don't depend on any instance state, so making them per-instance fields meant
+  // `flagValues` (a real int[] allocation, unlike the interned `flagNames` literal) got reallocated
+  // on every single PatternParser construction -- i.e. every compile() call, whether or not the
+  // pattern even has an inline flag group -- 10.9% of compile-time allocation per sampling
+  // (benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt).
+  private static final String flagNames = "idmsuxU";
 
-  private final int[] flagValues =
+  private static final int[] flagValues =
       new int[] {
         Pattern.CASE_INSENSITIVE,
         Pattern.UNIX_LINES,
@@ -914,7 +987,7 @@ final class PatternParser {
     if (groupCaptureIndex != -1) {
       groupCaptureIndex = captureConstructIndex++;
       if (!captureName.isEmpty()) {
-        namedGroups.put(captureName, groupCaptureIndex);
+        namedGroups.set(captureName, groupCaptureIndex);
       }
     }
     PatternConstruct body = parseUnion(groupStartIndex, entryFlags, groupCaptureIndex, captureName);
@@ -929,7 +1002,7 @@ final class PatternParser {
     if (groupCaptureIndex != -1) {
       // parseUnion() guarantees a real QuantifiedUnion whenever captureConstructIndex != -1 -- see
       // its own doc.
-      closedGroupsByIndex.put(groupCaptureIndex, (QuantifiedUnion) body);
+      closedGroupsByIndex.set(groupCaptureIndex, (QuantifiedUnion) body);
     }
     advance(1);
     PatternConstruct group = quantifyGroupBody(body, groupStartIndex, entryFlags);
@@ -1481,8 +1554,10 @@ final class PatternParser {
       }
       String name = pattern.substring(startName, index);
       advance(1);
-      Integer referencedIndex = namedGroups.get(name);
-      if (referencedIndex == null) {
+      // -1 sentinel: a real captureConstructIndex is always >= 0, so this distinguishes "absent"
+      // from index 0's real group without needing a boxed Integer/null (see namedGroups' own doc).
+      int referencedIndex = namedGroups.getOrDefault(name, -1);
+      if (referencedIndex == -1) {
         throw PatternSyntaxException.throwWithReferences(
             pattern,
             startIndex,

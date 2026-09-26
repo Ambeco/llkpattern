@@ -215,8 +215,10 @@ public class Matcher implements MatchResult {
 						throw new IllegalArgumentException(
 								"capturing group name {" + name + "} starts with digit character");
 					}
-					Integer index = pattern.namedGroups.get(name);
-					if (index == null) {
+					// -1 sentinel: see PatternParser#namedGroups's own doc for why this beats a boxed
+					// Integer/null (a real captureConstructIndex is always >= 0).
+					int index = pattern.namedGroups.getOrDefault(name, -1);
+					if (index == -1) {
 						throw new IllegalArgumentException("No group with name {" + name + "}");
 					}
 					refNum = index + 1;
@@ -741,8 +743,10 @@ public class Matcher implements MatchResult {
 	}
 
 	private int groupIndexByName(String name) {
-		Integer index = pattern.namedGroups.get(name);
-		if (index == null) {
+		// -1 sentinel: see PatternParser#namedGroups's own doc for why this beats a boxed
+		// Integer/null (a real captureConstructIndex is always >= 0).
+		int index = pattern.namedGroups.getOrDefault(name, -1);
+		if (index == -1) {
 			throw new IllegalArgumentException("No group with name <" + name + ">");
 		}
 		// Bug fix (2026-09-06): pattern.namedGroups stores the 0-based captureConstructIndex (see

@@ -999,7 +999,7 @@ final class PatternParser {
             CodePointSet finalRanges =
                 intersectionSoFar == null
                     ? completedRun
-                    : intersect(intersectionSoFar, completedRun);
+                    : intersectionSoFar.intersection(completedRun);
             return negate ? finalRanges.complement() : finalRanges;
           } else {
             ranges.add(+']', +']' + 1);
@@ -1047,7 +1047,7 @@ final class PatternParser {
             intersectionSoFar =
                 intersectionSoFar == null
                     ? completedRun
-                    : intersect(intersectionSoFar, completedRun);
+                    : intersectionSoFar.intersection(completedRun);
             ranges = CodePointSetBuilder.create();
             runUnion = null;
             break;
@@ -1063,21 +1063,6 @@ final class PatternParser {
           }
       }
     }
-  }
-
-  /**
-   * {@code a & b} (both members required), computed directly as "keep a's entries where b also has
-   * a member" rather than {@code a - complement(b)} the way the old Guava-{@code RangeSet} version
-   * had to (Guava has no in-place intersect) -- {@code b.intersection(min, max)} is already
-   * inversion-aware (see {@link CodePointSet#intersection}), so this handles either operand being
-   * a complement (e.g. {@code [a-z&&[^aeiou]]}) without materializing one, unlike the old
-   * complement-based formula, which would have.
-   */
-  private static MutableCodePointSet intersect(CodePointSet a, CodePointSet b) {
-    MutableCodePointSet result = new ArrayCodePointSet();
-    a.forEachRange((aMin, aMax) ->
-        b.intersection(aMin, aMax).forEachRange((bMin, bMax) -> result.add(bMin, bMax)));
-    return result;
   }
 
   /**

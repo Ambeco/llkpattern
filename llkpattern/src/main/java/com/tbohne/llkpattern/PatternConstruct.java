@@ -464,9 +464,14 @@ abstract class PatternConstruct {
 	 *
 	 * <p>Ambiguity between candidates is checked exactly as before (via {@link #checkDisjoint}, on
 	 * entry points alone, no compiling) -- this experiment changes how the matcher graph is built,
-	 * not whether an ambiguous pattern is still rejected (that machinery is a separate, later
-	 * experiment -- see remaining_work.md's "Entry-set-conflict-detection-without-allocation"
-	 * section).
+	 * not whether an ambiguous pattern is still rejected. A separate experiment considered replacing
+	 * {@code checkDisjoint} with on-demand conflict reporting to avoid entry-set allocation, but was
+	 * closed without being implemented once this flattened-dispatch design landed: {@code
+	 * checkDisjoint} itself is already allocation-free (pairwise {@link CodePointSet#intersects}, no
+	 * accumulated union), and the entry sets it compares are the very ones handed to {@code
+	 * dispatchEntrySet} below -- load-bearing for match-time dispatch, not just conflict detection --
+	 * so there was no longer any conflict-check-only allocation left to eliminate. See notes.md's
+	 * 2026-09-18 "entry-set-conflict-detection-without-allocation" entry.
 	 *
 	 * <p>{@code elseTarget} is this chain's final fallback, or {@code null} for none, in which case
 	 * the last candidate is left entirely ungated (no {@code dispatchEntrySet}/{@code
@@ -1961,6 +1966,14 @@ abstract class PatternConstruct {
 	 * candidates contribute) -- same conservative-fallback philosophy as {@code lastCharSet} itself.
 	 */
 	private static @Nullable CodePointSet unionLastCharSet(List<PatternConstruct> body) {
+		if (body.size() == 1) {
+			// No copy needed: lastCharSet() always returns a fresh set (or an already-immutable one --
+			// see its own call sites), and every caller of unionLastCharSet's result only ever reads it
+			// (skipZeroWidthEntrySet passes it straight into an admittedInteriorExitPeekSet call, never
+			// mutates it) -- the overwhelmingly common single-alternative loop body (`a+`, `\w*`) would
+			// otherwise pay a whole addAll-driven copy of a set it's about to discard anyway.
+			return lastCharSet(body.get(0));
+		}
 		MutableCodePointSet result = new ArrayCodePointSet();
 		for (PatternConstruct part : body) {
 			CodePointSet partLast = lastCharSet(part);
@@ -2124,9 +2137,22 @@ abstract class PatternConstruct {
 	}
 
 	static final class EndConstruct extends PatternConstruct {
+		// A true cross-compile singleton, not one-per-Ll1Pattern.compile() call: every field this
+		// class ever touches is fixed at construction time and never subsequently written --
+		// `flags`/`dispatchEntrySet`/`dispatchFailedEntry` stay at their class defaults (nothing ever
+		// assigns them, since this construct never appears as a buildFlattenedChain candidate or a
+		// parsed node the parser stamps flags onto), `next` is never assigned (compile()'s own
+		// `matcher != null` guard -- already true the moment this constructor returns -- short-
+		// circuits before the `this.next = next` line ever runs), and `matcher`/`entryElse` are set
+		// once, right here, to values that don't depend on which pattern is being compiled. Nothing
+		// reads `startIndex`/`endIndex` back out for this construct either (it's never a chain
+		// candidate, so it never appears in an ambiguity error message). Sharing one instance (with
+		// its own already-built EndMatcherConstruct, likewise shared) across every compiled pattern
+		// removes a real, if small, per-compile allocation pair.
+		static final EndConstruct INSTANCE = new EndConstruct();
 
-		EndConstruct(int startIndex) {
-			super(startIndex);
+		private EndConstruct() {
+			super(-1);
 			// "The pattern's grammar is satisfied here" -- reachable regardless of what character (or
 			// lack of one) comes next, matching ANY of them via entryElse rather than only registering
 			// the -1 "no more input" sentinel (see Matcher#peek()). That distinction matters for a

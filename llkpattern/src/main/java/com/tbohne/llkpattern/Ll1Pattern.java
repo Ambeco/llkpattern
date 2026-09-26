@@ -44,7 +44,7 @@ public final class Ll1Pattern {
 		PatternConstruct parsed = parser.parse();
 		MatcherConstruct compiled;
 		try {
-			compiled = parsed.compile(new PatternConstruct.EndConstruct(parsed.endIndex));
+			compiled = parsed.compile(PatternConstruct.EndConstruct.INSTANCE);
 		} catch (PatternConstruct.EntryPointCycleException e) {
 			// See design.md's "Entry-point computation vs. matcher compilation" section: this fires
 			// only for a quantified construct whose entire body can match zero characters (e.g.

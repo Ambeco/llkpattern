@@ -334,6 +334,135 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return result;
   }
 
+  /**
+   * Overrides the interface default with an allocation-light two-pointer sweep over both sets'
+   * raw {@code keys} arrays -- one temporary {@link ArrayCodePointSet} total (the result), versus
+   * the default's one-per-range-of-{@code this} plus a binary-search {@link #add} per emitted
+   * sub-range. Falls back to the default for a non-{@link ArrayCodePointSet} {@code other} (e.g. a
+   * lazy {@code UnionCodePointSet}) -- every real caller on the parse-time hot path
+   * ({@code PatternParser}'s {@code &&} handling) already has both operands as concrete {@code
+   * ArrayCodePointSet}s by the time they reach here (see {@code PatternParser#mergeRun}'s own
+   * doc), so this is the path that actually matters.
+   *
+   * <p>Handles {@link #invert} by De Morgan's laws, since {@code keys} always holds the same raw
+   * ranges regardless of the flag: two normal sets sweep-intersect directly; two inverted sets'
+   * intersection is the (raw) union of their keys, inverted (<code>&#x2201;A &cap; &#x2201;B =
+   * &#x2201;(A &cup; B)</code>); one of each is the normal side's raw ranges minus the inverted
+   * side's raw ranges (<code>A &cap; &#x2201;B = A - B</code>).
+   */
+  @Override
+  public CodePointSet intersection(CodePointSet other) {
+    if (!(other instanceof ArrayCodePointSet)) {
+      return MutableCodePointSet.super.intersection(other);
+    }
+    ArrayCodePointSet o = (ArrayCodePointSet) other;
+    if (!invert && !o.invert) {
+      return sweepIntersect(this, o);
+    }
+    if (invert && o.invert) {
+      ArrayCodePointSet result = sweepUnion(this, o);
+      result.invert = true;
+      return result;
+    }
+    return invert ? sweepDifference(o, this) : sweepDifference(this, o);
+  }
+
+  /** Two normal (non-inverted) sets' raw ranges, intersected via a linear merge-scan. */
+  private static ArrayCodePointSet sweepIntersect(ArrayCodePointSet a, ArrayCodePointSet b) {
+    ArrayCodePointSet result = new ArrayCodePointSet();
+    result.ensureCapacity(Math.min(a.size, b.size));
+    int i = 0, j = 0;
+    while (i < a.size && j < b.size) {
+      int aMin = keyMin(a.keys[i]), aMax = keyMax(a.keys[i]);
+      int bMin = keyMin(b.keys[j]), bMax = keyMax(b.keys[j]);
+      int lo = Math.max(aMin, bMin), hi = Math.min(aMax, bMax);
+      if (lo < hi) {
+        result.appendSorted(lo, hi);
+      }
+      if (aMax < bMax) {
+        i++;
+      } else {
+        j++;
+      }
+    }
+    return result;
+  }
+
+  /** {@code a}'s raw ranges minus {@code b}'s, both normal (non-inverted), via a linear scan. */
+  private static ArrayCodePointSet sweepDifference(ArrayCodePointSet a, ArrayCodePointSet b) {
+    ArrayCodePointSet result = new ArrayCodePointSet();
+    result.ensureCapacity(a.size + b.size);
+    int bi = 0;
+    for (int ai = 0; ai < a.size; ai++) {
+      int cursor = keyMin(a.keys[ai]);
+      int aMax = keyMax(a.keys[ai]);
+      while (cursor < aMax) {
+        while (bi < b.size && keyMax(b.keys[bi]) <= cursor) {
+          bi++;
+        }
+        if (bi >= b.size || keyMin(b.keys[bi]) >= aMax) {
+          result.appendSorted(cursor, aMax);
+          cursor = aMax;
+        } else {
+          int bMin = keyMin(b.keys[bi]), bMax = keyMax(b.keys[bi]);
+          if (cursor < bMin) {
+            result.appendSorted(cursor, bMin);
+          }
+          cursor = Math.max(cursor, bMax);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * {@code a}'s and {@code b}'s raw ranges, unioned via a linear merge (not {@link #addAll}).
+   * Coalesces into a running {@code (curMin, curMax)} accumulator before ever calling {@link
+   * #appendSorted} -- NOT simply "append whichever source's next range has the smaller min":
+   * once a run merged from both sources spans more than 2048 code points, it's split across
+   * multiple physical {@code keys} chunks, and a later source range can have a min that's
+   * ascending relative to every range appended so far yet still falls behind the true covered
+   * frontier (inside an earlier physical chunk of that same logical run, not just the last one) --
+   * which would violate {@code appendSorted}'s "only touches/overlaps the LAST entry" precondition.
+   * Coalescing first guarantees every {@code appendSorted} call gets a truly maximal run, so this
+   * can never happen. (Found by this method's own differential fuzz test against the interface
+   * default -- see {@code ArrayCodePointSetTest}.)
+   */
+  private static ArrayCodePointSet sweepUnion(ArrayCodePointSet a, ArrayCodePointSet b) {
+    ArrayCodePointSet result = new ArrayCodePointSet();
+    result.ensureCapacity(a.size + b.size);
+    int i = 0, j = 0;
+    boolean haveCurrent = false;
+    int curMin = 0, curMax = 0;
+    while (i < a.size || j < b.size) {
+      int min, max;
+      if (j >= b.size || (i < a.size && keyMin(a.keys[i]) <= keyMin(b.keys[j]))) {
+        min = keyMin(a.keys[i]);
+        max = keyMax(a.keys[i]);
+        i++;
+      } else {
+        min = keyMin(b.keys[j]);
+        max = keyMax(b.keys[j]);
+        j++;
+      }
+      if (!haveCurrent) {
+        curMin = min;
+        curMax = max;
+        haveCurrent = true;
+      } else if (min <= curMax) {
+        curMax = Math.max(curMax, max);
+      } else {
+        result.appendSorted(curMin, curMax);
+        curMin = min;
+        curMax = max;
+      }
+    }
+    if (haveCurrent) {
+      result.appendSorted(curMin, curMax);
+    }
+    return result;
+  }
+
   @Override
   public CodePointSet complement() {
     return complementOf(this);
@@ -423,8 +552,10 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     // General case: a plain range-at-a-time add() per source range, not a sorted-sweep merge (no
     // "other wins on overlap" semantics to preserve here -- a union just needs every source range
     // folded in, and add() already merges anything it touches/overlaps) -- correctness-first given
-    // every real caller in this codebase builds these sets from scratch via appendSorted, not
-    // addAll/union, so this path isn't hot.
+    // most callers build these sets from scratch via appendSorted, not addAll/union. This path IS
+    // reached on a real, if smaller, hot path though -- PatternConstruct#unionLastCharSet/lastCharSet
+    // fold a multi-alternative loop/union body's branches together this way -- so it's not the "cold
+    // path only" case it once was; see notes.md's 2026-09-25 entry if it's worth a sweep merge too.
     other.forEachRange(this::add);
   }
 

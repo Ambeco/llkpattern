@@ -290,17 +290,26 @@ builder or pre-sized.
       exactly one branch and no capture -- both common). Worth investigating whether some of these
       can be built lazily (only materialized if something downstream actually needs the wrapper,
       rather than unconditionally on the way down) or elided entirely for the trivial-wrapper case.
-      Not attempted yet -- this is parse-time AST structure, not the compiled matcher graph the
-      `flatten-matcher-dispatch` experiment touches, so it's an independent effort; likely large
-      enough in surface area (`PatternParser`'s whole recursive-descent structure assumes eager
+      Confirmed via desktop allocation sampling (`Intel-i7-9750H_llkCompile_alloc_sampling.txt`,
+      2026-09-25): `PatternParser.parseUnion`'s own eager `new Sequence(index)` (line 313,
+      unconditional at the top of every union/group parse, whether or not the parsed content turns
+      out to need more than one element) is alone 4.0% of all sampled allocation weight, and
+      `PatternParser.parse`'s own top-level `new QuantifiedUnion(...)` (line 279, same
+      "unconditional wrapper" shape, one per `Ll1Pattern.compile` call) is a further 3.7%, and
+      `PatternParser.parseGroup`'s own `new QuantifiedUnion(...)` for each `(...)`/`(?:...)` group
+      (line 702) another 2.7% -- ~10% combined across these three sites alone, not just the
+      `Sequence` half. Not attempted yet -- this is parse-time AST structure,
+      not the compiled matcher graph the `flatten-matcher-dispatch` experiment touches, so it's an
+      independent effort; likely large enough in surface area (`PatternParser`'s whole recursive-descent structure assumes eager
       construction) to warrant its own dedicated session per this file's usual guidance, not a
       quick opportunistic change.
 - [ ] **`PatternParser#parseComplexCharacterRanges`'s `negate` handling** calls a separate
       `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a bracket
       expression starts with `^`. `CodePointSetBuilder` gained an `#invert` method (2026-09-18,
       currently uncalled) specifically so a builder could bake inversion in directly instead --
-      would need `negate` threaded through `intersect`/`mergeRun`'s own call chain first. Not
-      attempted yet.
+      would need `negate` threaded through `mergeRun`'s own call chain (and `CodePointSet
+      #intersection(CodePointSet)`, which replaced the old private `intersect` helper this note
+      used to name -- see notes.md's 2026-09-25 entry) first. Not attempted yet.
 - [ ] **`PatternConstruct#mergeEntryPoints` restoring its old pre-sizing** -- it used to
       `ensureCapacity` its result from a known entry count (`mergeEntryPointsRaw`'s
       `CodePointMapBuilder`) before that source was deleted as an unrelated side effect of the

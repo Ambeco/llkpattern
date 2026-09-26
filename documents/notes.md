@@ -3065,3 +3065,85 @@ session's changes plausibly explain, since neither touches compile-time code at 
   sampling files too (unrelated to the stash mixup, but same root cause -- an overly broad
   `checkout -- <dir>` while multiple unrelated pending changes shared that directory), which had to
   be re-run from scratch to recover.
+
+### `PatternParser.intersect`/`unionLastCharSet` allocation cleanup (2026-09-25)
+
+- Prompted by the project owner spotting `PatternParser.intersect` (11.7% of desktop compile-time
+  allocation) and `PatternConstruct.unionLastCharSet` (4.3%) in a freshly re-run
+  `Intel-i7-9750H_llkCompile_alloc_sampling.txt` (the prior copy was stale, from 2026-09-18, versus
+  the same day's CPU sampling).
+- `intersect(a, b)`'s nested-`forEachRange` formula allocated a temporary `ArrayCodePointSet` per
+  range of `a` (via `b.intersection(min, max)`) plus a binary-search `add()` per emitted sub-range.
+  Added `CodePointSet#intersection(CodePointSet)` (interface default = the old formula, for any
+  non-`ArrayCodePointSet` operand) and overrode it in `ArrayCodePointSet` with a two-pointer sweep
+  over both sets' raw `keys` arrays -- one allocation total (the result), handling `invert` via De
+  Morgan (two normals: direct sweep-intersect; two inverted: sweep-union of raw keys, inverted;
+  one of each: sweep-difference). `PatternParser.intersect` deleted; its two call sites now call
+  `a.intersection(b)` directly -- both operands are always concrete `ArrayCodePointSet` by the time
+  they reach there (per `mergeRun`'s own "nothing but a concrete ArrayCodePointSet leaves this
+  method" contract), so the fast override always fires for the real callers.
+- `unionLastCharSet` gained a `body.size() == 1` fast path returning `lastCharSet(body.get(0))`
+  directly with no copy -- safe since every real caller (`skipZeroWidthEntrySet`) only ever reads
+  the result, never mutates it, and `lastCharSet` already returns a fresh-or-immutable set. This is
+  the common case (a single-alternative loop body, e.g. `a+`, `\w*`); multi-branch bodies still
+  build via `addAll`.
+- Corrected `ArrayCodePointSet.addAll`'s stale doc comment claiming its general (non-sweep) path
+  "isn't hot" -- it's exactly what `unionLastCharSet`'s multi-branch case (and `lastCharSet`'s own
+  `QuantifiedUnion` branch-union loop) call into.
+- Also noticed while digging into this: a doc comment on `PatternConstruct#buildFlattenedChain`
+  pointed at a `remaining_work.md` section ("Entry-set-conflict-detection-without-allocation") that
+  no longer exists -- that experiment was closed without being implemented back on 2026-09-18 (see
+  that date's entry above), which is why the section is gone; the comment just never got updated.
+  Fixed to point at this file's own history instead.
+- Measured (combined with the `EndConstruct` singleton below, both benchmarked together): desktop
+  `llkCompile`/`regexCompile` ratio improved from a fresh 3.02x baseline (A/B'd via `git stash`, not
+  the stale committed one) to 2.56x-2.61x across two back-to-back runs -- bands don't overlap, a
+  real improvement, not noise. `llkCompile`'s own `·gc.alloc.rate.norm` dropped from 5,082,425 to
+  4,090,056 B/op (-19.5%). `regexCompile`/`regexMatch`/`llkMatch` moved by less than run-to-run
+  noise, as expected. Re-ran `jmhAllocSampling`/`jmhSampling` afterward: the `intersect`/
+  `PatternParser.lambda$intersect$*`/`unionLastCharSet` frames are gone entirely from
+  `Intel-i7-9750H_llkCompile_alloc_sampling.txt`. Pixel 3a corpus benchmark also re-run (`adb
+  devices` showed it plugged in and unlocked, and `compileDebugAndroidTestJavaWithJavac`/
+  `dexBuilderDebug`/`packageDebug` genuinely re-ran, not UP-TO-DATE, with the 6 on-device tests
+  visibly progressing 0/6->6/6) -- but the resulting
+  `Google_Pixel_3a_sargo_corpus_benchmark_results.json` came back BYTE-IDENTICAL (all four
+  `avgMillisPerCorpusPass` values to 4 decimal places, including `compileRegex`/`matchRegex`, which
+  this change cannot possibly affect) to the version already committed at this session's start.
+  Real wall-clock on-device timing reproducing that exactly is implausible by chance -- flagged as
+  an open question rather than trusted as "confirmed no change"; see remaining_work.md's new item.
+  README's desktop benchmark numbers updated; its Pixel 3a numbers left as-is pending a genuine
+  re-run.
+
+- **Follow-up, same day: the Pixel re-run above WAS stale, confirmed and root-caused.** The device
+  had been locked at the time (`adb devices` reports a locked device as plain `device`, same as an
+  unlocked one -- it does not distinguish the two, so that check alone doesn't catch this). Once
+  the project owner unlocked it, two fresh `:app:connectedAndroidTest` runs produced genuinely
+  different, plausible numbers each time (`compileLlk` 38.74/38.91 ms/pass -- tight; `compileRegex`
+  60.06/53.52 ms/pass -- noisier, real device jitter): compile ratio 0.65x-0.73x, match ratio
+  0.21x-0.23x, both a real improvement over the stale 0.91x/0.24x. README updated with the second
+  (more recent) run's numbers. Lesson for next time: confirm the Pixel 3a's screen is actually
+  unlocked (not just that `adb devices` lists it), not merely that it's listed as `device`.
+
+### `PatternConstruct.EndConstruct` made a true cross-compile singleton (2026-09-25, same session)
+
+- Project owner noticed `EndConstruct` (~2.5% of compile-time allocation) has no state that
+  actually varies per compile: `flags`/`dispatchEntrySet`/`dispatchFailedEntry` stay at their class
+  defaults (nothing ever assigns them -- it's never a parsed node the parser stamps flags onto, nor
+  a `buildFlattenedChain` candidate), `next` is never assigned (`compile()`'s own `matcher != null`
+  guard -- already true the instant the constructor returns, since the constructor builds its own
+  `EndMatcherConstruct` and sets `matcher` directly -- short-circuits before the `this.next = next`
+  line ever runs), and `matcher`/`entryElse` are set once, in the constructor, to values that don't
+  depend on which pattern is being compiled. Nothing reads `startIndex`/`endIndex` back out for
+  this construct either (confirmed via `grep -n "EndConstruct"` across all of `llkpattern/src/main`
+  -- the only production reference besides its own class was the single `new` call site).
+- Made `EndConstruct`'s constructor private and added `static final EndConstruct INSTANCE = new
+  EndConstruct()`; `Ll1Pattern.compile` now passes `PatternConstruct.EndConstruct.INSTANCE` instead
+  of allocating a fresh one (and no longer needs `parsed.endIndex` for this, since nothing ever read
+  it back). `EndMatcherConstruct` becomes a singleton automatically as a side effect -- it's built
+  exactly once, inside `EndConstruct`'s now-singleton constructor -- so no separate factory method
+  was needed for it.
+- Full suite green, plus both CLAUDE.md hand-checks (`((a?b)c)?` vs `""`, `(a+b)+` vs `"ababab"`)
+  re-run against the built jar directly. Benchmarked together with the `intersect`/`unionLastCharSet`
+  change above (see that entry for the combined numbers) -- confirmed via
+  `Intel-i7-9750H_llkCompile_alloc_sampling.txt` that no `Ll1Pattern.compile:47`-attributed
+  allocation remains at all (previously ~2.5%).

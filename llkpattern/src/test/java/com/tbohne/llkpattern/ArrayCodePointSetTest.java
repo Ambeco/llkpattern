@@ -143,6 +143,187 @@ public class ArrayCodePointSetTest {
   }
 
   @Test
+  public void intersection_bySet_neitherInverted_keepsOnlyOverlap() {
+    MutableCodePointSet a = create();
+    a.add('a', 'z' + 1);
+    MutableCodePointSet b = create();
+    b.add('x', '~' + 1);
+
+    CodePointSet result = a.intersection(b);
+
+    assertThat(result.contains('m'), is(false));
+    assertThat(result.contains('x'), is(true));
+    assertThat(result.contains('z'), is(true));
+    assertThat(result.contains('~'), is(false));
+  }
+
+  @Test
+  public void intersection_bySet_oneInverted_isDifference() {
+    MutableCodePointSet a = create();
+    a.add('a', 'z' + 1); // [a, z]
+    MutableCodePointSet notVowels = create();
+    notVowels.add('a', 'e' + 1); // remove [a, e] via invert below
+    notVowels.invert(); // everything except [a, e]
+
+    CodePointSet result = a.intersection(notVowels); // [a, z] minus [a, e]
+
+    assertThat(result.contains('c'), is(false));
+    assertThat(result.contains('f'), is(true));
+    assertThat(result.contains('z'), is(true));
+
+    // Symmetric (the inverted operand on the receiver side instead).
+    CodePointSet resultSwapped = notVowels.intersection(a);
+    assertThat(resultSwapped.contains('c'), is(false));
+    assertThat(resultSwapped.contains('f'), is(true));
+  }
+
+  @Test
+  public void intersection_bySet_bothInverted_isInvertedUnion() {
+    MutableCodePointSet notA = create();
+    notA.add('a', 'a' + 1);
+    notA.invert(); // everything except 'a'
+    MutableCodePointSet notB = create();
+    notB.add('b', 'b' + 1);
+    notB.invert(); // everything except 'b'
+
+    // complement(a) & complement(b) == complement(a | b): excludes exactly 'a' and 'b'.
+    CodePointSet result = notA.intersection(notB);
+
+    assertThat(result.contains('a'), is(false));
+    assertThat(result.contains('b'), is(false));
+    assertThat(result.contains('c'), is(true));
+  }
+
+  @Test
+  public void intersection_bySet_matchesNaiveDefaultFormula_fuzzed() {
+    // The interface's default intersection(CodePointSet) (the old nested-forEachRange formula) is
+    // the oracle here -- exercised via a plain delegating wrapper so it doesn't dispatch straight
+    // back to ArrayCodePointSet's own optimized override.
+    java.util.Random random = new java.util.Random(42);
+    for (int trial = 0; trial < 500; trial++) {
+      ArrayCodePointSet a = randomSet(random);
+      ArrayCodePointSet b = randomSet(random);
+
+      CodePointSet fast = a.intersection(b);
+      CodePointSet naive = new DelegatingCodePointSet(a).intersection(b);
+
+      // Compared as COALESCED ranges, not raw rangeSet(): two logically identical sets can be
+      // chunked into physically different (but touching/mergeable) ranges -- e.g. one big
+      // ArrayCodePointSet entry vs several 2048-wide ones an intermediate computation produced --
+      // without being unequal as sets. rangeSet()/equals() don't normalize this (see this
+      // project's own ArrayCodePointSet#equals fast path, which is raw-array-identity-sensitive
+      // for exactly this reason), so this test does it explicitly instead.
+      assertThat("trial " + trial + ": " + a + " & " + b, coalesced(fast), equalTo(coalesced(naive)));
+    }
+  }
+
+  /** {@code set}'s members as a minimal, fully-coalesced range list -- the actual SET this
+   * represents, independent of how many physical chunks its current representation happens to
+   * split that into. */
+  private static java.util.List<CodePointSet.Range> coalesced(CodePointSet set) {
+    java.util.List<CodePointSet.Range> result = new java.util.ArrayList<>();
+    int[] current = {-1, -1}; // [min, max), or [-1, -1] for "none yet"
+    set.forEachRange((min, max) -> {
+      if (current[0] == -1) {
+        current[0] = min;
+        current[1] = max;
+      } else if (min <= current[1]) {
+        current[1] = Math.max(current[1], max);
+      } else {
+        result.add(new CodePointSet.Range(current[0], current[1]));
+        current[0] = min;
+        current[1] = max;
+      }
+    });
+    if (current[0] != -1) {
+      result.add(new CodePointSet.Range(current[0], current[1]));
+    }
+    return result;
+  }
+
+  private static ArrayCodePointSet randomSet(java.util.Random random) {
+    ArrayCodePointSet set = new ArrayCodePointSet();
+    int entries = random.nextInt(5);
+    int cursor = 0;
+    for (int i = 0; i < entries; i++) {
+      cursor += random.nextInt(20);
+      int width = 1 + random.nextInt(3000); // sometimes spans the 2048-per-chunk boundary
+      set.appendSorted(cursor, cursor + width);
+      cursor += width;
+    }
+    if (random.nextBoolean()) {
+      set.invert();
+    }
+    return set;
+  }
+
+  /** Delegates every {@link CodePointSet} method to a backing set, EXCEPT {@code
+   * intersection(CodePointSet)} -- left unoverridden so callers exercise the interface's plain
+   * default formula instead of {@link ArrayCodePointSet}'s own optimized sweep. */
+  private static final class DelegatingCodePointSet implements CodePointSet {
+    private final CodePointSet delegate;
+
+    DelegatingCodePointSet(CodePointSet delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public boolean isEmpty() {
+      return delegate.isEmpty();
+    }
+
+    @Override
+    public boolean contains(int codePoint) {
+      return delegate.contains(codePoint);
+    }
+
+    @Override
+    public boolean containsAll(int min, int max) {
+      return delegate.containsAll(min, max);
+    }
+
+    @Override
+    public void forEachRange(RangeConsumer action) {
+      delegate.forEachRange(action);
+    }
+
+    @Override
+    public CodePointSet intersection(int min, int max) {
+      return delegate.intersection(min, max);
+    }
+
+    @Override
+    public CodePointSet complement() {
+      return delegate.complement();
+    }
+
+    @Override
+    public CodePointSet union(CodePointSet other) {
+      return delegate.union(other);
+    }
+
+    @Override
+    public CodePointSet difference(CodePointSet other) {
+      return delegate.difference(other);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return delegate.equals(other);
+    }
+
+    @Override
+    public int hashCode() {
+      return delegate.hashCode();
+    }
+
+    @Override
+    public String toString() {
+      return delegate.toString();
+    }
+  }
+
+  @Test
   public void intersects_overlappingRanges_isTrue() {
     MutableCodePointSet a = create();
     a.add('a', 'm'); // [a, m)

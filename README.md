@@ -164,17 +164,17 @@ over time.
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.618 | 1.872 | 3.03x |
-| Pixel 3a | 50.83 | 46.33 | 0.91x |
+| Intel-i7-9750H | 0.644 | 1.677 | 2.60x |
+| Pixel 3a | 53.52 | 38.91 | 0.73x |
 
 **Corpus match time (each pass matches/finds/look_ats ~2300 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.290 | 0.324 | 1.12x |
-| Pixel 3a | 20.52 | 4.86 | 0.24x |
+| Intel-i7-9750H | 0.311 | 0.358 | 1.15x |
+| Pixel 3a | 21.22 | 4.83 | 0.23x |
 
-llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips). On the Pixel 3a compile time is now somewhat faster than `java.util.regex`, though the two land close enough together, and vary run-to-run, that this ratio shouldn't be read as settled (see notes.md). Match time is faster than `java.util.regex` on the Pixel 3a, notably so; on desktop the two are close to parity, with llkpattern landing on either side of `java.util.regex` depending on run and corpus composition. See notes.md for the compile/match-time performance history.
+llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the desktop compile-time ratio improved from 3.03x to 2.60x on 2026-09-25 (an `ArrayCodePointSet#intersection(CodePointSet)` sweep merge replacing a nested-allocation formula, an `EndConstruct` singleton, and a single-branch fast path in `unionLastCharSet` -- see notes.md). On the Pixel 3a compile time is now somewhat faster than `java.util.regex`, though the two land close enough together, and vary run-to-run, that this ratio shouldn't be read as settled (see notes.md). Match time is faster than `java.util.regex` on the Pixel 3a, notably so; on desktop the two are close to parity, with llkpattern landing on either side of `java.util.regex` depending on run and corpus composition. See notes.md for the compile/match-time performance history.
 
 ## 5. Authorship
 

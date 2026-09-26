@@ -85,6 +85,20 @@ public interface CodePointSet {
   CodePointSet intersection(int min, int max);
 
   /**
+   * Returns the intersection of this set and {@code other}: code points in both. Default
+   * implementation is a plain nested range scan -- allocates one temporary {@link CodePointSet}
+   * per range of this set (via {@link #intersection(int, int)}) plus one {@link
+   * MutableCodePointSet#add} per resulting sub-range -- fine for a cold path, but see {@link
+   * ArrayCodePointSet}'s override for the allocation-light sweep merge real (parse-time-hot)
+   * callers should get instead.
+   */
+  default CodePointSet intersection(CodePointSet other) {
+    MutableCodePointSet result = new ArrayCodePointSet();
+    forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::add));
+    return result;
+  }
+
+  /**
    * Whether this set and {@code other} share at least one code point -- a boolean-only,
    * short-circuiting counterpart to {@link #intersection}, for callers (e.g. {@code
    * PatternConstruct#checkDisjoint}'s ambiguity check) that only need "do these overlap at all"

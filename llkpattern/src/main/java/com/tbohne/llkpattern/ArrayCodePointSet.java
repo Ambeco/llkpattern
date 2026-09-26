@@ -341,7 +341,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
    * sub-range. Falls back to the default for a non-{@link ArrayCodePointSet} {@code other} (e.g. a
    * lazy {@code UnionCodePointSet}) -- every real caller on the parse-time hot path
    * ({@code PatternParser}'s {@code &&} handling) already has both operands as concrete {@code
-   * ArrayCodePointSet}s by the time they reach here (see {@code PatternParser#mergeRun}'s own
+   * ArrayCodePointSet}s by the time they reach here (see {@code CodePointSetBuilder#mergeRun}'s own
    * doc), so this is the path that actually matters.
    *
    * <p>Handles {@link #invert} by De Morgan's laws, since {@code keys} always holds the same raw

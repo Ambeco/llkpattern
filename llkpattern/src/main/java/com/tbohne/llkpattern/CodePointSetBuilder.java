@@ -1,5 +1,8 @@
 package com.tbohne.llkpattern;
 
+import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
+import org.checkerframework.checker.nullness.qual.Nullable;
+
 /**
  * Accumulates code point ranges from possibly many sources without maintaining sort order or
  * coalescing as each one is added, then sorts and coalesces them all at once in {@link #build} --
@@ -54,4 +57,35 @@ interface CodePointSetBuilder {
    * returned -- create a new builder per {@link CodePointSet} instead of reusing one.
    */
   CodePointSet build();
+
+  /**
+   * Combines a run's literal-member builder with its (possibly null) lazily-unioned large sets.
+   * The laziness in {@code runUnion} (see {@code PatternParser#parseComplexCharacterRanges}'s doc
+   * on that field) only exists to avoid copying a large set's entries into the builder *while the
+   * run is still being parsed* -- once the run is finished, the result must be a concrete {@link
+   * ArrayCodePointSet} before it can go anywhere near a compiled matcher (as {@code
+   * ComplexCharacter.ranges}, a chain node's own {@code entrySet}, etc.), since a {@link
+   * UnionCodePointSet}'s {@code contains}/{@code containsAll}/{@code forEachRange} are all
+   * measurably more expensive than {@code ArrayCodePointSet}'s -- see its own class doc. So this
+   * materializes eagerly here, at the one point (a completed run) where the saved copy would
+   * otherwise turn into a permanent cost on the match-time hot path instead of a one-time parse-time
+   * saving.
+   */
+  static CodePointSet mergeRun(CodePointSetBuilder literals, @Nullable CodePointSet runUnion) {
+    CodePointSet literalSet = literals.build();
+    if (runUnion == null) {
+      return literalSet;
+    }
+    // runUnion is a bare escape/nested-class result (already concrete -- see this method's own
+    // recursive use) unless this run combined *multiple* large sets (e.g. "[\d\w]"), in which case
+    // it's a UnionCodePointSet that must be materialized here too, same as when literalSet is
+    // non-empty -- either way, nothing but a concrete ArrayCodePointSet may leave this method.
+    if (literalSet.isEmpty() && !(runUnion instanceof UnionCodePointSet)) {
+      return runUnion;
+    }
+    MutableCodePointSet result = new ArrayCodePointSet();
+    result.addAll(runUnion);
+    result.addAll(literalSet);
+    return result;
+  }
 }

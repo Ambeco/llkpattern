@@ -873,12 +873,9 @@ abstract class PatternConstruct {
 	}
 
 	static final class QuantifiedUnion extends QuantifiableConstruct {
-		final int parentFlags;
-
 		int captureConstructIndex = 0;
 		String captureName = "";
 		final List<PatternConstruct> constructs = new ArrayList<>();
-		boolean tempFlags = false;
 
 		// The real (non-identity-rewritten) catch-all candidate this union's OWN fork chain falls
 		// back to in buildMatcher() -- see that method below. Needed because the inherited
@@ -900,9 +897,8 @@ abstract class PatternConstruct {
 		// buildEntryMap() already has, in this (unquantified, non-empty-constructs) branch.
 		@Nullable PatternConstruct compileTarget;
 
-		QuantifiedUnion(String pattern, int startIndex, int parentFlags) {
+		QuantifiedUnion(String pattern, int startIndex) {
 			super(pattern, startIndex);
-			this.parentFlags = parentFlags;
 		}
 
 		private boolean isCapturing() {

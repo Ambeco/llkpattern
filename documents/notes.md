@@ -3147,3 +3147,13 @@ session's changes plausibly explain, since neither touches compile-time code at 
   change above (see that entry for the combined numbers) -- confirmed via
   `Intel-i7-9750H_llkCompile_alloc_sampling.txt` that no `Ll1Pattern.compile:47`-attributed
   allocation remains at all (previously ~2.5%).
+
+### `PatternParser` defers `QuantifiedUnion`/`Sequence` allocation until structurally needed (2026-09-25)
+
+- `parseUnion`/`parseGroup` allocate a `QuantifiedUnion` only when structurally required (a
+  capturing group, or 2+ alternatives) instead of unconditionally; a non-capturing
+  single-alternative group (the common `(?:...)` case) now returns a bare `Sequence`, wrapped
+  lazily by a new `quantifyGroupBody` only if a quantifier actually follows. `mergeRun` moved to
+  `CodePointSetBuilder` (pure function, no parser state).
+- Intel-i7-9750H A/B: `llkCompile` alloc rate ~4.09M -> ~3.33M B/op (~19%), llk/regex compile ratio
+  ~2.55x -> ~2.23x. Match-time and Pixel 3a unaffected (compile-time-only, allocation-only change).

@@ -322,3 +322,16 @@ builder or pre-sized.
       as the three rejected `CodePointSetBuilder` conversions, so a `CodePointSetBuilder`-based fix
       specifically is NOT the presumed answer here -- a pre-sized `ArrayCodePointSet` is more likely
       the right shape, same as before the `mergeEntryPointsRaw` deletion).
+- [ ] **`ArrayCodePointSet#addAll`'s general path (one `add()` per source range) resizes/shifts a
+      lot.** Temporary instrumentation (2026-09-25, not committed -- counters in a `Stats` nested
+      class, plus a scratch `ResizeStatsDriver` compiling every `AGREES` corpus row once) measured:
+      2368 patterns -> 5833 `ArrayCodePointSet` instances, 1376 `ensureCapacity` resizes, 2121
+      `addAll` calls of which only 856 (40%) hit the cheap fast-path array copy -- the other 1265
+      each do a plain `add()` per source range (8504 total), which both resizes AND
+      `System.arraycopy`-shifts the tail incrementally instead of sizing/merging once upfront. This
+      is the same shape the `intersection`/`unionLastCharSet` sweep-merge (notes.md's 2026-09-25
+      entry) already fixed for a different method; `addAll`'s general path wasn't done in that pass
+      and looks like the single biggest remaining resize source. Worth a fresh look with its own
+      profiling session -- pre-size via `ensureCapacity(size + other.size)` before the loop is the
+      easy partial fix, but a real one-pass sorted merge (like `union`'s own static factory) would
+      also avoid the incremental tail-shifting `addRange` does per insert.

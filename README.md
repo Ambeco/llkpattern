@@ -164,17 +164,17 @@ over time.
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.654 | 1.546 | 2.36x |
+| Intel-i7-9750H | 0.664 | 1.561 | 2.35x |
 | Pixel 3a | 50.62 | 34.61 | 0.68x |
 
 **Corpus match time (each pass matches/finds/look_ats ~2300 patterns):**
 
 | | regex (ms/pass) | llkpattern (ms/pass) | llk/regex ratio |
 |---|---|---|---|
-| Intel-i7-9750H | 0.320 | 0.345 | 1.08x |
+| Intel-i7-9750H | 0.295 | 0.337 | 1.15x |
 | Pixel 3a | 22.11 | 5.00 | 0.23x |
 
-llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the desktop compile-time ratio improved from 3.03x to 2.60x on 2026-09-25 (an `ArrayCodePointSet#intersection(CodePointSet)` sweep merge replacing a nested-allocation formula, an `EndConstruct` singleton, and a single-branch fast path in `unionLastCharSet` -- see notes.md), then to 2.23x and 2.36x across two further 2026-09-25 passes (deferring `PatternParser`'s `QuantifiedUnion`/`Sequence` allocations until they're structurally needed, plus replacing `HashMap<Integer, ...>`/`HashMap<String, Integer>` with `androidx.collection`'s primitive-keyed maps and hoisting a per-instance `int[]` constant to `static` -- see notes.md). Absolute compile-time ratios vary run to run (see notes.md); the allocation-rate reduction behind them is the more stable number. On the Pixel 3a compile time is now somewhat faster than `java.util.regex`, though the two land close enough together, and vary run-to-run, that this ratio shouldn't be read as settled (see notes.md). Match time is faster than `java.util.regex` on the Pixel 3a, notably so; on desktop the two are close to parity, with llkpattern landing on either side of `java.util.regex` depending on run and corpus composition. See notes.md for the compile/match-time performance history.
+llkpattern still compiles slower than `java.util.regex` on desktop (compilation does real ambiguity-detection work `java.util.regex` skips), though the desktop compile-time ratio improved from 3.03x to 2.60x on 2026-09-25 (an `ArrayCodePointSet#intersection(CodePointSet)` sweep merge replacing a nested-allocation formula, an `EndConstruct` singleton, and a single-branch fast path in `unionLastCharSet` -- see notes.md), then to 2.23x and 2.36x across two further 2026-09-25 passes (deferring `PatternParser`'s `QuantifiedUnion`/`Sequence` allocations until they're structurally needed, plus replacing `HashMap<Integer, ...>`/`HashMap<String, Integer>` with `androidx.collection`'s primitive-keyed maps and hoisting a per-instance `int[]` constant to `static` -- see notes.md), and again via a further 2026-09-25 pass pre-sizing `mergeEntryPoints`/`unionLastCharSet`'s merge target from its candidates' own summed entry counts (a measured ~1.5% compile-time allocation reduction; three earlier attempts at a `CodePointSetBuilder`-based rewrite of the same two call sites all measured as net regressions instead -- see notes.md). Absolute compile-time ratios vary run to run (see notes.md); the allocation-rate reduction behind them is the more stable number. On the Pixel 3a compile time is now somewhat faster than `java.util.regex`, though the two land close enough together, and vary run-to-run, that this ratio shouldn't be read as settled (see notes.md). Match time is faster than `java.util.regex` on the Pixel 3a, notably so; on desktop the two are close to parity, with llkpattern landing on either side of `java.util.regex` depending on run and corpus composition. See notes.md for the compile/match-time performance history.
 
 ## 5. Authorship
 

@@ -543,8 +543,17 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       }
       if (size == 0 && !invert && !o.invert) {
         // Fast path: this set has nothing of its own yet, so addAll degenerates to a plain array
-        // copy.
-        keys = Arrays.copyOf(o.keys, o.size);
+        // copy -- but preserve `keys`' own capacity if a caller (e.g. PatternConstruct#
+        // mergeEntryPoints/#unionLastCharSet, pre-sized via the (int initialCapacity) constructor
+        // for a merge this is only the FIRST step of) already sized it bigger than `o.size`:
+        // Arrays.copyOf here would otherwise silently throw that pre-sizing away, shrinking back
+        // down to fit just this one source before any later addAll ever runs (measured as real,
+        // not just theoretical -- see notes.md's 2026-09-25 entry).
+        if (keys.length >= o.size) {
+          System.arraycopy(o.keys, 0, keys, 0, o.size);
+        } else {
+          keys = Arrays.copyOf(o.keys, o.size);
+        }
         size = o.size;
         return;
       }

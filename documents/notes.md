@@ -3189,3 +3189,42 @@ session's changes plausibly explain, since neither touches compile-time code at 
   ~3.35M -> ~3.24M B/op on top of this same day's earlier ~4.09M -> ~3.35M reduction. Full suite
   green throughout (same 5 pre-existing Unicode/grapheme failures each time).
 
+### `mergeEntryPoints`/`unionLastCharSet` pre-sizing: `CodePointSetBuilder` rejected (x3), plain pre-sized `ArrayCodePointSet` kept (2026-09-25, same day)
+
+- Prompted by a resize-count profile (temporary per-instance callstack instrumentation in
+  `ArrayCodePointSet`, not committed) showing `ArrayCodePointSet#addAll`'s general path (one `add()`
+  per source range) as the dominant resize source, itself dominated by `mergeEntryPoints`/
+  `mergeOneEntryPoint` and `unionLastCharSet`.
+- **Attempt 1: swap both call sites' `new ArrayCodePointSet()` for `CodePointSetBuilder.create()`.**
+  Intel-i7-9750H 3-run-each-way A/B: `llkCompile` alloc +4.11% (3.239M -> 3.372M B/op), compile
+  ratio bands non-overlapping and worse (baseline [2.32,2.45] vs change [2.51,2.61]). Root cause:
+  `CodePointSetBuilderImpl`'s `BUILDER_INITIAL_CAPACITY = 4` (tuned for its original bracket-literal
+  caller) unconditionally over-provisions this construct's usual 2-3-candidate merge, and `build()`'s
+  sort/compact pass is a real per-call cost `ArrayCodePointSet#add`'s already-cheap (for small N)
+  binary-search-insert-with-shift doesn't pay.
+- **Attempt 2: add `CodePointSetBuilder.create(int initialCapacityHint)`**, summing each candidate's
+  own entry count as the hint. Only closed the gap partway (+3.44%): `ArrayCodePointSet#addAll`'s
+  `size == 0` fast path (`keys = Arrays.copyOf(o.keys, o.size)`) unconditionally discarded the
+  pre-sized array on the very first `addAll`, shrinking back to just that first candidate's own size
+  before any later candidate's `addAll` ever ran.
+- **Attempt 3: fix that fast path** (preserve `keys` when already `>= o.size`, via
+  `System.arraycopy` instead of `Arrays.copyOf`) **on top of attempt 2.** Closed the gap further but
+  not fully (+2.40%) -- some residual overshoot is real, not just the fast-path bug: `unionLastCharSet`'s
+  parts aren't required to be disjoint (unlike `mergeEntryPoints`' candidates), so the summed hint can
+  genuinely overshoot the true merged count there, and `build()`'s sort/compact pass is still paid.
+- **Attempt 4 (kept): drop `CodePointSetBuilder` entirely, pre-size a plain `ArrayCodePointSet` via
+  its package-private `(int initialCapacity)` constructor** (the same capacity hint, summed via a new
+  `rangeCountHint` helper -- exact via `ArrayCodePointSet.size` when possible, else a
+  `forEachRange`-counted fallback), keeping only the `addAll` fast-path fix from attempt 3. This
+  isolates "pre-size the target" from "switch algorithms" and it's the pre-sizing alone that pays
+  off: Intel-i7-9750H 3-run-each-way A/B, `llkCompile` alloc **-1.53%** (3.239M -> 3.190M B/op,
+  bands non-overlapping, a real reduction), compile-time ms/op ratio bands overlapping (no measured
+  CPU regression), match-time and its allocation both unaffected (as expected -- compile-time-only
+  change). Full suite green throughout.
+- Takeaway for any future small-N accumulation site: pre-sizing the *existing* `ArrayCodePointSet`
+  shape is worth trying, but `CodePointSetBuilder`'s append-then-sort-once strategy is tuned for a
+  bigger typical N (bracket-expression literals) and has repeatedly regressed small-N call sites
+  (this entry; see also `remaining_work.md`'s now-superseded "Remaining desktop-allocation-sampling
+  leaders" caution about the same trap). A raw resize *count* from profiling is not by itself
+  evidence that a site is expensive -- a resize on a length-≤5 array is cheap.
+

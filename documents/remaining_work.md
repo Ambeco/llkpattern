@@ -261,8 +261,10 @@ to keep it "vaguely reasonable" and the jar/dex small.
 
 Found via `:llkpattern:jmhAllocSampling`. Each has a bigger blast radius than the throwaway per-bracket
 `CodePointSetBuilder`, so each needs its own dedicated look. Before touching any of them, read the
-`CodePointSetBuilder` entry in notes.md: small-N accumulation sites have repeatedly regressed when converted to a
-builder or pre-sized.
+`CodePointSetBuilder` entries in notes.md (2026-09-18 and 2026-09-25): small-N accumulation sites have
+repeatedly regressed when converted to a `CodePointSetBuilder` specifically, but plain `ArrayCodePointSet`
+pre-sizing (its `(int initialCapacity)` constructor, with a correctly-computed hint) has measured as a real
+win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't conflate the two.
 
 - [ ] **`ArrayCodePointSet`'s own eager `keys` array** (~6% of sampled allocation weight) has the
       same "allocated even when the set ends up empty" shape `CodePointSetBuilder` had, but
@@ -310,28 +312,11 @@ builder or pre-sized.
       would need `negate` threaded through `mergeRun`'s own call chain (and `CodePointSet
       #intersection(CodePointSet)`, which replaced the old private `intersect` helper this note
       used to name -- see notes.md's 2026-09-25 entry) first. Not attempted yet.
-- [ ] **`PatternConstruct#mergeEntryPoints` restoring its old pre-sizing** -- it used to
-      `ensureCapacity` its result from a known entry count (`mergeEntryPointsRaw`'s
-      `CodePointMapBuilder`) before that source was deleted as an unrelated side effect of the
-      `checkDisjoint`/ambiguity-check refactor (see notes.md's 2026-09-14 entries), leaving today's
-      version unsized. A prior attempt at restoring this (summing each candidate's own entry-set
-      size) was rejected specifically because it would have forced an `entryMap` materialization
-      `addCodePointsTo` existed to avoid -- but `addCodePointsTo` was ALSO removed in that same
-      refactor, so that objection may no longer hold. Worth a fresh look, with the "measure before
-      keeping" caution above firmly in mind (`mergeEntryPoints` is likely a small-N call site same
-      as the three rejected `CodePointSetBuilder` conversions, so a `CodePointSetBuilder`-based fix
-      specifically is NOT the presumed answer here -- a pre-sized `ArrayCodePointSet` is more likely
-      the right shape, same as before the `mergeEntryPointsRaw` deletion).
-- [ ] **`ArrayCodePointSet#addAll`'s general path (one `add()` per source range) resizes/shifts a
-      lot.** Temporary instrumentation (2026-09-25, not committed -- counters in a `Stats` nested
-      class, plus a scratch `ResizeStatsDriver` compiling every `AGREES` corpus row once) measured:
-      2368 patterns -> 5833 `ArrayCodePointSet` instances, 1376 `ensureCapacity` resizes, 2121
-      `addAll` calls of which only 856 (40%) hit the cheap fast-path array copy -- the other 1265
-      each do a plain `add()` per source range (8504 total), which both resizes AND
-      `System.arraycopy`-shifts the tail incrementally instead of sizing/merging once upfront. This
-      is the same shape the `intersection`/`unionLastCharSet` sweep-merge (notes.md's 2026-09-25
-      entry) already fixed for a different method; `addAll`'s general path wasn't done in that pass
-      and looks like the single biggest remaining resize source. Worth a fresh look with its own
-      profiling session -- pre-size via `ensureCapacity(size + other.size)` before the loop is the
-      easy partial fix, but a real one-pass sorted merge (like `union`'s own static factory) would
-      also avoid the incremental tail-shifting `addRange` does per insert.
+- [ ] **`ArrayCodePointSet#addAll`'s general path (one `add()` per source range) still resizes/shifts
+      per range for any caller that doesn't pre-size its target first** (unlike `mergeEntryPoints`/
+      `unionLastCharSet`, fixed 2026-09-25 -- see notes.md). A real one-pass sorted merge (like
+      `union`'s own static factory) would avoid the incremental tail-shifting `addRange` does per
+      insert for whatever callers remain; per notes.md's dated entry, `CodePointSetBuilder` is NOT
+      the presumed fix (repeatedly regressed small-N call sites) -- pre-sizing a plain
+      `ArrayCodePointSet` via its `(int initialCapacity)` constructor is the shape that's measured
+      as a real win.

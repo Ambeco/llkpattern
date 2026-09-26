@@ -330,7 +330,19 @@ abstract class PatternConstruct {
 			// still handled rather than assumed away.
 			return new MergedEntries(extra.getEntryPointMap(), extra.claimsEntryElse() ? extra : null);
 		}
-		MutableCodePointSet ranges = new ArrayCodePointSet();
+		// Pre-sized (not the default single-slot capacity) from the candidates' own entry counts
+		// summed -- an overestimate of the final merged size (merging can only coalesce entries
+		// together, never split them further), so this is a real Arrays.copyOf regrow avoided, not
+		// a guess. Plain ArrayCodePointSet, not a CodePointSetBuilder: a builder's extra sort/compact
+		// pass measurably cost MORE than this construct's usual 2-3-candidate merge saved by skipping
+		// ArrayCodePointSet#add's binary-search-insert-with-shift (see notes.md's 2026-09-25 entry) --
+		// pre-sizing alone, without that pass, is the part that's worth keeping.
+		int capacityHint = rangeCountHint(candidateAt(candidates, extra, 0).getEntryPointMap());
+		int candidateCount = candidateCount(candidates, extra);
+		for (int i = 1; i < candidateCount; i++) {
+			capacityHint += rangeCountHint(candidateAt(candidates, extra, i).getEntryPointMap());
+		}
+		MutableCodePointSet ranges = new ArrayCodePointSet(capacityHint);
 		PatternConstruct elseCandidate = null;
 		for (PatternConstruct candidate : candidates) {
 			elseCandidate = mergeOneEntryPoint(pattern, candidate, elseCandidate, candidateNounPlural, ranges);
@@ -339,6 +351,22 @@ abstract class PatternConstruct {
 			elseCandidate = mergeOneEntryPoint(pattern, extra, elseCandidate, candidateNounPlural, ranges);
 		}
 		return new MergedEntries(ranges, elseCandidate);
+	}
+
+	/**
+	 * An overestimate of {@code set}'s own entry count, for pre-sizing an {@link ArrayCodePointSet}
+	 * about to absorb it (see {@link #mergeEntryPoints}/{@link #unionLastCharSet}) -- exact for the
+	 * common case ({@code set} already an {@link ArrayCodePointSet}, whose {@code size} field is
+	 * read directly, no iteration), and a real (if rarer) count via {@link CodePointSet#forEachRange}
+	 * for any other {@link CodePointSet} implementation (e.g. a lazy {@code UnionCodePointSet}).
+	 */
+	private static int rangeCountHint(CodePointSet set) {
+		if (set instanceof ArrayCodePointSet) {
+			return ((ArrayCodePointSet) set).size;
+		}
+		int[] count = {0};
+		set.forEachRange((min, max) -> count[0]++);
+		return count[0];
 	}
 
 	/** One candidate's own contribution to an in-progress merge (shared by {@link
@@ -1970,12 +1998,27 @@ abstract class PatternConstruct {
 			// otherwise pay a whole addAll-driven copy of a set it's about to discard anyway.
 			return lastCharSet(body.get(0));
 		}
-		MutableCodePointSet result = new ArrayCodePointSet();
-		for (PatternConstruct part : body) {
-			CodePointSet partLast = lastCharSet(part);
+		// lastCharSet() (unlike getEntryPointMap()) isn't cached -- each call does real recursive
+		// work and returns a fresh set -- so every part's set is computed exactly once here, up
+		// front, both to preserve that (a null anywhere still means "give up entirely") and so the
+		// capacity hint below doesn't force a second call per part.
+		CodePointSet[] partLastSets = new CodePointSet[body.size()];
+		int capacityHint = 0;
+		for (int i = 0; i < body.size(); i++) {
+			CodePointSet partLast = lastCharSet(body.get(i));
 			if (partLast == null) {
 				return null;
 			}
+			partLastSets[i] = partLast;
+			capacityHint += rangeCountHint(partLast);
+		}
+		// Pre-sized -- see mergeEntryPoints' own comment on why (plain ArrayCodePointSet, not a
+		// CodePointSetBuilder). Note this hint can overshoot more here than in mergeEntryPoints:
+		// unlike entry-point candidates, last-char sets aren't required to be disjoint, so the
+		// summed count isn't as tight an overestimate -- still safe (never too small), just not as
+		// exact.
+		MutableCodePointSet result = new ArrayCodePointSet(capacityHint);
+		for (CodePointSet partLast : partLastSets) {
 			result.addAll(partLast);
 		}
 		return result;

@@ -3228,3 +3228,13 @@ session's changes plausibly explain, since neither touches compile-time code at 
   leaders" caution about the same trap). A raw resize *count* from profiling is not by itself
   evidence that a site is expensive -- a resize on a length-≤5 array is cheap.
 
+### Indexed loops over `List` in three compile-time-only hot spots (2026-09-26)
+
+- `mergeEntryPoints`, `buildLoopEntryMap`, `lastCharSet`'s `QuantifiedUnion` branch: enhanced-for
+  over `candidates`/`body`/`union.constructs` (all `List<PatternConstruct>`, `ArrayList`- or
+  `List.of()`-backed) replaced with indexed `for (int i = 0; i < list.size(); i++)` -- these methods
+  run once per compile with few iterations, never hot enough for C2 to scalar-replace the
+  `Iterator`, so each call really did allocate one. Intel-i7-9750H 2-run-each-way A/B: `llkCompile`
+  alloc -2.03% (3.205M -> 3.141M B/op, bands non-overlapping), ms/op ratio bands overlapping (no
+  measured CPU-time change either way, as expected for a change this small). Full suite green.
+

@@ -344,8 +344,8 @@ abstract class PatternConstruct {
 		}
 		MutableCodePointSet ranges = new ArrayCodePointSet(capacityHint);
 		PatternConstruct elseCandidate = null;
-		for (PatternConstruct candidate : candidates) {
-			elseCandidate = mergeOneEntryPoint(pattern, candidate, elseCandidate, candidateNounPlural, ranges);
+		for (int i = 0; i < candidates.size(); i++) {
+			elseCandidate = mergeOneEntryPoint(pattern, candidates.get(i), elseCandidate, candidateNounPlural, ranges);
 		}
 		if (extra != null) {
 			elseCandidate = mergeOneEntryPoint(pattern, extra, elseCandidate, candidateNounPlural, ranges);
@@ -588,8 +588,8 @@ abstract class PatternConstruct {
 				return;
 			}
 			PatternConstruct target = loopBodyTarget(captureConstructIndex);
-			for (PatternConstruct part : body) {
-				part.next = target;
+			for (int i = 0; i < body.size(); i++) {
+				body.get(i).next = target;
 			}
 			// `body` handed straight to mergeEntryPoints, with `next` merged in via its own `extra`
 			// parameter instead of first being copied into a new ArrayList<>(body) just to append it
@@ -1943,8 +1943,8 @@ abstract class PatternConstruct {
 				return null;
 			}
 			MutableCodePointSet result = new ArrayCodePointSet();
-			for (PatternConstruct branch : union.constructs) {
-				CodePointSet branchSet = lastCharSet(branch);
+			for (int i = 0; i < union.constructs.size(); i++) {
+				CodePointSet branchSet = lastCharSet(union.constructs.get(i));
 				if (branchSet == null) {
 					return null;
 				}

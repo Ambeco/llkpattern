@@ -867,6 +867,13 @@ final class PatternParser {
             throw throwUnexpectedChar("First character of capture name must be an ASCII letter.");
           }
           captureName = pattern.substring(startName, index);
+          if (namedGroups.containsKey(captureName)) {
+            // Checked here, not where namedGroups is actually populated below -- java.util.regex
+            // rejects the redefinition itself, before even looking at the group's own body, and
+            // this is the point where the name (and its position, for the error) is in scope.
+            throw PatternSyntaxException.throwWithReferences(
+                pattern, startName, "Named capturing group <", captureName, "> is already defined");
+          }
           advance(1);
           break;
         case ':':

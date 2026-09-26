@@ -3228,6 +3228,24 @@ session's changes plausibly explain, since neither touches compile-time code at 
   leaders" caution about the same trap). A raw resize *count* from profiling is not by itself
   evidence that a site is expensive -- a resize on a length-≤5 array is cheap.
 
+### `:llkpattern:jmh` moved to fork=3/iterations=10 for tighter A/B precision (2026-09-26)
+
+- Prompted by this session's own A/B history showing noisy, sometimes non-overlapping ratio bands
+  even across 2-3 whole-invocation repeats. Tested three configs back to back, same machine/
+  background-load conditions, 3 runs each (`llkCompile`, `Intel-i7-9750H`): old fork=1/iterations=10
+  had 7.8%-26.2% within-run `scoreError` and an 8.2%-of-mean cross-run spread; fork=3 with
+  `iterations` dropped to 5 (to hold wall time roughly flat) was NOT an improvement (10%-34%
+  scoreError) -- each fork needs close to the old iteration count to get past its own cold-JIT
+  noise, so cutting iterations per fork to pay for more forks doesn't work. fork=3/iterations=10
+  measured 4.4%-6.0% scoreError and a 3.0%-of-mean cross-run spread -- a real ~3x tightening on both
+  measures. Cost: ~144s per `:llkpattern:jmh` invocation, up from ~75s (`jmhSampling` unaffected,
+  always single-fork). See `remaining_work.md`'s "Benchmark methodology" section for the kept
+  numbers and `llkpattern/build.gradle`'s `jmh {}` block comment for the same history inline.
+- Also refreshed the Pixel 3a benchmark/sampling files (device was plugged in this session) and
+  README's benchmark tables for both devices; the desktop compile-time ratio table entry jumped
+  (2.36x -> 2.59x) purely from this methodology change, not a regression -- flagged as such in
+  README so it isn't misread as one later.
+
 ### Indexed loops over `List` in three compile-time-only hot spots (2026-09-26)
 
 - `mergeEntryPoints`, `buildLoopEntryMap`, `lastCharSet`'s `QuantifiedUnion` branch: enhanced-for

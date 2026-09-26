@@ -78,9 +78,22 @@ jmh {
     // iterations mostly just re-measure the same already-hot state, not build on it further.
     warmupIterations = 1
     warmup = '1s'
+    // fork = 3, not 1: this session's own A/B history (documents/notes.md, 2026-09-26) found the
+    // dominant source of noise between runs was environmental drift BETWEEN JVM forks (background
+    // load, JIT warmup variance), not too few samples within one fork -- separate forks (separate
+    // JVMs, separate warmups) address that where more iterations in a single fork can't. Measured
+    // (llkCompile, same machine/background-load conditions, 3 runs each): fork=1/iterations=10's
+    // within-run scoreError was 7.8%-26.2% of score with an 8.2%-of-mean cross-run spread; fork=3
+    // with iterations DROPPED to 5 (to hold wall time roughly flat) was NOT an improvement
+    // (10%-34% scoreError) -- each fork apparently needs close to the same iteration count as
+    // before to get past its own cold-JIT/warmup noise. fork=3/iterations=10 (this config) measured
+    // 4.4%-6.0% scoreError and a 3.0%-of-mean cross-run spread -- a real, roughly 3x tightening on
+    // both measures, at a real cost: ~144s per `:llkpattern:jmh` invocation, up from the old
+    // config's ~75s (`jmhSampling` is unaffected -- it always runs a single fork regardless of this
+    // setting, see `SamplingRunner`).
     iterations = 10
     timeOnIteration = '1s'
-    fork = 1
+    fork = 3
     jvm = benchmarkJvm
     // Console output (the plugin always prints a human-readable summary as the jmh task runs)
     // plus a checked-in JSON baseline file -- see remaining_work.md's "results go both places"

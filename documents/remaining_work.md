@@ -91,6 +91,21 @@ run to run with background load on either device, but the ratio is comparatively
 whether the ratio's run-to-run noise bands (from a couple of runs each way) still overlap between baseline and
 the change, not by a single before/after data point.
 
+`:llkpattern:jmh`'s `fork` is 3 (not 1) specifically because the noise that actually mattered across this
+project's own A/B history was between-JVM-fork drift (background load, JIT warmup variance), not too few
+samples within a single fork -- separate forks (separate JVMs, separate warmups) address that where more
+`iterations` in a single fork can't. Measured (llkCompile, same machine/background-load conditions, 3 runs
+each, 2026-09-26): the old fork=1/iterations=10 had 7.8%-26.2% within-run `scoreError` and an 8.2%-of-mean
+cross-run spread; dropping `iterations` to 5 to hold fork=3 at roughly the old wall-clock cost was NOT an
+improvement (10%-34% scoreError -- each fork needs close to the old iteration count to get past its own
+cold-JIT noise); fork=3 with `iterations` kept at 10 measured 4.4%-6.0% scoreError and a 3.0%-of-mean
+cross-run spread -- a real ~3x tightening on both measures, at a real cost (~144s per `:llkpattern:jmh`
+invocation, up from ~75s -- `jmhSampling` is unaffected, it always runs a single fork regardless of this
+setting, see `SamplingRunner`). One `:llkpattern:jmh` invocation now internally spans 3 forks' worth of
+samples, so a couple of whole-invocation repeats each way is already fairly robust; `gc.alloc.rate.norm`
+remains deterministic enough that a single run each way is enough for an allocation-only claim, same as
+before.
+
 - [ ] **Possible small compile-time regression from `\X`/`\b{g}` (2026-09-23).** The Intel llk/regex
       compile ratio A/B'd as baseline 2.92-3.00x vs changed 2.99-3.18x -- the bands technically
       overlap (2.99-3.00), but only barely, not the comfortable overlap this project usually treats
@@ -285,26 +300,6 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
       "measure before keeping" guidance a few sections up (a plausible-sounding pre-sizing
       heuristic has already twice measured as a net regression in this project).
 
-- [ ] **`PatternParser.parse`'s own `PatternConstruct` allocation is ~18% of sampled allocation
-      weight** -- every `QuantifiedUnion`/`Sequence` node gets allocated eagerly as the parser
-      descends, even for AST shapes that could plausibly be deferred or elided (e.g. a `Sequence`
-      wrapping a single element, or a `QuantifiedUnion` that turns out to be unquantified with
-      exactly one branch and no capture -- both common). Worth investigating whether some of these
-      can be built lazily (only materialized if something downstream actually needs the wrapper,
-      rather than unconditionally on the way down) or elided entirely for the trivial-wrapper case.
-      Confirmed via desktop allocation sampling (`Intel-i7-9750H_llkCompile_alloc_sampling.txt`,
-      2026-09-25): `PatternParser.parseUnion`'s own eager `new Sequence(index)` (line 313,
-      unconditional at the top of every union/group parse, whether or not the parsed content turns
-      out to need more than one element) is alone 4.0% of all sampled allocation weight, and
-      `PatternParser.parse`'s own top-level `new QuantifiedUnion(...)` (line 279, same
-      "unconditional wrapper" shape, one per `Ll1Pattern.compile` call) is a further 3.7%, and
-      `PatternParser.parseGroup`'s own `new QuantifiedUnion(...)` for each `(...)`/`(?:...)` group
-      (line 702) another 2.7% -- ~10% combined across these three sites alone, not just the
-      `Sequence` half. Not attempted yet -- this is parse-time AST structure,
-      not the compiled matcher graph the `flatten-matcher-dispatch` experiment touches, so it's an
-      independent effort; likely large enough in surface area (`PatternParser`'s whole recursive-descent structure assumes eager
-      construction) to warrant its own dedicated session per this file's usual guidance, not a
-      quick opportunistic change.
 - [ ] **`PatternParser#parseComplexCharacterRanges`'s `negate` handling** calls a separate
       `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a bracket
       expression starts with `^`. `CodePointSetBuilder` gained an `#invert` method (2026-09-18,
@@ -319,4 +314,50 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
       insert for whatever callers remain; per notes.md's dated entry, `CodePointSetBuilder` is NOT
       the presumed fix (repeatedly regressed small-N call sites) -- pre-sizing a plain
       `ArrayCodePointSet` via its `(int initialCapacity)` constructor is the shape that's measured
-      as a real win.
+      as a real win. Remaining unsized `new ArrayCodePointSet()` + `addAll` sites flagged 2026-09-26
+      (not yet measured, so "worth trying," not "known win"):
+  - [ ] `PatternConstruct.lastCharSet`'s own `QuantifiedUnion` branch (still hand-rolls its own
+        unsized merge loop) could instead just `return unionLastCharSet(union.constructs);` after
+        its `min < 1 || constructs.isEmpty()` guard -- same null-propagation semantics, and picks up
+        `unionLastCharSet`'s existing pre-sizing and single-branch fast path for free instead of
+        duplicating a worse version of it.
+  - [ ] `PatternConstruct`'s private `union(a, b)` two-set helper.
+  - [ ] `CodePointSetBuilder.mergeRun`'s own `new ArrayCodePointSet()` + two `addAll` calls.
+  - [ ] When both operands are already non-inverted `ArrayCodePointSet`s, `addAll` could dispatch to
+        `sweepUnion(this, o)`'s merge-scan instead of `other.forEachRange(this::add)` -- removes the
+        per-call capturing lambda and the per-range tail shift entirely, not just the resizes.
+- [ ] **`PatternParser`'s per-`Ll1Pattern.compile` constructor allocations** (flagged from a
+      2026-09-26 allocation-sampling capture, ~2.9% each for two call sites at `PatternParser.<init>`)
+      -- if these are the `androidx.collection` maps for named-groups/backreference tracking
+      (`namedGroups`/`closedGroupsByIndex`, added 2026-09-25 -- see notes.md), most corpus patterns
+      have neither, so leaving them `null` until the first named group or backreference is parsed
+      (rather than constructing an empty map unconditionally) may be a real, if small, win. Not
+      measured yet -- confirm which fields these two call sites actually are first.
+- [ ] **A `java.util.stream`/`Collectors` call appears in the desktop compile-time allocation
+      profile** (2026-09-26 capture, small -- ~0.5%, and only the profile's top 10 leaves are shown,
+      so there may be more). `grep -rn 'stream()\|Collectors\.' llkpattern/src/main` to find and
+      replace with plain loops if the call sites are on the compile hot path rather than some cold
+      error-message-formatting branch.
+- [ ] **Pixel 3a CPU-sampling leaders** (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`,
+      captured 2026-09-24 -- refresh before trusting exact percentages, per this file's usual
+      staleness caution): none of these are measured yet, just flagged from reading the profile.
+  - [ ] `PatternParser`'s constructor does a full-pattern pre-scan (`Character.codePointAt` <-
+        `PatternParser.codePointAt` <- `PatternParser.<init>`, ~7.8% combined) -- read what this
+        scan computes and whether it can be folded into the same pass as parsing itself, or skipped
+        when the pattern doesn't need whatever it's answering.
+  - [ ] `PatternParser.advanceCodePoint` uses `String.offsetByCodePoints` (~1.4%) -- a supplementary-
+        code-point-aware advance can likely be done with `Character.charCount(codePointAt(...))`
+        instead, avoiding whatever `offsetByCodePoints` does beyond that.
+  - [ ] `PatternParser.removeQuoting`'s repeated `String.indexOf` calls (~2.7% combined across
+        several call sites) -- worth a single-pass rewrite if `removeQuoting` is called often enough
+        to matter (check corpus frequency of `\Q...\E` first).
+  - [ ] `NamedCharClass$RegexCharacterClass.valueOf` goes through `Enum.valueOf` (~1.3%) -- convert
+        to a generated string switch, the same way `NamedCharClass#scriptByName`/`#blockByName`
+        already avoid `Enum.valueOf`'s linear name scan.
+  - [ ] `PatternConstruct$Sequence.buildMatcher` calls `patterns.get(i)` repeatedly (several separate
+        line numbers in the profile, ~3.0% combined `ArrayList.get` + ~1.7% `Objects.checkIndex` on
+        ART) -- hoist the element into a local once per loop iteration instead of re-indexing.
+  - [ ] `PatternParser.skipComments` is its own leaf at ~1.9% -- confirm it early-returns when
+        `COMMENTS` isn't set rather than always scanning.
+  - [ ] `PatternParser.tryParseSingleCharEscape` calls `String.indexOf` (~1.0%) -- a plain `switch`
+        over the escape character may be cheaper.

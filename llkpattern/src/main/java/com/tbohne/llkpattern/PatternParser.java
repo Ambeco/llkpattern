@@ -128,12 +128,18 @@ final class PatternParser {
   // instead of a linked Node per entry -- most patterns have zero or one named group, so this is
   // usually either empty or a single small insert, not a data structure worth a java.util.HashMap's
   // per-instance overhead.
-  // Explicit 0, not the default no-arg constructor: androidx.collection's default initial capacity
-  // (6, rounded up to 7/8-slot backing arrays) allocates those arrays unconditionally in the
-  // constructor, even for the common case of a pattern with no named groups at all -- 0 gets the
-  // same "no backing storage until the first real insert" laziness java.util.HashMap's own no-arg
-  // constructor already had, which the array-eager default here would otherwise have regressed.
-  private final MutableObjectIntMap<String> namedGroups = new MutableObjectIntMap<>(0);
+  // Shared, empty, never mutated: getNamedGroups() returns this for the common case of a pattern
+  // with no named groups at all, instead of allocating a MutableObjectIntMap per compile that
+  // would just sit empty. Safe to share across parses because it is read-only from the outside
+  // (ObjectIntMap has no mutators) and this class never mutates it either -- see namedGroups below.
+  private static final ObjectIntMap<String> EMPTY_NAMED_GROUPS = new MutableObjectIntMap<>(0);
+
+  // Null until the first named group is registered (parseGroup), rather than an eagerly-constructed
+  // androidx.collection.MutableObjectIntMap instead of java.util.HashMap<String, Integer>: no
+  // per-entry Integer boxing, and (like closedGroupsByIndex below) a flat open-addressed table
+  // instead of a linked Node per entry -- but most patterns have zero named groups, so skipping the
+  // map object itself (not just its backing arrays) is worth it for the common case.
+  private MutableObjectIntMap<String> namedGroups;
   // captureConstructIndex -> the already-fully-parsed QuantifiedUnion for that group, populated at
   // the same point as namedGroups (parseGroup, once a group's ")" is reached). Backreferences
   // (tryParseBackReference) look a referenced group up here: only a group already present -- i.e.
@@ -146,8 +152,10 @@ final class PatternParser {
   // compile() paid for one, whether or not the pattern has any backreferences at all -- see
   // benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt), plus a boxed Integer key and a
   // HashMap.Node per capturing group. A primitive-int-keyed open-addressed map needs neither.
-  // Explicit 0 -- see namedGroups' own doc just above for why.
-  private final MutableIntObjectMap<QuantifiedUnion> closedGroupsByIndex = new MutableIntObjectMap<>(0);
+  // Null until the first capturing group closes -- see namedGroups' own doc just above for why
+  // (this one only saves the allocation for patterns with no capturing groups at all, since any
+  // capturing group populates it regardless of whether a backreference ever uses it).
+  private MutableIntObjectMap<QuantifiedUnion> closedGroupsByIndex;
 
   PatternParser(String pattern, int flags) {
     // LITERAL wins over CANON_EQ, as in java.util.regex.
@@ -217,7 +225,7 @@ final class PatternParser {
 
   /** Named capturing groups' names mapped to their captureConstructIndex. */
   ObjectIntMap<String> getNamedGroups() {
-    return namedGroups;
+    return namedGroups != null ? namedGroups : EMPTY_NAMED_GROUPS;
   }
 
   /** Whether the pattern used {@code \G} -- see the field's own doc for what that means. */
@@ -867,7 +875,7 @@ final class PatternParser {
             throw throwUnexpectedChar("First character of capture name must be an ASCII letter.");
           }
           captureName = pattern.substring(startName, index);
-          if (namedGroups.containsKey(captureName)) {
+          if (namedGroups != null && namedGroups.containsKey(captureName)) {
             // Checked here, not where namedGroups is actually populated below -- java.util.regex
             // rejects the redefinition itself, before even looking at the group's own body, and
             // this is the point where the name (and its position, for the error) is in scope.
@@ -994,6 +1002,9 @@ final class PatternParser {
     if (groupCaptureIndex != -1) {
       groupCaptureIndex = captureConstructIndex++;
       if (!captureName.isEmpty()) {
+        if (namedGroups == null) {
+          namedGroups = new MutableObjectIntMap<>(4);
+        }
         namedGroups.set(captureName, groupCaptureIndex);
       }
     }
@@ -1009,6 +1020,9 @@ final class PatternParser {
     if (groupCaptureIndex != -1) {
       // parseUnion() guarantees a real QuantifiedUnion whenever captureConstructIndex != -1 -- see
       // its own doc.
+      if (closedGroupsByIndex == null) {
+        closedGroupsByIndex = new MutableIntObjectMap<>(4);
+      }
       closedGroupsByIndex.set(groupCaptureIndex, (QuantifiedUnion) body);
     }
     advance(1);
@@ -1526,7 +1540,7 @@ final class PatternParser {
         digitsEnd++;
       }
       int referencedIndex = groupNumber - 1;
-      QuantifiedUnion referenced = closedGroupsByIndex.get(referencedIndex);
+      QuantifiedUnion referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
       if (referenced == null) {
         throw PatternSyntaxException.throwWithReferences(
             pattern,
@@ -1562,7 +1576,7 @@ final class PatternParser {
       advance(1);
       // -1 sentinel: a real captureConstructIndex is always >= 0, so this distinguishes "absent"
       // from index 0's real group without needing a boxed Integer/null (see namedGroups' own doc).
-      int referencedIndex = namedGroups.getOrDefault(name, -1);
+      int referencedIndex = namedGroups != null ? namedGroups.getOrDefault(name, -1) : -1;
       if (referencedIndex == -1) {
         throw PatternSyntaxException.throwWithReferences(
             pattern,
@@ -1571,7 +1585,7 @@ final class PatternParser {
             "hasn't been closed yet at this point in the pattern (forward references aren't ",
             "supported)");
       }
-      QuantifiedUnion referenced = closedGroupsByIndex.get(referencedIndex);
+      QuantifiedUnion referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
       BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
       backReference.flags = flags;
       return backReference;

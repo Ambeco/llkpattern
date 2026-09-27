@@ -3588,3 +3588,15 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   (bare flags-only groups) now pay for an array they didn't before -- the honest number is the
   net ~2.7% B/op reduction. Full suite green. README updated; item removed from
   remaining_work.md.
+
+### `PatternParser.namedGroups`/`closedGroupsByIndex` made lazy-null (2026-09-27)
+
+- Confirmed the two ~2.9% `PatternParser.<init>` allocation leaves flagged 2026-09-26 were exactly
+  these two `androidx.collection` maps. Made both fields non-final and null until first use
+  (`getNamedGroups()` returns a shared empty singleton when null); `closedGroupsByIndex` only
+  saves the allocation for patterns with zero capturing groups, since any capturing group
+  populates it regardless of backreferences. A/B'd (two baseline, two changed runs): desktop
+  llk/regex compile-time ratio 2.40x-2.46x (baseline) vs. 2.29x-2.30x (changed) -- non-overlapping,
+  a real ~5% improvement, matching the flagged allocation share. `jmhAllocSampling` confirms both
+  `PatternParser.<init>` leaves are gone. Full suite green. README updated; item removed from
+  remaining_work.md.

@@ -293,13 +293,6 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
   - [ ] When both operands are already non-inverted `ArrayCodePointSet`s, `addAll` could dispatch to
         `sweepUnion(this, o)`'s merge-scan instead of `other.forEachRange(this::add)` -- removes the
         per-call capturing lambda and the per-range tail shift entirely, not just the resizes.
-- [ ] **`PatternParser`'s per-`Ll1Pattern.compile` constructor allocations** (flagged from a
-      2026-09-26 allocation-sampling capture, ~2.9% each for two call sites at `PatternParser.<init>`)
-      -- if these are the `androidx.collection` maps for named-groups/backreference tracking
-      (`namedGroups`/`closedGroupsByIndex`, added 2026-09-25 -- see notes.md), most corpus patterns
-      have neither, so leaving them `null` until the first named group or backreference is parsed
-      (rather than constructing an empty map unconditionally) may be a real, if small, win. Not
-      measured yet -- confirm which fields these two call sites actually are first.
 - [ ] **A `java.util.stream`/`Collectors` call appears in the desktop compile-time allocation
       profile** (2026-09-26 capture, small -- ~0.5%, and only the profile's top 10 leaves are shown,
       so there may be more). `grep -rn 'stream()\|Collectors\.' llkpattern/src/main` to find and

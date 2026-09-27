@@ -1069,8 +1069,7 @@ final class PatternParser {
     }
     body.endIndex = index;
     advance(1);
-    LookbehindConstruct.SingleCodePointBody resolved =
-        LookbehindConstruct.resolveSingleCodePointBody(body);
+    LookbehindConstruct.SingleCodePointBody resolved = body.resolveSingleCodePointBody();
     if (resolved == null) {
       throw throwUnexpectedChar(
           "lookbehind is only supported when its body always matches exactly one code point (a "

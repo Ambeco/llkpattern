@@ -3460,3 +3460,48 @@ well-ordered `instanceof` chain (whose real-world type distribution across the c
 predictable enough to branch-predict well), even though the chain nominally does more comparisons.
 **Do not "fix" this by reverting to an `instanceof` chain without the project owner's explicit
 sign-off again** -- this tradeoff was made deliberately and knowingly, not overlooked.
+
+## Remaining `instanceof` chains eliminated: firstCharSet/lastCharSet/resolveSingleCodePointBody/exitAssertionChain (2026-09-27)
+
+Project owner asked for a full audit after the skipZeroWidthEntrySet/collectExitAssertionChain
+conversion above. Found three more `instanceof`-chain static methods in `PatternConstruct.java`
+(all the identical 5-type shape: `LiteralString`/`ComplexCharacter`/`ComplexQuantifiedCharacter`/
+`QuantifiedUnion`/`Sequence`) -- `firstCharSet(PatternConstruct pc)`, `lastCharSet(PatternConstruct
+pc)`, and `LookbehindConstruct.resolveSingleCodePointBody(PatternConstruct pc)` -- plus one static
+method that wasn't a chain but still had "the first parameter is really the receiver" shape:
+`MatcherConstruct.exitAssertionChain(MatcherConstruct node)`. Everything else with `instanceof` in
+`llkpattern/src/main` (`ArrayCodePointSet`/`CodePointSet`/`CodePointSetBuilder`/`UnionCodePointSet`'s
+equals()-style single-type checks, `Ll1Pattern`'s two single-purpose root-shape checks,
+`PatternParser`'s `accumulator instanceof Sequence`/`body instanceof QuantifiedUnion` single checks,
+`PatternSyntaxException`'s 2-branch one) is a single fast-path/purpose-built check against one or
+two specific types, not a general per-construct-type dispatch chain -- left alone.
+
+Converted all four the same way: virtual method + default on the base class, `final` override per
+construct type (the project owner asked overrides be marked `final` explicitly this round, applied
+retroactively to the earlier skipZeroWidthEntrySet/collectExitAssertionChain overrides too --
+none of the concrete classes needed it structurally, since they're all already `final class`, but
+it documents intent). `resolveSingleCodePointBody`'s return type (`LookbehindConstruct
+.SingleCodePointBody`, nested inside `LookbehindConstruct`, not `PatternConstruct` itself) needed
+the type-use `@Nullable` annotation written as `LookbehindConstruct.@Nullable SingleCodePointBody`,
+not `@Nullable LookbehindConstruct.SingleCodePointBody` -- javac rejects the latter ("scoping
+construct cannot be annotated with a type-use annotation") since the annotation must bind to the
+simple type name, not the qualifying scope. `exitAssertionChain` needed no per-type overrides (it
+never dispatched by type at all, just read awkwardly as a static utility) -- became a plain `final`
+instance method, `node.exitAssertionChain()` instead of `MatcherConstruct.exitAssertionChain(node)`.
+
+Full suite green (7213 tests, same 5 pre-existing failures), both CLAUDE.md hand-checks verified
+again. Re-ran the full benchmark cycle (desktop JMH + CPU/allocation sampling, Pixel 3a corpus
+benchmark, 2 runs each): desktop compile ratio 2.47x (1.560-1.562ms llkCompile, consistent with
+recent runs, allocation-sampling total weight essentially unchanged at ~155.76B bytes sampled vs
+~155.77B before -- expected, since this is a pure dispatch-mechanism change with no allocation
+difference); Pixel 3a compile time 33.17-33.60ms/pass, actually faster than the narrower
+skipZeroWidthEntrySet-only conversion's own same-session numbers (34.72-35.03ms/pass) from earlier
+today, and squarely in the range of the fastest runs seen all session -- no regression from
+completing the conversion, unlike the earlier partial version. Not a controlled A/B (too much of
+the day's device-noise variance already established to justify yet another full stash-based cycle
+for what the project owner explicitly said was acceptable either way), but nothing here suggests
+megamorphism got WORSE by extending it to more call sites -- plausibly because `firstCharSet`/
+`lastCharSet`/`resolveSingleCodePointBody` are called far less often per compile than
+`skipZeroWidthEntrySet` (only for backreferences, word-boundary optimization, and lookbehind
+bodies respectively, not on every loop's `next` chain), so their own megamorphic dispatch cost has
+little to move. README's benchmark tables and prose updated to match.

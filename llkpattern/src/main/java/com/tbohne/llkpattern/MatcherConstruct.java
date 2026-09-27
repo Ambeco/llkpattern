@@ -261,7 +261,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
 	}
@@ -702,7 +702,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			chain.add(this);
 			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
@@ -864,7 +864,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			chain.add(this);
 			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
@@ -927,7 +927,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			chain.add(this);
 			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
@@ -981,7 +981,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			chain.add(this);
 			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
@@ -1117,7 +1117,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			return minIsZero && MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
 	}
@@ -1222,7 +1222,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			return MatcherConstruct.collectExitAssertionChain(exitNode, chain);
 		}
 
@@ -1253,9 +1253,9 @@ abstract class MatcherConstruct {
 	 * scope for now, see remaining_work.md): a {@code null} result here just leaves that shape
 	 * greedy, this engine's existing (correct-for-{@code matches()}) default, never wrong.
 	 */
-	static @Nullable List<ZeroWidthAssertionGuard> exitAssertionChain(MatcherConstruct node) {
+	final @Nullable List<ZeroWidthAssertionGuard> exitAssertionChain() {
 		List<ZeroWidthAssertionGuard> chain = new ArrayList<>();
-		return collectExitAssertionChain(node, chain) ? chain : null;
+		return collectExitAssertionChain(this, chain) ? chain : null;
 	}
 
 	private static boolean collectExitAssertionChain(
@@ -1334,7 +1334,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
 	}
@@ -1359,7 +1359,7 @@ abstract class MatcherConstruct {
 		}
 
 		@Override
-		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
 			return true;
 		}
 	}

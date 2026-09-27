@@ -717,7 +717,7 @@ abstract class PatternConstruct {
 			// directly via the body's own failedEntry, bypassing the marker-owned node entirely) has to
 			// agree on that same shifted meaning to stay consistent.
 			@Nullable List<MatcherConstruct.ZeroWidthAssertionGuard> exitAssertionChain =
-					reluctant ? MatcherConstruct.exitAssertionChain(next.matcher) : null;
+					reluctant ? next.matcher.exitAssertionChain() : null;
 			boolean reluctantSafe = exitAssertionChain != null;
 			int shiftedMin = plusOneCapped(min);
 			int shiftedMax = plusOneCapped(max);
@@ -1054,7 +1054,7 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 			if (isUnquantified() && !constructs.isEmpty()) {
 				MutableCodePointSet result = new ArrayCodePointSet();
 				for (PatternConstruct branch : constructs) {
@@ -1063,6 +1063,72 @@ abstract class PatternConstruct {
 				return result;
 			}
 			return super.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+		}
+
+		@Override
+		final @Nullable CodePointSet lastCharSet() {
+			if (min < 1 || constructs.isEmpty()) {
+				return null;
+			}
+			MutableCodePointSet result = new ArrayCodePointSet();
+			for (int i = 0; i < constructs.size(); i++) {
+				CodePointSet branchSet = constructs.get(i).lastCharSet();
+				if (branchSet == null) {
+					return null;
+				}
+				result.addAll(branchSet);
+			}
+			return result;
+		}
+
+		@Override
+		final @Nullable CodePointSet firstCharSet() {
+			if (min < 1 || constructs.isEmpty()) {
+				return null;
+			}
+			MutableCodePointSet result = new ArrayCodePointSet();
+			for (PatternConstruct branch : constructs) {
+				CodePointSet branchSet = branch.firstCharSet();
+				if (branchSet == null) {
+					return null;
+				}
+				result.addAll(branchSet);
+			}
+			return result;
+		}
+
+		@Override
+		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+			if (min != 1 || max != 1 || constructs.isEmpty()) {
+				return null;
+			}
+			boolean isCapturing = captureConstructIndex >= 0;
+			if (constructs.size() == 1) {
+				LookbehindConstruct.SingleCodePointBody inner = constructs.get(0).resolveSingleCodePointBody();
+				if (inner == null) {
+					return null;
+				}
+				if (!isCapturing) {
+					return inner;
+				}
+				// A capturing group can't itself wrap another capturing group here -- there's only
+				// one code point behind this position for at most one group to claim.
+				return inner.captureConstructIndex == -1
+						? new LookbehindConstruct.SingleCodePointBody(inner.codePoints, captureConstructIndex)
+						: null;
+			}
+			// A real alternation: every branch must resolve with no capturing group of its own --
+			// only the whole alternation (via an enclosing capturing group on this union) may
+			// capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
+			MutableCodePointSet result = new ArrayCodePointSet();
+			for (PatternConstruct branch : constructs) {
+				LookbehindConstruct.SingleCodePointBody inner = branch.resolveSingleCodePointBody();
+				if (inner == null || inner.captureConstructIndex != -1) {
+					return null;
+				}
+				result.addAll(inner.codePoints);
+			}
+			return new LookbehindConstruct.SingleCodePointBody(result, captureConstructIndex);
 		}
 	}
 
@@ -1219,7 +1285,7 @@ abstract class PatternConstruct {
 			for (int i = patterns.size() - 1; i >= 0; i--) {
 				PatternConstruct part = patterns.get(i);
 				if (part instanceof WordBoundaryConstruct && i > 0) {
-					((WordBoundaryConstruct) part).priorCharSet = lastCharSet(patterns.get(i - 1));
+					((WordBoundaryConstruct) part).priorCharSet = patterns.get(i - 1).lastCharSet();
 				}
 				part.compile(tail);
 				tail = part;
@@ -1228,10 +1294,25 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 			return patterns.isEmpty()
 					? getEntryPointMap()
 					: patterns.get(0).skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+		}
+
+		@Override
+		final @Nullable CodePointSet lastCharSet() {
+			return patterns.isEmpty() ? null : patterns.get(patterns.size() - 1).lastCharSet();
+		}
+
+		@Override
+		final @Nullable CodePointSet firstCharSet() {
+			return patterns.isEmpty() ? null : patterns.get(0).firstCharSet();
+		}
+
+		@Override
+		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+			return patterns.size() == 1 ? patterns.get(0).resolveSingleCodePointBody() : null;
 		}
 	}
 
@@ -1285,6 +1366,33 @@ abstract class PatternConstruct {
 			// no-op (String#toString() returns `this`).
 			new LiteralMatcherConstruct(this, value.toString());
 		}
+
+		@Override
+		final @Nullable CodePointSet lastCharSet() {
+			if (value.length() == 0) {
+				return null;
+			}
+			int cp = Character.codePointBefore(value, value.length());
+			return singletonCodePointMap(cp);
+		}
+
+		@Override
+		final @Nullable CodePointSet firstCharSet() {
+			return value.length() == 0 ? null : singletonCodePointMap(Character.codePointAt(value, 0));
+		}
+
+		@Override
+		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+			if (Character.codePointCount(value, 0, value.length()) != 1) {
+				return null;
+			}
+			MutableCodePointSet set = new ArrayCodePointSet();
+			set.add(Character.codePointAt(value, 0));
+			// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
+			// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
+			// UNICODE_CASE, exactly like LiteralString.buildEntryMap's own entryMap.
+			return new LookbehindConstruct.SingleCodePointBody(MatcherConstruct.foldedEntrySet(set, flags), -1);
+		}
 	}
 
 	/**
@@ -1306,7 +1414,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			CodePointSet firstChars = firstCharSet(referencedGroup);
+			CodePointSet firstChars = referencedGroup.firstCharSet();
 			if (firstChars == null) {
 				// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
 				// fall back to the catch-all entry set rather than risk silently wrong zero-width
@@ -1397,6 +1505,21 @@ abstract class PatternConstruct {
 		void buildMatcher() {
 			new SingleCharMatcherConstruct(this);
 		}
+
+		@Override
+		final @Nullable CodePointSet lastCharSet() {
+			return validRanges();
+		}
+
+		@Override
+		final @Nullable CodePointSet firstCharSet() {
+			return validRanges();
+		}
+
+		@Override
+		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+			return new LookbehindConstruct.SingleCodePointBody(validRanges(), -1);
+		}
 	}
 
 	static final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
@@ -1447,6 +1570,23 @@ abstract class PatternConstruct {
 			delegate.dispatchFailedEntry = dispatchFailedEntry;
 			delegate.compile(next);
 			matcher = delegate.matcher;
+		}
+
+		@Override
+		final @Nullable CodePointSet lastCharSet() {
+			return min >= 1 ? delegate.validRanges() : null;
+		}
+
+		@Override
+		final @Nullable CodePointSet firstCharSet() {
+			return min >= 1 ? delegate.validRanges() : null;
+		}
+
+		@Override
+		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+			return min == 1 && max == 1
+					? new LookbehindConstruct.SingleCodePointBody(delegate.validRanges(), -1)
+					: null;
 		}
 	}
 
@@ -1534,7 +1674,7 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 			if (!checkAssertions) {
 				return rest;
@@ -1569,7 +1709,7 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 			return next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 		}
 	}
@@ -1626,7 +1766,7 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 			if (!checkAssertions || (flags & Ll1Pattern.MULTILINE) == 0) {
 				return rest;
@@ -1747,7 +1887,7 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 			if (!checkAssertions) {
 				return rest;
@@ -1874,75 +2014,6 @@ abstract class PatternConstruct {
 		}
 
 		/**
-		 * Statically resolves a lookbehind body to "always matches exactly one code point, optionally
-		 * wrapped in a single capturing group around the whole body" -- or {@code null} if it doesn't
-		 * (e.g. more than one code point wide, optional/repeated, or more than one capturing group).
-		 * Same recursive shape as {@link #lastCharSet}/{@link #firstCharSet} but stricter (needs total
-		 * width exactly 1, not just "last/first character known") and threads a capture index too.
-		 */
-		static @Nullable SingleCodePointBody resolveSingleCodePointBody(PatternConstruct pc) {
-			if (pc instanceof LiteralString) {
-				CharSequence value = ((LiteralString) pc).value;
-				if (Character.codePointCount(value, 0, value.length()) != 1) {
-					return null;
-				}
-				MutableCodePointSet set = new ArrayCodePointSet();
-				set.add(Character.codePointAt(value, 0));
-				// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
-				// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
-				// UNICODE_CASE, exactly like LiteralString.buildEntryMap's own entryMap.
-				return new SingleCodePointBody(MatcherConstruct.foldedEntrySet(set, pc.flags), -1);
-			}
-			if (pc instanceof ComplexCharacter) {
-				return new SingleCodePointBody(((ComplexCharacter) pc).validRanges(), -1);
-			}
-			if (pc instanceof ComplexQuantifiedCharacter) {
-				ComplexQuantifiedCharacter cqc = (ComplexQuantifiedCharacter) pc;
-				return cqc.min == 1 && cqc.max == 1
-						? new SingleCodePointBody(cqc.delegate.validRanges(), -1)
-						: null;
-			}
-			if (pc instanceof QuantifiedUnion) {
-				QuantifiedUnion union = (QuantifiedUnion) pc;
-				if (union.min != 1 || union.max != 1 || union.constructs.isEmpty()) {
-					return null;
-				}
-				boolean isCapturing = union.captureConstructIndex >= 0;
-				if (union.constructs.size() == 1) {
-					SingleCodePointBody inner = resolveSingleCodePointBody(union.constructs.get(0));
-					if (inner == null) {
-						return null;
-					}
-					if (!isCapturing) {
-						return inner;
-					}
-					// A capturing group can't itself wrap another capturing group here -- there's only
-					// one code point behind this position for at most one group to claim.
-					return inner.captureConstructIndex == -1
-							? new SingleCodePointBody(inner.codePoints, union.captureConstructIndex)
-							: null;
-				}
-				// A real alternation: every branch must resolve with no capturing group of its own --
-				// only the whole alternation (via an enclosing capturing group on this union) may
-				// capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
-				MutableCodePointSet result = new ArrayCodePointSet();
-				for (PatternConstruct branch : union.constructs) {
-					SingleCodePointBody inner = resolveSingleCodePointBody(branch);
-					if (inner == null || inner.captureConstructIndex != -1) {
-						return null;
-					}
-					result.addAll(inner.codePoints);
-				}
-				return new SingleCodePointBody(result, union.captureConstructIndex);
-			}
-			if (pc instanceof Sequence) {
-				List<PatternConstruct> patterns = ((Sequence) pc).patterns;
-				return patterns.size() == 1 ? resolveSingleCodePointBody(patterns.get(0)) : null;
-			}
-			return null;
-		}
-
-		/**
 		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s {@code
 		 * checkAssertions} doc, and {@code WordBoundaryConstruct#admittedInteriorExitPeekSet}'s own
 		 * doc for why the coarse catch-all entry point ({@code entryElse = this}) isn't safe for a
@@ -1965,7 +2036,7 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 			if (!checkAssertions) {
 				return rest;
@@ -1976,50 +2047,18 @@ abstract class PatternConstruct {
 	}
 
 	/**
-	 * The set of code points that could be the LAST one consumed if {@code pc} matches here, if
+	 * The set of code points that could be the LAST one consumed if this construct matches here, if
 	 * that's statically known regardless of runtime input -- used by WordBoundaryConstruct's \b/\B
 	 * compile-time optimization (see design.md's "Boundary matching" section) to classify the
 	 * character immediately preceding a boundary as always/never a "word" character, the same way
 	 * an ordinary entryMap already classifies the character immediately following one. Returns null
-	 * ("not statically known") for anything that could match zero-width -- including this method
-	 * simply not recognizing the construct -- rather than chasing what an earlier sibling might
-	 * contribute in that case; that's always a safe fallback, just a missed optimization.
+	 * ("not statically known") for anything that could match zero-width -- including a construct
+	 * type with no override here -- rather than chasing what an earlier sibling might contribute in
+	 * that case; that's always a safe fallback, just a missed optimization. Overridden by
+	 * LiteralString/ComplexCharacter/ComplexQuantifiedCharacter/QuantifiedUnion/Sequence -- see
+	 * skipZeroWidthEntrySet's own doc for why a virtual method, not an `instanceof` chain.
 	 */
-	static @Nullable CodePointSet lastCharSet(PatternConstruct pc) {
-		if (pc instanceof LiteralString) {
-			CharSequence value = ((LiteralString) pc).value;
-			if (value.length() == 0) {
-				return null;
-			}
-			int cp = Character.codePointBefore(value, value.length());
-			return singletonCodePointMap(cp);
-		}
-		if (pc instanceof ComplexCharacter) {
-			return ((ComplexCharacter) pc).validRanges();
-		}
-		if (pc instanceof ComplexQuantifiedCharacter) {
-			ComplexQuantifiedCharacter cqc = (ComplexQuantifiedCharacter) pc;
-			return cqc.min >= 1 ? cqc.delegate.validRanges() : null;
-		}
-		if (pc instanceof QuantifiedUnion) {
-			QuantifiedUnion union = (QuantifiedUnion) pc;
-			if (union.min < 1 || union.constructs.isEmpty()) {
-				return null;
-			}
-			MutableCodePointSet result = new ArrayCodePointSet();
-			for (int i = 0; i < union.constructs.size(); i++) {
-				CodePointSet branchSet = lastCharSet(union.constructs.get(i));
-				if (branchSet == null) {
-					return null;
-				}
-				result.addAll(branchSet);
-			}
-			return result;
-		}
-		if (pc instanceof Sequence) {
-			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
-			return patterns.isEmpty() ? null : lastCharSet(patterns.get(patterns.size() - 1));
-		}
+	@Nullable CodePointSet lastCharSet() {
 		return null;
 	}
 
@@ -2073,7 +2112,7 @@ abstract class PatternConstruct {
 			// (skipZeroWidthEntrySet passes it straight into an admittedInteriorExitPeekSet call, never
 			// mutates it) -- the overwhelmingly common single-alternative loop body (`a+`, `\w*`) would
 			// otherwise pay a whole addAll-driven copy of a set it's about to discard anyway.
-			return lastCharSet(body.get(0));
+			return body.get(0).lastCharSet();
 		}
 		// lastCharSet() (unlike getEntryPointMap()) isn't cached -- each call does real recursive
 		// work and returns a fresh set -- so every part's set is computed exactly once here, up
@@ -2082,7 +2121,7 @@ abstract class PatternConstruct {
 		CodePointSet[] partLastSets = new CodePointSet[body.size()];
 		int capacityHint = 0;
 		for (int i = 0; i < body.size(); i++) {
-			CodePointSet partLast = lastCharSet(body.get(i));
+			CodePointSet partLast = body.get(i).lastCharSet();
 			if (partLast == null) {
 				return null;
 			}
@@ -2101,14 +2140,6 @@ abstract class PatternConstruct {
 		return result;
 	}
 
-	/**
-	 * The set of code points that could be the FIRST one consumed if {@code pc} matches here, if
-	 * that's statically known regardless of runtime input -- the mirror image of {@link
-	 * #lastCharSet}, used by {@code BackReference}'s compile-time entry-set computation (see
-	 * design.md's "Backreferences" section): a backreference's possible first characters are
-	 * exactly the referenced group's possible first characters. Returns null ("not statically
-	 * known") for anything that could match zero-width, same safe fallback as {@code lastCharSet}.
-	 */
 	/**
 	 * {@code pc}'s own entry point (see {@link #getEntryPointMap}), but seeing straight through any
 	 * zero-width assertion ({@code BoundaryConstruct}/{@code LineBoundaryConstruct}/{@code
@@ -2172,37 +2203,29 @@ abstract class PatternConstruct {
 		return getEntryPointMap();
 	}
 
-	static @Nullable CodePointSet firstCharSet(PatternConstruct pc) {
-		if (pc instanceof LiteralString) {
-			CharSequence value = ((LiteralString) pc).value;
-			return value.length() == 0 ? null : singletonCodePointMap(Character.codePointAt(value, 0));
-		}
-		if (pc instanceof ComplexCharacter) {
-			return ((ComplexCharacter) pc).validRanges();
-		}
-		if (pc instanceof ComplexQuantifiedCharacter) {
-			ComplexQuantifiedCharacter cqc = (ComplexQuantifiedCharacter) pc;
-			return cqc.min >= 1 ? cqc.delegate.validRanges() : null;
-		}
-		if (pc instanceof QuantifiedUnion) {
-			QuantifiedUnion union = (QuantifiedUnion) pc;
-			if (union.min < 1 || union.constructs.isEmpty()) {
-				return null;
-			}
-			MutableCodePointSet result = new ArrayCodePointSet();
-			for (PatternConstruct branch : union.constructs) {
-				CodePointSet branchSet = firstCharSet(branch);
-				if (branchSet == null) {
-					return null;
-				}
-				result.addAll(branchSet);
-			}
-			return result;
-		}
-		if (pc instanceof Sequence) {
-			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
-			return patterns.isEmpty() ? null : firstCharSet(patterns.get(0));
-		}
+	/**
+	 * The set of code points that could be the FIRST one consumed if this construct matches here, if
+	 * that's statically known regardless of runtime input -- the mirror image of {@link
+	 * #lastCharSet}, used by {@code BackReference}'s compile-time entry-set computation (see
+	 * design.md's "Backreferences" section): a backreference's possible first characters are
+	 * exactly the referenced group's possible first characters. Returns null ("not statically
+	 * known") for anything that could match zero-width, same safe fallback as {@code lastCharSet}.
+	 * Overridden by the same construct types {@code lastCharSet} is.
+	 */
+	@Nullable CodePointSet firstCharSet() {
+		return null;
+	}
+
+	/**
+	 * Statically resolves this construct to "always matches exactly one code point, optionally
+	 * wrapped in a single capturing group around the whole body" -- or {@code null} if it doesn't
+	 * (e.g. more than one code point wide, optional/repeated, or more than one capturing group).
+	 * Same recursive shape as {@link #lastCharSet}/{@link #firstCharSet} but stricter (needs total
+	 * width exactly 1, not just "last/first character known") and threads a capture index too.
+	 * Used only by {@code LookbehindConstruct} to resolve a 1-code-point lookbehind body; overridden
+	 * by the same construct types {@code lastCharSet}/{@code firstCharSet} are.
+	 */
+	LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
 		return null;
 	}
 

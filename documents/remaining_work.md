@@ -4,6 +4,17 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 ## Matcher dispatch
 
+- [ ] **Experiment: intermediate abstract classes to de-megamorphize the new virtual dispatch
+      methods (2026-09-27, project owner's idea).** `skipZeroWidthEntrySet`/
+      `collectExitAssertionChain`/`firstCharSet`/`lastCharSet`/`resolveSingleCodePointBody` each now
+      have 5-9 different overriding classes at their call sites (see notes.md's dated entries) --
+      megamorphic, plausibly why the narrower first version of this conversion measured a small
+      Android regression before the fuller conversion came out perf-neutral. Idea: introduce
+      intermediate abstract classes grouping construct types that share behavior (or could share one
+      implementation), so a call site sees fewer distinct concrete override bodies -- speculative,
+      genuinely an experiment (would need its own measurement, not assumed to help), not yet
+      attempted.
+
 - [ ] **Known gap, not currently reachable**: `buildFlattenedChain`'s handling of a chain
       candidate that is BOTH the "any other character" catch-all (`rawEntryElse`) AND separately
       claims real, non-empty explicit ranges of its own would mis-order dispatch (its own explicit

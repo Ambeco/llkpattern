@@ -3505,3 +3505,51 @@ megamorphism got WORSE by extending it to more call sites -- plausibly because `
 `skipZeroWidthEntrySet` (only for backreferences, word-boundary optimization, and lookbehind
 bodies respectively, not on every loop's `next` chain), so their own megamorphic dispatch cost has
 little to move. README's benchmark tables and prose updated to match.
+
+## De-megamorphizing experiment: `ZeroWidthAssertionConstruct`/`ZeroWidthAssertionMatcherConstruct` (2026-09-27)
+
+Tried the project owner's suggested experiment: introduce an intermediate abstract class so
+several concrete subclasses share one compiled `Method` at a megamorphic call site, instead of each
+having its own distinct override -- fewer distinct dispatch targets, even though the same number of
+concrete classes still exist. Two call sites qualified, both from the earlier dispatch-conversion
+work: `PatternConstruct.skipZeroWidthEntrySet`'s four identical-shape overrides
+(`WordBoundaryConstruct`/`LineBoundaryConstruct`/`LookbehindConstruct`/`GraphemeBoundaryConstruct`,
+each "fold in `admittedInteriorExitPeekSet`'s answer on top of seeing through to `next`") and
+`MatcherConstruct.collectExitAssertionChain`'s four identical (not just same-shape -- byte-for-byte
+identical body) overrides on the matching `*MatcherConstruct` types. Added
+`PatternConstruct.ZeroWidthAssertionConstruct` (abstract, `final` `skipZeroWidthEntrySet` +
+abstract `admittedInteriorExitPeekSet(bodyLastCharSet)`) and
+`MatcherConstruct.ZeroWidthAssertionMatcherConstruct` (abstract, `final`
+`collectExitAssertionChain`, implements `ZeroWidthAssertionGuard`); the four construct classes and
+four matcher classes each now extend the shared abstract base instead of duplicating the
+dispatch-glue method. `LineBoundaryConstruct`'s own MULTILINE early-out moved from the (now-shared)
+caller into its own `admittedInteriorExitPeekSet` override (return `null` when MULTILINE isn't set)
+-- behaviorally identical, since the shared caller already treats a `null` result as "contribute
+nothing" the same way the old early-return did.
+
+Full suite green (7213 tests, same 5 pre-existing failures), both hand-checks verified.
+
+Performance result: **no measurable effect either way**, checked three ways, all agreeing:
+
+1. *Absolute ms/pass* looked promising at first glance (same-session stash-based A/B, 2 runs each
+   way: pre-merge 35.82-40.78ms/pass vs post-merge 33.24-34.42ms/pass, non-overlapping) but this
+   metric is exactly the noisy one this project's own convention warns against trusting alone: the
+   identical pre-merge commit (`16e7552`) had ALSO measured 33.17-33.60ms/pass earlier the same
+   session (the previous dispatch-conversion entry above) -- the same code producing two
+   non-overlapping bands an hour apart means the device's own noise floor is at least as large as
+   whatever this A/B measured.
+2. *llk/regex ratio* (the project's own preferred, more-stable metric): pre-merge 0.551-0.663
+   (this A/B) and 0.618-0.636 (the earlier-session measurement of the same commit) vs post-merge
+   0.580-0.674 -- all three bands overlap each other. No separation on the metric that's supposed
+   to cancel out shared device-load noise.
+3. *CPU sampling* (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`, captured fresh for both states):
+   `PatternConstruct$Sequence.skipZeroWidthEntrySet` -- the only frame from this call site to clear
+   the sampler's reporting threshold at all -- shows 0.0% in BOTH the pre- and post-merge capture.
+   The call site this experiment targeted simply isn't a large enough fraction of total compile time
+   at this corpus's scale for its dispatch-mechanism cost to be visible to either timing or
+   sampling, regardless of megamorphism.
+
+Not a real effect, in either direction, by any of the three metrics available. Kept the change
+anyway: independent of the (absent) performance effect, it's a real, unambiguous code-quality win
+(four duplicated method bodies collapsed to one shared implementation each, in both
+`PatternConstruct` and `MatcherConstruct`), and nothing suggests a regression by any measure.

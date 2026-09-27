@@ -631,6 +631,33 @@ abstract class MatcherConstruct {
 	}
 
 	/**
+	 * Shared base for the {@link ZeroWidthAssertionGuard} implementers whose own {@link
+	 * #collectExitAssertionChain} override is identical: add {@code this} to the chain (it already
+	 * implements {@link ZeroWidthAssertionGuard}) and keep recursing through {@code next} --
+	 * {@link WordBoundaryMatcherConstruct}, {@link LineBoundaryMatcherConstruct}, {@link
+	 * LookbehindMatcherConstruct}, {@link GraphemeBoundaryMatcherConstruct}.
+	 *
+	 * <p>EXPERIMENTAL (2026-09-27, project owner's idea -- see remaining_work.md/notes.md): the
+	 * {@code PatternConstruct} counterpart of this merge ({@code ZeroWidthAssertionConstruct}) has
+	 * the full rationale and caveats. Same idea here: one shared, {@code final} {@code
+	 * collectExitAssertionChain} implementation instead of four separate (but identical) ones, so
+	 * all four subclasses dispatch to the exact same compiled method -- an attempt to reduce that
+	 * call site's megamorphism, not yet known whether it actually helps.
+	 */
+	static abstract class ZeroWidthAssertionMatcherConstruct extends MatcherConstruct
+			implements ZeroWidthAssertionGuard {
+		ZeroWidthAssertionMatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
+			super(owner, next);
+		}
+
+		@Override
+		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			chain.add(this);
+			return MatcherConstruct.collectExitAssertionChain(next, chain);
+		}
+	}
+
+	/**
 	 * {@code ^} (line begin) / {@code $} (line end): without {@code MULTILINE}, exactly {@code \A}/
 	 * {@code \Z} (see {@link #matchesEndExceptTerminator}); under {@code MULTILINE}, {@code ^} also
 	 * matches immediately after any line terminator ({@link #lineTerminatorLengthBefore}, a
@@ -638,8 +665,7 @@ abstract class MatcherConstruct {
 	 * line terminator ({@link #lineTerminatorLengthAt}). See design.md's "Boundary matching"
 	 * section.
 	 */
-	static final class LineBoundaryMatcherConstruct extends MatcherConstruct
-			implements ZeroWidthAssertionGuard {
+	static final class LineBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 		final boolean isLineBegin; // true: ^, false: $
 
 		LineBoundaryMatcherConstruct(PatternConstruct owner, boolean isLineBegin) {
@@ -700,12 +726,6 @@ abstract class MatcherConstruct {
 			}
 			return matcher.pos == matcher.anchorEnd || lineTerminatorLengthAt(matcher, flags) > 0;
 		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			chain.add(this);
-			return MatcherConstruct.collectExitAssertionChain(next, chain);
-		}
 	}
 
 	/**
@@ -721,8 +741,7 @@ abstract class MatcherConstruct {
 	 * constructing one of these) -- this class just interprets whichever of the two enums below ended
 	 * up not {@code Unchecked}.
 	 */
-	static final class WordBoundaryMatcherConstruct extends MatcherConstruct
-			implements ZeroWidthAssertionGuard {
+	static final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 		/** Whether {@code matchBody()} needs to independently check {@code matcher.peekPrevious()}. */
 		enum PriorWordBoundaryMatchType {
 			Unchecked,
@@ -862,12 +881,6 @@ abstract class MatcherConstruct {
 			}
 			return peekMustBeWord != PeekWordBoundaryMatchType.PeekMustBeOppositePrior || peekIsWord != priorIsWord;
 		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			chain.add(this);
-			return MatcherConstruct.collectExitAssertionChain(next, chain);
-		}
 	}
 
 	/**
@@ -884,8 +897,7 @@ abstract class MatcherConstruct {
 	 * there's no possibility of a partial (begin-without-end) write the way a general capturing
 	 * construct has to guard against.
 	 */
-	static final class LookbehindMatcherConstruct extends MatcherConstruct
-			implements ZeroWidthAssertionGuard {
+	static final class LookbehindMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 		final boolean isPositive; // true: (?<=X), false: (?<!X)
 		final CodePointSet lookSet;
 		final int captureConstructIndex; // -1 if the body wasn't wrapped in a capturing group
@@ -925,12 +937,6 @@ abstract class MatcherConstruct {
 		public boolean holdsHere(Matcher matcher, int peeked) {
 			return holds(matcher.peekPrevious());
 		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			chain.add(this);
-			return MatcherConstruct.collectExitAssertionChain(next, chain);
-		}
 	}
 
 	/**
@@ -944,8 +950,7 @@ abstract class MatcherConstruct {
 	 * always change a grapheme-boundary answer, unlike a 1-code-point lookbehind, which only ever
 	 * looks backward); anywhere strictly between the two delegates to the real check.
 	 */
-	static final class GraphemeBoundaryMatcherConstruct extends MatcherConstruct
-			implements ZeroWidthAssertionGuard {
+	static final class GraphemeBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 		GraphemeBoundaryMatcherConstruct(PatternConstruct owner) {
 			super(owner, owner.next.matcher);
 		}
@@ -978,12 +983,6 @@ abstract class MatcherConstruct {
 		@Override
 		public boolean holdsHere(Matcher matcher, int peeked) {
 			return holds(matcher);
-		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			chain.add(this);
-			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
 	}
 

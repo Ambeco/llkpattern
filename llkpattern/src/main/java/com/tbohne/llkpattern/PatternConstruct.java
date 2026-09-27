@@ -1633,13 +1633,57 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * Shared base for the zero-width assertion construct types whose {@code skipZeroWidthEntrySet}
+	 * override has the exact same shape -- fold in whatever {@link #admittedInteriorExitPeekSet}
+	 * says a loop's interior exit through this assertion should treat as ambiguous, on top of
+	 * unconditionally seeing through to {@code next}'s own entry set otherwise -- {@code
+	 * WordBoundaryConstruct}/{@code LineBoundaryConstruct}/{@code LookbehindConstruct}/{@code
+	 * GraphemeBoundaryConstruct}. ({@code BoundaryConstruct} sees straight through with no
+	 * "admitted" concept at all, so it stays a direct {@code PatternConstruct} subclass instead.)
+	 *
+	 * <p>EXPERIMENTAL (2026-09-27, project owner's idea -- see remaining_work.md/notes.md): merges
+	 * what used to be four separate {@code skipZeroWidthEntrySet} overrides into one shared,
+	 * {@code final} implementation here, so all four subclasses dispatch to the exact same compiled
+	 * method rather than each having their own -- an attempt to reduce that call site's
+	 * megamorphism (it still has several distinct override bodies system-wide -- this shared one,
+	 * plus {@code BoundaryConstruct}/{@code Sequence}/{@code QuantifiedUnion}'s own, plus the base
+	 * default -- just fewer of them). Not known in advance whether ART's inline caching actually
+	 * benefits from this; measured, not assumed -- see notes.md for the result.
+	 */
+	static abstract class ZeroWidthAssertionConstruct extends PatternConstruct {
+		ZeroWidthAssertionConstruct(int startIndex, int endIndex) {
+			super(startIndex, endIndex);
+		}
+
+		@Override
+		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+			if (!checkAssertions) {
+				return rest;
+			}
+			CodePointSet admitted = admittedInteriorExitPeekSet(bodyLastCharSet);
+			return admitted == null ? rest : union(rest, admitted);
+		}
+
+		/**
+		 * The set of peek code points for which a loop's interior exit through this assertion could
+		 * be ambiguous with the loop body simply continuing on, given that the body's own
+		 * last-consumed character is somewhere in {@code bodyLastCharSet} ({@code null} if that's
+		 * not statically known, in which case this must also return {@code null} -- "not statically
+		 * known" is always a safe fallback, just a missed optimization). See each override's own doc
+		 * for its own construct-specific reasoning.
+		 */
+		abstract @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet);
+	}
+
+	/**
 	 * {@code \b{g}} (grapheme boundary) -- unlike {@code \b}/{@code \B}, only the positive form
 	 * exists (JDK 27 doesn't recognize {@code \B{g}} as special syntax either; see design.md).
 	 * Always a real, match-time check -- like {@link LookbehindConstruct}, there's no compile-time
 	 * elision to a no-op or a compile error, since neither neighbor's grapheme-boundary-ness is
 	 * ever fully statically known the way \b/\B's word-ness sometimes is.
 	 */
-	static final class GraphemeBoundaryConstruct extends PatternConstruct {
+	static final class GraphemeBoundaryConstruct extends ZeroWidthAssertionConstruct {
 		GraphemeBoundaryConstruct(int startIndex, int endIndex) {
 			super(startIndex, endIndex);
 		}
@@ -1655,32 +1699,21 @@ abstract class PatternConstruct {
 		}
 
 		/**
-		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s {@code
-		 * checkAssertions} doc and {@code LookbehindConstruct#admittedInteriorExitPeekSet}'s own doc
-		 * for the general shape. Deliberately conservative rather than precise: unlike \b/\B (whose
-		 * truth depends on a simple word/non-word classification of exactly one neighbor at a time)
-		 * or a 1-code-point lookbehind, \b{g}'s truth can depend on a whole chain of prior code
-		 * points (GB9c/GB11/GB12-13 -- see {@code GraphemeCluster#isBoundary}), which this loop-
-		 * ambiguity check has no way to reason about precisely. So whenever the loop body could
-		 * plausibly have just consumed ANY character at all ({@code bodyLastCharSet != null}), this
-		 * treats \b{g} as potentially holding for every peek code point -- i.e. always ambiguous with
-		 * continuing the loop. This over-rejects some loops that would actually be fine at match time
-		 * (e.g. {@code \X+\b{g}}, since a loop of whole clusters can never stop mid-cluster) in
-		 * exchange for never under-rejecting a genuinely ambiguous one -- the same tradeoff this
-		 * project already accepts for {@code \X} itself (see README's "Intentional differences").
+		 * Deliberately conservative rather than precise: unlike \b/\B (whose truth depends on a
+		 * simple word/non-word classification of exactly one neighbor at a time) or a 1-code-point
+		 * lookbehind, \b{g}'s truth can depend on a whole chain of prior code points (GB9c/GB11/
+		 * GB12-13 -- see {@code GraphemeCluster#isBoundary}), which this loop-ambiguity check has no
+		 * way to reason about precisely. So whenever the loop body could plausibly have just
+		 * consumed ANY character at all ({@code bodyLastCharSet != null}), this treats \b{g} as
+		 * potentially holding for every peek code point -- i.e. always ambiguous with continuing the
+		 * loop. This over-rejects some loops that would actually be fine at match time (e.g. {@code
+		 * \X+\b{g}}, since a loop of whole clusters can never stop mid-cluster) in exchange for never
+		 * under-rejecting a genuinely ambiguous one -- the same tradeoff this project already accepts
+		 * for {@code \X} itself (see README's "Intentional differences").
 		 */
-		static @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
-			return bodyLastCharSet == null ? null : universalCodePointSet();
-		}
-
 		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-			if (!checkAssertions) {
-				return rest;
-			}
-			CodePointSet admitted = admittedInteriorExitPeekSet(bodyLastCharSet);
-			return admitted == null ? rest : union(rest, admitted);
+		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
+			return bodyLastCharSet == null ? null : universalCodePointSet();
 		}
 	}
 
@@ -1722,7 +1755,7 @@ abstract class PatternConstruct {
 	 * one {@code BoundaryEnum}-keyed dispatch added indirection for no benefit. See design.md's
 	 * "Boundary matching" section for the matching design.
 	 */
-	static final class LineBoundaryConstruct extends PatternConstruct {
+	static final class LineBoundaryConstruct extends ZeroWidthAssertionConstruct {
 		final boolean isLineBegin; // true: ^, false: $
 
 		LineBoundaryConstruct(int startIndex, int endIndex, boolean isLineBegin) {
@@ -1741,20 +1774,22 @@ abstract class PatternConstruct {
 		}
 
 		/**
-		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s
-		 * {@code checkAssertions} doc, and only ever consulted there under {@code MULTILINE} (a
-		 * non-MULTILINE ^/$ only ever holds at the true input edges, never at an interior loop-exit
-		 * position, so the caller never needs this otherwise). {@code $} holds whenever the PEEK
-		 * character itself is a line terminator, regardless of what the loop body's last-consumed
-		 * character was, so its admitted set is exactly the terminator-starting code points,
-		 * unconditionally. {@code ^} holds whenever the PRIOR character was a line terminator,
-		 * regardless of peek, so its admitted set is "any code point" whenever the body could
-		 * plausibly have just consumed one, and empty (no interior exit possible via ^) otherwise;
-		 * returns {@code null} ("not statically known") when {@code bodyLastCharSet} itself is
-		 * {@code null}, same safe fallback {@code WordBoundaryConstruct}'s own version uses.
+		 * Only ever contributes anything under {@code MULTILINE} (a non-MULTILINE ^/$ only ever
+		 * holds at the true input edges, never at an interior loop-exit position). {@code $} holds
+		 * whenever the PEEK character itself is a line terminator, regardless of what the loop
+		 * body's last-consumed character was, so its admitted set is exactly the terminator-starting
+		 * code points, unconditionally. {@code ^} holds whenever the PRIOR character was a line
+		 * terminator, regardless of peek, so its admitted set is "any code point" whenever the body
+		 * could plausibly have just consumed one, and empty (no interior exit possible via ^)
+		 * otherwise; returns {@code null} ("not statically known") when {@code bodyLastCharSet}
+		 * itself is {@code null}, same safe fallback {@code WordBoundaryConstruct}'s own version
+		 * uses.
 		 */
-		static @Nullable CodePointSet admittedInteriorExitPeekSet(
-				boolean isLineBegin, @Nullable CodePointSet bodyLastCharSet, int flags) {
+		@Override
+		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
+			if ((flags & Ll1Pattern.MULTILINE) == 0) {
+				return null;
+			}
 			CodePointSet terminatorStarts = lineTerminatorStartCodePoints(flags);
 			if (!isLineBegin) {
 				return terminatorStarts;
@@ -1763,16 +1798,6 @@ abstract class PatternConstruct {
 				return null;
 			}
 			return bodyLastCharSet.intersects(terminatorStarts) ? universalCodePointSet() : null;
-		}
-
-		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-			if (!checkAssertions || (flags & Ll1Pattern.MULTILINE) == 0) {
-				return rest;
-			}
-			CodePointSet admitted = admittedInteriorExitPeekSet(isLineBegin, bodyLastCharSet, flags);
-			return admitted == null ? rest : union(rest, admitted);
 		}
 
 		/**
@@ -1801,7 +1826,7 @@ abstract class PatternConstruct {
 	 * implementation, plus a compile-time optimization {@link BoundaryConstruct}'s other types
 	 * don't need -- see design.md's "Boundary matching" section for the full design.
 	 */
-	static final class WordBoundaryConstruct extends PatternConstruct {
+	static final class WordBoundaryConstruct extends ZeroWidthAssertionConstruct {
 		final String pattern;
 		final boolean isWordBoundary; // true: \b, false: \B
 
@@ -1870,8 +1895,8 @@ abstract class PatternConstruct {
 		 * (since some prior character in it always matches whatever word-ness the peek character
 		 * has, \b/\B can then hold for ANY peek).
 		 */
-		static @Nullable CodePointSet admittedInteriorExitPeekSet(
-				boolean isWordBoundary, @Nullable CodePointSet bodyLastCharSet, int flags) {
+		@Override
+		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
 			if (bodyLastCharSet == null) {
 				return null;
 			}
@@ -1884,16 +1909,6 @@ abstract class PatternConstruct {
 			boolean priorIsWord = prior == Wordness.WORD;
 			boolean wantsWordPeek = isWordBoundary != priorIsWord;
 			return wantsWordPeek ? wordSet : wordSet.complement();
-		}
-
-		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-			if (!checkAssertions) {
-				return rest;
-			}
-			CodePointSet admitted = admittedInteriorExitPeekSet(isWordBoundary, bodyLastCharSet, flags);
-			return admitted == null ? rest : union(rest, admitted);
 		}
 
 		@Override
@@ -1972,7 +1987,7 @@ abstract class PatternConstruct {
 	 * #resolveSingleCodePointBody} -- unlike {@code WordBoundaryConstruct}, there's no neighbor
 	 * context to wait for, so this construct needs no {@code buildEntryMap}-time classification step.
 	 */
-	static final class LookbehindConstruct extends PatternConstruct {
+	static final class LookbehindConstruct extends ZeroWidthAssertionConstruct {
 		final String pattern;
 		final boolean isPositive; // true: (?<=X), false: (?<!X)
 		final CodePointSet lookSet;
@@ -2023,8 +2038,8 @@ abstract class PatternConstruct {
 		 * through it is ambiguous with continuing for literally every peek code point; otherwise it
 		 * contributes nothing.
 		 */
-		static @Nullable CodePointSet admittedInteriorExitPeekSet(
-				boolean isPositive, CodePointSet lookSet, @Nullable CodePointSet bodyLastCharSet) {
+		@Override
+		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
 			if (bodyLastCharSet == null) {
 				return null;
 			}
@@ -2033,16 +2048,6 @@ abstract class PatternConstruct {
 			boolean subsetOfLookSet = !bodyLastCharSet.first((min, max) -> !lookSet.containsAll(min, max));
 			boolean couldHold = isPositive ? bodyLastCharSet.intersects(lookSet) : !subsetOfLookSet;
 			return couldHold ? universalCodePointSet() : new ArrayCodePointSet();
-		}
-
-		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-			if (!checkAssertions) {
-				return rest;
-			}
-			CodePointSet admitted = admittedInteriorExitPeekSet(isPositive, lookSet, bodyLastCharSet);
-			return admitted == null ? rest : union(rest, admitted);
 		}
 	}
 

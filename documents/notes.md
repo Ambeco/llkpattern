@@ -3575,9 +3575,16 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   probe incrementing a counter in each class's buildEntryMap, reverted after): Sequence is
   100% <=4 elements (mean 1.15), QuantifiedUnion 99.63% <=4 (mean 1.38) -- confirms
   remaining_work.md's proposed capacity of 4 rather than guessing.
-- Changed both `new ArrayList<>()` field initializers to `new ArrayList<>(4)`. A/B'd against a
-  fresh `git stash -u` baseline (two runs each way): desktop `llkCompile` allocation
-  3,128,364 -> ~3,043,000 B/op (~2.7%), time and llk/regex ratio flat within noise across both
-  pairs. `jmhAllocSampling` confirms the `java.util.ArrayList.grow` leaf (previously 5.7% of
-  sampled allocation weight) is gone entirely. Full suite green. README updated; item removed
-  from remaining_work.md.
+- Changed both `new ArrayList<>()` field initializers to `new ArrayList<>(4)`. A/B'd against
+  the pre-change code (two baseline runs, two changed runs -- one baseline via `git stash -u`
+  before the commit, the other by checking out the pre-change file from `HEAD~1` after):
+  desktop `llkCompile` allocation 3,128,364 / 3,127,804 (baseline) -> 3,040,998 / 3,045,474
+  (changed) B/op, a consistent ~2.7% reduction. llk/regex compile-time ratio ranged
+  2.407x-2.480x on baseline vs. 2.435x-2.502x on changed -- fully overlapping, so no real time
+  change, net allocation-only win. `jmhAllocSampling` shows the `java.util.ArrayList.grow` leaf
+  (previously 5.7% of sampled allocation weight) no longer appears -- not a pure elimination,
+  since `new ArrayList<>(4)` now eagerly allocates an `Object[4]` at construction (unlike the
+  default constructor's shared empty array), so the ~16% of QuantifiedUnions that stay empty
+  (bare flags-only groups) now pay for an array they didn't before -- the honest number is the
+  net ~2.7% B/op reduction. Full suite green. README updated; item removed from
+  remaining_work.md.

@@ -154,6 +154,21 @@ abstract class MatcherConstruct {
 	/** This node's own matching behavior, run only once {@link #entrySet} (if any) has passed. */
 	abstract boolean matchBody(Matcher matcher, int peeked);
 
+	// Default: not a node that can be safely "seen through" for exitAssertionChain's reluctant-loop
+	// early-exit safety proof -- overridden by EndMatcherConstruct (the successful base case) and
+	// the handful of zero-width-assertion/wrapper types that ARE safely passable-through. A plain
+	// virtual method here, rather than the `instanceof` chain this replaced (2026-09-27): matches
+	// skipZeroWidthEntrySet's own conversion in PatternConstruct.java for the same reason -- see
+	// that method's own doc and documents/notes.md's 2026-09-26 entries for the measured cost of
+	// an ever-growing `instanceof` chain. Recurse via the static two-arg
+	// `collectExitAssertionChain(node, chain)` helper below, not `next.collectExitAssertionChain
+	// (chain)` directly, so `next`'s own `entrySet` precedence (checked by that static helper) is
+	// still honored -- this method only ever runs for a node already confirmed to have no gating
+	// `entrySet` of its own.
+	boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+		return false;
+	}
+
 	/**
 	 * Plain (unfolded) membership in {@code entrySet}, {@code null} treated as "always matches" (no
 	 * gating at all -- the overwhelming majority of nodes). {@code -1} (Matcher's "no more input"
@@ -243,6 +258,11 @@ abstract class MatcherConstruct {
 		@Override
 		boolean matchBody(Matcher matcher, int peeked) {
 			return next.match(matcher, peeked);
+		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
 	}
 
@@ -680,6 +700,12 @@ abstract class MatcherConstruct {
 			}
 			return matcher.pos == matcher.anchorEnd || lineTerminatorLengthAt(matcher, flags) > 0;
 		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			chain.add(this);
+			return MatcherConstruct.collectExitAssertionChain(next, chain);
+		}
 	}
 
 	/**
@@ -836,6 +862,12 @@ abstract class MatcherConstruct {
 			}
 			return peekMustBeWord != PeekWordBoundaryMatchType.PeekMustBeOppositePrior || peekIsWord != priorIsWord;
 		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			chain.add(this);
+			return MatcherConstruct.collectExitAssertionChain(next, chain);
+		}
 	}
 
 	/**
@@ -893,6 +925,12 @@ abstract class MatcherConstruct {
 		public boolean holdsHere(Matcher matcher, int peeked) {
 			return holds(matcher.peekPrevious());
 		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			chain.add(this);
+			return MatcherConstruct.collectExitAssertionChain(next, chain);
+		}
 	}
 
 	/**
@@ -940,6 +978,12 @@ abstract class MatcherConstruct {
 		@Override
 		public boolean holdsHere(Matcher matcher, int peeked) {
 			return holds(matcher);
+		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			chain.add(this);
+			return MatcherConstruct.collectExitAssertionChain(next, chain);
 		}
 	}
 
@@ -1071,6 +1115,11 @@ abstract class MatcherConstruct {
 			matcher.quantifiableCounts[quantifiableIndex] = 0;
 			return next.match(matcher, peeked);
 		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			return minIsZero && MatcherConstruct.collectExitAssertionChain(next, chain);
+		}
 	}
 
 	/**
@@ -1172,6 +1221,11 @@ abstract class MatcherConstruct {
 			return true;
 		}
 
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			return MatcherConstruct.collectExitAssertionChain(exitNode, chain);
+		}
+
 		@VisibleForTesting
 		MatcherConstruct getContinuation() { return continuation.matcher; }
 	}
@@ -1206,7 +1260,7 @@ abstract class MatcherConstruct {
 
 	private static boolean collectExitAssertionChain(
 			MatcherConstruct node, List<ZeroWidthAssertionGuard> chain) {
-		// Checked FIRST, before any type-specific case below: a chain-candidate node's own entrySet
+		// Checked FIRST, before any type-specific dispatch: a chain-candidate node's own entrySet
 		// (e.g. the head of a following `b?`'s own body, OR a PassThroughMatcherConstruct standing in
 		// for a gated owner -- see aliasOrPassThrough) always takes precedence over what that node
 		// would otherwise do when its own gate misses. That entrySet was itself checked for
@@ -1220,47 +1274,14 @@ abstract class MatcherConstruct {
 		// should happen; either way, `failedEntry`'s own safety, not this node's `matchBody`, is what
 		// this recursion needs to prove.) Recursing into failedEntry rather than stopping here is what
 		// lets this see past an intervening optional part (`a+?b?`, `[ab]+?c?`) to the real zero-width
-		// tail beyond it.
+		// tail beyond it. This entrySet precedence is common to every node type, so it stays here
+		// rather than being duplicated into each type-specific collectExitAssertionChain override
+		// below -- only once that's settled does per-type dispatch (now a virtual call, not an
+		// `instanceof` chain -- see that method's own doc) take over.
 		if (node.entrySet != null) {
 			return node.failedEntry != null && collectExitAssertionChain(node.failedEntry, chain);
 		}
-		if (node instanceof EndMatcherConstruct) {
-			return true;
-		}
-		if (node instanceof EndCaptureMatcherConstruct) {
-			return collectExitAssertionChain(((EndCaptureMatcherConstruct) node).next, chain);
-		}
-		if (node instanceof PassThroughMatcherConstruct) {
-			return collectExitAssertionChain(((PassThroughMatcherConstruct) node).next, chain);
-		}
-		if (node instanceof LoopMatcherExit) {
-			LoopMatcherExit exit = (LoopMatcherExit) node;
-			return exit.minIsZero && collectExitAssertionChain(exit.next, chain);
-		}
-		if (node instanceof ReluctantLoopMatcherConstruct) {
-			return collectExitAssertionChain(((ReluctantLoopMatcherConstruct) node).exitNode, chain);
-		}
-		if (node instanceof WordBoundaryMatcherConstruct) {
-			WordBoundaryMatcherConstruct wb = (WordBoundaryMatcherConstruct) node;
-			chain.add(wb);
-			return collectExitAssertionChain(wb.next, chain);
-		}
-		if (node instanceof LineBoundaryMatcherConstruct) {
-			LineBoundaryMatcherConstruct lb = (LineBoundaryMatcherConstruct) node;
-			chain.add(lb);
-			return collectExitAssertionChain(lb.next, chain);
-		}
-		if (node instanceof LookbehindMatcherConstruct) {
-			LookbehindMatcherConstruct lb = (LookbehindMatcherConstruct) node;
-			chain.add(lb);
-			return collectExitAssertionChain(lb.next, chain);
-		}
-		if (node instanceof GraphemeBoundaryMatcherConstruct) {
-			GraphemeBoundaryMatcherConstruct gb = (GraphemeBoundaryMatcherConstruct) node;
-			chain.add(gb);
-			return collectExitAssertionChain(gb.next, chain);
-		}
-		return false;
+		return node.collectExitAssertionChain(chain);
 	}
 
 	static final class BeginCaptureMatcherConstruct extends MatcherConstruct {
@@ -1311,6 +1332,11 @@ abstract class MatcherConstruct {
 			matcher.captureGroups[captureConstructIndex * 2 + 1] = matcher.pos;
 			return next.match(matcher, peeked);
 		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			return MatcherConstruct.collectExitAssertionChain(next, chain);
+		}
 	}
 
 	/**
@@ -1330,6 +1356,11 @@ abstract class MatcherConstruct {
 		@Override
 		boolean matchBody(Matcher matcher, int peeked) {
 			return !matcher.requireFullMatch || matcher.pos == matcher.regionEnd;
+		}
+
+		@Override
+		boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
+			return true;
 		}
 	}
 }

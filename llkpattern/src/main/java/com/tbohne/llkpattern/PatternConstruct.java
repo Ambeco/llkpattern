@@ -697,7 +697,7 @@ abstract class PatternConstruct {
 			CodePointSet bodyLastCharSet = checkAssertionAmbiguity ? unionLastCharSet(body) : null;
 			CodePointSet[] gates =
 					checkDisjoint(pattern, flags, body, next,
-							skipZeroWidthEntrySet(next, checkAssertionAmbiguity, bodyLastCharSet),
+							next.skipZeroWidthEntrySet(checkAssertionAmbiguity, bodyLastCharSet),
 							"loop part");
 
 			// Reuses the SAME LoopBackMarker (and, when capturing, the same wrapping CaptureEndMarker)
@@ -1052,6 +1052,18 @@ abstract class PatternConstruct {
 				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
 			}
 		}
+
+		@Override
+		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			if (isUnquantified() && !constructs.isEmpty()) {
+				MutableCodePointSet result = new ArrayCodePointSet();
+				for (PatternConstruct branch : constructs) {
+					result.addAll(branch.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet));
+				}
+				return result;
+			}
+			return super.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+		}
 	}
 
 	/**
@@ -1213,6 +1225,13 @@ abstract class PatternConstruct {
 				tail = part;
 			}
 			matcher = patterns.get(0).matcher;
+		}
+
+		@Override
+		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			return patterns.isEmpty()
+					? getEntryPointMap()
+					: patterns.get(0).skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 		}
 	}
 
@@ -1513,6 +1532,16 @@ abstract class PatternConstruct {
 		static @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
 			return bodyLastCharSet == null ? null : universalCodePointSet();
 		}
+
+		@Override
+		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+			if (!checkAssertions) {
+				return rest;
+			}
+			CodePointSet admitted = admittedInteriorExitPeekSet(bodyLastCharSet);
+			return admitted == null ? rest : union(rest, admitted);
+		}
 	}
 
 	static final class BoundaryConstruct extends PatternConstruct {
@@ -1537,6 +1566,11 @@ abstract class PatternConstruct {
 		@Override
 		void buildMatcher() {
 			new BoundaryMatcherConstruct(this, type);
+		}
+
+		@Override
+		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			return next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 		}
 	}
 
@@ -1589,6 +1623,16 @@ abstract class PatternConstruct {
 				return null;
 			}
 			return bodyLastCharSet.intersects(terminatorStarts) ? universalCodePointSet() : null;
+		}
+
+		@Override
+		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+			if (!checkAssertions || (flags & Ll1Pattern.MULTILINE) == 0) {
+				return rest;
+			}
+			CodePointSet admitted = admittedInteriorExitPeekSet(isLineBegin, bodyLastCharSet, flags);
+			return admitted == null ? rest : union(rest, admitted);
 		}
 
 		/**
@@ -1700,6 +1744,16 @@ abstract class PatternConstruct {
 			boolean priorIsWord = prior == Wordness.WORD;
 			boolean wantsWordPeek = isWordBoundary != priorIsWord;
 			return wantsWordPeek ? wordSet : wordSet.complement();
+		}
+
+		@Override
+		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+			if (!checkAssertions) {
+				return rest;
+			}
+			CodePointSet admitted = admittedInteriorExitPeekSet(isWordBoundary, bodyLastCharSet, flags);
+			return admitted == null ? rest : union(rest, admitted);
 		}
 
 		@Override
@@ -1909,6 +1963,16 @@ abstract class PatternConstruct {
 			boolean couldHold = isPositive ? bodyLastCharSet.intersects(lookSet) : !subsetOfLookSet;
 			return couldHold ? universalCodePointSet() : new ArrayCodePointSet();
 		}
+
+		@Override
+		CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+			if (!checkAssertions) {
+				return rest;
+			}
+			CodePointSet admitted = admittedInteriorExitPeekSet(isPositive, lookSet, bodyLastCharSet);
+			return admitted == null ? rest : union(rest, admitted);
+		}
 	}
 
 	/**
@@ -2093,65 +2157,19 @@ abstract class PatternConstruct {
 	 * engine's already-non-backtracking compilation can't newly disagree with it) -- see
 	 * {@code QuantifiableConstruct#buildLoopMatcher}.
 	 */
-	private static CodePointSet skipZeroWidthEntrySet(
-			PatternConstruct pc, boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-		if (pc instanceof WordBoundaryConstruct) {
-			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
-			if (!checkAssertions) {
-				return rest;
-			}
-			CodePointSet admitted = WordBoundaryConstruct.admittedInteriorExitPeekSet(
-					((WordBoundaryConstruct) pc).isWordBoundary, bodyLastCharSet, pc.flags);
-			return admitted == null ? rest : union(rest, admitted);
-		}
-		if (pc instanceof LineBoundaryConstruct) {
-			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
-			if (!checkAssertions || (pc.flags & Ll1Pattern.MULTILINE) == 0) {
-				return rest;
-			}
-			CodePointSet admitted = LineBoundaryConstruct.admittedInteriorExitPeekSet(
-					((LineBoundaryConstruct) pc).isLineBegin, bodyLastCharSet, pc.flags);
-			return admitted == null ? rest : union(rest, admitted);
-		}
-		if (pc instanceof BoundaryConstruct) {
-			return skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
-		}
-		if (pc instanceof LookbehindConstruct) {
-			LookbehindConstruct lb = (LookbehindConstruct) pc;
-			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
-			if (!checkAssertions) {
-				return rest;
-			}
-			CodePointSet admitted =
-					LookbehindConstruct.admittedInteriorExitPeekSet(lb.isPositive, lb.lookSet, bodyLastCharSet);
-			return admitted == null ? rest : union(rest, admitted);
-		}
-		if (pc instanceof GraphemeBoundaryConstruct) {
-			CodePointSet rest = skipZeroWidthEntrySet(pc.next, checkAssertions, bodyLastCharSet);
-			if (!checkAssertions) {
-				return rest;
-			}
-			CodePointSet admitted =
-					GraphemeBoundaryConstruct.admittedInteriorExitPeekSet(bodyLastCharSet);
-			return admitted == null ? rest : union(rest, admitted);
-		}
-		if (pc instanceof Sequence) {
-			List<PatternConstruct> patterns = ((Sequence) pc).patterns;
-			return patterns.isEmpty()
-					? pc.getEntryPointMap()
-					: skipZeroWidthEntrySet(patterns.get(0), checkAssertions, bodyLastCharSet);
-		}
-		if (pc instanceof QuantifiedUnion && ((QuantifiedUnion) pc).isUnquantified()) {
-			List<PatternConstruct> constructs = ((QuantifiedUnion) pc).constructs;
-			if (!constructs.isEmpty()) {
-				MutableCodePointSet result = new ArrayCodePointSet();
-				for (PatternConstruct branch : constructs) {
-					result.addAll(skipZeroWidthEntrySet(branch, checkAssertions, bodyLastCharSet));
-				}
-				return result;
-			}
-		}
-		return pc.getEntryPointMap();
+	// Default: this construct claims its own entry point normally -- overridden by the handful of
+	// zero-width-assertion/wrapper types below (WordBoundaryConstruct, LineBoundaryConstruct,
+	// BoundaryConstruct, LookbehindConstruct, GraphemeBoundaryConstruct, Sequence, QuantifiedUnion)
+	// that instead need to be "seen through" for a loop-exit ambiguity check. A plain virtual method
+	// here, rather than the `instanceof` chain this replaced (2026-09-27): every OTHER construct
+	// (LiteralString, ComplexCharacter, etc. -- the common case) used to have to fail all 7
+	// `instanceof` tests before reaching this same fallback, and each new zero-width construct type
+	// added one more unconditional test to that chain (measured as a real, if small, ART-specific
+	// compile-time cost for \X/\b{g} -- see documents/notes.md's 2026-09-26 entries). A virtual
+	// dispatch costs the same O(1) regardless of how many construct types exist, and matches how
+	// buildEntryMap/buildMatcher already dispatch per-type on this same class.
+	CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
+		return getEntryPointMap();
 	}
 
 	static @Nullable CodePointSet firstCharSet(PatternConstruct pc) {

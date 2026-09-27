@@ -3427,3 +3427,36 @@ zero-width assertion construct" section) -- fixing it for real would mean redesi
 mechanism (a virtual method or type-tag `switch` instead of an `instanceof` chain), a much bigger
 and riskier change than this ~1ms-per-2347-row-corpus-pass cost justifies. Closing this as an
 accepted, understood, and now-documented cost of the feature rather than continuing to optimize it.
+
+## `skipZeroWidthEntrySet`/`collectExitAssertionChain` converted to virtual dispatch (2026-09-27)
+
+Immediately revisited the item above per the project owner's request: the `instanceof` chain is a
+code smell worth removing on its own merits, even independent of the performance question.
+Converted both `PatternConstruct.skipZeroWidthEntrySet` and `MatcherConstruct.collectExitAssertionChain`
+from a static method with an `instanceof` chain into a virtual method with a default implementation
+on the base class (matching how `buildEntryMap`/`buildMatcher` already dispatch per-type on these
+same classes) plus one override per construct type that previously had its own `instanceof` branch
+(`WordBoundaryConstruct`/`LineBoundaryConstruct`/`BoundaryConstruct`/`LookbehindConstruct`/
+`GraphemeBoundaryConstruct`/`Sequence`/`QuantifiedUnion` for the first; the `MatcherConstruct`
+equivalents plus `EndMatcherConstruct`/`EndCaptureMatcherConstruct`/`PassThroughMatcherConstruct`/
+`LoopMatcherExit`/`ReluctantLoopMatcherConstruct` for the second).
+`collectExitAssertionChain`'s generic "check `entrySet` first" precedence logic (common to every
+node type, not part of the per-type dispatch) stays as a small private static wrapper that delegates
+to the new virtual method only once that check clears -- overrides recurse via that wrapper
+(`MatcherConstruct.collectExitAssertionChain(next, chain)`), not directly via `next`'s own virtual
+method, so `next`'s own `entrySet` precedence is still honored. Full suite green (7213 tests, same 5
+pre-existing JDK-17-vs-27 Unicode-drift failures), both CLAUDE.md hand-checks
+(`((a?b)c)?` vs `""`, `(a+b)+` vs `"ababab"`) verified via a scratch probe.
+
+**Measured a real, if small, Android REGRESSION from this refactor -- kept anyway, deliberately,
+per the project owner's explicit preference for eliminating the `instanceof` smell over the
+performance difference.** Same-session stash-based A/B (2 runs each way, controlling for the
+time-of-day/thermal drift that made an earlier cross-session comparison misleading): `instanceof`
+chain 34.10-34.57ms/pass vs virtual dispatch 34.72-35.03ms/pass -- non-overlapping bands, ~0.5-2.7%
+slower with virtual dispatch. Plausible cause: `skipZeroWidthEntrySet`/`collectExitAssertionChain`
+each now have 7-9 different overriding classes, making the call site megamorphic -- the indirect
+virtual dispatch this requires is apparently harder for ART to predict/optimize than a
+well-ordered `instanceof` chain (whose real-world type distribution across the corpus is
+predictable enough to branch-predict well), even though the chain nominally does more comparisons.
+**Do not "fix" this by reverting to an `instanceof` chain without the project owner's explicit
+sign-off again** -- this tradeoff was made deliberately and knowingly, not overlooked.

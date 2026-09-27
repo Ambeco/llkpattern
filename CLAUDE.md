@@ -84,6 +84,26 @@ confirming the final chosen design once the narrow question is settled. When rea
 `benchmarks/*_corpus_benchmark_results.json` (700+ lines) for a specific number, grep for the
 `"score"`/`"benchmark"` lines rather than reading the whole file.
 
+**Investigating a suspected regression via the existing sampling tasks.** When a change (or a
+scraped-corpus refresh) is suspected of regressing compile or match time but the golden corpus
+doesn't yet exercise the suspect pattern/input much or at all, don't just eyeball the aggregate
+ratio -- temporarily mutate the corpus the relevant benchmark method itself reads (not a sibling
+`@Benchmark` method) so roughly half its rows exercise the suspect pattern/input, then run
+`./gradlew :llkpattern:jmh` (CPU sampling, via its `jmhSampling` `finalizedBy`) and
+`./gradlew :llkpattern:jmhAllocSampling` (allocation sampling) against that mutated corpus and diff
+the resulting `benchmarks/*_sampling.txt`/`*_alloc_sampling.txt` against the committed baseline.
+This works because both sampling tasks call the benchmark method by its literal name
+(`samplingBenchmarkNames` in `llkpattern/build.gradle`, currently `['llkCompile', 'llkMatch']`) --
+a new sibling method wouldn't get sampled at all, so the mutation has to happen inside
+`CorpusBenchmark.llkCompile`/`llkMatch` themselves (e.g. read from a parallel mutated
+pattern/flags array built in `setUp()`, falling back to the original row when the mutation breaks
+compilation). New leaves/leaf-weight jumps in the diff point straight at the regressing code path
+-- this is how `PatternConstruct.universalCodePointSet`'s per-call allocation (no caching) was
+found as `\X`'s real per-use cost (documents/notes.md, 2026-09-26). Revert the mutation and the
+auto-overwritten `benchmarks/*` files afterward (`git checkout --`) -- this is a throwaway
+diagnostic, not a real benchmark methodology change, and regexCompile/regexMatch usually can't even
+run against the mutated patterns if the suspect syntax isn't valid `java.util.regex`.
+
 ## `MatcherConstruct` fields must be `final`
 
 Every field on a `MatcherConstruct` (`MatcherConstruct.java`) and its subclasses must be `final` --

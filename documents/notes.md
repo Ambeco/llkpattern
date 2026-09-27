@@ -3256,3 +3256,93 @@ session's changes plausibly explain, since neither touches compile-time code at 
   alloc -2.03% (3.205M -> 3.141M B/op, bands non-overlapping), ms/op ratio bands overlapping (no
   measured CPU-time change either way, as expected for a change this small). Full suite green.
 
+## `\X`/`\b{g}` compile-time regression confirmed via worktree A/B (2026-09-26)
+
+Re-checked the 2026-09-23 "possible regression" item (remaining_work.md) now that the fork=3/
+iterations=10 methodology exists. Isolated the feature itself rather than comparing against current
+HEAD (which also carries unrelated perf work since): two `git worktree add`s, one at `e69b38d`
+(just before the feature), one at `9d090e2` (just after), each with only `fork` hand-patched from
+1 to 3 in that worktree's `build.gradle` to match current methodology (`warmupIterations`/`warmup`/
+`iterations` were already identical). Two full `:llkpattern:jmh` runs each way (~30 min per run --
+the whole 4-benchmark suite, not just `llkCompile`).
+
+llk/regex compile ratio: baseline 3.01x, 2.98x (band 2.98-3.01x) vs post-feature 3.22x, 3.07x (band
+3.07-3.22x) -- bands do NOT overlap, confirming a real ~2-7% regression, not noise (the original
+quick single-run check had found bands that technically overlapped by a hair). Not yet fixed;
+plausible cause still just the `instanceof GraphemeBoundaryConstruct`/`GraphemeClusterConstruct`
+branches unconditionally added to `skipZeroWidthEntrySet`/`collectExitAssertionChain`, unverified.
+Worktrees removed after (`git worktree remove --force`, paths under `AppData/Local/Temp/claude/`
+short enough not to hit the deep-nested-path removal issue).
+
+## Grapheme regression decomposed: fixed overhead vs real per-use cost (2026-09-26)
+
+Follow-up to the worktree A/B above. Added a THROWAWAY llkCompileHalfGrapheme benchmark method
+to CorpusBenchmark.java (reverted after, not committed): a parallel pattern array where every
+other row got a literal extended-grapheme-cluster escape appended to its pattern (falling back to
+the unmodified pattern if that broke compilation, e.g. a pattern ending in a zero-width assertion
+that can't be followed by a consuming atom -- 941/2368 candidate rows actually took the mutation,
+~40%, close enough to the requested 50% split). Compared against the existing llkCompile benchmark
+(0% real usage) in the SAME jmh invocation/trial, so both numbers share identical background-load
+conditions.
+
+Result: llkCompile 1.510 ms/op (CI 1.476-1.544) vs llkCompileHalfGrapheme 1.602 ms/op (CI
+1.574-1.630) -- non-overlapping, a real +6.1% from ~40% real usage, extrapolating to roughly +15%
+at 100% usage (linear scaling assumed). This decomposes the previously-confirmed ~2-7% regression
+into two distinct costs: (1) fixed per-compile overhead present even at 0% real usage (the new
+zero-width-construct instanceof branches in the entry-set/exit-assertion helpers running
+unconditionally -- this is the ~2-7% already measured), and (2) additional real per-use cost only
+paid by patterns that actually contain the construct (this ~15%-at-full-usage number) --
+presumably legitimate grapheme-classification work, not waste, and a separate question from (1) if
+ever worth optimizing.
+
+## Grapheme per-use cost identified: universalCodePointSet() allocates fresh every call (2026-09-26)
+
+Follow-up to the decomposition above, same THROWAWAY setup (reused for this pass instead of a
+separate benchmark method this time: llkCompile() itself temporarily read from the mutated
+pattern array, so the already-wired-up jmhSampling/jmhAllocSampling tasks -- which call llkCompile
+by name, see build.gradle's samplingBenchmarkNames -- would capture stacks/allocations for the
+mixed corpus; reverted after, not committed). Ran both `:llkpattern:jmh` (chains into
+jmhSampling for CPU stacks) and `:llkpattern:jmhAllocSampling` against the mixed corpus, diffed
+the resulting benchmarks/*_llkCompile_*sampling.txt against the committed (0%-usage) baseline,
+then reverted the source and the auto-overwritten benchmark/sampling files.
+
+Allocation sampling found the smoking gun: `java.util.Arrays.copyOf` jumped from 5.0% to 13.5% of
+total sampled allocation weight, and 9.2 of those percentage points trace through
+`ArrayCodePointSet.ensureCapacity`/`addRange`/`add` back to
+`PatternConstruct.universalCodePointSet:1973` called from
+`PatternConstruct$GraphemeClusterConstruct.buildEntryMap:1467` -- a leaf entirely absent from the
+baseline profile. `universalCodePointSet()` allocates a brand-new `ArrayCodePointSet` and calls
+`add(0, MAX_CODE_POINT + 1)` on every single call, with no caching; `GraphemeClusterConstruct`
+calls it once per `\X` compiled, and adding that huge a range triggers array-growth
+(`ensureCapacity`/`Arrays.copyOf`), which is why it shows up so heavily in allocation weight.  CPU
+sampling corroborated the same new leaf (`GraphemeClusterConstruct.buildEntryMap` ->
+`universalCodePointSet` -> `ArrayCodePointSet.add`/`addRange`) at ~1-1.5% of sampled CPU time,
+absent from baseline.
+
+This is a strong candidate fix (not yet implemented): `universalCodePointSet()`'s result is never
+mutated by any of its 5 call sites (`GraphemeClusterConstruct.buildEntryMap`,
+`QuantifiableConstruct`'s ambiguity-check helpers, etc. -- verify all 5 before changing), so it
+could return a single cached immutable instance instead of building one from scratch each call --
+would eliminate this allocation (and the array-growth CPU cost) everywhere it's used, not just for
+`\X`/`\b{g}`, since the same helper backs the pre-existing "any peek could be ambiguous" case for
+`\b`/`\B` too.
+
+## `universalCodePointSet()` caching fix implemented (2026-09-26)
+
+Hand-verified all 5 call sites read the result only (via `union`/`addAll`/`intersects`/`containsAll`/
+`first`, an entryMap-field assignment, or a plain return -- never a further mutating call on the
+returned reference), then replaced the per-call `new ArrayCodePointSet()` + `add(0, MAX_CODE_POINT +
+1)` with a `private static final CodePointSet UNIVERSAL_CODE_POINT_SET` built once, matching the
+existing `EMPTY_ENTRY_MAP` pattern in the same file. Full suite green (7213 tests, same 5
+pre-existing JDK-17-vs-27 Unicode-drift failures as unmodified code, confirmed via `git stash push
+-- llkpattern/src/main` + rerun -- not a regression).
+
+Skipped a full A/B before/after this change: background-load noise on the desktop today swung the
+llk/regex compile ratio between 2.4x and 3.2x across several single runs at different times (all
+same machine, same fork=3/iterations=10 config), too noisy to draw a before/after conclusion from
+a small number of runs without a much larger investment. The fix is provably allocation-only and
+semantically inert (identical `CodePointSet` contents returned, just shared instead of rebuilt), and
+the real golden corpus has ~0% real `\X`/`\b{g}` usage (so this specific corpus's compile ratio
+isn't expected to move much either way) -- a rigorous re-benchmark is more worth doing once the
+corpus actually exercises `\X`/`\b{g}`, or as part of a future session revisiting the
+still-open fixed-overhead portion of the regression (remaining_work.md).

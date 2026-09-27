@@ -1965,13 +1965,26 @@ abstract class PatternConstruct {
 		return result;
 	}
 
+	// Built once, not per call -- every call site only reads the result (union/addAll/intersects,
+	// never mutates it back), so there's no need to pay universalCodePointSet's own
+	// add(0, MAX_CODE_POINT + 1) allocation-and-array-growth cost on every one of its callers'
+	// calls (measured as a real compile-time cost for \X: see documents/notes.md's 2026-09-26
+	// entry -- GraphemeClusterConstruct.buildEntryMap calls this once per \X compiled, and adding
+	// that huge a range from empty triggered enough ArrayCodePointSet growth to show up at ~9% of
+	// sampled allocation weight in a corpus with real \X usage).
+	private static final CodePointSet UNIVERSAL_CODE_POINT_SET = buildUniversalCodePointSet();
+
+	private static CodePointSet buildUniversalCodePointSet() {
+		MutableCodePointSet result = new ArrayCodePointSet();
+		result.add(0, CodePointSet.MAX_CODE_POINT + 1);
+		return result;
+	}
+
 	/** Every code point -- used by the {@code admittedInteriorExitPeekSet} methods below for the
 	 *  "any peek could be ambiguous" case (e.g. a loop body with both word and non-word last
 	 *  characters, against \b/\B). */
 	static CodePointSet universalCodePointSet() {
-		MutableCodePointSet result = new ArrayCodePointSet();
-		result.add(0, CodePointSet.MAX_CODE_POINT + 1);
-		return result;
+		return UNIVERSAL_CODE_POINT_SET;
 	}
 
 	private static CodePointSet union(CodePointSet a, CodePointSet b) {

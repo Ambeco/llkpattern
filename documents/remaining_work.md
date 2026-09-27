@@ -106,14 +106,16 @@ samples, so a couple of whole-invocation repeats each way is already fairly robu
 remains deterministic enough that a single run each way is enough for an allocation-only claim, same as
 before.
 
-- [ ] **Possible small compile-time regression from `\X`/`\b{g}` (2026-09-23).** The Intel llk/regex
-      compile ratio A/B'd as baseline 2.92-3.00x vs changed 2.99-3.18x -- the bands technically
-      overlap (2.99-3.00), but only barely, not the comfortable overlap this project usually treats
-      as "clearly noise." Plausible cause: the new `instanceof GraphemeBoundaryConstruct`/
-      `GraphemeClusterConstruct` branches added to `skipZeroWidthEntrySet`/`collectExitAssertionChain`
-      run for every compile, whether or not the pattern uses either construct. Deferred per the
-      project owner (2026-09-23): revisit once the grapheme-cluster feature work is feature-complete,
-      with a proper multi-run A/B (more than two runs each way) rather than the quick check done here.
+- [ ] **Remaining small compile-time regression from `\X`/`\b{g}` -- fixed-overhead portion only
+      (2026-09-26).** A confirmed real (if small, ~2-7%) compile-time regression from `\X`/`\b{g}`
+      (see notes.md's dated entries) decomposed into two costs: a per-use cost, now fixed
+      (`PatternConstruct#universalCodePointSet` no longer allocates fresh on every call -- see
+      notes.md), and a still-unfixed fixed-per-compile-overhead portion present even with 0% real
+      `\X`/`\b{g}` usage in the corpus. Plausible cause, still unverified in isolation: the new
+      `instanceof GraphemeBoundaryConstruct`/`GraphemeClusterConstruct` branches in
+      `skipZeroWidthEntrySet`/`collectExitAssertionChain` running unconditionally. Worth a targeted
+      microbenchmark isolating just those two branches' own cost before deciding whether it's worth
+      optimizing (e.g. reordering the `instanceof` chain) versus accepting it as the feature's cost.
 
 ## Scraped-corpus microbenchmark
 

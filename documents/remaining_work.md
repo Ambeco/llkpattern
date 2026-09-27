@@ -106,17 +106,6 @@ samples, so a couple of whole-invocation repeats each way is already fairly robu
 remains deterministic enough that a single run each way is enough for an allocation-only claim, same as
 before.
 
-- [ ] **Remaining small compile-time regression from `\X`/`\b{g}` -- fixed-overhead portion only
-      (2026-09-26).** A confirmed real (if small, ~2-7%) compile-time regression from `\X`/`\b{g}`
-      (see notes.md's dated entries) decomposed into two costs: a per-use cost, now fixed
-      (`PatternConstruct#universalCodePointSet` no longer allocates fresh on every call -- see
-      notes.md), and a still-unfixed fixed-per-compile-overhead portion present even with 0% real
-      `\X`/`\b{g}` usage in the corpus. Plausible cause, still unverified in isolation: the new
-      `instanceof GraphemeBoundaryConstruct`/`GraphemeClusterConstruct` branches in
-      `skipZeroWidthEntrySet`/`collectExitAssertionChain` running unconditionally. Worth a targeted
-      microbenchmark isolating just those two branches' own cost before deciding whether it's worth
-      optimizing (e.g. reordering the `instanceof` chain) versus accepting it as the feature's cost.
-
 ## Scraped-corpus microbenchmark
 
 - [ ] `jmhAllocSampling`'s fixed 3000-iteration count (`llkpattern/build.gradle`) was sized for

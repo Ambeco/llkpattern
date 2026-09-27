@@ -3346,3 +3346,84 @@ the real golden corpus has ~0% real `\X`/`\b{g}` usage (so this specific corpus'
 isn't expected to move much either way) -- a rigorous re-benchmark is more worth doing once the
 corpus actually exercises `\X`/`\b{g}`, or as part of a future session revisiting the
 still-open fixed-overhead portion of the regression (remaining_work.md).
+
+## Fixed-overhead portion investigated further: doesn't reproduce under low-noise measurement (2026-09-26)
+
+Followed up same session on the remaining "fixed per-compile overhead" piece (present even at 0%
+real `\X`/`\b{g}` usage). First re-read the actual `9d090e2` diff to find every unconditionally-run
+insertion point rather than guessing: confirmed NO field was added to the shared
+`PatternConstruct`/`MatcherConstruct` base classes (ruling out "every allocation got bigger"), and
+found three small, always-executed additions: (1) a `peek == '\\' && ... == 'X'` check added to
+`PatternParser`'s main per-atom parse loop (fires once per atom parsed, short-circuits instantly for
+non-backslash atoms), (2) one extra `instanceof GraphemeBoundaryConstruct` branch in
+`skipZeroWidthEntrySet`'s per-loop `next`-chain walk (fires once per quantified/loop construct
+compiled, regardless of whether the pattern contains `\X`/`\b{g}` at all), (3) one extra
+`instanceof GraphemeBoundaryMatcherConstruct` branch in `collectExitAssertionChain` (fires only for
+reluctant loops' exit-safety check, narrower than (2)).
+
+Built a THROWAWAY (not committed) low-noise microbenchmark to test whether these three cheap
+branches add up to anything measurable: `MicroProbe.java` (scratchpad, not the repo), a plain
+`System.nanoTime` loop compiling the full 2368-row AGREES corpus per pass, 30 warmup + 60 measured
+passes in ONE JVM invocation (no JMH forking, no 1s-iteration budget) -- deliberately much more
+warmup than JMH's own fork=3/1-warmup-iteration config, to reach true HotSpot steady state. First
+attempt didn't consume the compiled `Ll1Pattern` results at all and showed pre/post as
+indistinguishable (~5.7ms both) -- correctly suspected as JIT dead-code elimination silently
+skipping unused work (the same reason JMH ships `Blackhole`), so added an
+`acc ^= System.identityHashCode(compiled)` accumulator before trusting any number.
+
+With that fix, two worktrees (`e69b38d` pre-feature, current HEAD post-feature, same technique as
+the original A/B), 3 JVM invocations each (compiled against each worktree's own
+`build/classes/java/{main,test}` + guava + androidx.collection-jvm + kotlin-stdlib jars, all
+`cygpath -w`'d): pre-feature median pass times 7.18ms (first run, likely cold-start/disk-cache
+noise -- discarded), 5.56ms, 5.80ms; post-feature 5.75ms, 5.71ms, 5.75ms. Excluding the one
+cold-start outlier, the bands overlap (~5.56-5.80 vs ~5.71-5.75) -- i.e. this low-noise steady-state
+measurement found NO reproducible difference between pre- and post-feature code, in EITHER
+direction (post-feature was numerically the FASTEST in 2 of 3 comparisons, the opposite of the
+"confirmed regression").
+
+Conclusion: the fork=3/1-warmup-iteration JMH result that originally confirmed this regression
+(non-overlapping 2.98-3.01x vs 3.07-3.22x bands) most likely reflects the two code versions
+reaching JIT steady state at different rates within JMH's short 1s warmup window, not a genuine
+steady-state per-compile cost from these three small `instanceof`/parse-check additions -- probably
+because the fork=3 methodology (chosen specifically to reduce BETWEEN-fork noise, see the
+`build.gradle` jmh{} comment) still only gives each fork a single 1s warmup iteration, which may not
+be enough to reach steady state at all, making it sensitive to code-size/inlining-order differences
+between versions in a way a properly-warmed-up measurement isn't. NOT fully closing the
+remaining_work.md item on this basis alone, though: desktop HotSpot's warmup model doesn't
+necessarily match Android's ART, so it's still open pending an on-device check.
+
+## On-device (Pixel 3a) check: the regression IS real there, ART-specific (2026-09-26)
+
+Same session, continued: the Pixel 3a was plugged in, so ran `:app:connectedAndroidTest` (the
+project's existing on-device `AndroidCorpusBenchmark`) via the same two-worktree technique as the
+original desktop A/B, each worktree needing its own copied-in `local.properties` (gitignored, holds
+the SDK path) since a fresh worktree doesn't have one.
+
+First comparison (current HEAD, i.e. `\X`/`\b{g}` PLUS ~15 later unrelated perf-optimization
+commits PLUS this session's `universalCodePointSet` fix, vs `e69b38d` pre-feature) was badly
+confounded and produced a misleading ~23% gap (current HEAD 33.93-34.33ms/pass vs pre-feature
+44.60-44.69ms/pass, both bands individually very tight/reproducible across 2 runs each) --
+correctly recognized as mostly reflecting the ~15 OTHER perf commits' cumulative effect on ART, not
+`\X`/`\b{g}` in isolation, so redone properly against `9d090e2` (immediately after the feature,
+before any of those later commits) instead of current HEAD.
+
+Isolated comparison, 2 runs each way: `e69b38d` 44.5971ms/44.6878ms (band 44.60-44.69) vs `9d090e2`
+45.7685ms/45.5115ms (band 45.51-45.77) -- bands do NOT overlap, a real, reproducible ~2-2.6%
+regression, matching the original desktop JMH finding's direction and rough magnitude. This
+directly contradicts the desktop low-noise steady-state probe above (which found no reproducible
+difference): ART evidently IS sensitive to these few extra `instanceof` branches in a way HotSpot's
+C2-compiled steady state is not, plausibly because ART's own JIT/interpreter tiering never fully
+amortizes a handful of extra branch tests the way HotSpot's steady-state inlining does.
+
+Decided NOT to chase this further with a dispatch restructure (e.g. reordering the `instanceof`
+chain in `skipZeroWidthEntrySet`/`collectExitAssertionChain`, or replacing it with a type-tag
+switch): the added `GraphemeBoundaryConstruct` check sits near the end of the chain, but reordering
+would only help nodes that ARE `Sequence`/`QuantifiedUnion` skip past the assertion-type checks --
+it does nothing for the likely-dominant case (an ordinary `LiteralString`/`ComplexCharacter`/etc.
+node), which must fail every check in the chain regardless of order before reaching the final
+fallback. The added check is an unavoidable O(1) cost of this project's own established
+"instanceof-chain dispatch per zero-width construct type" pattern (CLAUDE.md's "Adding a new
+zero-width assertion construct" section) -- fixing it for real would mean redesigning that dispatch
+mechanism (a virtual method or type-tag `switch` instead of an `instanceof` chain), a much bigger
+and riskier change than this ~1ms-per-2347-row-corpus-pass cost justifies. Closing this as an
+accepted, understood, and now-documented cost of the feature rather than continuing to optimize it.

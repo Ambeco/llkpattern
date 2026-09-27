@@ -272,15 +272,6 @@ repeatedly regressed when converted to a `CodePointSetBuilder` specifically, but
 pre-sizing (its `(int initialCapacity)` constructor, with a correctly-computed hint) has measured as a real
 win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't conflate the two.
 
-- [ ] **`ArrayCodePointSet`'s own eager `keys` array** (~6% of sampled allocation weight) has the
-      same "allocated even when the set ends up empty" shape `CodePointSetBuilder` had, but
-      `ArrayCodePointSet` is a much more central, widely-used class -- implements the shared
-      `CodePointSet`/`MutableCodePointSet` interfaces, used at match time as well as parse time,
-      and has many more call sites (`add`/`addRange`/`complement`/`forEachRange`/`size`/`invert`/
-      the shared static `EMPTY_ENTRY_MAP` instance in `PatternConstruct`). Making `keys` lazy would
-      need every reader path to handle a null/absent array correctly, not just the two methods
-      `CodePointSetBuilder` needed -- worth doing, but as its own careful pass with full
-      before/after benchmarking, not bundled in with a smaller, throwaway-class fix.
 - [ ] **`Sequence`/`QuantifiedUnion`'s default-capacity `patterns`/`constructs` `ArrayList`s**
       (`ArrayList.grow`, ~7% of sampled allocation weight) -- both are plain `new ArrayList<>()`,
       so the first `#add` grows to Java's default capacity of 10 regardless of how many elements

@@ -20,6 +20,23 @@ public class ArrayCodePointSetTest {
   }
 
   @Test
+  public void keys_freshSet_isSharedEmptyArray() {
+    assertThat(((ArrayCodePointSet) create()).keys.length, is(0));
+  }
+
+  @Test
+  public void keys_copyOfEmptySet_isSharedEmptyArray() {
+    ArrayCodePointSet empty = new ArrayCodePointSet();
+    assertThat(new ArrayCodePointSet(empty).keys.length, is(0));
+  }
+
+  @Test
+  public void keys_complementOfEmptySet_isSharedEmptyArray() {
+    ArrayCodePointSet empty = new ArrayCodePointSet();
+    assertThat(((ArrayCodePointSet) empty.complement()).keys.length, is(0));
+  }
+
+  @Test
   public void isEmpty_afterAdd_isFalse() {
     MutableCodePointSet set = create();
     set.add('a');

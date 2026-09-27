@@ -30,7 +30,12 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   // chunk-count math when packing its own keys array.
   static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
 
-  private static final int INITIAL_CAPACITY = 1;
+  // Shared by every set that starts (or ends up) with no entries, so the common empty case pays
+  // no array allocation at all -- a zero-length array, not null, so every existing reader (bounded
+  // by `size`, or reading `keys.length` for capacity math) keeps working with no null check added:
+  // System.arraycopy and Arrays.copyOf both accept a zero-length array freely, and a zero-length
+  // array can never be written into by mistake (any real write path grows it first).
+  private static final int[] EMPTY_KEYS = new int[0];
 
   // Package-private, not private: CodePointSetBuilder's own Impl subclasses this class directly
   // (rather than composing a separate builder object that hands a finished array off to a fresh
@@ -52,18 +57,19 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   boolean invert;
 
   public ArrayCodePointSet() {
-    this(INITIAL_CAPACITY);
+    keys = EMPTY_KEYS;
+    size = 0;
   }
 
   /**
    * Same as the no-arg constructor, but starting {@code keys} at {@code initialCapacity} instead
-   * of {@link #INITIAL_CAPACITY} -- for a subclass (namely {@link CodePointSetBuilderImpl}) whose
-   * typical real accumulation is known to be bigger than this class's own single-character common
-   * case, so it's worth avoiding the first one or two {@code Arrays.copyOf} regrows rather than
-   * inheriting a capacity tuned for a different usage pattern.
+   * of empty -- for a subclass (namely {@link CodePointSetBuilderImpl}) whose typical real
+   * accumulation is known to be bigger than this class's own single-character common case, so
+   * it's worth avoiding the first one or two {@code Arrays.copyOf} regrows rather than inheriting
+   * a capacity tuned for a different usage pattern.
    */
   ArrayCodePointSet(int initialCapacity) {
-    keys = new int[initialCapacity];
+    keys = initialCapacity == 0 ? EMPTY_KEYS : new int[initialCapacity];
     size = 0;
   }
 
@@ -83,7 +89,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
    */
   private static ArrayCodePointSet complementOf(ArrayCodePointSet source) {
     ArrayCodePointSet result = new ArrayCodePointSet();
-    result.keys = Arrays.copyOf(source.keys, source.size);
+    result.keys = source.size == 0 ? EMPTY_KEYS : Arrays.copyOf(source.keys, source.size);
     result.size = source.size;
     result.invert = !source.invert;
     return result;

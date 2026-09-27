@@ -3553,3 +3553,18 @@ Not a real effect, in either direction, by any of the three metrics available. K
 anyway: independent of the (absent) performance effect, it's a real, unambiguous code-quality win
 (four duplicated method bodies collapsed to one shared implementation each, in both
 `PatternConstruct` and `MatcherConstruct`), and nothing suggests a regression by any measure.
+
+### `ArrayCodePointSet`'s eager `keys` array made lazy (2026-09-27)
+
+- Replaced the always-allocated `int[1]`/`int[initialCapacity]` in the no-arg and copy
+  constructors with a shared `EMPTY_KEYS` (`int[0]`) sentinel, not null -- every existing reader is
+  already bounded by `size` or reads `keys.length`, and a zero-length array is safe for
+  `System.arraycopy`/`Arrays.copyOf` and can't be corrupted by a stray write. `complementOf` also
+  shares it for an empty source. New discriminating test: `keys.length == 0` for a fresh set, a
+  copy of an empty set, and the complement of an empty set (confirmed via a stash-and-rerun -- fails
+  on old code as expected).
+- Result smaller than remaining_work.md's ~6% estimate: Intel-i7-9750H compile-time allocation
+  ~3,141,335 -> ~3,132,288 B/op (~0.3%), llk/regex ratio bands overlapping (no CPU-time change).
+  Allocation sampling confirms the constructor no longer appears as its own top-10 leaf. Most real
+  call sites (parse-time unions/intersections, addAll) immediately grow the array past empty
+  anyway, so the empty case saved is rarer than the estimate assumed. Full suite green.

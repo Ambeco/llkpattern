@@ -272,16 +272,6 @@ repeatedly regressed when converted to a `CodePointSetBuilder` specifically, but
 pre-sizing (its `(int initialCapacity)` constructor, with a correctly-computed hint) has measured as a real
 win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't conflate the two.
 
-- [ ] **`Sequence`/`QuantifiedUnion`'s default-capacity `patterns`/`constructs` `ArrayList`s**
-      (`ArrayList.grow`, ~7% of sampled allocation weight) -- both are plain `new ArrayList<>()`,
-      so the first `#add` grows to Java's default capacity of 10 regardless of how many elements
-      the sequence/union actually ends up holding (often far fewer for typical corpus patterns).
-      Pre-sizing to a smaller initial capacity (e.g. 4, matching `CodePointSetBuilder`'s own
-      `INITIAL_CAPACITY`) would shrink the allocated array without eliminating the allocation
-      itself -- measure whether that's worth doing before implementing, per this file's existing
-      "measure before keeping" guidance a few sections up (a plausible-sounding pre-sizing
-      heuristic has already twice measured as a net regression in this project).
-
 - [ ] **`PatternParser#parseComplexCharacterRanges`'s `negate` handling** calls a separate
       `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a bracket
       expression starts with `^`. `CodePointSetBuilder` gained an `#invert` method (2026-09-18,

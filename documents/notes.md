@@ -3568,3 +3568,16 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   Allocation sampling confirms the constructor no longer appears as its own top-10 leaf. Most real
   call sites (parse-time unions/intersections, addAll) immediately grow the array past empty
   anyway, so the empty case saved is rarer than the estimate assumed. Full suite green.
+
+### Pre-sizing Sequence.patterns/QuantifiedUnion.constructs (2026-09-27)
+
+- Measured the final-size histogram of both ArrayLists across the corpus first (scratch test
+  probe incrementing a counter in each class's buildEntryMap, reverted after): Sequence is
+  100% <=4 elements (mean 1.15), QuantifiedUnion 99.63% <=4 (mean 1.38) -- confirms
+  remaining_work.md's proposed capacity of 4 rather than guessing.
+- Changed both `new ArrayList<>()` field initializers to `new ArrayList<>(4)`. A/B'd against a
+  fresh `git stash -u` baseline (two runs each way): desktop `llkCompile` allocation
+  3,128,364 -> ~3,043,000 B/op (~2.7%), time and llk/regex ratio flat within noise across both
+  pairs. `jmhAllocSampling` confirms the `java.util.ArrayList.grow` leaf (previously 5.7% of
+  sampled allocation weight) is gone entirely. Full suite green. README updated; item removed
+  from remaining_work.md.

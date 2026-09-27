@@ -307,11 +307,6 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
       `ArrayCodePointSet` via its `(int initialCapacity)` constructor is the shape that's measured
       as a real win. Remaining unsized `new ArrayCodePointSet()` + `addAll` sites flagged 2026-09-26
       (not yet measured, so "worth trying," not "known win"):
-  - [ ] `PatternConstruct.lastCharSet`'s own `QuantifiedUnion` branch (still hand-rolls its own
-        unsized merge loop) could instead just `return unionLastCharSet(union.constructs);` after
-        its `min < 1 || constructs.isEmpty()` guard -- same null-propagation semantics, and picks up
-        `unionLastCharSet`'s existing pre-sizing and single-branch fast path for free instead of
-        duplicating a worse version of it.
   - [ ] `PatternConstruct`'s private `union(a, b)` two-set helper.
   - [ ] `CodePointSetBuilder.mergeRun`'s own `new ArrayCodePointSet()` + two `addAll` calls.
   - [ ] When both operands are already non-inverted `ArrayCodePointSet`s, `addAll` could dispatch to

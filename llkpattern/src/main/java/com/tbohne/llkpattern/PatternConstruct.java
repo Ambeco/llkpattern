@@ -1070,15 +1070,7 @@ abstract class PatternConstruct {
 			if (min < 1 || constructs.isEmpty()) {
 				return null;
 			}
-			MutableCodePointSet result = new ArrayCodePointSet();
-			for (int i = 0; i < constructs.size(); i++) {
-				CodePointSet branchSet = constructs.get(i).lastCharSet();
-				if (branchSet == null) {
-					return null;
-				}
-				result.addAll(branchSet);
-			}
-			return result;
+			return unionLastCharSet(constructs);
 		}
 
 		@Override

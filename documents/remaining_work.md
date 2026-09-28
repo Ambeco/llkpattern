@@ -293,11 +293,6 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
   - [ ] When both operands are already non-inverted `ArrayCodePointSet`s, `addAll` could dispatch to
         `sweepUnion(this, o)`'s merge-scan instead of `other.forEachRange(this::add)` -- removes the
         per-call capturing lambda and the per-range tail shift entirely, not just the resizes.
-- [ ] **A `java.util.stream`/`Collectors` call appears in the desktop compile-time allocation
-      profile** (2026-09-26 capture, small -- ~0.5%, and only the profile's top 10 leaves are shown,
-      so there may be more). `grep -rn 'stream()\|Collectors\.' llkpattern/src/main` to find and
-      replace with plain loops if the call sites are on the compile hot path rather than some cold
-      error-message-formatting branch.
 - [ ] **Pixel 3a CPU-sampling leaders** (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`,
       captured 2026-09-24 -- refresh before trusting exact percentages, per this file's usual
       staleness caution): none of these are measured yet, just flagged from reading the profile.

@@ -291,10 +291,6 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
       `ArrayCodePointSet`s) not attempted: risks a per-call fresh-array allocation if `sweepUnion`
       doesn't merge in place, which would undo the real `mergeEntryPoints`/`unionLastCharSet`/
       `mergeRun` wins if ever reused there -- deprioritized.
-- [ ] **Confirm the 2026-09-27 `CodePointSetBuilder.mergeRun` pre-sizing on the Pixel 3a** -- not
-      measured there yet (device wasn't plugged in that session). Desktop only has a deterministic
-      per-call allocation-count confirmation, not a full-corpus JMH ratio move; worth a Pixel 3a
-      compile-time/allocation-sampling run to see if the effect is visible there.
 - [ ] **Pixel 3a CPU-sampling leaders** (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`,
       captured 2026-09-24 -- refresh before trusting exact percentages, per this file's usual
       staleness caution): none of these are measured yet, just flagged from reading the profile.

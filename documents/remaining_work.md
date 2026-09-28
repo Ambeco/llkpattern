@@ -284,13 +284,17 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
       (like `union`'s own static factory) would avoid the incremental tail-shifting `addRange` does
       per insert for whatever callers remain. Assessed 2026-09-27 (see notes.md): `PatternConstruct`'s
       private `union(a, b)` is cold (absent from both alloc-sampling files, only reached via the rare
-      `\b`/assertion-ambiguity path) -- not worth pursuing. `CodePointSetBuilder.mergeRun` was hot
-      (9.5% of `llkCompile`'s sampled allocation weight) and was pre-sized and A/B'd, but measured no
-      real win (ratio bands fully overlapping) -- reverted. The third idea (`addAll` dispatching to
-      `sweepUnion` for two non-inverted `ArrayCodePointSet`s) wasn't attempted: it only matters for
-      this same cold-in-practice `mergeRun` shape, and risks a per-call fresh-array allocation if
-      `sweepUnion` doesn't merge in place, which would undo the real `mergeEntryPoints`/
-      `unionLastCharSet` wins (2026-09-25) if ever reused there -- deprioritized.
+      `\b`/assertion-ambiguity path) -- not worth pursuing. `CodePointSetBuilder.mergeRun` was pre-sized
+      and landed (2026-09-27, see notes.md) -- a real per-call allocation cut confirmed via a
+      deterministic probe, though too small a share of `llkCompile`'s total to move the full-corpus
+      JMH ratio. Remaining idea (`addAll` dispatching to `sweepUnion` for two non-inverted
+      `ArrayCodePointSet`s) not attempted: risks a per-call fresh-array allocation if `sweepUnion`
+      doesn't merge in place, which would undo the real `mergeEntryPoints`/`unionLastCharSet`/
+      `mergeRun` wins if ever reused there -- deprioritized.
+- [ ] **Confirm the 2026-09-27 `CodePointSetBuilder.mergeRun` pre-sizing on the Pixel 3a** -- not
+      measured there yet (device wasn't plugged in that session). Desktop only has a deterministic
+      per-call allocation-count confirmation, not a full-corpus JMH ratio move; worth a Pixel 3a
+      compile-time/allocation-sampling run to see if the effect is visible there.
 - [ ] **Pixel 3a CPU-sampling leaders** (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`,
       captured 2026-09-24 -- refresh before trusting exact percentages, per this file's usual
       staleness caution): none of these are measured yet, just flagged from reading the profile.

@@ -3613,11 +3613,17 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   constructor (`literalSet.size + runUnion.size` when both operands are `ArrayCodePointSet`s),
   same shape as the `mergeEntryPoints`/`unionLastCharSet` win. A/B'd (two baseline, two changed
   runs): llk/regex compile-time ratio 2.28x-2.30x (baseline) vs. 2.26x-2.40x (changed) -- fully
-  overlapping, no measurable win, unlike the earlier `mergeEntryPoints` case. Likely because
-  the first `addAll`'s fast-path copy already sizes the array to the first operand, so pre-
-  sizing only saves the second operand's marginal regrow(s) -- a small absolute byte count
-  against `llkCompile`'s ~2.7 MB/op total. Reverted; not landed. Third flagged site (`addAll`
-  dispatching to `sweepUnion` for two non-inverted `ArrayCodePointSet`s) not attempted -- it
-  only matters for this same cold-in-practice `mergeRun` shape, and risks adding a fresh-array
-  allocation per call if `sweepUnion` doesn't merge in place, which would undo the real
-  `mergeEntryPoints`/`unionLastCharSet` wins if ever reused there -- deprioritized.
+  overlapping in the full-corpus JMH ratio, likely because the first `addAll`'s fast-path copy
+  already sizes the array to the first operand, so pre-sizing only saves the second operand's
+  marginal regrow(s) -- a small absolute byte count against `llkCompile`'s ~2.7 MB/op total,
+  easily lost in run-to-run corpus noise. But a deterministic per-call probe (a scratch
+  in-package class calling `mergeRun`'s old/new logic directly in a warmed-up loop, measuring
+  `ThreadMXBean.getThreadAllocatedBytes` deltas -- no JMH/GC sampling noise) showed a real,
+  reproducible cut: 792 -> 352 B/op for a small runUnion (`isDigit`) + small literalSet, and
+  7456 -> 3024 B/op for a large runUnion (`isLetter`) + small literalSet -- roughly 55-60%
+  fewer bytes per call either way. Landed on this evidence even though the corpus-level ratio
+  can't confirm it; not yet measured on the Pixel 3a (not plugged in this session). Third
+  flagged site (`addAll` dispatching to `sweepUnion` for two non-inverted `ArrayCodePointSet`s)
+  still not attempted -- it only matters for this same `mergeRun` shape, and risks adding a
+  fresh-array allocation per call if `sweepUnion` doesn't merge in place, which would undo the
+  real `mergeEntryPoints`/`unionLastCharSet` wins if ever reused there -- deprioritized.

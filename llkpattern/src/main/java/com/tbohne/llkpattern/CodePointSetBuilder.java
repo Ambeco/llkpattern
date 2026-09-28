@@ -83,7 +83,19 @@ interface CodePointSetBuilder {
     if (literalSet.isEmpty() && !(runUnion instanceof UnionCodePointSet)) {
       return runUnion;
     }
-    MutableCodePointSet result = new ArrayCodePointSet();
+    // Pre-size when both operands are ArrayCodePointSets so the first addAll's fast-path copy
+    // (ArrayCodePointSet#addAll's `size == 0` case) doesn't hand the second addAll a keys array
+    // sized to fit only the first operand, forcing it to grow via ensureCapacity's Arrays.copyOf
+    // before every add() -- same fix as mergeEntryPoints/unionLastCharSet (notes.md, 2026-09-25).
+    // `size` is a count of packed ints, not ranges (ArrayCodePointSet's own `keys` unit), so
+    // summing it directly is the right unit for `initialCapacity`. Not visible in the full-corpus
+    // JMH ratio (too small a share of llkCompile's ~2.7 MB/op total to clear run-to-run noise),
+    // but a deterministic per-call allocation probe confirms a real ~55-60% bytes/op cut at this
+    // operation (notes.md, 2026-09-27).
+    int hint = literalSet instanceof ArrayCodePointSet && runUnion instanceof ArrayCodePointSet
+        ? ((ArrayCodePointSet) runUnion).size + ((ArrayCodePointSet) literalSet).size
+        : 0;
+    MutableCodePointSet result = new ArrayCodePointSet(hint);
     result.addAll(runUnion);
     result.addAll(literalSet);
     return result;

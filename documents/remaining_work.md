@@ -280,19 +280,17 @@ win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't c
       #intersection(CodePointSet)`, which replaced the old private `intersect` helper this note
       used to name -- see notes.md's 2026-09-25 entry) first. Not attempted yet.
 - [ ] **`ArrayCodePointSet#addAll`'s general path (one `add()` per source range) still resizes/shifts
-      per range for any caller that doesn't pre-size its target first** (unlike `mergeEntryPoints`/
-      `unionLastCharSet`, fixed 2026-09-25 -- see notes.md). A real one-pass sorted merge (like
-      `union`'s own static factory) would avoid the incremental tail-shifting `addRange` does per
-      insert for whatever callers remain; per notes.md's dated entry, `CodePointSetBuilder` is NOT
-      the presumed fix (repeatedly regressed small-N call sites) -- pre-sizing a plain
-      `ArrayCodePointSet` via its `(int initialCapacity)` constructor is the shape that's measured
-      as a real win. Remaining unsized `new ArrayCodePointSet()` + `addAll` sites flagged 2026-09-26
-      (not yet measured, so "worth trying," not "known win"):
-  - [ ] `PatternConstruct`'s private `union(a, b)` two-set helper.
-  - [ ] `CodePointSetBuilder.mergeRun`'s own `new ArrayCodePointSet()` + two `addAll` calls.
-  - [ ] When both operands are already non-inverted `ArrayCodePointSet`s, `addAll` could dispatch to
-        `sweepUnion(this, o)`'s merge-scan instead of `other.forEachRange(this::add)` -- removes the
-        per-call capturing lambda and the per-range tail shift entirely, not just the resizes.
+      per range for any caller that doesn't pre-size its target first.** A real one-pass sorted merge
+      (like `union`'s own static factory) would avoid the incremental tail-shifting `addRange` does
+      per insert for whatever callers remain. Assessed 2026-09-27 (see notes.md): `PatternConstruct`'s
+      private `union(a, b)` is cold (absent from both alloc-sampling files, only reached via the rare
+      `\b`/assertion-ambiguity path) -- not worth pursuing. `CodePointSetBuilder.mergeRun` was hot
+      (9.5% of `llkCompile`'s sampled allocation weight) and was pre-sized and A/B'd, but measured no
+      real win (ratio bands fully overlapping) -- reverted. The third idea (`addAll` dispatching to
+      `sweepUnion` for two non-inverted `ArrayCodePointSet`s) wasn't attempted: it only matters for
+      this same cold-in-practice `mergeRun` shape, and risks a per-call fresh-array allocation if
+      `sweepUnion` doesn't merge in place, which would undo the real `mergeEntryPoints`/
+      `unionLastCharSet` wins (2026-09-25) if ever reused there -- deprioritized.
 - [ ] **Pixel 3a CPU-sampling leaders** (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`,
       captured 2026-09-24 -- refresh before trusting exact percentages, per this file's usual
       staleness caution): none of these are measured yet, just flagged from reading the profile.

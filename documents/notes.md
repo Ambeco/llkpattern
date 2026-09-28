@@ -3600,3 +3600,24 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   a real ~5% improvement, matching the flagged allocation share. `jmhAllocSampling` confirms both
   `PatternParser.<init>` leaves are gone. Full suite green. README updated; item removed from
   remaining_work.md.
+
+
+### `ArrayCodePointSet#addAll` unsized call sites assessed (2026-09-27)
+
+- Triaged the three sites flagged 2026-09-26 against the committed alloc-sampling files before
+  measuring anything: `PatternConstruct`'s private `union(a, b)` doesn't appear in either
+  `llkCompile` or `llkMatch` alloc sampling at all (its only caller is the cold ``/assertion-
+  ambiguity path) -- assessed cold, not worth pursuing. `CodePointSetBuilder.mergeRun`'s two
+  `addAll` calls DID show up hot (9.5% of `llkCompile`'s sampled allocation weight, via
+  `ensureCapacity`'s `Arrays.copyOf`), so pre-sized its result via the `(int initialCapacity)`
+  constructor (`literalSet.size + runUnion.size` when both operands are `ArrayCodePointSet`s),
+  same shape as the `mergeEntryPoints`/`unionLastCharSet` win. A/B'd (two baseline, two changed
+  runs): llk/regex compile-time ratio 2.28x-2.30x (baseline) vs. 2.26x-2.40x (changed) -- fully
+  overlapping, no measurable win, unlike the earlier `mergeEntryPoints` case. Likely because
+  the first `addAll`'s fast-path copy already sizes the array to the first operand, so pre-
+  sizing only saves the second operand's marginal regrow(s) -- a small absolute byte count
+  against `llkCompile`'s ~2.7 MB/op total. Reverted; not landed. Third flagged site (`addAll`
+  dispatching to `sweepUnion` for two non-inverted `ArrayCodePointSet`s) not attempted -- it
+  only matters for this same cold-in-practice `mergeRun` shape, and risks adding a fresh-array
+  allocation per call if `sweepUnion` doesn't merge in place, which would undo the real
+  `mergeEntryPoints`/`unionLastCharSet` wins if ever reused there -- deprioritized.

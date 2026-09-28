@@ -1045,9 +1045,17 @@ abstract class PatternConstruct {
 			// own mergeEntryPoints call, so nothing here goes unvalidated) and not exercised by this
 			// project's own test suite; flagged in remaining_work.md if it ever needs revisiting.
 			MatcherConstruct elseTarget = rawEntryElse != null ? rawEntryElse.compile(compileTarget) : null;
-			List<PatternConstruct> chainCandidates = rawEntryElse == null
-					? constructs
-					: constructs.stream().filter(c -> c != rawEntryElse).collect(java.util.stream.Collectors.toList());
+			List<PatternConstruct> chainCandidates;
+			if (rawEntryElse == null) {
+				chainCandidates = constructs;
+			} else {
+				chainCandidates = new ArrayList<>(constructs.size());
+				for (PatternConstruct c : constructs) {
+					if (c != rawEntryElse) {
+						chainCandidates.add(c);
+					}
+				}
+			}
 			if (isCapturing()) {
 				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);

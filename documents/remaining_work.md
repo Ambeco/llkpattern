@@ -272,13 +272,6 @@ repeatedly regressed when converted to a `CodePointSetBuilder` specifically, but
 pre-sizing (its `(int initialCapacity)` constructor, with a correctly-computed hint) has measured as a real
 win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't conflate the two.
 
-- [ ] **`PatternParser#parseComplexCharacterRanges`'s `negate` handling** calls a separate
-      `ArrayCodePointSet#complement` (a full array copy) on its already-built result when a bracket
-      expression starts with `^`. `CodePointSetBuilder` gained an `#invert` method (2026-09-18,
-      currently uncalled) specifically so a builder could bake inversion in directly instead --
-      would need `negate` threaded through `mergeRun`'s own call chain (and `CodePointSet
-      #intersection(CodePointSet)`, which replaced the old private `intersect` helper this note
-      used to name -- see notes.md's 2026-09-25 entry) first. Not attempted yet.
 - [ ] **`ArrayCodePointSet#addAll`'s general path (one `add()` per source range) still resizes/shifts
       per range for any caller that doesn't pre-size its target first.** A real one-pass sorted merge
       (like `union`'s own static factory) would avoid the incremental tail-shifting `addRange` does

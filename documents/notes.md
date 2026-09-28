@@ -3627,3 +3627,16 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   still not attempted -- it only matters for this same `mergeRun` shape, and risks adding a
   fresh-array allocation per call if `sweepUnion` doesn't merge in place, which would undo the
   real `mergeEntryPoints`/`unionLastCharSet` wins if ever reused there -- deprioritized.
+
+### `negate` threaded into `mergeRun`, avoiding `complement()`'s copy for `[^...]` (2026-09-28)
+
+- Landed the item flagged 2026-09-25/27: `CodePointSetBuilder.mergeRun` now takes a `negate`
+  parameter and flips a fresh set's own `invert` bit in place instead of the caller calling
+  `complement()` (a copy) afterward. Only the fast path that returns `runUnion` unchanged (e.g.
+  bare `\d` with no other bracket members) still copies via `complement()`, since that object can
+  be a shared `NamedCharClass` constant -- mutating it in place would corrupt every other user of
+  `\d`. `PatternParser#parseComplexCharacterRanges` only pushes `negate` into `mergeRun` when
+  `intersectionSoFar == null` (no `&&` in the class); negation after an intersection still calls
+  `complement()` on the intersection result, since De Morgan's doesn't let it push further down
+  cheaply. Full suite green; new `CodePointSetBuilderTest` cases cover the three `mergeRun` paths,
+  including a shared-runUnion-not-mutated check.

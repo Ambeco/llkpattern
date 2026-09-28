@@ -59,29 +59,44 @@ interface CodePointSetBuilder {
   CodePointSet build();
 
   /**
-   * Combines a run's literal-member builder with its (possibly null) lazily-unioned large sets.
-   * The laziness in {@code runUnion} (see {@code PatternParser#parseComplexCharacterRanges}'s doc
-   * on that field) only exists to avoid copying a large set's entries into the builder *while the
-   * run is still being parsed* -- once the run is finished, the result must be a concrete {@link
-   * ArrayCodePointSet} before it can go anywhere near a compiled matcher (as {@code
-   * ComplexCharacter.ranges}, a chain node's own {@code entrySet}, etc.), since a {@link
-   * UnionCodePointSet}'s {@code contains}/{@code containsAll}/{@code forEachRange} are all
-   * measurably more expensive than {@code ArrayCodePointSet}'s -- see its own class doc. So this
-   * materializes eagerly here, at the one point (a completed run) where the saved copy would
-   * otherwise turn into a permanent cost on the match-time hot path instead of a one-time parse-time
-   * saving.
+   * Combines a run's literal-member builder with its (possibly null) lazily-unioned large sets,
+   * optionally negating the result. The laziness in {@code runUnion} (see {@code
+   * PatternParser#parseComplexCharacterRanges}'s doc on that field) only exists to avoid copying a
+   * large set's entries into the builder *while the run is still being parsed* -- once the run is
+   * finished, the result must be a concrete {@link ArrayCodePointSet} before it can go anywhere
+   * near a compiled matcher (as {@code ComplexCharacter.ranges}, a chain node's own {@code
+   * entrySet}, etc.), since a {@link UnionCodePointSet}'s {@code contains}/{@code containsAll}/
+   * {@code forEachRange} are all measurably more expensive than {@code ArrayCodePointSet}'s -- see
+   * its own class doc. So this materializes eagerly here, at the one point (a completed run) where
+   * the saved copy would otherwise turn into a permanent cost on the match-time hot path instead of
+   * a one-time parse-time saving.
+   *
+   * <p>{@code negate} is applied here, by flipping a fresh set's own {@code invert} bit in place,
+   * rather than by the caller calling {@link CodePointSet#complement()} on this method's return
+   * value -- {@code complement()} always allocates a copy (see {@link ArrayCodePointSet}'s own
+   * doc), which is redundant work whenever this method already built (or is about to build) a set
+   * nothing else holds a reference to yet. The one path where that doesn't hold is where this
+   * method returns {@code runUnion} itself unchanged (no literals to merge it with): that object
+   * may be a shared {@code NamedCharClass} constant (e.g. plain {@code \d} with no other bracket
+   * members), so it's copied via {@code complement()} there instead of mutated. Callers whose
+   * negation cannot be pushed this far down (e.g. it applies only after an enclosing {@code "&&"}
+   * intersection) must pass {@code negate = false} here and negate the eventual result themselves.
    */
-  static CodePointSet mergeRun(CodePointSetBuilder literals, @Nullable CodePointSet runUnion) {
-    CodePointSet literalSet = literals.build();
+  static CodePointSet mergeRun(
+      CodePointSetBuilder literals, @Nullable CodePointSet runUnion, boolean negate) {
     if (runUnion == null) {
-      return literalSet;
+      if (negate) {
+        literals.invert();
+      }
+      return literals.build();
     }
+    CodePointSet literalSet = literals.build();
     // runUnion is a bare escape/nested-class result (already concrete -- see this method's own
     // recursive use) unless this run combined *multiple* large sets (e.g. "[\d\w]"), in which case
     // it's a UnionCodePointSet that must be materialized here too, same as when literalSet is
     // non-empty -- either way, nothing but a concrete ArrayCodePointSet may leave this method.
     if (literalSet.isEmpty() && !(runUnion instanceof UnionCodePointSet)) {
-      return runUnion;
+      return negate ? runUnion.complement() : runUnion;
     }
     // Pre-size when both operands are ArrayCodePointSets so the first addAll's fast-path copy
     // (ArrayCodePointSet#addAll's `size == 0` case) doesn't hand the second addAll a keys array
@@ -98,6 +113,9 @@ interface CodePointSetBuilder {
     MutableCodePointSet result = new ArrayCodePointSet(hint);
     result.addAll(runUnion);
     result.addAll(literalSet);
+    if (negate) {
+      result.invert();
+    }
     return result;
   }
 }

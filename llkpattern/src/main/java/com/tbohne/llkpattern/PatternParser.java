@@ -1191,11 +1191,13 @@ final class PatternParser {
         case ']':
           if (index > firstContentIndex) {
             advance(1); // consume the ']' -- callers expect peek to be past this construct
-            CodePointSet completedRun = CodePointSetBuilder.mergeRun(ranges, runUnion);
-            CodePointSet finalRanges =
-                intersectionSoFar == null
-                    ? completedRun
-                    : intersectionSoFar.intersection(completedRun);
+            if (intersectionSoFar == null) {
+              // negate applies to this run alone, so it can be pushed into mergeRun -- see that
+              // method's own doc for why that avoids an extra complement() copy in the common case.
+              return CodePointSetBuilder.mergeRun(ranges, runUnion, negate);
+            }
+            CodePointSet completedRun = CodePointSetBuilder.mergeRun(ranges, runUnion, false);
+            CodePointSet finalRanges = intersectionSoFar.intersection(completedRun);
             return negate ? finalRanges.complement() : finalRanges;
           } else {
             ranges.add(+']', +']' + 1);
@@ -1239,7 +1241,7 @@ final class PatternParser {
             // valid Java regex syntax, intersecting against the literal run "aeiou", not just
             // [a-z&&[aeiou]].
             advance(2);
-            CodePointSet completedRun = CodePointSetBuilder.mergeRun(ranges, runUnion);
+            CodePointSet completedRun = CodePointSetBuilder.mergeRun(ranges, runUnion, false);
             intersectionSoFar =
                 intersectionSoFar == null
                     ? completedRun

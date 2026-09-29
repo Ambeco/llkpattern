@@ -3639,4 +3639,7 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   `intersectionSoFar == null` (no `&&` in the class); negation after an intersection still calls
   `complement()` on the intersection result, since De Morgan's doesn't let it push further down
   cheaply. Full suite green; new `CodePointSetBuilderTest` cases cover the three `mergeRun` paths,
-  including a shared-runUnion-not-mutated check.
+  including a shared-runUnion-not-mutated check. Desktop JMH A/B: ratio flat within noise, as
+  expected for a change this small a share of `llkCompile`'s total. Pixel 3a run (device plugged in
+  later the same day): compile-time ratio 0.590 (prior 0.589), match-time ratio 0.22 (prior 0.21) --
+  both within this table's usual run-to-run variance.

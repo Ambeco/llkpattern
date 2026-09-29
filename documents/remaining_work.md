@@ -18,12 +18,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       else candidate as the ungated tail, and (as of 2026-09-29) `buildFlattenedChain` checks its
       explicit ranges for disjointness. (4) Reconcile every doc/comment above.
 
-- [ ] **A nullable branch that reaches the end of the pattern still wins by priority, not
-      ambiguity, against a sibling that is not `a*`-like:** `a*|b` on `"b"` gives `"b"` here and
-      `""` in `java.util.regex` (`EndConstruct` is a catch-all, so `a*`'s entry set is `{a}` plus
-      catch-all, and the explicit sibling `b` wins). Probably the same class of problem as above --
-      decide whether to reject (`a*` can also match empty at `b`) or document as intentional.
-
 - [x] ~~A greedy loop's `bodyHead` re-checks an entrySet its own caller may have already
       verified~~ -- implemented 2026-09-24 as `MatcherConstruct.LoopFirstEntryMatcherConstruct`
       (only for the byte-for-byte-identical case: single-alternative body, non-capturing,

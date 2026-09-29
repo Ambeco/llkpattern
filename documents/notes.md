@@ -3783,3 +3783,14 @@ commits input before its runtime check can veto it") only holds when nothing con
 The `checkDisjoint` overlap check had moved out of `mergeEntryPoints` on 2026-09-14, but the
 exclusion comment (2026-09-18) still claimed `mergeEntryPoints` did it. Tests:
 `UnionAssertionAmbiguityTest`. A/B (2 baseline + 2 changed runs): perf-neutral -- compile ratio 2.17x/2.33x changed vs 2.27x/2.44x base, match 1.14x-1.16x vs 1.18x-1.19x, compile B/op ~2,656K vs ~2,651K-2,672K. Pixel 3a single run: compile 31.49 ms (regex 51.90, ratio 0.61; regex's own baseline swung from 62.9), match 4.93 ms (ratio 0.22).
+
+## End-of-find union branches keep their priority position (2026-09-29)
+
+`a*|b` on `"b"`: llk gave `"b"` for find/lookingAt, the JDK `""` (first alternative wins when it can end the
+pattern; matches() agrees at `"b"`). `EndConstruct`'s catch-all is really "end-of-find" -- any position under
+find/lookingAt, end of input under matches() -- but a union pulled every catch-all branch out to the tail. Now an
+end-of-find branch (`PatternConstruct#elseIsEndOfFind`) stays in list order behind `EndOfFindGateMatcherConstruct`.
+Found by a 3-mode differential over nullable-tail patterns (`a?b*c{0,2}` and ~20 others were already clean; the only
+other divergence, `(ab)?`/`(ab)*` on `"a"`, is the documented no-un-consume limit). Not modeled: an end-of-find
+branch that FAILS after being chosen (e.g. an assertion vetoes it) does not fall through to the next sibling.
+Tests: `EndOfFindUnionTest`.

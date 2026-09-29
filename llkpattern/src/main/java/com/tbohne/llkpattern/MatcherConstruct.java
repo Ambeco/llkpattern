@@ -1076,6 +1076,38 @@ abstract class MatcherConstruct {
 	}
 
 	/**
+	 * The gate for a union branch that can END the whole pattern without consuming anything (a
+	 * nullable tail, e.g. {@code a*} at the end of the pattern) -- see {@code
+	 * PatternConstruct#elseIsEndOfFind}. Admits {@code peeked} if it is in {@code explicit} (the
+	 * branch's real first characters), or if end-of-find is satisfied here: any position under
+	 * {@code lookingAt()}/{@code find()} (a match may stop wherever it likes), only end of input under
+	 * {@code matches()} -- the same mode split {@link EndMatcherConstruct} applies. Otherwise defers
+	 * to {@code fallback} (the next sibling), exactly like an {@link #entrySet} miss. So
+	 * {@code a*|b} on {@code "b"} is {@code ""} under {@code find()} and {@code "b"} under {@code
+	 * matches()}, like {@code java.util.regex}. Its own {@code entrySet} is {@code null} (this node
+	 * does the gating in {@link #matchBody}), and the branch behind it is compiled ungated.
+	 */
+	static final class EndOfFindGateMatcherConstruct extends MatcherConstruct {
+		final CodePointSet explicit;
+		final @Nullable MatcherConstruct fallback;
+
+		EndOfFindGateMatcherConstruct(
+				int flags, CodePointSet explicit, MatcherConstruct branch, @Nullable MatcherConstruct fallback) {
+			super(flags, branch);
+			this.explicit = explicit;
+			this.fallback = fallback;
+		}
+
+		@Override
+		boolean matchBody(Matcher matcher, int peeked) {
+			if (peeked == -1 || !matcher.requireFullMatch || explicit.contains(peeked)) {
+				return next.match(matcher, peeked);
+			}
+			return fallback != null && fallback.match(matcher, peeked);
+		}
+	}
+
+	/**
 	 * A loop's own "stop iterating" node -- reached either because the body chain (see {@link
 	 * LoopMatcherConstruct}'s doc) naturally didn't match at all, or because {@link
 	 * LoopMatcherConstruct} forced a stop after {@code max} iterations. Enforces {@code min}

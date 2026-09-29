@@ -164,6 +164,23 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * Only meaningful once {@link #claimsEntryElse} is true: whether that catch-all is "the pattern
+	 * may END here" ({@link EndConstruct}, seen through whatever nullable/zero-width/marker
+	 * constructs sit in front of it) rather than a construct that itself accepts any character (an
+	 * unresolvable backreference). End-of-find is mode-dependent, exactly like {@link
+	 * MatcherConstruct.EndMatcherConstruct}: under {@code lookingAt()}/{@code find()} the match is
+	 * complete as soon as it is reached, whatever code point follows, but under {@code matches()} only
+	 * end of input completes it. That is why an end-of-find branch keeps its natural priority
+	 * position in a union, behind a mode-aware gate (see {@link MatcherConstruct.EndOfFindGateMatcherConstruct}),
+	 * instead of being a lowest-priority tail fallback. Every override mirrors an entry-point
+	 * construct that propagates {@code entryElse} from somewhere else; only called at matcher-build
+	 * time, for a union that actually has a catch-all candidate.
+	 */
+	boolean elseIsEndOfFind() {
+		return false;
+	}
+
+	/**
 	 * Compiles this construct (and, transitively, whatever it depends on) into a MatcherConstruct
 	 * graph, returning the node that represents "start matching this construct here". See
 	 * design.md's "The compile() algorithm and cycle handling" section.
@@ -504,6 +521,11 @@ abstract class PatternConstruct {
 	 * <p>{@code elseCandidate} is the construct {@code elseTarget} was compiled from (or {@code
 	 * null}); only its explicit entry ranges are used, purely for the {@link #checkDisjoint} call.
 	 *
+	 * <p>{@code endOfFindCandidate} (a member of {@code candidates}, or {@code null}) is the one
+	 * candidate whose catch-all is end-of-find; it stays in list order but behind an {@link
+	 * MatcherConstruct.EndOfFindGateMatcherConstruct}. Its explicit ranges are checked with the rest
+	 * (it is in {@code candidates}), so {@code elseCandidate} is {@code null} in that case.
+	 *
 	 * <p>{@code elseTarget} is this chain's final fallback, or {@code null} for none, in which case
 	 * the last candidate is left entirely ungated (no {@code dispatchEntrySet}/{@code
 	 * dispatchFailedEntry} at all) -- its own compiled matcher already re-verifies membership
@@ -521,7 +543,8 @@ abstract class PatternConstruct {
 			String candidateNounPlural,
 			PatternConstruct compileTarget,
 			@Nullable MatcherConstruct elseTarget,
-			@Nullable PatternConstruct elseCandidate) {
+			@Nullable PatternConstruct elseCandidate,
+			@Nullable PatternConstruct endOfFindCandidate) {
 		// elseCandidate (the catch-all branch, compiled separately as elseTarget and so absent from
 		// `candidates`) still has to be ambiguity-checked against the others by its own explicit ranges,
 		// if it has any -- it gets no gate of its own below, so `gates` past `count` is unused.
@@ -531,6 +554,15 @@ abstract class PatternConstruct {
 		for (int i = count - 1; i >= 0; i--) {
 			PatternConstruct candidate = candidates.get(i);
 			boolean lastUngated = (i == count - 1 && elseTarget == null);
+			if (candidate == endOfFindCandidate && !lastUngated) {
+				// Keeps its own list position (JDK alternation order): compiled ungated, behind a gate that
+				// also admits end-of-find -- see elseIsEndOfFind.
+				candidate.dispatchEntrySet = null;
+				candidate.dispatchFailedEntry = null;
+				tail = new MatcherConstruct.EndOfFindGateMatcherConstruct(
+						candidate.flags, gates[i], candidate.compile(compileTarget), tail);
+				continue;
+			}
 			candidate.dispatchEntrySet = lastUngated
 					? null
 					: gates[i];
@@ -574,6 +606,22 @@ abstract class PatternConstruct {
 		/** True for a "plain" {@code {1,1}} construct -- i.e. no real repetition/optionality. */
 		boolean isUnquantified() {
 			return min == 1 && max == 1;
+		}
+
+		/**
+		 * {@link #elseIsEndOfFind} for the quantified case: {@link #buildLoopEntryMap}'s catch-all comes
+		 * from whichever single candidate ({@code body} part, or {@code next} when the loop can be
+		 * skipped) claimed it -- {@link #mergeEntryPoints} rejects two.
+		 */
+		final boolean loopElseIsEndOfFind(List<PatternConstruct> body, PatternConstruct next) {
+			if (max != 0) {
+				for (int i = 0; i < body.size(); i++) {
+					if (body.get(i).claimsEntryElse()) {
+						return body.get(i).elseIsEndOfFind();
+					}
+				}
+			}
+			return (max == 0 || min == 0) && next.claimsEntryElse() && next.elseIsEndOfFind();
 		}
 
 		/**
@@ -958,6 +1006,17 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		boolean elseIsEndOfFind() {
+			if (!isUnquantified()) {
+				return loopElseIsEndOfFind(constructs, next);
+			}
+			if (constructs.isEmpty()) {
+				return next.elseIsEndOfFind();
+			}
+			return rawEntryElse != null && rawEntryElse.elseIsEndOfFind();
+		}
+
+		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
 				buildLoopEntryMap(constructs, next, captureConstructIndex);
@@ -1052,23 +1111,32 @@ abstract class PatternConstruct {
 			// buildFlattenedChain's `elseCandidate` argument (mergeEntryPoints does NOT check overlap), so
 			// nothing goes unvalidated. The tail is only reached once every sibling's gate has missed, so a
 			// sibling can't claim those code points either, and their order relative to siblings is moot.
-			MatcherConstruct elseTarget = rawEntryElse != null ? rawEntryElse.compile(compileTarget) : null;
+			//
+			// EXCEPT an end-of-find catch-all (a branch that can complete the whole pattern without
+			// consuming anything, e.g. `a*` at the end of the pattern): that one is NOT lowest-priority --
+			// `java.util.regex` takes the first alternative that succeeds, and under find()/lookingAt() a
+			// branch that can end here succeeds whatever follows. So it keeps its own list position (in
+			// chainCandidates, behind a mode-aware gate) and there is no tail fallback for it.
+			PatternConstruct endOfFindCandidate =
+					rawEntryElse != null && rawEntryElse.elseIsEndOfFind() ? rawEntryElse : null;
+			PatternConstruct tailElse = endOfFindCandidate != null ? null : rawEntryElse;
+			MatcherConstruct elseTarget = tailElse != null ? tailElse.compile(compileTarget) : null;
 			List<PatternConstruct> chainCandidates;
-			if (rawEntryElse == null) {
+			if (tailElse == null) {
 				chainCandidates = constructs;
 			} else {
 				chainCandidates = new ArrayList<>(constructs.size());
 				for (PatternConstruct c : constructs) {
-					if (c != rawEntryElse) {
+					if (c != tailElse) {
 						chainCandidates.add(c);
 					}
 				}
 			}
 			if (isCapturing()) {
-				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, rawEntryElse);
+				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, tailElse, endOfFindCandidate);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
 			} else {
-				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, rawEntryElse);
+				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, tailElse, endOfFindCandidate);
 			}
 		}
 
@@ -1170,6 +1238,11 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		boolean elseIsEndOfFind() {
+			return realNext.elseIsEndOfFind();
+		}
+
+		@Override
 		boolean needsEntryPointBeforeMatcher() {
 			// buildMatcher() below reads only realNext.matcher -- nothing buildEntryMap() sets.
 			return false;
@@ -1246,6 +1319,11 @@ abstract class PatternConstruct {
 			// entry-point computation still depends on the tail-to-front wiring below having run.
 			wireElementNextPointers();
 			return patterns.get(0).claimsEntryElse();
+		}
+
+		@Override
+		boolean elseIsEndOfFind() {
+			return patterns.get(0).elseIsEndOfFind();
 		}
 
 		@Override
@@ -1576,6 +1654,11 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		boolean elseIsEndOfFind() {
+			return !isUnquantified() && loopElseIsEndOfFind(List.of(delegate), next);
+		}
+
+		@Override
 		void buildEntryMap(PatternConstruct next) {
 			if (!isUnquantified()) {
 				buildLoopEntryMap(List.of(delegate), next, -1);
@@ -1709,6 +1792,11 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		final boolean elseIsEndOfFind() {
+			return next.elseIsEndOfFind();
+		}
+
+		@Override
 		final boolean needsEntryPointBeforeMatcher() {
 			// buildMatcher() never reads this construct's own entryMap/entryElse (see buildZeroWidthEntryMap).
 			return false;
@@ -1788,6 +1876,11 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			buildZeroWidthEntryMap(this, next);
+		}
+
+		@Override
+		boolean elseIsEndOfFind() {
+			return next.elseIsEndOfFind();
 		}
 
 		@Override
@@ -2307,6 +2400,11 @@ abstract class PatternConstruct {
 			// Matcher#requireFullMatch says to -- see its doc.
 			entryElse = this;
 			new EndMatcherConstruct(this);
+		}
+
+		@Override
+		boolean elseIsEndOfFind() {
+			return true;
 		}
 
 		@Override

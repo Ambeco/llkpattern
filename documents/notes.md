@@ -3767,3 +3767,6 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   own `foldedEntrySet` call, previously skipped for `firstCharSet()`/`lastCharSet()`), so the corpus
   (mostly case-sensitive patterns) shouldn't move measurably -- see the ratio/B-op numbers in this
   same session's benchmark run below.
+- Pixel 3a run (device connected the next day, 2026-09-29): compile-time ratio 0.497 (prior 0.543),
+  match-time ratio 0.203 (prior 0.212) -- both single runs, within this table's usual run-to-run
+  variance, consistent with the fix being perf-neutral as expected.

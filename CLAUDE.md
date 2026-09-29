@@ -22,6 +22,11 @@ performance, once the test suite is green:
    isn't there (or is there but locked, so the test run would just fail/hang), skip that step and
    don't block the rest of the work on it -- but once everything else is done, remind the user to
    plug in and unlock the Pixel 3a so this step can be run.
+4. Re-run `./gradlew :llkpattern:jmhAllocSampling` too, updating `benchmarks/Intel-i7-9750H_*_alloc_sampling.txt`
+   -- every file under `benchmarks/` should come out of this checklist refreshed together, not just
+   whichever ones an earlier, narrower version of this checklist happened to name. Before committing,
+   `git status --short benchmarks/` and make sure nothing in that directory is left stale relative to
+   the others (compare each file's last-commit date, e.g. `git log -1 --format=%cd -- <file>`, if unsure).
 
 **Sequencing the benchmark runs with other sessions.** The Intel JMH run needs the desktop CPU
 quiet. If another Claude session is active (`ListAgents`), do this in order: (1) `SendMessage` it

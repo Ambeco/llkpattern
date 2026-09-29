@@ -1379,12 +1379,25 @@ abstract class PatternConstruct {
 				return null;
 			}
 			int cp = Character.codePointBefore(value, value.length());
-			return singletonCodePointMap(cp);
+			// Folded by this literal's OWN flags, same as buildEntryMap()'s entryMap -- a bare literal
+			// (unlike a bracket-class member) isn't folded at parse time, so the raw written code point
+			// alone would under-report what this literal could actually have matched under its own
+			// CASE_INSENSITIVE. Every other firstCharSet()/lastCharSet() override already returns an
+			// already-folded set (ComplexCharacter's ranges are folded at parse time; a nested class's
+			// or named class's isn't foldable at all under java.util.regex's own rules) -- this brings
+			// LiteralString in line with that contract instead of being the one exception. See
+			// BackReference.buildEntryMap's own doc for why this matters beyond \b/\B classification:
+			// entrySet built from an under-reported firstCharSet() is a real match-time dispatch gate,
+			// not just a compile-time approximation.
+			return MatcherConstruct.foldedEntrySet(singletonCodePointMap(cp), flags);
 		}
 
 		@Override
 		final @Nullable CodePointSet firstCharSet() {
-			return value.length() == 0 ? null : singletonCodePointMap(Character.codePointAt(value, 0));
+			if (value.length() == 0) {
+				return null;
+			}
+			return MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags);
 		}
 
 		@Override
@@ -1431,8 +1444,14 @@ abstract class PatternConstruct {
 			// Aliased directly -- firstCharSet() already returns a plain CodePointSet (often itself an
 			// alias, e.g. straight through to a ComplexCharacter's own validRanges()), so there's no
 			// identity to lose by sharing it instead of copying its entries.
-			// The backreference itself compares case-insensitively (codePointsMatch), whatever the
-			// referenced group's own flags were.
+			// Two layers of folding, not one: `firstChars` is already folded by the referenced group's
+			// OWN flags (e.g. under "(?i)(a)", the group could have literally captured 'A', not just
+			// 'a' -- see LiteralString#firstCharSet's own doc), since that's what the group's content
+			// could actually have consumed at match time, independent of what follows it. This
+			// method's own `foldedEntrySet` call then folds THAT by the backreference's own flags,
+			// since the backreference itself compares case-insensitively (codePointsMatch) according
+			// to ITS OWN flags, whatever the referenced group's own flags were -- e.g. "(?-i)(a)(?i)\1"
+			// must accept 'A' too, even though the group itself never could have captured it.
 			entryMap = MatcherConstruct.foldedEntrySet(firstChars, flags);
 		}
 

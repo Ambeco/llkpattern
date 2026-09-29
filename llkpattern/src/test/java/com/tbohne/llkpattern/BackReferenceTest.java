@@ -193,4 +193,93 @@ public class BackReferenceTest {
     assertBothMatch(TEN_GROUPS + "\\11", "abcdefghija1", true);
     assertBothMatch("(a)\\10", "aa0", true);
   }
+
+  // --- \1's entry set folded by the referenced group's OWN case-folding, not just \1's own
+  // (2026-09-29 fix): a bare literal's firstCharSet()/lastCharSet() (LiteralString, unlike a
+  // bracket-class member) wasn't folded at parse time -- \1's compile-time entry set was
+  // under-reporting what the group could actually have captured, a real match-time dispatch-gate
+  // bug (not just an approximation), confirmed via a differential test before the fix (see notes.md).
+
+  @Test
+  public void backReference_entrySetFoldsByReferencedGroupsOwnFlags_matches() {
+    assertBothMatch("(?i)(a)(?-i)\\1", "AA", true);
+  }
+
+  @Test
+  public void backReference_entrySetFoldsByReferencedGroupsOwnFlags_multiCharLiteral() {
+    assertBothMatch("(?i)(ab)(?-i)\\1", "ABAB", true);
+  }
+
+  @Test
+  public void backReference_entrySetFoldsByReferencedGroupsOwnFlags_reverseDirection() {
+    // The referenced group is case-SENSITIVE (only ever captures literal 'a'), but \1 itself is
+    // case-insensitive -- this direction was already correct before the fix (foldedEntrySet's own
+    // fold, applied to the unfolded 'a', already covers it), included here as the complementary case.
+    assertBothMatch("(?-i)(a)(?i)\\1", "aA", true);
+  }
+
+  @Test
+  public void backReference_entrySetFoldsByReferencedGroupsOwnFlags_disambiguatesUnionDispatch() {
+    // The real bug: (?i)(a) can capture "A"; \1 is case-sensitive, so its entry set MUST include
+    // 'A' (what the group could actually have captured), not just the literal 'a' written in the
+    // pattern -- otherwise a sibling branch starting with 'A' wrongly looks disjoint from \1, and
+    // the compiled dispatch gate rejects a real 'A' before ever trying \1's own comparison. Confirmed
+    // this specific pattern/input diverged (jdk=true, llk=false) before the fix.
+    String pattern = "(?i)(a)(?-i)(?:\\1|b)";
+    assertBothMatch(pattern, "AA", true);
+    assertBothMatch(pattern, "Ab", true);
+    assertBothMatch(pattern, "Ac", false);
+    // find()/hitEnd, not just matches() -- the dispatch gate this fix touches also drives find()'s
+    // per-position lookingAt() attempts.
+    Ll1Pattern llk = Ll1Pattern.compile(pattern);
+    java.util.regex.Pattern jdk = java.util.regex.Pattern.compile(pattern);
+    Matcher lm = llk.matcher("xAAx");
+    java.util.regex.Matcher jm = jdk.matcher("xAAx");
+    assertThat(lm.find(), is(jm.find()));
+    assertThat(lm.start(), is(jm.start()));
+    assertThat(lm.end(), is(jm.end()));
+    assertThat(lm.hitEnd(), is(jm.hitEnd()));
+  }
+
+  @Test
+  public void backReferenceAndLiteral_nowAmbiguous_afterEntrySetFoldFix() {
+    // (?i)(a)(?-i)(?:\1|A): before the fix, \1's under-reported entry set ({a} only) looked
+    // disjoint from the literal "A" branch, so this compiled -- but both branches can actually
+    // match the same 'A' (per the previous test), so it's a genuine LL(1) ambiguity, correctly
+    // rejected now. java.util.regex accepts it (real backtracking, not LL(1)) -- this is one of
+    // this engine's known, intentional differences, not a divergence to fix.
+    try {
+      Ll1Pattern.compile("(?i)(a)(?-i)(?:\\1|A)");
+      fail("expected PatternSyntaxException for a now-ambiguous backreference/literal sibling");
+    } catch (PatternSyntaxException expected) {
+      // expected
+    }
+  }
+
+  // --- lastCharSet()'s own fold (Sequence's \b/\B prior-character classification, and a loop's own
+  // continue-vs-exit ambiguity check via unionLastCharSet) -- same underlying LiteralString fix.
+
+  @Test
+  public void wordBoundary_afterCaseInsensitiveLiteral_kelvinSignFold_matchesJdk() {
+    // Before the fix, \b's compile-time elision assumed the preceding character could only ever be
+    // literal 'k' (a word character), so it statically concluded \b here "can never match" and
+    // rejected the pattern outright -- wrong, since under (?iu) the actual captured/consumed
+    // character could also be U+212A (Kelvin sign), which this engine's own \w does NOT classify
+    // as a word character, so \b CAN hold there. Confirmed this pattern was wrongly rejected before
+    // the fix (see notes.md).
+    assertBothMatch("(?iu)k\\bx", "Kx", true);
+  }
+
+  @Test
+  public void wordBoundary_afterCaseInsensitiveLiteral_longSFold_matchesJdk() {
+    assertBothMatch("(?iu)s\\bx", "ſx", true);
+  }
+
+  @Test
+  public void wordBoundary_afterLoopOfCaseInsensitiveLiterals_asciiFold_matchesJdk() {
+    // ASCII-only fold (plain (?i), not (?iu)): stays entirely within \w, so no change in behavior
+    // from the fix -- included as a companion case to the Kelvin/long-s ones above, exercising
+    // unionLastCharSet's loop-tail path rather than Sequence's direct prior-character path.
+    assertBothMatch("(?i)(?:k)+\\b ", "kK ", true);
+  }
 }

@@ -3715,3 +3715,55 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
 - Pixel 3a run (device plugged in later the same day, after the desktop fix landed): compile-time
   ratio 0.543 (prior 0.590), match-time ratio 0.212 (prior 0.224) -- both single runs, within this
   table's usual run-to-run variance rather than confirmed trends; not re-A/B'd on-device.
+
+### `LiteralString#firstCharSet`/`lastCharSet` weren't folded -- a real backreference dispatch-gate bug (2026-09-29)
+
+- Asked to look at remaining_work.md's "`BackReference` aliasing its referenced group's own entry
+  point directly" item (a proposed perf tweak: use `referencedGroup.getEntryPointMap()`, cached,
+  instead of the uncached `firstCharSet()` walk). Investigated and confirmed unsafe, per that item's
+  own caution: for a nullable referenced group like `(a?)`, `getEntryPointMap()` doesn't return
+  `null` the way `firstCharSet()` does -- it folds in `next` (`buildLoopEntryMap`'s `min == 0` case),
+  and for `(a?)\1` specifically, `next` chains back to the very `BackReference` doing the asking,
+  throwing `EntryPointCycleException`. No cheaper "is this safe" check exists than calling
+  `firstCharSet()` itself, so there was no walk left to save -- removed the item (no notes.md
+  "reverted experiment" entry needed, since nothing was ever landed).
+- While tracing exactly why `getEntryPointMap()`/`firstCharSet()` diverge, found a real, independent
+  bug instead: `LiteralString#firstCharSet()`/`#lastCharSet()` returned the RAW, unfolded written
+  code point (`singletonCodePointMap(cp)`), unlike `ComplexCharacter`'s (whose ranges are folded at
+  parse time) or `LiteralString`'s own `entryMap` (folded lazily via `MatcherConstruct#foldedEntrySet`
+  in `buildEntryMap`). `BackReference.buildEntryMap` uses `firstCharSet()` to build `\1`'s own entry
+  set, and that entry set is a REAL match-time dispatch gate (`MatcherConstruct#foldedEntrySet`'s own
+  doc: "this is what lets a chain-candidate node's entrySet be checked with a plain, unfolded
+  containsEntry at match time"), not just a compile-time approximation -- so an under-folded entry
+  set caused real wrong-match-result bugs, confirmed via a differential test before fixing:
+  `(?i)(a)(?-i)(?:\1|b)` against `"AA"` gave `jdk=true, llk=false` (group captured "A" under `(?i)`;
+  `\1`'s entry set was `{a}` only, missing `A`, so the union dispatch rejected the second "A" before
+  ever trying `\1`'s real comparison).
+- Fix: `LiteralString#firstCharSet`/`#lastCharSet` now fold their singleton the same way
+  `buildEntryMap` does (`MatcherConstruct.foldedEntrySet(singletonCodePointMap(cp), flags)`). Verified
+  the discriminating test fails on old code, passes on new (`git stash push -- llkpattern/src/main`).
+  `BackReference.buildEntryMap`'s own fold (`foldedEntrySet(firstChars, flags)`, `flags` = the
+  backreference's OWN flags) now composes correctly on top: two layers, referenced-group's own fold
+  first, backreference's own fold second -- e.g. `(?-i)(a)(?i)\1` on `"aA"` needs the second layer
+  even though the group itself never folds.
+- Side effect, expected and correct: `(?i)(a)(?-i)(?:\1|A)` is now a compile-time ambiguity error
+  (both branches can match the real second `'A'`) where it used to silently compile with the wrong
+  (too-narrow) dispatch. `java.util.regex` accepts it via real backtracking -- an intentional
+  difference (LL(1) restriction), not a divergence to chase.
+- `lastCharSet()`'s fold also fixed a SEPARATE, independently-confirmed bug: `\b`/`\B`'s compile-time
+  elision (`WordBoundaryConstruct`, `Sequence.buildEntryMap`'s `priorCharSet`) used the same raw
+  singleton, so `(?iu)k\bx` was wrongly rejected at compile time as "can never match" -- wrong,
+  since the actually-consumed character under `(?iu)` could be U+212A (Kelvin sign), which this
+  engine's own `\w` does NOT classify as a word character, so `\b` genuinely can hold there.
+  Confirmed via differential test (`(?iu)k\bx` vs `"Kx"`: old code threw at compile time, jdk
+  matches; new code matches too). Same for U+017F (long s) against `s`. An ASCII-only
+  (non-`(?iu)`) loop-tail variant (`unionLastCharSet`'s own path, via `(?:k)+\b`) was checked and
+  found non-discriminating (ASCII-fold members share word-ness with the original, so no behavior
+  change there) -- included as a companion test anyway for coverage of that code path.
+- Both hand-check regressions (`((a?b)c)?` vs `""`, `(a+b)+` vs `"ababab"` -> `group(1)=="ab"`)
+  re-verified; full suite green. New tests folded into `BackReferenceTest.java` (permanent home,
+  not a throwaway class) -- see that file's own comments for the full case list.
+- Desktop JMH: the new allocation only fires under `CASE_INSENSITIVE`/`UNICODE_CASE` (a literal's
+  own `foldedEntrySet` call, previously skipped for `firstCharSet()`/`lastCharSet()`), so the corpus
+  (mostly case-sensitive patterns) shouldn't move measurably -- see the ratio/B-op numbers in this
+  same session's benchmark run below.

@@ -130,16 +130,6 @@ before.
       (a third sibling to `firstCharSet()`/`lastCharSet()`). A parse-time version would only improve the
       diagnostic (an earlier, more specific message), not correctness, since the guard already catches every case
       (`NestedQuantifierCombinatorialTest`).
-- [ ] **Bracket-embedded named classes still merge, unlike a standalone escape.** Now that
-      `ComplexCharacter.ranges` is immutable and `PatternParser#parseComplexEscape` is a pure
-      function, a standalone escape atom (a bare `\D`/`\p{...}` in running pattern text) assigns
-      the resulting `CodePointMap` straight into `ComplexCharacter.ranges` with no copy at all. A
-      named class used *inside* a bracket expression (e.g. `[\d\s]`, `[a\D]`) still goes through
-      `ranges.putAll(...)` (now `ArrayCodePointMap#putAll(ArrayCodePointMap)`'s optimized overload,
-      not a per-entry merge -- see that method's own doc), which is a real sorted-sweep merge, not
-      an alias. Worth revisiting if profiling shows it matters: e.g. special-casing "the bracket's
-      `ranges` local is still empty" to alias instead of merge, same trick the standalone-escape
-      site already uses.
 - [ ] **`CodePointMap#forEachRange` isn't used everywhere `entrySet()` still is.** It visits ranges
       as primitive `int`/`value` triples with no `Range`/`Entry`/`Iterator` allocated per range (for
       `ArrayCodePointMap`'s common `elseValue == null` case -- see its own doc). `PatternParser`'s
@@ -260,7 +250,6 @@ to keep it "vaguely reasonable" and the jar/dex small.
 
 ## `firstCharSet`/`lastCharSet` follow-ups
 
-- [ ] **`BackReference` aliasing its referenced group's own entry point directly**, instead of going through the separate `firstCharSet`/`lastCharSet` static-walk helpers -- proposed this session, NOT done: `firstCharSet(referencedGroup)` and `referencedGroup.getEntryPointMap()` diverge for a nullable referenced group (the latter folds in `next`'s entries via `buildLoopEntryMap`'s `min == 0` case, and can throw `EntryPointCycleException` on a pattern that compiles fine today), so this needs verifying against `(a?)\1` and `(a|b)?\1` before landing, not just assumed safe.
 - [ ] `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`, and stale-named -- it's a `CodePointSet` now, not a `CodePointMap`) and the `QuantifiedUnion`-branch-union temporary sets inside those two methods are still real, un-eliminated small allocations -- left alone this session per the item above (converting `lastCharSet`'s callers to a push model isn't viable; `firstCharSet`'s one call site might be, see above, but wasn't converted). Worth renaming `singletonCodePointMap` to `singletonCodePointSet` while touching this.
 
 ## Remaining desktop-allocation-sampling leaders

@@ -231,8 +231,8 @@ public class LineAndInputBoundaryTest {
   @Test
   public void boundaryInOrdinaryAlternation_stillCompilesAndMatches() {
     // A zero-width assertion as a plain union branch (not a loop's own tail) never commits any
-    // input before its own runtime check can veto it, so it's fine as a low-priority catch-all
-    // there -- only a loop's own ambiguity check needs the stricter treatment above.
+    // input before its own runtime check can veto it, so it's fine whenever its branch's real first set is disjoint
+    // from its siblings' (see UnionAssertionAmbiguityTest) -- only a loop's own ambiguity check needs the stricter treatment above.
     assertThat(Ll1Pattern.compile("(^a|b)c").matcher("bc").matches(), is(true));
     assertThat(Ll1Pattern.compile("(^a|b)c").matcher("ac").matches(), is(true));
   }

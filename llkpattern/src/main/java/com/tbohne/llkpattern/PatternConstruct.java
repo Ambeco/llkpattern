@@ -501,6 +501,9 @@ abstract class PatternConstruct {
 	 * so there was no longer any conflict-check-only allocation left to eliminate. See notes.md's
 	 * 2026-09-18 "entry-set-conflict-detection-without-allocation" entry.
 	 *
+	 * <p>{@code elseCandidate} is the construct {@code elseTarget} was compiled from (or {@code
+	 * null}); only its explicit entry ranges are used, purely for the {@link #checkDisjoint} call.
+	 *
 	 * <p>{@code elseTarget} is this chain's final fallback, or {@code null} for none, in which case
 	 * the last candidate is left entirely ungated (no {@code dispatchEntrySet}/{@code
 	 * dispatchFailedEntry} at all) -- its own compiled matcher already re-verifies membership
@@ -517,8 +520,12 @@ abstract class PatternConstruct {
 			List<PatternConstruct> candidates,
 			String candidateNounPlural,
 			PatternConstruct compileTarget,
-			@Nullable MatcherConstruct elseTarget) {
-		CodePointSet[] gates = checkDisjoint(pattern, flags, candidates, null, candidateNounPlural);
+			@Nullable MatcherConstruct elseTarget,
+			@Nullable PatternConstruct elseCandidate) {
+		// elseCandidate (the catch-all branch, compiled separately as elseTarget and so absent from
+		// `candidates`) still has to be ambiguity-checked against the others by its own explicit ranges,
+		// if it has any -- it gets no gate of its own below, so `gates` past `count` is unused.
+		CodePointSet[] gates = checkDisjoint(pattern, flags, candidates, elseCandidate, candidateNounPlural);
 		int count = candidates.size();
 		MatcherConstruct tail = elseTarget;
 		for (int i = count - 1; i >= 0; i--) {
@@ -1040,10 +1047,11 @@ abstract class PatternConstruct {
 			// flattened design bakes gating into the candidate's own single compiled node, so the same
 			// node can't simultaneously be "gated at its natural position" and "the ungated final
 			// fallback". Dropping it from the ordinary list is only a behavior change when rawEntryElse
-			// ALSO claims real (non-empty) explicit ranges of its own -- rare in practice (its own explicit
-			// ranges, if any, were already required to be disjoint from every sibling's by buildEntryMap's
-			// own mergeEntryPoints call, so nothing here goes unvalidated) and not exercised by this
-			// project's own test suite; flagged in remaining_work.md if it ever needs revisiting.
+			// ALSO claims real (non-empty) explicit ranges of its own (e.g. a nullable branch reaching the end of
+			// the pattern) -- those ranges are still checked for disjointness against every sibling's, by
+			// buildFlattenedChain's `elseCandidate` argument (mergeEntryPoints does NOT check overlap), so
+			// nothing goes unvalidated. The tail is only reached once every sibling's gate has missed, so a
+			// sibling can't claim those code points either, and their order relative to siblings is moot.
 			MatcherConstruct elseTarget = rawEntryElse != null ? rawEntryElse.compile(compileTarget) : null;
 			List<PatternConstruct> chainCandidates;
 			if (rawEntryElse == null) {
@@ -1057,10 +1065,10 @@ abstract class PatternConstruct {
 				}
 			}
 			if (isCapturing()) {
-				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
+				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, rawEntryElse);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
 			} else {
-				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget);
+				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, rawEntryElse);
 			}
 		}
 
@@ -1658,6 +1666,21 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * Entry point of a zero-width assertion ({@code \b}, {@code ^}, a lookbehind, ...): whatever can
+	 * start what FOLLOWS it, since the assertion consumes nothing itself, so a union branch or loop
+	 * part opening with one is ambiguity-checked against its siblings by the code points it can
+	 * really start with (e.g. {@code \b[ab]c} starts with {@code a} or {@code b}), exactly like any
+	 * other branch. The assertion only ever NARROWS when that branch can succeed at match time, so
+	 * {@code next}'s own entry set is a sound (if not tight) gate. Catch-all ({@code entryElse}) is
+	 * inherited from {@code next} only when {@code next} itself claims it (e.g. the end of the
+	 * pattern), re-keyed onto {@code owner} like every other pass-through construct.
+	 */
+	static void buildZeroWidthEntryMap(PatternConstruct owner, PatternConstruct next) {
+		owner.entryMap = next.getEntryPointMap();
+		owner.entryElse = next.getEntryElse() != null ? owner : null;
+	}
+
+	/**
 	 * Shared base for the zero-width assertion construct types whose {@code skipZeroWidthEntrySet}
 	 * override has the exact same shape -- fold in whatever {@link #admittedInteriorExitPeekSet}
 	 * says a loop's interior exit through this assertion should treat as ambiguous, on top of
@@ -1678,6 +1701,17 @@ abstract class PatternConstruct {
 	static abstract class ZeroWidthAssertionConstruct extends PatternConstruct {
 		ZeroWidthAssertionConstruct(int startIndex, int endIndex) {
 			super(startIndex, endIndex);
+		}
+
+		@Override
+		final void buildEntryMap(PatternConstruct next) {
+			buildZeroWidthEntryMap(this, next);
+		}
+
+		@Override
+		final boolean needsEntryPointBeforeMatcher() {
+			// buildMatcher() never reads this construct's own entryMap/entryElse (see buildZeroWidthEntryMap).
+			return false;
 		}
 
 		@Override
@@ -1711,11 +1745,6 @@ abstract class PatternConstruct {
 	static final class GraphemeBoundaryConstruct extends ZeroWidthAssertionConstruct {
 		GraphemeBoundaryConstruct(int startIndex, int endIndex) {
 			super(startIndex, endIndex);
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			entryElse = this;
 		}
 
 		@Override
@@ -1758,7 +1787,12 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			entryElse = this;
+			buildZeroWidthEntryMap(this, next);
+		}
+
+		@Override
+		boolean needsEntryPointBeforeMatcher() {
+			return false;
 		}
 
 		@Override
@@ -1786,11 +1820,6 @@ abstract class PatternConstruct {
 		LineBoundaryConstruct(int startIndex, int endIndex, boolean isLineBegin) {
 			super(startIndex, endIndex);
 			this.isLineBegin = isLineBegin;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			entryElse = this;
 		}
 
 		@Override
@@ -1866,11 +1895,6 @@ abstract class PatternConstruct {
 			super(startIndex, endIndex);
 			this.pattern = pattern;
 			this.isWordBoundary = isWordBoundary;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			entryElse = this;
 		}
 
 		private enum Wordness {
@@ -2029,11 +2053,6 @@ abstract class PatternConstruct {
 		}
 
 		@Override
-		void buildEntryMap(PatternConstruct next) {
-			entryElse = this;
-		}
-
-		@Override
 		void buildMatcher() {
 			// Always a real check -- unlike \b/\B, there's no "peek" side to statically classify
 			// away: the previous character is never known at compile time, so this never collapses
@@ -2181,8 +2200,8 @@ abstract class PatternConstruct {
 	 * is "could exiting the loop, possibly through one or more zero-width assertions, eventually
 	 * require the SAME code point some body part would also accept," not "what does the very next
 	 * AST node, in isolation, claim." An ordinary union's own dispatch never commits anything before
-	 * a zero-width assertion's own runtime check can veto it, so treating such an assertion as a
-	 * low-priority catch-all (its ordinary {@code entryElse = this}, no explicit ranges) is fine
+	 * a zero-width assertion's own runtime check can veto it, so gating on the assertion's ordinary
+	 * see-through entry point ({@link #buildZeroWidthEntryMap}) is fine
 	 * there -- see design.md's "Boundary matching" section -- but a loop can't afford that same
 	 * latitude, since it has nowhere to backtrack to once it's consumed a character (see
 	 * remaining_work.md's now-fixed "loop followed by a zero-width assertion" entry, e.g. {@code

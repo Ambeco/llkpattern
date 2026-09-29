@@ -211,7 +211,7 @@ instead of retyping the text.
 A new zero-width `PatternConstruct`/`MatcherConstruct` pair needs wiring into four places, not just
 its own `buildEntryMap`/`buildMatcher`:
 
-1. `buildEntryMap`: `entryElse = this` (the ordinary catch-all -- safe for plain union dispatch).
+1. `buildEntryMap`: extend `ZeroWidthAssertionConstruct` (or call `buildZeroWidthEntryMap(this, next)`), so the entry point is what can start what FOLLOWS the assertion. Never a bare `entryElse = this` catch-all: it hid `\b[ab]c|a`-style overlaps from the ambiguity check.
 2. `PatternConstruct#skipZeroWidthEntrySet`'s `checkAssertions` branch, via an
    `admittedInteriorExitPeekSet` static helper -- without this, a loop whose exit passes through
    the new construct can silently compile an unsound ambiguity (see design.md's "Boundary matching"

@@ -3770,3 +3770,16 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
 - Pixel 3a run (device connected the next day, 2026-09-29): compile-time ratio 0.497 (prior 0.543),
   match-time ratio 0.203 (prior 0.212) -- both single runs, within this table's usual run-to-run
   variance, consistent with the fix being perf-neutral as expected.
+
+## Union assertion ambiguity: assertions report what follows them (2026-09-29)
+
+`\b`/`^`/`$`/lookbehind/`\b{g}` used to report `entryElse = this` (bare catch-all, no ranges), and a
+catch-all union branch was compiled as the ungated tail and left out of `checkDisjoint`, so
+`a*\b-|a`, `a?\b-|a`, `\b[ab]c|a`, `\ba|a` compiled and the sibling silently won (`a*\b-|a` on
+`"a-"`: `"a"`, JDK `"a-"`). Fixed two ways: every zero-width assertion's entry point is now `next`'s
+(`buildZeroWidthEntryMap`), and `buildFlattenedChain` gets the else candidate purely for the
+`checkDisjoint` call (also newly rejects `a*|a`, `a?|a`). The old rationale ("an assertion never
+commits input before its runtime check can veto it") only holds when nothing consuming follows it.
+The `checkDisjoint` overlap check had moved out of `mergeEntryPoints` on 2026-09-14, but the
+exclusion comment (2026-09-18) still claimed `mergeEntryPoints` did it. Tests:
+`UnionAssertionAmbiguityTest`. A/B (2 baseline + 2 changed runs): perf-neutral -- compile ratio 2.17x/2.33x changed vs 2.27x/2.44x base, match 1.14x-1.16x vs 1.18x-1.19x, compile B/op ~2,656K vs ~2,651K-2,672K. Pixel 3a single run: compile 31.49 ms (regex 51.90, ratio 0.61; regex's own baseline swung from 62.9), match 4.93 ms (ratio 0.22).

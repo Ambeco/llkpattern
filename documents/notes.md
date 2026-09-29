@@ -3643,3 +3643,75 @@ anyway: independent of the (absent) performance effect, it's a real, unambiguous
   expected for a change this small a share of `llkCompile`'s total. Pixel 3a run (device plugged in
   later the same day): compile-time ratio 0.590 (prior 0.589), match-time ratio 0.22 (prior 0.21) --
   both within this table's usual run-to-run variance.
+
+### `MutableCodePointSet#add` renamed to `#set`; `CodePointSetBuilder#add` unchanged (2026-09-28)
+
+- Project owner's naming rule: `add` is for methods that append unsorted to the end (`CodePointSetBuilder#add`,
+  `CodePointSetBuilderImpl`'s own override), `set` is for methods that binary-search-insert (`ArrayCodePointSet`'s
+  real implementation, via `MutableCodePointSet`). Renamed `MutableCodePointSet.add`/`ArrayCodePointSet.add` (the
+  binary-search-insert-with-shift one) to `set` throughout -- `CodePointSet.java`, `ArrayCodePointSet.java`
+  (including doc comments and `addWindowStart`'s own comment), `PatternConstruct.java`'s several
+  `MutableCodePointSet` literal-building sites, `NamedCharClass.java`'s ~89 `m.set(...)` calls (mechanical
+  sed, verified every occurrence's receiver was `MutableCodePointSet` first), and three test files
+  (`ArrayCodePointSetTest`, `CodePointSetBuilderTest`, `UnionCodePointSetTest`). `CaseFolding.java`,
+  `CanonicalEquivalence.java`, and `PatternParser.java`'s bracket-parsing `ranges.add(...)` calls were
+  NOT touched -- their receivers are `CodePointSetBuilder` (stays `add`) or unrelated `java.util`/Guava
+  collections, checked individually before any mechanical replace. Historical `notes.md` entries predating
+  this rename keep saying `ArrayCodePointSet#add` -- left as-is, since they describe what the method was
+  called at the time, not the current API.
+- `CodePointSetBuilderImpl` (nested in `ArrayCodePointSet.java`) now also overrides `set(int, int)`,
+  forwarding to its own `add`, purely as a safety net: `ArrayCodePointSet#addAll`'s per-range fallback
+  calls `this::set` polymorphically, and without this override a still-accumulating builder reached
+  through that fallback would silently corrupt itself via the inherited sorted-insert `set` instead of
+  its own unsorted-append `add`. Caught by a dedicated test
+  (`builder_addThenAddAll_staysCorrect_despiteUnsortedKeysMidBuild`) -- confirmed it discriminates by
+  temporarily changing `addAll`'s builder-exclusion check to `true` and re-running just that test (FAILED,
+  `contains('a')` came back false -- an unsorted 'a' entry got silently absorbed into a later, larger
+  run during the buggy sweep), then reverting.
+- Full suite green after the rename; no behavior change intended or observed.
+
+### `ArrayCodePointSet#addAll`'s general path given a one-pass in-place merge (2026-09-28)
+
+- Landed the `addAll` item flagged 2026-09-27/28 (remaining_work.md): when merging into an already
+  non-empty target that already has room for both operands combined (`keys.length >= size + o.size`
+  -- the shape `PatternConstruct#mergeEntryPoints`/`#unionLastCharSet`'s own capacity hint and
+  `CodePointSetBuilder#mergeRun`'s two-step combine all produce), `addAll` now shifts its own entries
+  to the tail of `keys` and sweep-merges forward from that shifted copy and `o.keys` into `keys[0..]`
+  in one pass (`mergeInPlace`), coalescing runs and re-chunking exactly like
+  `CodePointSetBuilderImpl#build`'s own in-place compaction. Replaces the old unconditional
+  per-source-range `add()` (now `set()`) call for this shape, which was a binary-search-insert-with-shift
+  per range. Excluded whenever `this` is a still-accumulating `CodePointSetBuilderImpl` (unsorted
+  `keys` mid-build -- see the rename entry above) or either side is inverted (unchanged, falls to the
+  old per-range fallback).
+- **First attempt (reverted): fell back to the existing `sweepUnion` helper (already used by
+  `union()`/`intersection()`) when the target lacked room, instead of the old per-range fallback.**
+  Reasoned (wrongly) that this could only be "no worse than the growth an unsized target would need
+  anyway." Measured via JMH A/B (two baseline runs at 2,678,113/2,678,340 B/op for `llkCompile`,
+  agreeing tightly; one changed run at 2,702,507 B/op): a real, reproducible ~0.9% desktop
+  compile-time allocation REGRESSION, not the intended reduction. Root cause (confirmed by an
+  advisor review before further measurement): `sweepUnion` always allocates a throwaway wrapper
+  `ArrayCodePointSet` plus a fresh array sized to the pessimistic `size + o.size` bound, whereas the
+  old per-range `set()` fallback allocated nothing at all whenever an incoming range merely
+  touched/overlapped an existing entry (`addRange`'s `delta <= 0` case) or prior 1.5x growth had
+  already left slack -- both common for the corpus's typically-small bracket-expression merges and
+  for `union()`'s own unsized `addAll` call. Fixed by dropping the `sweepUnion` fallback entirely:
+  `mergeInPlace` now runs only when there's already room, otherwise `addAll` falls through to the
+  unchanged old per-range path.
+- **After the fix**, re-measured (three runs, JAVA_HOME=jdk-17): `llkCompile` B/op = 2,654,831 /
+  2,670,782 / 2,656,927 -- noisier than most of this project's other allocation deltas (the fix
+  doesn't make B/op perfectly deterministic the way earlier `mergeRun`-shaped changes did), but all
+  three land below the ~2,678,200 baseline, a real if small (~0.6-0.9%) reduction each time. Compile-time
+  ratio itself stayed within run-to-run noise across all runs (~2.20-2.36x), as expected for a change
+  this small a share of `llkCompile`'s ~2.65 MB/op total.
+- New `ArrayCodePointSetTest` cases: `addAll_preSizedTarget_mergesInPlace_touchingRunsAcrossChunkBoundary`
+  (two >2048-wide operands touching exactly at the boundary -- the shape `sweepUnion`'s own doc warns
+  needs coalescing before any chunk-write, mirrored by `mergeInPlace`), a matching insufficient-capacity
+  variant proving both code paths agree, a `mergeEntryPoints`-shaped sequential-addAll test, and a
+  500-trial fuzz test (`addAll_matchesPerRangeSetFormula_fuzzed`) comparing `addAll` (both the
+  pre-sized and unsized cases) against an independent per-range `#set` formula.
+- Hand-checked both of this project's own dispatch/capture regression cases
+  (`((a?b)c)?` vs `""`, `(a+b)+` vs `"ababab"` -> `group(1) == "ab"`) via a throwaway test class,
+  since `mergeEntryPoints` feeds `entrySet`; both passed. Full suite green.
+- Pixel 3a run (device plugged in later the same day, after the desktop fix landed): compile-time
+  ratio 0.543 (prior 0.590), match-time ratio 0.212 (prior 0.224) -- both single runs, within this
+  table's usual run-to-run variance rather than confirmed trends; not re-A/B'd on-device.

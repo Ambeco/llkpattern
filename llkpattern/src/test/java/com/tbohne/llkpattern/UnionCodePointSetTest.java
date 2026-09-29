@@ -14,7 +14,7 @@ public class UnionCodePointSetTest {
   private static MutableCodePointSet setOf(int... codePoints) {
     MutableCodePointSet set = new ArrayCodePointSet();
     for (int cp : codePoints) {
-      set.add(cp);
+      set.set(cp);
     }
     return set;
   }
@@ -42,9 +42,9 @@ public class UnionCodePointSetTest {
   @Test
   public void forEachRange_disjointDelegates_yieldsBothRangesInOrder() {
     MutableCodePointSet a = new ArrayCodePointSet();
-    a.add('d', 'f' + 1); // d,e,f
+    a.set('d', 'f' + 1); // d,e,f
     MutableCodePointSet b = new ArrayCodePointSet();
-    b.add('a', 'b' + 1); // a,b
+    b.set('a', 'b' + 1); // a,b
     CodePointSet union = new UnionCodePointSet(a, b); // a starts after b -- exercises ordering
 
     assertThat(union.rangeSet(), equalTo(Set.of(new Range('a', 'c'), new Range('d', 'g'))));
@@ -53,9 +53,9 @@ public class UnionCodePointSetTest {
   @Test
   public void forEachRange_overlappingDelegates_coalesce() {
     MutableCodePointSet a = new ArrayCodePointSet();
-    a.add('a', 'e'); // a,b,c,d
+    a.set('a', 'e'); // a,b,c,d
     MutableCodePointSet b = new ArrayCodePointSet();
-    b.add('c', 'g'); // c,d,e,f
+    b.set('c', 'g'); // c,d,e,f
     CodePointSet union = new UnionCodePointSet(a, b);
 
     assertThat(union.rangeSet(), equalTo(Set.of(new Range('a', 'g'))));
@@ -64,9 +64,9 @@ public class UnionCodePointSetTest {
   @Test
   public void forEachRange_touchingDelegates_coalesce() {
     MutableCodePointSet a = new ArrayCodePointSet();
-    a.add('a', 'c' + 1); // a,b,c
+    a.set('a', 'c' + 1); // a,b,c
     MutableCodePointSet b = new ArrayCodePointSet();
-    b.add('d', 'f' + 1); // d,e,f -- touches a's range exactly, no gap
+    b.set('d', 'f' + 1); // d,e,f -- touches a's range exactly, no gap
     CodePointSet union = new UnionCodePointSet(a, b);
 
     assertThat(union.rangeSet(), equalTo(Set.of(new Range('a', 'g'))));
@@ -80,8 +80,8 @@ public class UnionCodePointSetTest {
     // these touch or overlap, so all three must survive as separate ranges, with the true gaps
     // (c-f, g-j) NOT reported as members.
     MutableCodePointSet x = new ArrayCodePointSet();
-    x.add('b', 'c' + 1);
-    x.add('j', 'k' + 1);
+    x.set('b', 'c' + 1);
+    x.set('j', 'k' + 1);
     MutableCodePointSet y = setOf('f');
     CodePointSet union = new UnionCodePointSet(x, y);
 
@@ -93,9 +93,9 @@ public class UnionCodePointSetTest {
   @Test
   public void containsAll_fullyCoveredAcrossBothDelegates_isTrue() {
     MutableCodePointSet a = new ArrayCodePointSet();
-    a.add('a', 'c' + 1); // a,b,c
+    a.set('a', 'c' + 1); // a,b,c
     MutableCodePointSet b = new ArrayCodePointSet();
-    b.add('d', 'f' + 1); // d,e,f
+    b.set('d', 'f' + 1); // d,e,f
     CodePointSet union = new UnionCodePointSet(a, b);
 
     assertThat(union.containsAll('a', 'g'), is(true));

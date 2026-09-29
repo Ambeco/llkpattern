@@ -47,7 +47,7 @@ public class CodePointSetBuilderTest {
   public void addAll_pushesSourceSetsRanges() {
     CodePointSetBuilder builder = CodePointSetBuilder.create();
     MutableCodePointSet source = new ArrayCodePointSet();
-    source.add('x', 'z' + 1);
+    source.set('x', 'z' + 1);
     builder.addAll(source);
     CodePointSet set = builder.build();
     assertThat(set.contains('x'), is(true));
@@ -66,7 +66,7 @@ public class CodePointSetBuilderTest {
   @Test
   public void mergeRun_negatedWithEmptyLiteralsAndRunUnion_returnsComplementCopy_leavesRunUnionUntouched() {
     MutableCodePointSet runUnion = new ArrayCodePointSet();
-    runUnion.add('a', 'd');
+    runUnion.set('a', 'd');
     CodePointSetBuilder emptyBuilder = CodePointSetBuilder.create();
     CodePointSet set = CodePointSetBuilder.mergeRun(emptyBuilder, runUnion, true);
     assertThat(set.contains('a'), is(false));
@@ -82,7 +82,7 @@ public class CodePointSetBuilderTest {
     CodePointSetBuilder builder = CodePointSetBuilder.create();
     builder.add('a', 'c'); // 'a', 'b'
     MutableCodePointSet runUnion = new ArrayCodePointSet();
-    runUnion.add('x', 'z' + 1);
+    runUnion.set('x', 'z' + 1);
     CodePointSet set = CodePointSetBuilder.mergeRun(builder, runUnion, true);
     assertThat(set.contains('a'), is(false));
     assertThat(set.contains('x'), is(false));

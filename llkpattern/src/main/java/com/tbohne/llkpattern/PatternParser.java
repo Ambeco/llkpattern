@@ -1181,7 +1181,7 @@ final class PatternParser {
     // CodePointSetBuilder, not a MutableCodePointSet, since members of a single operand run arrive
     // in whatever order the bracket expression wrote them (e.g. "[cba]" adds 'c', 'b', 'a') --
     // CodePointSetBuilder#add is a plain O(1)-amortized append regardless of order, deferring the
-    // sort/coalesce ArrayCodePointSet#add would otherwise do on every single-character member to
+    // sort/coalesce ArrayCodePointSet#set would otherwise do on every single-character member to
     // one #build() call when this operand run is actually finished (at "&&" or the closing "]").
     @Nullable CodePointSet intersectionSoFar = null;
     for (; ; ) {

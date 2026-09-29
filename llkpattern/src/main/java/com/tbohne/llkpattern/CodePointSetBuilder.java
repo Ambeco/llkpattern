@@ -21,7 +21,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * off to a SEPARATE, freshly-allocated {@link ArrayCodePointSet} -- so a built {@link
  * CodePointSetBuilder} costs exactly one object, the same as directly mutating an {@link
  * ArrayCodePointSet} would, while still getting {@link #add}'s O(1)-amortized append (measured as
- * a real win over {@link ArrayCodePointSet#add}'s binary-search-insert-with-shift for this
+ * a real win over {@link ArrayCodePointSet#set}'s binary-search-insert-with-shift for this
  * interface's own real caller, a bracket expression's literal members -- see notes.md). Only the
  * implementation's own methods ever see it as the mutable {@link ArrayCodePointSet} it actually is;
  * every other caller sees only this narrow interface until {@link #build} hands back a plain

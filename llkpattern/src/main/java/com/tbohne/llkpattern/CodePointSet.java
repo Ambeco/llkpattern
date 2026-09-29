@@ -88,13 +88,13 @@ public interface CodePointSet {
    * Returns the intersection of this set and {@code other}: code points in both. Default
    * implementation is a plain nested range scan -- allocates one temporary {@link CodePointSet}
    * per range of this set (via {@link #intersection(int, int)}) plus one {@link
-   * MutableCodePointSet#add} per resulting sub-range -- fine for a cold path, but see {@link
+   * MutableCodePointSet#set} per resulting sub-range -- fine for a cold path, but see {@link
    * ArrayCodePointSet}'s override for the allocation-light sweep merge real (parse-time-hot)
    * callers should get instead.
    */
   default CodePointSet intersection(CodePointSet other) {
     MutableCodePointSet result = new ArrayCodePointSet();
-    forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::add));
+    forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::set));
     return result;
   }
 
@@ -128,21 +128,21 @@ public interface CodePointSet {
   int hashCode();
 
   interface MutableCodePointSet extends CodePointSet {
-    default void add(int codePoint) {
-      add(codePoint, codePoint + 1);
+    default void set(int codePoint) {
+      set(codePoint, codePoint + 1);
     }
 
     /** Adds every code point in {@code [min, max)} to this set. */
-    void add(int min, int max);
+    void set(int min, int max);
 
     /**
-     * Bulk-adds a single range, skipping whatever overlap-checking/coalescing work {@link #add}
+     * Bulk-adds a single range, skipping whatever overlap-checking/coalescing work {@link #set}
      * normally does. Callers must supply ranges in ascending {@code min} order, building this set
-     * up from empty. Default just forwards to {@link #add}; {@link ArrayCodePointSet} provides the
+     * up from empty. Default just forwards to {@link #set}; {@link ArrayCodePointSet} provides the
      * real O(1)-amortized override.
      */
     default void appendSorted(int min, int max) {
-      add(min, max);
+      set(min, max);
     }
 
     /**

@@ -272,18 +272,6 @@ repeatedly regressed when converted to a `CodePointSetBuilder` specifically, but
 pre-sizing (its `(int initialCapacity)` constructor, with a correctly-computed hint) has measured as a real
 win at least once (`mergeEntryPoints`/`unionLastCharSet`, 2026-09-25) -- don't conflate the two.
 
-- [ ] **`ArrayCodePointSet#addAll`'s general path (one `add()` per source range) still resizes/shifts
-      per range for any caller that doesn't pre-size its target first.** A real one-pass sorted merge
-      (like `union`'s own static factory) would avoid the incremental tail-shifting `addRange` does
-      per insert for whatever callers remain. Assessed 2026-09-27 (see notes.md): `PatternConstruct`'s
-      private `union(a, b)` is cold (absent from both alloc-sampling files, only reached via the rare
-      `\b`/assertion-ambiguity path) -- not worth pursuing. `CodePointSetBuilder.mergeRun` was pre-sized
-      and landed (2026-09-27, see notes.md) -- a real per-call allocation cut confirmed via a
-      deterministic probe, though too small a share of `llkCompile`'s total to move the full-corpus
-      JMH ratio. Remaining idea (`addAll` dispatching to `sweepUnion` for two non-inverted
-      `ArrayCodePointSet`s) not attempted: risks a per-call fresh-array allocation if `sweepUnion`
-      doesn't merge in place, which would undo the real `mergeEntryPoints`/`unionLastCharSet`/
-      `mergeRun` wins if ever reused there -- deprioritized.
 - [ ] **Pixel 3a CPU-sampling leaders** (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`,
       captured 2026-09-24 -- refresh before trusting exact percentages, per this file's usual
       staleness caution): none of these are measured yet, just flagged from reading the profile.

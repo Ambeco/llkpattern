@@ -335,7 +335,7 @@ abstract class PatternConstruct {
 		// together, never split them further), so this is a real Arrays.copyOf regrow avoided, not
 		// a guess. Plain ArrayCodePointSet, not a CodePointSetBuilder: a builder's extra sort/compact
 		// pass measurably cost MORE than this construct's usual 2-3-candidate merge saved by skipping
-		// ArrayCodePointSet#add's binary-search-insert-with-shift (see notes.md's 2026-09-25 entry) --
+		// ArrayCodePointSet#set's binary-search-insert-with-shift (see notes.md's 2026-09-25 entry) --
 		// pre-sizing alone, without that pass, is the part that's worth keeping.
 		int capacityHint = rangeCountHint(candidateAt(candidates, extra, 0).getEntryPointMap());
 		int candidateCount = candidateCount(candidates, extra);
@@ -1352,7 +1352,7 @@ abstract class PatternConstruct {
 			// single-entry) set, built via a local mutable variable since entryMap itself is a plain
 			// (non-Mutable) CodePointSet reference now -- see its own doc.
 			MutableCodePointSet set = new ArrayCodePointSet();
-			set.add(Character.codePointAt(value, 0));
+			set.set(Character.codePointAt(value, 0));
 			// A literal is the one leaf whose set isn't already folded (a class's is, at parse time;
 			// a named class is never folded), so it is folded here rather than in checkDisjoint.
 			entryMap = MatcherConstruct.foldedEntrySet(set, flags);
@@ -1393,7 +1393,7 @@ abstract class PatternConstruct {
 				return null;
 			}
 			MutableCodePointSet set = new ArrayCodePointSet();
-			set.add(Character.codePointAt(value, 0));
+			set.set(Character.codePointAt(value, 0));
 			// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
 			// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
 			// UNICODE_CASE, exactly like LiteralString.buildEntryMap's own entryMap.
@@ -1466,7 +1466,7 @@ abstract class PatternConstruct {
 		ComplexCharacter(int startIndex, int character) {
 			super(startIndex);
 			MutableCodePointSet single = new ArrayCodePointSet();
-			single.add(character, character + 1);
+			single.set(character, character + 1);
 			this.ranges = single;
 		}
 
@@ -1816,11 +1816,11 @@ abstract class PatternConstruct {
 		 */
 		private static CodePointSet lineTerminatorStartCodePoints(int flags) {
 			MutableCodePointSet result = new ArrayCodePointSet();
-			result.add('\n', '\n' + 1);
-			result.add('\r', '\r' + 1);
+			result.set('\n', '\n' + 1);
+			result.set('\r', '\r' + 1);
 			if ((flags & Ll1Pattern.UNIX_LINES) == 0) {
-				result.add(0x0085, 0x0086);
-				result.add(0x2028, 0x202A);
+				result.set(0x0085, 0x0086);
+				result.set(0x2028, 0x202A);
 			}
 			return result;
 		}
@@ -2075,13 +2075,13 @@ abstract class PatternConstruct {
 
 	private static CodePointSet singletonCodePointMap(int codePoint) {
 		MutableCodePointSet result = new ArrayCodePointSet();
-		result.add(codePoint, codePoint + 1);
+		result.set(codePoint, codePoint + 1);
 		return result;
 	}
 
 	// Built once, not per call -- every call site only reads the result (union/addAll/intersects,
 	// never mutates it back), so there's no need to pay universalCodePointSet's own
-	// add(0, MAX_CODE_POINT + 1) allocation-and-array-growth cost on every one of its callers'
+	// set(0, MAX_CODE_POINT + 1) allocation-and-array-growth cost on every one of its callers'
 	// calls (measured as a real compile-time cost for \X: see documents/notes.md's 2026-09-26
 	// entry -- GraphemeClusterConstruct.buildEntryMap calls this once per \X compiled, and adding
 	// that huge a range from empty triggered enough ArrayCodePointSet growth to show up at ~9% of
@@ -2090,7 +2090,7 @@ abstract class PatternConstruct {
 
 	private static CodePointSet buildUniversalCodePointSet() {
 		MutableCodePointSet result = new ArrayCodePointSet();
-		result.add(0, CodePointSet.MAX_CODE_POINT + 1);
+		result.set(0, CodePointSet.MAX_CODE_POINT + 1);
 		return result;
 	}
 

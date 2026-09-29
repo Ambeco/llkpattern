@@ -3793,4 +3793,4 @@ end-of-find branch (`PatternConstruct#elseIsEndOfFind`) stays in list order behi
 Found by a 3-mode differential over nullable-tail patterns (`a?b*c{0,2}` and ~20 others were already clean; the only
 other divergence, `(ab)?`/`(ab)*` on `"a"`, is the documented no-un-consume limit). Not modeled: an end-of-find
 branch that FAILS after being chosen (e.g. an assertion vetoes it) does not fall through to the next sibling.
-Tests: `EndOfFindUnionTest`.
+Tests: `EndOfFindUnionTest`. A/B (4 baseline + 4 changed): perf-neutral -- compile ratio 2.20x-2.34x vs 2.20x-2.24x, match 1.12x-1.19x vs 1.10x-1.13x (match B/op identical, so the small spread is noise). Pixel 3a single run: compile 31.67 ms (regex 60.42, ratio 0.52), match 4.80 ms (ratio 0.21).

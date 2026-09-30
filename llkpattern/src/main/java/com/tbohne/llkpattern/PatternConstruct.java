@@ -2319,11 +2319,9 @@ abstract class PatternConstruct {
 							(isWordBoundary ? "\\b" : "\\B"),
 							" requires");
 				}
-				// Statically always satisfied: a zero-width no-op, so just pass straight through.
-				// `next` is shared/likely already compiled, so any dispatch gating of our own (if this
-				// construct is itself a chain candidate) can't be retrofitted onto it directly -- see
-				// MatcherConstruct#aliasOrPassThrough's own doc.
-				MatcherConstruct.aliasOrPassThrough(this, next().matcher());
+				// Statically always satisfied, so nothing to check at match time -- except under
+				// transparent bounds at regionEnd (see ElidedWordBoundaryMatcherConstruct's own doc).
+				new MatcherConstruct.ElidedWordBoundaryMatcherConstruct(this, wordSet, isWordBoundary);
 				return;
 			}
 

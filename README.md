@@ -146,9 +146,6 @@ construct (`^*a`, `\b+a`) is accepted and folded away.
 
 See [documents/remaining_work.md](documents/remaining_work.md) for the full, actively-maintained list. Some of the more interesting open items:
 
-- **Whether the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence (design.md's "Boundary matching"
-  section) is an acceptable, permanent consequence of the compile-time `\b`/`\B` elision, or a bug to fix** — not
-  yet analyzed in depth; see remaining_work.md.
 - **More scraped-corpus sources planned** beyond these four — Oracle GraalVM's regex engine tests are an unconfirmed candidate; dk.brics.automaton was considered and skipped (see remaining_work.md). The RE2J corpus turned up a match-time crash (`((x))*`) and an ambiguity-check gap (`a*^a`); see remaining_work.md.
 - **`ArrayCodePointSet` density experiment**: a proposed bitmask-entry variant (trading lookup speed for density on alternating-but-non-contiguous data, e.g. `isLowerCase`) hasn't been tried yet.
 

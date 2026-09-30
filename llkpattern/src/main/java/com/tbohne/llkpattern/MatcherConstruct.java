@@ -801,7 +801,7 @@ abstract class MatcherConstruct {
 		// Static, with `wordSet` passed as a parameter, rather than an instance method reading
 		// `this.wordSet` -- part of the same experiment as ArrayCodePointSet#floorIndex (see its own
 		// doc); no measurable difference found here either (see notes.md's dated entry).
-		private static boolean isWordChar(CodePointSet wordSet, int codePoint) {
+		static boolean isWordChar(CodePointSet wordSet, int codePoint) {
 			return codePoint >= 0 && wordSet.contains(codePoint);
 		}
 
@@ -889,6 +889,42 @@ abstract class MatcherConstruct {
 				return false;
 			}
 			return peekMustBeWord != PeekWordBoundaryMatchType.PeekMustBeOppositePrior || peekIsWord != priorIsWord;
+		}
+	}
+
+	/**
+	 * A {@code \b}/{@code \B} whose both neighbours were statically known and always satisfy it
+	 * (see {@code WordBoundaryConstruct.buildMatcher()}), so nothing needs checking at match time --
+	 * except under transparent bounds at {@code regionEnd}, where the statically-known following
+	 * character can't actually be consumed (nothing consumes past the region) and the real next
+	 * character decides whether {@code java.util.regex} gets as far as flagging {@code hitEnd}.
+	 */
+	static final class ElidedWordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
+		final CodePointSet wordSet;
+		final boolean isWordBoundary; // true: \b, false: \B
+
+		ElidedWordBoundaryMatcherConstruct(PatternConstruct owner, CodePointSet wordSet, boolean isWordBoundary) {
+			super(owner, owner.next().matcher());
+			this.wordSet = wordSet;
+			this.isWordBoundary = isWordBoundary;
+		}
+
+		@Override
+		boolean matchBody(Matcher matcher, int peeked) {
+			return holdsHere(matcher, peeked) && next.match(matcher, peeked);
+		}
+
+		@Override
+		public boolean holdsHere(Matcher matcher, int peeked) {
+			if (peeked == -1) {
+				int ahead = matcher.peekForBoundary();
+				if (ahead != -1) {
+					boolean boundary = WordBoundaryMatcherConstruct.isWordChar(wordSet, matcher.peekPrevious())
+							!= WordBoundaryMatcherConstruct.isWordChar(wordSet, ahead);
+					return boundary == isWordBoundary;
+				}
+			}
+			return true;
 		}
 	}
 

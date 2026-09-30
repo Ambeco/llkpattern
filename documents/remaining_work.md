@@ -112,18 +112,6 @@ small and startup "vaguely reasonable".
 
 ## Open questions
 
-- [ ] **Is the `useTransparentBounds`/`hitEnd`-at-`regionEnd` divergence a bug or an intended divergence?**
-      design.md's "Boundary matching" section notes that a `\b`/`\B` whose both neighboring characters are
-      statically known gets elided at compile time (folded into a zero-width no-op, or rejected as
-      unsatisfiable) -- an optimization that assumes the statically-known neighbor really is the character about
-      to be consumed. Under `useTransparentBounds(true)`, at `regionEnd`, that assumption can be wrong (there's
-      real input past the region boundary that the compile-time elision never accounted for), so `hitEnd` can
-      come out different from `java.util.regex` -- never the match result itself, only the `hitEnd` flag.
-      `TransparentBoundsTest` currently skips the `hitEnd` comparison for those patterns rather than asserting a
-      specific (dis)agreement. Analyze whether this is an acceptable, permanent consequence of the compile-time
-      elision (in which case it belongs in README's "Intentional differences" list, not just design.md prose) or
-      a fixable bug (e.g. by not eliding the boundary check specifically when transparent bounds are in play).
-
 ## Optional experiments (nothing here is required work)
 
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable** (e.g. `(a?)+`).

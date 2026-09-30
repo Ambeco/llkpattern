@@ -23,14 +23,6 @@ public class TransparentBoundsTest {
     "a\\b-", "-\\ba", "\\b-", "-\\b", "\\B-", "-\\B", "\\ba\\b", "^\\ba", "a\\b$",
   };
 
-  /**
-   * Patterns whose {@code \b}/{@code \B} is resolved at compile time (both neighbours statically known, so no
-   * boundary check exists at match time). With transparent bounds, at regionEnd, java.util.regex still looks at
-   * the real next character and so reports a different hitEnd; only hitEnd differs (never the match result), and
-   * reproducing it would mean giving up the compile-time elision, so those cases skip the hitEnd comparison.
-   */
-  private static final String[] STATICALLY_RESOLVED = {"a\\Bb", "a\\b-", "-\\ba"};
-
   private static final String[] INPUTS = {
     "", "a", "ab", "a b", " a", "a-", "-a", "ab ", " ab", "a_b", "abab", "a-b", "-a-", "b-a-b", "ab-ab", " a ",
   };
@@ -88,10 +80,6 @@ public class TransparentBoundsTest {
                   } else {
                     expected = findAll(jm);
                     actual = findAll(lm);
-                  }
-                  if (transparent && java.util.Arrays.asList(STATICALLY_RESOLVED).contains(p)) {
-                    expected = expected.replaceAll("[a-zA-Z,]", "");
-                    actual = actual.replaceAll("[a-zA-Z,]", "");
                   }
                   if (!expected.equals(actual)) {
                     divergences.add(new String[] {"matches", "lookingAt", "find"}[op] + " /" + p + "/ flags " + flags

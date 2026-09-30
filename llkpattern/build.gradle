@@ -4,25 +4,23 @@ plugins {
     id 'me.champeau.jmh' version '0.7.3'
     //id("net.ltgt.errorprone") version "3.1.0"
 }
-// Opt-in (`./gradlew :llkpattern:compileJava -PenableChecker`): the pinned checker runs fine on the JDK 25
-// daemon, but the sources have not been annotated for it yet -- 100+ real nullness findings (the run
-// also needs more compiler-fork heap than the default), tracked in documents/remaining_work.md.
-if (project.hasProperty('enableChecker')) {
-    apply plugin: 'org.checkerframework'
+// Nullness checking runs as part of every compile (~1 minute). `UnicodePredicates` is skipped: it is
+// generated, was verified once against a truncated copy, and is too big for the checker's heap.
+apply plugin: 'org.checkerframework'
 
-    checkerFramework {
-        checkers = [
-                'org.checkerframework.checker.nullness.NullnessChecker',
-        ]
-        // Explicitly pinned: the plugin's default-resolved 3.19.0 crashes against newer javac internals.
-        version = '3.49.5'
-        // Generated, huge, and not worth annotating: skip checking its bodies.
-        extraJavacArgs = ['-AskipDefs=UnicodePredicates', '-Xmaxerrs', '5000']
-    }
-    tasks.withType(JavaCompile).configureEach {
-        options.fork = true
-        options.forkOptions.memoryMaximumSize = '2g'
-    }
+checkerFramework {
+    checkers = [
+            'org.checkerframework.checker.nullness.NullnessChecker',
+    ]
+    // Explicitly pinned: the plugin's default-resolved 3.19.0 crashes against newer javac internals.
+    version = '3.49.5'
+    excludeTests = true
+    // Generated, huge, and not worth annotating: skip checking its bodies.
+    extraJavacArgs = ['-AskipDefs=UnicodePredicates', '-Xmaxerrs', '5000']
+}
+tasks.withType(JavaCompile).configureEach {
+    options.fork = true
+    options.forkOptions.memoryMaximumSize = '2g'
 }
 
 java {
@@ -188,4 +186,12 @@ task generateCorpus(type: JavaExec) {
         project.findProperty('mode') ?: 'FIND',
         project.findProperty('unescape') ?: 'none',
     ]
+}
+
+// The plugin ignores `excludeTests` for the jmh source set; benchmarks aren't worth annotating. Appended in
+// afterEvaluate + doFirst so it lands after the plugin's own `-AskipDefs` argument (last one wins).
+afterEvaluate {
+    tasks.named('compileJmhJava') {
+        doFirst { options.compilerArgs.add('-AskipDefs=.*') }
+    }
 }

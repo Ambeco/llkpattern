@@ -3814,10 +3814,7 @@ JDK 27 for `:llkpattern:test`. A scratch class using `MatchRunner` also needs th
 Widened `DotElseDifferentialTest` (class/named-class siblings, nested unions, reluctant/optional shapes, MULTILINE `$`
 pairs, CASE_INSENSITIVE, CRLF/U+2028/supplementary inputs). Region bounds that split a surrogate pair or a CR LF are
 skipped: both engines are undefined/noisy there and it is not about `.`. The sweep found two bugs independent of `.`,
-fixed and guarded by `LineEndCrLfUnixLinesTest`: `$`/`\Z` held between the halves of `
-` (JDK treats the pair as
-one terminator), and `lineTerminatorStartCodePoints` counted `` as a MULTILINE `$` peek under UNIX_LINES (so
-`[^
-]+$` failed to compile). Also note `a?.` is `a.|[^a]`, not `a?[^a]`: a `?` has no back edge, so after a consumed
-`a` the `.` is unopposed. Benchmarks not re-run (only the `
-` branch of `lineTerminatorLengthAt` gained a check).
+fixed and guarded by `LineEndCrLfUnixLinesTest`: `$`/`\Z` held between the halves of `\r\n` (JDK treats the pair as
+one terminator), and `lineTerminatorStartCodePoints` counted `\r` as a MULTILINE `$` peek under UNIX_LINES (so
+`[^\n]+$` failed to compile). Also note `a?.` is `a.|[^a]`, not `a?[^a]`: a `?` has no back edge, so after a consumed
+`a` the `.` is unopposed. Benchmarks not re-run (only the `\n` branch of `lineTerminatorLengthAt` gained a check).

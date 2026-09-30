@@ -74,7 +74,7 @@ abstract class PatternConstruct {
 	// 2026-09-06 bug once did: exposing a PatternConstruct-valued map as an ancestor's entry map,
 	// breaking downstream `==` identity checks like a loop's continue-vs-exit classification.
 	CodePointSet entryMap = EMPTY_ENTRY_MAP;
-	@Nullable PatternConstruct entryElse;
+	@MonotonicNonNull PatternConstruct entryElse;
 
 	private static final int ENTRY_POINT_NOT_STARTED = 0;
 	private static final int ENTRY_POINT_CONSTRUCTING = 1;
@@ -671,7 +671,9 @@ abstract class PatternConstruct {
 				// `X{0}` never matches X at all: its entry point is exactly `next`'s.
 				MergedEntries skipped = mergeEntryPoints(pattern, List.of(), next, "loop part");
 				entryMap = skipped.ranges;
-				entryElse = skipped.entryElse() != null ? this : null;
+				if (skipped.entryElse() != null) {
+					entryElse = this;
+				}
 				return;
 			}
 			PatternConstruct target = loopBodyTarget(captureConstructIndex);
@@ -683,7 +685,9 @@ abstract class PatternConstruct {
 			// -- see that overload's own doc.
 			MergedEntries result = mergeEntryPoints(pattern, body, min == 0 ? next : null, "loop part");
 			entryMap = result.ranges; // already Boolean-valued -- see mergeEntryPoints' own doc.
-			entryElse = result.entryElse() != null ? this : null;
+			if (result.entryElse() != null) {
+				entryElse = this;
+			}
 		}
 
 		@MonotonicNonNull LoopBackMarker loopBackMarker;
@@ -1011,7 +1015,9 @@ abstract class PatternConstruct {
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			entryMap = owner.getEntryPointMap();
-			entryElse = owner.getEntryElse() != null ? this : null;
+			if (owner.getEntryElse() != null) {
+				entryElse = this;
+			}
 		}
 
 		@Override
@@ -1142,7 +1148,9 @@ abstract class PatternConstruct {
 				// construct built it (see entryMap's own doc), so there's no PatternConstruct identity
 				// to lose by sharing next's own map instead of copying its entries.
 				entryMap = next.getEntryPointMap();
-				entryElse = next.getEntryElse() != null ? this : null;
+				if (next.getEntryElse() != null) {
+					entryElse = this;
+				}
 				// matcher isn't assigned here (unlike the pre-split design) -- next.matcher may not be
 				// built yet at this point (see design.md's "Entry-point computation vs. matcher
 				// compilation" section); buildMatcher() assigns it once next really is compiled.
@@ -1171,7 +1179,9 @@ abstract class PatternConstruct {
 			// see Sequence.buildEntryMap's doc for why (same fix, same reason: a containing loop's
 			// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
 			// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
-			entryElse = rawEntryElse != null ? this : null;
+			if (rawEntryElse != null) {
+				entryElse = this;
+			}
 			// Safe to alias directly (unlike entryElse just above): result.ranges is already
 			// Boolean-valued -- see mergeEntryPoints' own doc -- so there's no PatternConstruct
 			// identity to lose by sharing it as-is instead of re-keying/copying.
@@ -1384,7 +1394,9 @@ abstract class PatternConstruct {
 			// candidate list (e.g. `constructs`/`rawEntryElse`) or mergeEntryPoints' own transient
 			// merge (used only to run its ambiguity check), never this plain, Boolean-only entryMap.
 			entryMap = realNext.getEntryPointMap();
-			entryElse = realNext.getEntryElse() != null ? this : null;
+			if (realNext.getEntryElse() != null) {
+				entryElse = this;
+			}
 		}
 
 		@Override
@@ -1472,7 +1484,9 @@ abstract class PatternConstruct {
 			// content AND in every consumer's eyes -- there's no identity to lose by sharing the
 			// object instead of copying its entries.
 			entryMap = patterns.get(0).getEntryPointMap();
-			entryElse = patterns.get(0).getEntryElse() != null ? this : null;
+			if (patterns.get(0).getEntryElse() != null) {
+				entryElse = this;
+			}
 		}
 
 		@Override
@@ -1896,7 +1910,9 @@ abstract class PatternConstruct {
 	 */
 	static void buildZeroWidthEntryMap(PatternConstruct owner, PatternConstruct next) {
 		owner.entryMap = next.getEntryPointMap();
-		owner.entryElse = next.getEntryElse() != null ? owner : null;
+		if (next.getEntryElse() != null) {
+			owner.entryElse = owner;
+		}
 	}
 
 	/**

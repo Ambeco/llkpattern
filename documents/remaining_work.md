@@ -98,6 +98,23 @@ small and startup "vaguely reasonable".
       compile step is clean: `PatternConstruct#next()`/`#matcher()` are throwing accessors for the set-after-construction
       fields, and `registerMatcher` holds the one suppression for MatcherConstruct self-registration. Once that last
       finding is fixed, make the checker default (drop the `enableChecker` gate in `llkpattern/build.gradle`).
+- [ ] **Make a single benchmark run statistically self-sufficient** (so sessions stop repeating whole runs to
+      estimate noise; see CLAUDE.md's A/B procedure). Own session -- touches the JMH config, the Android test and
+      the output formats:
+  - **Intel/JMH:** raise `forks` (between-fork variance -- JIT, layout, heap -- dominates, and iterations inside one
+    fork don't shrink it) and trim warmup iterations per fork; keep total wall time near today's ~2m50s.
+  - **Ratio helper:** a small script/Gradle task that reads the JMH JSON and prints llk/regex per table with an error
+    interval propagated from the two `scoreError`s, replacing the two-run eyeballing of overlapping bands.
+  - **Android:** record per-pass times (already measured, currently only averaged) and output stddev, a 99%
+    confidence interval and p50/p90/p99 next to the mean in `Google_Pixel_3a_sargo_corpus_benchmark_results.json`;
+    also emit the llk/regex ratio with its interval there. Update README/CLAUDE.md for the new fields.
+  - **Interleave llk and regex (both platforms):** investigate alternating llk and regex iterations/forks (JMH: one
+    fork running both benchmarks in alternation, or a combined benchmark method; Android: alternate llk/regex passes
+    in the test loop) so time-correlated noise (background load, thermal throttling, sync clients) hits numerator and
+    denominator equally and largely cancels in the ratio. Check it doesn't distort either side (shared JIT/ART state,
+    cache effects) before adopting.
+  - **Environment:** a pre-run checklist (pause Dropbox, close other sessions) belongs in CLAUDE.md; this session's Intel
+    A/B was noisy with Dropbox syncing.
 - [ ] Decide on a CI setup (or at least a documented local command; the daemon must be JDK 17-25, tests want JDK 27 -- see notes.md) to run the suite "frequently" per the owner's stated preference.
 
 ## Open questions

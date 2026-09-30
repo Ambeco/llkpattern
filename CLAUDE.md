@@ -246,6 +246,12 @@ in Python source passed through Bash: the Bash tool halves backslashes, so it be
 byte, and git then treats the file as binary (`git ls-files --eol` shows `w/-text`). Build such
 text with `chr(92)`, or use the Edit tool.
 
+## Which JDK runs the suite
+
+Run `./gradlew :llkpattern:test` on JDK 27 (`JAVA_HOME="C:\Program Files\Java\jdk-27"`). On JDK 21 it fails 8
+Unicode-data tests (Emoji/Indic/CaseFold/CanonEq) even on unmodified code, since the generated data is
+JDK 27's; don't chase those as regressions. (The JMH/Android tasks still need a JDK 17 daemon -- see notes.md.)
+
 ## Reading Gradle test output
 
 Redirect Gradle output to a file and search it with `grep -a` (raw bytes in test names otherwise

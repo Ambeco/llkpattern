@@ -3,6 +3,7 @@ package com.tbohne.llkpattern;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -15,6 +16,8 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class CaseFoldSweepTest {
+  @Rule public final UnicodeDriftRule unicodeDrift = new UnicodeDriftRule();
+
   private static final String[] PATTERNS = {
     "s", "k", "å", "σ", "ς", "ß", "µ", "i", "ı",
     "[s]", "[k]", "[i]", "[σ]", "[ς]", "[Σ]", "[ß]", "[ẞ]", "[µ]", "[å]",
@@ -50,6 +53,7 @@ public class CaseFoldSweepTest {
   }
 
   @Test
+  @UnicodeSensitive
   public void everyCodePointMatchesLikeJdk() {
     StringBuilder diffs = new StringBuilder();
     int total = 0;

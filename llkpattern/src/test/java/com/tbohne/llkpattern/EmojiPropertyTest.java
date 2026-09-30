@@ -4,6 +4,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assume.assumeNoException;
 
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -14,6 +15,8 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class EmojiPropertyTest {
+  @Rule public final UnicodeDriftRule unicodeDrift = new UnicodeDriftRule();
+
   private static final String[] NAMES = {
     "Emoji", "Emoji_Presentation", "Emoji_Modifier", "Emoji_Modifier_Base", "Emoji_Component",
     "Extended_Pictographic",
@@ -49,6 +52,7 @@ public class EmojiPropertyTest {
   }
 
   @Test
+  @UnicodeSensitive
   public void matchesJdkForEveryCodePoint() {
     for (String name : NAMES) {
       assertSameProperty("\\p{Is" + name + "}", "\\p{Is" + name + "}");
@@ -56,6 +60,7 @@ public class EmojiPropertyTest {
   }
 
   @Test
+  @UnicodeSensitive
   public void isWordMatchesJdkAndUnicodeW() {
     assertSameProperty("\\p{IsWord}", "\\p{IsWord}");
     assertSameProperty("\\p{IsWORD}", "\\p{IsWORD}");
@@ -64,6 +69,7 @@ public class EmojiPropertyTest {
   }
 
   @Test
+  @UnicodeSensitive
   public void negationAndCaseInsensitiveNameMatchJdk() {
     assertSameProperty("\\P{IsEmoji}", "\\P{IsEmoji}");
     assertSameProperty("\\p{IsEMOJI_MODIFIER_BASE}", "\\p{IsEMOJI_MODIFIER_BASE}");

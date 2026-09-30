@@ -42,12 +42,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       what the "correct" outcome even is without an oracle to compare against. java-reggie
       apparently found an answer worth copying -- read it before building anything, don't just
       copy the "fuzz" label.
-- [ ] **Extend the "Unicode version != 27" skip to the non-corpus unit tests.** Golden rows now carry a
-      `unicodeSensitive` column (`ScrapedCorpusTestBase` skips a mismatch on a flagged row when the running JDK
-      isn't 27; no row needs it yet -- all six corpora pass on JDK 17 and 21). The hand-written tests
-      `CanonEqTest`, `EmojiPropertyTest`, `GraphemeBoundaryTest` (x2) and `GraphemeClusterTest` still fail on a
-      non-27 JDK; give them the same treatment (an `assumeTrue(GoldenRow.hostUnicodeMatchesGolden())` guard, or a
-      shared rule) so a non-27 run tells expected drift apart from a genuine regression.
 - [ ] **Let `CorpusGenerator` refresh a golden file in place.** Today it only writes a whole file from an
       intermediate TSV, which discards the hand-triaged `status` tags, so refreshing a few rows means writing a
       throwaway class in package `com.tbohne.llkpattern.corpus` (needed for `CorpusGenerator.generateRow`) that

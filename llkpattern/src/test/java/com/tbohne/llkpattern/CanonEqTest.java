@@ -5,6 +5,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.fail;
 
 import java.util.regex.Pattern;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -12,6 +13,8 @@ import org.junit.runners.JUnit4;
 /** {@code CANON_EQ}: canonically equivalent spellings match each other; diffed against java.util.regex. */
 @RunWith(JUnit4.class)
 public class CanonEqTest {
+  @Rule public final UnicodeDriftRule unicodeDrift = new UnicodeDriftRule();
+
   // Deliberately absent, each a known difference (see CanonEq* tests below and remaining_work.md):
   //  - "\u00e9+", "e\u0301*": a multi-code-point loop body that starts to match and then fails is not
   //    retried as fewer iterations here (same as "(ab)+" on "abac" without CANON_EQ).
@@ -64,6 +67,7 @@ public class CanonEqTest {
   }
 
   @Test
+  @UnicodeSensitive
   public void canonEq_matchesJavaUtilRegex() {
     StringBuilder divergences = new StringBuilder();
     int compared = 0;

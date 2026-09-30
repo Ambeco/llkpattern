@@ -4,6 +4,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertThrows;
 
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -16,6 +17,8 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class GraphemeBoundaryTest {
+  @Rule public final UnicodeDriftRule unicodeDrift = new UnicodeDriftRule();
+
   private static void assertSameAsJavaRegex(String pattern, String input) {
     java.util.regex.Matcher jdk = java.util.regex.Pattern.compile(pattern).matcher(input);
     Matcher llk = Ll1Pattern.compile(pattern).matcher(input);
@@ -100,6 +103,7 @@ public class GraphemeBoundaryTest {
   // --- GB9c: Indic conjunct break ---
 
   @Test
+  @UnicodeSensitive
   public void indicConjunctHasNoInteriorBoundary() {
     // Devanagari K + VIRAMA (linker) + SSA -- one conjunct cluster.
     String conjunct = "\u0915\u094D\u0937";
@@ -118,6 +122,7 @@ public class GraphemeBoundaryTest {
   // --- Differential matrix over find() ---
 
   @Test
+  @UnicodeSensitive
   public void differentialAgainstJavaRegex() {
     String[] inputs = {
       "abc",

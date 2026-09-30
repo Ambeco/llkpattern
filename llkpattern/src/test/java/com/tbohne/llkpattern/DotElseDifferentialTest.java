@@ -47,6 +47,30 @@ public class DotElseDifferentialTest {
     {".+a?", "[^a@]+a?"},
     {"(a|.)b", "(a|[^a@])b"},
     {"(?:a|.)+b", "(?:a|[^ab@])+b"},
+    // other sibling kinds: classes, named classes, deeper nesting, reluctant/optional shapes
+    {"[ab]|.", "[ab]|[^ab@]"},
+    {"\\w|.", "\\w|[^\\w@]"},
+    {"a|b|.", "a|b|[^ab@]"},
+    {"a(b|.)", "a(b|[^b@])"},
+    {"(a|(b|.))", "(a|(b|[^ab@]))"},
+    {"(?:a(?:b|.)|c)", "(?:a(?:b|[^b@])|c)"},
+    {"x(?:.|\\n)y", "x(?:[^\\n@]|\\n)y"},
+    {"(a|.)*b", "(a|[^ab@])*b"},
+    {"(?:a|.)+?b", "(?:a|[^ab@])+?b"},
+    {"(.)*?b", "([^b@])*?b"},
+    {".??b", "[^b@]??b"},
+    {".?b", "[^b@]?b"},
+    {"(.?)b", "([^b@]?)b"},
+    {"(?:.b)*c", "(?:[^c@]b)*c"},
+    // after a `?` there is no back edge, so a consumed `a` leaves `.` unopposed
+    {"a?.", "(?:a.|[^a@])"},
+    {"a*.b*", "a*[^a@]b*"},
+    {"[ab]*.", "[ab]*[^ab@]"},
+    {"\\s*.", "\\s*[^\\s@]"},
+    {"\\d+.", "\\d+[^\\d@]"},
+    {"b|.*c", "b|(?!b)[^c@]*c"},
+    {".+\\n", "[^\\n@]+\\n"},
+    {"(?i)a.+B", "(?i)a[^b@]+B"},
     // no conflict: `.` is the only claimant, so it behaves as an ordinary "any character"
     {".", "."},
     {".*", ".*"},
@@ -60,9 +84,37 @@ public class DotElseDifferentialTest {
     {"..", ".."},
     {"(.)(.)", "(.)(.)"},
     {"a.*", "a.*"},
+    {".$", ".$"},
+    {"a.$", "a.$"},
+    {".\\b", ".\\b"},
+    {"a.\\z", "a.\\z"},
+    {".\\Z", ".\\Z"},
+    {"(.)?", "(.)?"},
+    {"(.?)", "(.?)"},
+    {"(?:.)+", "(?:.)+"},
   };
 
-  private static final int[] FLAG_SETS = {0, Ll1Pattern.DOTALL, Ll1Pattern.UNIX_LINES};
+  /** Pairs whose oracle depends on the MULTILINE terminator set ({@code #}); run only with it. */
+  private static final String[][] MULTILINE_PAIRS = {
+    {".+$", "[^#]+$"},
+    {".*$", "[^#]*$"},
+    {"^.+$", "^[^#]+$"},
+    {"^.*b$", "^[^b@]*b$"},
+    {"a|.$", "a|[^a@]$"},
+    {"(?:.$|a)", "(?:[^a@]$|a)"},
+    {".*", ".*"},
+    {"^.*", "^.*"},
+  };
+
+  private static final int[] FLAG_SETS = {
+    0, Ll1Pattern.DOTALL, Ll1Pattern.UNIX_LINES, Ll1Pattern.CASE_INSENSITIVE,
+    Ll1Pattern.DOTALL | Ll1Pattern.UNIX_LINES
+  };
+  private static final int[] MULTILINE_FLAG_SETS = {
+    Ll1Pattern.MULTILINE, Ll1Pattern.MULTILINE | Ll1Pattern.DOTALL,
+    Ll1Pattern.MULTILINE | Ll1Pattern.UNIX_LINES,
+    Ll1Pattern.MULTILINE | Ll1Pattern.DOTALL | Ll1Pattern.UNIX_LINES
+  };
   private static final char[] ALPHABET = {'a', 'b', 'c', 'x', '\n'};
 
   /** The two engines' matchers behind one interface, so either can be the oracle. */
@@ -135,6 +187,10 @@ public class DotElseDifferentialTest {
     result.add("abxab");
     result.add("aab\nb");
     result.add("xxbxb");
+    result.add("a\r\nb");
+    result.add("b\u2028c");
+    result.add("\uD801\uDC00b");
+    result.add("a\uD801\uDC00b");
     return result;
   }
 
@@ -207,18 +263,45 @@ public class DotElseDifferentialTest {
 
   @Test
   public void matchesLookingAtAndFind_matchExplicitResidualOracle() {
+    assertNoDivergences(PAIRS, FLAG_SETS);
+  }
+
+  @Test
+  public void multilineDollarPairs_matchExplicitResidualOracle() {
+    assertNoDivergences(MULTILINE_PAIRS, MULTILINE_FLAG_SETS);
+  }
+
+  /** A region boundary inside a surrogate pair or a CR LF pair is outside what the engines agree
+   *  on (and is about `$`/`\Z`/pair handling, which other tests cover, not about `.`). */
+  private static boolean splitsSurrogatePair(String in, int index) {
+    if (index <= 0 || index >= in.length()) {
+      return false;
+    }
+    char before = in.charAt(index - 1);
+    char after = in.charAt(index);
+    return (Character.isHighSurrogate(before) && Character.isLowSurrogate(after))
+        || (before == 0x0D && after == 0x0A);
+  }
+
+  private static void assertNoDivergences(String[][] pairs, int[] flagSets) {
     List<String> divergences = new ArrayList<>();
     List<String> inputs = inputs();
-    for (String[] pair : PAIRS) {
+    for (String[] pair : pairs) {
       boolean llkOracle = pair.length > 2;
-      for (int flags : FLAG_SETS) {
+      for (int flags : flagSets) {
         String oracleText = pair[1].replace("@", terminators(flags)).replace("#", multilineTerminators(flags));
         Pattern jdkOracle = llkOracle ? null : Pattern.compile(oracleText, flags);
         Ll1Pattern llkOracleP = llkOracle ? Ll1Pattern.compile(oracleText, flags) : null;
         Ll1Pattern llk = Ll1Pattern.compile(pair[0], flags);
         for (String in : inputs) {
           for (int s = 0; s <= in.length(); s++) {
+            if (splitsSurrogatePair(in, s)) {
+              continue;
+            }
             for (int e = s; e <= in.length(); e++) {
+              if (splitsSurrogatePair(in, e)) {
+                continue;
+              }
               for (int op = 0; op < 3; op++) {
                 M jm = llkOracle ? wrap(llkOracleP.matcher(in)) : wrap(jdkOracle.matcher(in));
                 M lm = wrap(llk.matcher(in));
@@ -227,7 +310,7 @@ public class DotElseDifferentialTest {
                 boolean jr = jm.run(op);
                 boolean lr = lm.run(op);
                 String ctx = "op" + op + " /" + pair[0] + "/ flags " + flags + " on \""
-                    + in.replace("\n", "\\n") + "\" region [" + s + "," + e + ")";
+                    + in.replace("\n", "\\n").replace("\r", "\\r") + "\" region [" + s + "," + e + ")";
                 if (jr != lr) {
                   divergences.add(ctx + ": result oracle=" + jr + " llk=" + lr);
                   continue;

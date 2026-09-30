@@ -2104,8 +2104,8 @@ abstract class PatternConstruct {
 		private static CodePointSet lineTerminatorStartCodePoints(int flags) {
 			MutableCodePointSet result = new ArrayCodePointSet();
 			result.set('\n', '\n' + 1);
-			result.set('\r', '\r' + 1);
 			if ((flags & Ll1Pattern.UNIX_LINES) == 0) {
+				result.set('\r', '\r' + 1);
 				result.set(0x0085, 0x0086);
 				result.set(0x2028, 0x202A);
 			}

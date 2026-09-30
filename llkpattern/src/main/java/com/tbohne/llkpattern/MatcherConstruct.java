@@ -519,7 +519,12 @@ abstract class MatcherConstruct {
 		// end-of-region sentinel but the input goes on.)
 		int c = matcher.pos < matcher.regionEnd ? matcher.peeked : matcher.input.charAt(matcher.pos);
 		if (c == '\n') {
-			return 1;
+			// The '\n' of a "\r\n" pair is not a terminator start: the pair is one unit, so $/\Z
+			// must not hold between its halves (java.util.regex agrees).
+			boolean secondHalfOfCrLf = (flags & Ll1Pattern.UNIX_LINES) == 0
+					&& matcher.pos > matcher.anchorStart
+					&& matcher.input.charAt(matcher.pos - 1) == '\r';
+			return secondHalfOfCrLf ? 0 : 1;
 		}
 		if ((flags & Ll1Pattern.UNIX_LINES) != 0) {
 			return 0;

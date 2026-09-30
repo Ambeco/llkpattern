@@ -1,27 +1,36 @@
 plugins {
     id 'java-library'
-    id 'org.checkerframework' version '0.6.61' apply false
     id 'me.champeau.jmh' version '0.7.3'
     //id("net.ltgt.errorprone") version "3.1.0"
 }
-// Nullness checking runs as part of every compile (~1 minute). `UnicodePredicates` is skipped: it is
-// generated, was verified once against a truncated copy, and is too big for the checker's heap.
-apply plugin: 'org.checkerframework'
-
-checkerFramework {
-    checkers = [
-            'org.checkerframework.checker.nullness.NullnessChecker',
-    ]
-    // Explicitly pinned: the plugin's default-resolved 3.19.0 crashes against newer javac internals.
-    version = '3.49.5'
-    excludeTests = true
-    // Generated, huge, and not worth annotating: skip checking its bodies.
-    extraJavacArgs = ['-AskipDefs=UnicodePredicates', '-Xmaxerrs', '5000']
+// Nullness checking is its own task (`checkNullness`, ~1 minute) that `test` depends on, so it can't be
+// forgotten but plain compiles stay fast. It recompiles main into a scratch dir with the checker
+// attached. `UnicodePredicates` is skipped: it is generated, was verified once against a truncated copy,
+// and is too big for the checker's heap.
+configurations {
+    checkerProcessor
 }
-tasks.withType(JavaCompile).configureEach {
+dependencies {
+    checkerProcessor 'org.checkerframework:checker:3.49.5'
+}
+tasks.register('checkNullness', JavaCompile) {
+    group = 'verification'
+    description = 'Runs the Checker Framework nullness checker over the main sources.'
+    source = sourceSets.main.java
+    classpath = sourceSets.main.compileClasspath
+    destinationDirectory = layout.buildDirectory.dir('checkerframework-classes')
+    options.annotationProcessorPath = configurations.checkerProcessor
+    options.compilerArgs += ['-processor', 'org.checkerframework.checker.nullness.NullnessChecker',
+            '-AskipDefs=UnicodePredicates', '-Xmaxerrs', '5000']
     options.fork = true
     options.forkOptions.memoryMaximumSize = '2g'
+    // The checker needs javac internals that JDK 16+ encapsulates.
+    ['api', 'code', 'comp', 'file', 'main', 'model', 'parser', 'processing', 'tree', 'util', 'jvm'].each {
+        options.forkOptions.jvmArgs += '--add-exports=jdk.compiler/com.sun.tools.javac.' + it + '=ALL-UNNAMED'
+    }
+    options.forkOptions.jvmArgs += '--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED'
 }
+tasks.named('test') { dependsOn 'checkNullness' }
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8

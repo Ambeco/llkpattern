@@ -91,9 +91,11 @@ small and startup "vaguely reasonable".
 
 ## Toolchain and testing
 
-- [ ] Pin a Checker Framework version compatible with modern JDKs (or a JDK toolchain constraint) and re-enable the nullness checker in `llkpattern/build.gradle` — currently disabled because the default-resolved 3.19.0 crashes against JDK 25's javac internals.
-- [ ] Consider bumping the Gradle wrapper (currently 8.7) so it can run on newer JDKs directly, instead of falling back to `JAVA_HOME` at JDK 17/21 if a newer one misbehaves. Check compatibility with the Android Gradle Plugin used by `app/` first.
-- [ ] Decide on a CI setup (or at least a documented local command, given the JDK version constraint) to run the suite "frequently" per the owner's stated preference.
+- [ ] **Annotate the sources for the nullness checker, then make it default.** It is pinned (3.49.5) and runs on
+      the JDK 25 daemon via `-PenableChecker`, but reports 100+ real findings (mostly `[argument]`,
+      `[dereference.of.nullable]`, `[assignment]`; e.g. `PatternParser.rawText`, field initialization) and runs out
+      of heap even at 2g (probably the huge generated `UnicodePredicates`; consider excluding it).
+- [ ] Decide on a CI setup (or at least a documented local command; the daemon must be JDK 17-25, tests want JDK 27 -- see notes.md) to run the suite "frequently" per the owner's stated preference.
 
 ## Open questions
 

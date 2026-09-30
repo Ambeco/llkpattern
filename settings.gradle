@@ -16,4 +16,3 @@ rootProject.name = "llkpattern"
 include ':app'
 include ':llkpattern'
 include ':unicodeanalyzer'
-include ':oldllkpattern'

@@ -1,21 +1,27 @@
 plugins {
     id 'java-library'
-    id 'org.checkerframework' version '0.6.3' apply false
-    id 'me.champeau.jmh' version '0.7.2'
+    id 'org.checkerframework' version '0.6.61' apply false
+    id 'me.champeau.jmh' version '0.7.3'
     //id("net.ltgt.errorprone") version "3.1.0"
 }
-// TODO(remaining_work.md "toolchain"): the Checker Framework processor (defaulting to an old
-// 3.19.0) crashes with NoSuchMethodError against JDK 25's internal javac APIs -- a toolchain
-// incompatibility, not a source issue. Disabled for now so the module actually compiles; revisit
-// by pinning a JDK-25-compatible Checker Framework version (or running this task's JDK toolchain
-// pinned to an older JDK) rather than dropping nullness checking permanently.
-// apply plugin: 'org.checkerframework'
-//
-// checkerFramework {
-//     checkers = [
-//             'org.checkerframework.checker.nullness.NullnessChecker',
-//     ]
-// }
+// Opt-in (`./gradlew :llkpattern:compileJava -PenableChecker`): the pinned checker runs fine on the JDK 25
+// daemon, but the sources have not been annotated for it yet -- 100+ real nullness findings (the run
+// also needs more compiler-fork heap than the default), tracked in documents/remaining_work.md.
+if (project.hasProperty('enableChecker')) {
+    apply plugin: 'org.checkerframework'
+
+    checkerFramework {
+        checkers = [
+                'org.checkerframework.checker.nullness.NullnessChecker',
+        ]
+        // Explicitly pinned: the plugin's default-resolved 3.19.0 crashes against newer javac internals.
+        version = '3.49.5'
+    }
+    tasks.withType(JavaCompile).configureEach {
+        options.fork = true
+        options.forkOptions.memoryMaximumSize = '2g'
+    }
+}
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
@@ -27,9 +33,8 @@ dependencies {
     implementation("com.google.guava:guava:32.1.1-jre")
     implementation 'androidx.collection:collection-jvm:1.5.0'
     testImplementation 'junit:junit:4.12'
-    ext.checkerFrameworkVersion = '0.6.3'
+    ext.checkerFrameworkVersion = '3.49.5'
     implementation "org.checkerframework:checker-qual:${checkerFrameworkVersion}"
-    //annotationProcessor "org.checkerframework:checker:${checkerFrameworkVersion}"
 }
 
 // JMH microbenchmark comparing java.util.regex vs Ll1Pattern speed over the scraped-corpus

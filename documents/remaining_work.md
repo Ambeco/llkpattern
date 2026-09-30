@@ -93,11 +93,10 @@ small and startup "vaguely reasonable".
 
 - [ ] **Finish the nullness checker, then make it default.** It is pinned (3.49.5) and runs on
       the JDK 25 daemon via `-PenableChecker` (~1 minute, `UnicodePredicates` skipped via `-AskipDefs`; including it
-      ran out of heap even at 2g). One finding remains: `ArrayCodePointSet(CodePointSet)` calls the overridable
-      `addAll` from its constructor (`[method.invocation]`; the `MutableCodePointSet` subclass overrides it). The
+      ran out of heap even at 2g). Everything outside `UnicodePredicates` is now clean. Next: find why
+      including `UnicodePredicates` exhausts heap, and fix that. The
       compile step is clean: `PatternConstruct#next()`/`#matcher()` are throwing accessors for the set-after-construction
-      fields, and `registerMatcher` holds the one suppression for MatcherConstruct self-registration. Once that last
-      finding is fixed, make the checker default (drop the `enableChecker` gate in `llkpattern/build.gradle`).
+      fields, and `registerMatcher` holds the one suppression for MatcherConstruct self-registration. Once that is resolved, make the checker default (drop the `enableChecker` gate in `llkpattern/build.gradle`).
 - [ ] **Make a single benchmark run statistically self-sufficient** (so sessions stop repeating whole runs to
       estimate noise; see CLAUDE.md's A/B procedure). Own session -- touches the JMH config, the Android test and
       the output formats:

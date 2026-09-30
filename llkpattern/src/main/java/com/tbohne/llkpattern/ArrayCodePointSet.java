@@ -73,9 +73,10 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     size = 0;
   }
 
+  @SuppressWarnings("method.invocation") // addAllImpl is private and only touches this class's own (initialized) fields
   public ArrayCodePointSet(CodePointSet other) {
     this();
-    addAll(other);
+    addAllImpl(other);
   }
 
   /**
@@ -542,6 +543,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public void addAll(CodePointSet other) {
+    addAllImpl(other);
+  }
+
+  /** {@link #addAll}'s body, non-overridable so the copy constructor can call it safely. */
+  private void addAllImpl(CodePointSet other) {
     if (other instanceof ArrayCodePointSet) {
       ArrayCodePointSet o = (ArrayCodePointSet) other;
       if (o == this) {

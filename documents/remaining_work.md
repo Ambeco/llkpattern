@@ -42,15 +42,12 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
       what the "correct" outcome even is without an oracle to compare against. java-reggie
       apparently found an answer worth copying -- read it before building anything, don't just
       copy the "fuzz" label.
-- [ ] **Add a golden-row flag for "may differ when the running JDK's Unicode version != 27."** Some rows
-      (CanonEq, emoji/grapheme-cluster-boundary, word-boundary-on-emoji) currently fail when the suite runs
-      on a JDK whose bundled Unicode tables are older/newer than 27 (README's "Unicode data is currently
-      pinned to JDK 27's tables" divergence) -- confirmed 2026-09-24: `CanonEqTest`, `EmojiPropertyTest`,
-      `GraphemeBoundaryTest` (x2), `GraphemeClusterTest` all fail identically on both pre- and post-change
-      code when run under JDK 17, so this is pre-existing JDK-version drift, not a real regression. A
-      golden-row (or test-level) flag would let CI/local runs on a non-27 JDK distinguish "expected to
-      possibly diverge here" from a genuine new failure, instead of requiring a manual stash-and-rerun to
-      tell the two apart each time (as done ad hoc this session).
+- [ ] **Extend the "Unicode version != 27" skip to the non-corpus unit tests.** Golden rows now carry a
+      `unicodeSensitive` column (`ScrapedCorpusTestBase` skips a mismatch on a flagged row when the running JDK
+      isn't 27; no row needs it yet -- all six corpora pass on JDK 17 and 21). The hand-written tests
+      `CanonEqTest`, `EmojiPropertyTest`, `GraphemeBoundaryTest` (x2) and `GraphemeClusterTest` still fail on a
+      non-27 JDK; give them the same treatment (an `assumeTrue(GoldenRow.hostUnicodeMatchesGolden())` guard, or a
+      shared rule) so a non-27 run tells expected drift apart from a genuine regression.
 - [ ] **Let `CorpusGenerator` refresh a golden file in place.** Today it only writes a whole file from an
       intermediate TSV, which discards the hand-triaged `status` tags, so refreshing a few rows means writing a
       throwaway class in package `com.tbohne.llkpattern.corpus` (needed for `CorpusGenerator.generateRow`) that

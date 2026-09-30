@@ -202,18 +202,19 @@ public final class CorpusGenerator {
         llk.matchException,
         llk.encodeResult(),
         status,
-        originalPathologicalInput);
+        originalPathologicalInput,
+        false);
   }
 
   private static Optional<MatchOutcome> tryRegex(
       String pattern, String flags, String input, GoldenRow.Mode mode) {
-    GoldenRow probe = new GoldenRow(pattern, flags, input, mode, "", "", "", "", "", "", "", "");
+    GoldenRow probe = new GoldenRow(pattern, flags, input, mode, "", "", "", "", "", "", "", "", false);
     return MatchRunner.runWithTimeout(() -> MatchRunner.runRegex(probe), TIMEOUT_MS);
   }
 
   private static Optional<MatchOutcome> tryLlk(
       String pattern, String flags, String input, GoldenRow.Mode mode) {
-    GoldenRow probe = new GoldenRow(pattern, flags, input, mode, "", "", "", "", "", "", "", "");
+    GoldenRow probe = new GoldenRow(pattern, flags, input, mode, "", "", "", "", "", "", "", "", false);
     return MatchRunner.runWithTimeout(() -> MatchRunner.runLlk(probe), TIMEOUT_MS);
   }
 

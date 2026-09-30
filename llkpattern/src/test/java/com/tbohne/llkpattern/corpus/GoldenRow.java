@@ -14,6 +14,7 @@ import java.util.Objects;
  * <pre>
  * pattern  flags  input  mode  regexCompileException  regexMatchException  regexMatchResult
  * llkCompileException  llkMatchException  llkMatchResult  status  originalPathologicalInput
+ * unicodeSensitive
  * </pre>
  *
  * <p>{@code status} is free-text triage metadata (e.g. {@code "AGREES"}, {@code
@@ -31,6 +32,13 @@ import java.util.Objects;
  * holds the real original input the source used, so the substitution is traceable rather than a
  * silent edit. See {@link CorpusGenerator}'s timeout/simplification logic and
  * documents/remaining_work.md.
+ *
+ * <p>{@code unicodeSensitive} is {@code ""} (the common case) or {@code "true"}. A true row's
+ * outcome depends on Unicode data (case folding, emoji/grapheme boundaries, canonical equivalence,
+ * ...) that {@code UnicodePredicates} pins to JDK 27's tables, while the host-JDK-dependent parts
+ * of llk (e.g. {@code CaseFolding}) and {@code java.util.regex} follow the running JDK's own. So
+ * its golden outcome may legitimately differ when the suite runs on a JDK other than 27; see
+ * {@link #UNICODE_DATA_JDK_FEATURE} and {@code ScrapedCorpusTestBase}.
  */
 public final class GoldenRow {
   public enum Mode {
@@ -53,6 +61,16 @@ public final class GoldenRow {
   /** "" unless {@link #input} was simplified from a pathological original -- see the class
    *  javadoc. */
   public final String originalPathologicalInput;
+  /** See the class javadoc. */
+  public final boolean unicodeSensitive;
+
+  /** The JDK feature release whose Unicode tables the golden outcomes were recorded against. */
+  public static final int UNICODE_DATA_JDK_FEATURE = 27;
+
+  /** True if the running JDK's Unicode tables are the ones this project's data is pinned to. */
+  public static boolean hostUnicodeMatchesGolden() {
+    return Runtime.version().feature() == UNICODE_DATA_JDK_FEATURE;
+  }
 
   public GoldenRow(
       String pattern,
@@ -66,7 +84,8 @@ public final class GoldenRow {
       String llkMatchException,
       String llkMatchResult,
       String status,
-      String originalPathologicalInput) {
+      String originalPathologicalInput,
+      boolean unicodeSensitive) {
     this.pattern = pattern;
     this.flags = flags;
     this.input = input;
@@ -79,6 +98,7 @@ public final class GoldenRow {
     this.llkMatchResult = llkMatchResult;
     this.status = status;
     this.originalPathologicalInput = originalPathologicalInput;
+    this.unicodeSensitive = unicodeSensitive;
   }
 
   public int flagBits() {
@@ -133,7 +153,7 @@ public final class GoldenRow {
   }
 
   List<String> toFields() {
-    List<String> fields = new ArrayList<>(11);
+    List<String> fields = new ArrayList<>(13);
     fields.add(pattern);
     fields.add(flags);
     fields.add(input);
@@ -146,16 +166,17 @@ public final class GoldenRow {
     fields.add(llkMatchResult);
     fields.add(status);
     fields.add(originalPathologicalInput);
+    fields.add(unicodeSensitive ? "true" : "");
     return fields;
   }
 
   static GoldenRow fromFields(List<String> fields) {
-    if (fields.size() != 12) {
+    if (fields.size() != 13) {
       throw new IllegalArgumentException(
-          "Golden row has " + fields.size() + " fields, expected 12 "
+          "Golden row has " + fields.size() + " fields, expected 13 "
               + "(pattern, flags, input, mode, regexCompileException, regexMatchException, "
               + "regexMatchResult, llkCompileException, llkMatchException, llkMatchResult, "
-              + "status, originalPathologicalInput) -- was this file hand-edited with a wrong "
+              + "status, originalPathologicalInput, unicodeSensitive) -- was this file hand-edited with a wrong "
               + "tab count? Fields: " + fields);
     }
     Mode mode;
@@ -166,6 +187,12 @@ public final class GoldenRow {
           "Unknown mode '" + fields.get(3) + "' -- did you mean one of "
               + java.util.Arrays.toString(Mode.values()) + "?",
           e);
+    }
+    String sensitive = fields.get(12);
+    if (!sensitive.isEmpty() && !sensitive.equals("true")) {
+      throw new IllegalArgumentException(
+          "Unknown unicodeSensitive value '" + sensitive + "' -- did you mean \"true\" (flagged) "
+              + "or empty (not flagged)?");
     }
     return new GoldenRow(
         fields.get(0),
@@ -179,7 +206,8 @@ public final class GoldenRow {
         fields.get(8),
         fields.get(9),
         fields.get(10),
-        fields.get(11));
+        fields.get(11),
+        !sensitive.isEmpty());
   }
 
   @Override
@@ -197,7 +225,8 @@ public final class GoldenRow {
         && llkMatchException.equals(other.llkMatchException)
         && llkMatchResult.equals(other.llkMatchResult)
         && status.equals(other.status)
-        && originalPathologicalInput.equals(other.originalPathologicalInput);
+        && originalPathologicalInput.equals(other.originalPathologicalInput)
+        && unicodeSensitive == other.unicodeSensitive;
   }
 
   @Override
@@ -205,7 +234,7 @@ public final class GoldenRow {
     return Objects.hash(
         pattern, flags, input, mode, regexCompileException, regexMatchException,
         regexMatchResult, llkCompileException, llkMatchException, llkMatchResult, status,
-        originalPathologicalInput);
+        originalPathologicalInput, unicodeSensitive);
   }
 
   @Override

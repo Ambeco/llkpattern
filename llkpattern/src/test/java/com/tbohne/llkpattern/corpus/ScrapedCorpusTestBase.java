@@ -2,6 +2,7 @@ package com.tbohne.llkpattern.corpus;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeFalse;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -37,7 +38,9 @@ import org.junit.runners.Parameterized.Parameters;
  *
  * <p>The {@code status} and {@code regex*} columns are intentionally not part of the
  * parameterized data used for assertions -- {@code status} is triage metadata for humans, and
- * {@code regex*} is reference documentation, not a live test input.
+ * {@code regex*} is reference documentation, not a live test input. {@code unicodeSensitive} is
+ * the one exception: it only downgrades a mismatch to a skip (see {@link
+ * #skipIfExpectedUnicodeDrift}), never a match to anything.
  */
 @RunWith(Parameterized.class)
 public abstract class ScrapedCorpusTestBase {
@@ -91,12 +94,26 @@ public abstract class ScrapedCorpusTestBase {
     MatchOutcome golden =
         MatchOutcome.decode(
             row.regexCompileException, row.regexMatchException, row.regexMatchResult);
+    skipIfExpectedUnicodeDrift(golden, actual.get());
     assertEquals(
         "java.util.regex outcome changed vs. the golden file for " + row.displayName()
             + " -- either a real regression in how this row was scraped/encoded, or the JDK's "
             + "own regex behavior changed. Status was: " + row.status,
         golden,
         actual.get());
+  }
+
+  /** Skips (a JUnit assumption, reported as skipped rather than failed) a mismatch on a row
+   *  flagged {@link GoldenRow#unicodeSensitive} when the running JDK isn't the one whose Unicode
+   *  tables the golden outcomes were recorded against. Never skips a match, a mismatch on an
+   *  unflagged row, or a mismatch on JDK {@link GoldenRow#UNICODE_DATA_JDK_FEATURE}. */
+  private void skipIfExpectedUnicodeDrift(MatchOutcome golden, MatchOutcome actual) {
+    assumeFalse(
+        "Mismatch on a unicodeSensitive row under JDK " + Runtime.version().feature() + " (golden "
+            + "data is JDK " + GoldenRow.UNICODE_DATA_JDK_FEATURE + "'s); expected drift, not a "
+            + "regression. Golden " + golden + " vs actual " + actual + " for "
+            + row.displayName(),
+        row.unicodeSensitive && !GoldenRow.hostUnicodeMatchesGolden() && !golden.equals(actual));
   }
 
   /** Wall-clock budget for llk's own re-verification below. Belt-and-suspenders: llk isn't
@@ -119,6 +136,7 @@ public abstract class ScrapedCorpusTestBase {
     }
     MatchOutcome golden =
         MatchOutcome.decode(row.llkCompileException, row.llkMatchException, row.llkMatchResult);
+    skipIfExpectedUnicodeDrift(golden, actual.get());
     assertEquals(
         "Ll1Pattern outcome changed vs. the golden file for " + row.displayName()
             + " -- if this is an intended behavior change, regenerate the golden file "

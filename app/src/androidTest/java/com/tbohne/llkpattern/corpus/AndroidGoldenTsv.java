@@ -21,8 +21,8 @@ final class AndroidGoldenTsv {
   private static final String HEADER =
       "pattern\tflags\tinput\tmode\tregexCompileException\tregexMatchException\t"
           + "regexMatchResult\tllkCompileException\tllkMatchException\tllkMatchResult\tstatus\t"
-          + "originalPathologicalInput";
-  private static final int NUM_FIELDS = 12;
+          + "originalPathologicalInput\tunicodeSensitive";
+  private static final int NUM_FIELDS = 13;
 
   private AndroidGoldenTsv() {}
 

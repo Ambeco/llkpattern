@@ -121,7 +121,8 @@ public class GoldenTsvTest {
             "",
             "NOMATCH",
             "AGREES",
-            "");
+            "",
+            false);
     Path tmp = Files.createTempFile("golden-tsv-surrogate-test", ".tsv");
     try {
       GoldenTsv.write(tmp, List.of(row));
@@ -147,7 +148,8 @@ public class GoldenTsvTest {
             "",
             "",
             "UNIMPLEMENTED: example",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!");
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!",
+            true);
     Path tmp = Files.createTempFile("golden-tsv-test", ".tsv");
     try {
       GoldenTsv.write(tmp, List.of(row));
@@ -156,6 +158,18 @@ public class GoldenTsvTest {
       assertThat(readBack.get(0), is(row));
     } finally {
       Files.deleteIfExists(tmp);
+    }
+  }
+
+  @Test
+  public void fromFields_rejectsAnUnknownUnicodeSensitiveValue() {
+    List<String> fields =
+        List.of("a", "", "a", "FIND", "", "", "MATCHa", "", "", "MATCHa", "AGREES", "", "yes");
+    try {
+      GoldenRow.fromFields(fields);
+      org.junit.Assert.fail("expected IllegalArgumentException for unicodeSensitive=yes");
+    } catch (IllegalArgumentException e) {
+      assertThat(e.getMessage().contains("did you mean \"true\""), is(true));
     }
   }
 }

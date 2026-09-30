@@ -26,7 +26,7 @@ public final class GoldenTsv {
   private static final String HEADER =
       "pattern\tflags\tinput\tmode\tregexCompileException\tregexMatchException\t"
           + "regexMatchResult\tllkCompileException\tllkMatchException\tllkMatchResult\tstatus\t"
-          + "originalPathologicalInput";
+          + "originalPathologicalInput	unicodeSensitive";
 
   private GoldenTsv() {}
 

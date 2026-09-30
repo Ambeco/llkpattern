@@ -37,6 +37,7 @@ dependencies {
     testImplementation 'junit:junit:4.12'
     ext.checkerFrameworkVersion = '3.49.5'
     implementation "org.checkerframework:checker-qual:${checkerFrameworkVersion}"
+    implementation "org.checkerframework:checker-util:${checkerFrameworkVersion}"
 }
 
 // JMH microbenchmark comparing java.util.regex vs Ll1Pattern speed over the scraped-corpus

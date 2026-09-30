@@ -15,7 +15,7 @@ import java.nio.CharBuffer;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
-import static com.tbohne.llkpattern.Nullness.castNonNull;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 final class PatternParser {
   // Notes:
@@ -1590,6 +1590,13 @@ final class PatternParser {
             "supported)");
       }
       QuantifiedUnion referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
+      if (referenced == null) {
+        throw PatternSyntaxException.throwWithReferences(
+            pattern,
+            startIndex,
+            "backreference \\k<", name, "> refers to a named group that hasn't been closed yet at ",
+            "this point in the pattern (forward references aren't supported)");
+      }
       BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
       backReference.flags = flags;
       return backReference;

@@ -7,7 +7,6 @@ import com.tbohne.llkpattern.NamedCharClass.*;
 import java.util.Map.Entry;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
-import static com.tbohne.llkpattern.Nullness.castNonNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -1624,9 +1623,9 @@ abstract class PatternConstruct {
 	 */
 	static final class BackReference extends PatternConstruct {
 		final int captureConstructIndex;
-		final @Nullable QuantifiedUnion referencedGroup;
+		final QuantifiedUnion referencedGroup;
 
-		BackReference(int startIndex, int endIndex, int captureConstructIndex, @Nullable QuantifiedUnion referencedGroup) {
+		BackReference(int startIndex, int endIndex, int captureConstructIndex, QuantifiedUnion referencedGroup) {
 			super(startIndex, endIndex);
 			this.captureConstructIndex = captureConstructIndex;
 			this.referencedGroup = referencedGroup;
@@ -1634,7 +1633,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			CodePointSet firstChars = castNonNull(referencedGroup).firstCharSet();
+			CodePointSet firstChars = referencedGroup.firstCharSet();
 			if (firstChars == null) {
 				// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
 				// fall back to the catch-all entry set rather than risk silently wrong zero-width

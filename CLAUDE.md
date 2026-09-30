@@ -70,6 +70,13 @@ process this session loses track of, which then races later `:llkpattern:jmh` in
 `jmh.lock` file and fails one of them with "Another JMH instance might be running". Use the Bash
 tool's own `run_in_background: true` instead, which is tracked and notifies on completion.
 
+**Stopping a background JMH run (TaskStop) does not kill its Java process.** The orphaned
+`gradlew`/JMH process keeps holding `jmh.lock`, so every later `:llkpattern:jmh` fails with "Another
+JMH instance might be running" -- and a script that just `cp`s the output JSON afterward silently
+"measures" one stale file N times (seen 2026-09-30: four byte-identical "runs"). Kill the orphan
+before relaunching (find it with `Get-CimInstance Win32_Process -Filter "Name='java.exe'"`, stop the
+`gradlew` client, then `./gradlew --stop`), and have A/B scripts print each build's `BUILD` line.
+
 **The primary metric is the llk/regex ratio, not either absolute number.** Absolute ms/pass varies
 run to run with background load on either device (README.md's benchmark section), but the ratio is
 comparatively stable. After the A/B above, compare each table's llk/regex ratio (not

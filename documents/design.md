@@ -75,6 +75,15 @@ This matters in practice because every union/loop branch that's a bare literal o
 
 The quantified-loop case (`QuantifiedUnion`/`ComplexQuantifiedCharacter` with `min`/`max` making it a real loop) and the unquantified-with-branches union case both still need the pull, since both `buildMatcher()`s read fields only `buildEntryMap()` populates: the former's `buildLoopMatcher` reads `rawEntryElse` directly (to build `owner`'s own entry fork chain, once every body candidate is compiled), and the latter reads `compileTarget`/`rawEntryElse`.
 
+##### `LoopFirstEntryMatcherConstruct`: skipping a re-check the caller already made
+
+A greedy loop's first body node normally re-checks an entry set its caller may already have verified. `LoopFirstEntryMatcherConstruct` skips that re-check, but only when the two checks are provably identical: a single-alternative, non-capturing body with `min >= 1` (`QuantifiableConstruct.buildLoopMatcher`). The gain is a small dispatch-cost reduction, with no statistically significant ms/pass change on either device.
+
+It is deliberately not generalized:
+- **Multi-alternative body (`(a|b)+`):** each branch's own check is still needed to pick the right branch.
+- **`min == 0` loop (`a*`):** the loop's exposed entry set folds in `next`'s, so it is broader than any single branch's and passing the outer check doesn't imply passing the inner one.
+- **Capturing single-alternative loop (`(a)+`):** skipping the check would let a capture start be recorded on unverified input for an ungated top-level loop, the same shape of bug the project already hit once (a capture start recorded on a `min == 0` loop's very first attempt).
+
 ##### Opcode set
 
 The matcher graph is a small "opcode" virtual machine. Every `MatcherConstruct` carries an optional `final @Nullable CodePointSet entrySet`/`final @Nullable MatcherConstruct failedEntry` pair (both usually `null`), checked by a single, non-overridable `match(Matcher, int peeked)` template method BEFORE a node's own `matchBody(Matcher, int peeked)` runs: a plain (unfolded), `-1`-guarded `entrySet.contains(peeked)` check, deferring to `failedEntry.match(...)` on a miss (or failing outright if `failedEntry` is `null`). `entrySet`/`failedEntry` are populated via the OWNING `PatternConstruct`'s own `dispatchEntrySet`/`dispatchFailedEntry` fields (read by `MatcherConstruct`'s owner-based constructor), set by a chain builder just before that construct's first `compile()` call — this is what lets ANY existing node type become a chain candidate with no constructor changes of its own, and is the mechanism that replaced a separate `ForkingMatcherConstruct` node wrapping each candidate (see "Alternatives Considered"):

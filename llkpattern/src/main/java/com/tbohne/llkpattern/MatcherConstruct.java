@@ -1055,8 +1055,8 @@ abstract class MatcherConstruct {
 	 * chain's head ({@code bodyHead}) directly, for the narrow case where {@code bodyHead}'s own
 	 * {@link #entrySet} check is provably redundant on first entry -- see {@code
 	 * QuantifiableConstruct.buildLoopMatcher}'s own doc for the eligibility conditions (a single-
-	 * alternative, non-capturing, {@code min >= 1} loop) and remaining_work.md's "bodyHead
-	 * re-checks..." entry for why those conditions matter and can't currently be relaxed.
+	 * alternative, non-capturing, {@code min >= 1} loop) and design.md's "LoopFirstEntryMatcherConstruct"
+	 * section for why those conditions matter and can't currently be relaxed.
 	 *
 	 * <p>Calls {@code bodyHead.matchBody(...)} directly -- not {@code bodyHead.match(...)} -- so
 	 * {@code bodyHead}'s own {@link #entrySet}/{@link #failedEntry} check never runs on this path.

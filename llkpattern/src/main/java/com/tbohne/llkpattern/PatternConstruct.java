@@ -868,8 +868,8 @@ abstract class PatternConstruct {
 			// compiled) -- ReluctantLoopMatcherConstruct's own doc explains why it needs to run before
 			// the very first iteration too, not just after each completed one.
 			//
-			// EXPERIMENT (2026-09-24, see remaining_work.md's "bodyHead re-checks an entrySet..."
-			// entry): for a single-alternative, non-capturing, min>=1 loop, bodyHead's own entrySet
+			// EXPERIMENT (2026-09-24, see design.md's "LoopFirstEntryMatcherConstruct"
+			// section): for a single-alternative, non-capturing, min>=1 loop, bodyHead's own entrySet
 			// check is PROVABLY redundant on first entry specifically -- buildLoopEntryMap's own
 			// `min == 0 ? next : null` means this loop's externally-exposed entry point (whatever an
 			// outer chain candidate's own gate, or an ungated top-level loop's own lack of one,

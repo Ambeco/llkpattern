@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
+
 /**
  * A single compiled, executable step in the matcher graph -- one "opcode" of the tiny virtual
  * machine this package interprets. See design.md's "The compile() algorithm and cycle handling"
@@ -80,8 +82,9 @@ abstract class MatcherConstruct {
 	 *     every existing subclass constructor participate in a chain with no signature change of
 	 *     its own.
 	 */
+	@SuppressWarnings("assignment") // `next = this`: a never-read self-loop, see the doc above
 	MatcherConstruct(PatternConstruct owner) {
-		owner.matcher = this;
+		owner.registerMatcher(this);
 		this.flags = owner.flags;
 		this.entrySet = owner.dispatchEntrySet;
 		this.failedEntry = owner.dispatchFailedEntry;
@@ -102,6 +105,7 @@ abstract class MatcherConstruct {
 	 * (normally the owning construct's own {@code flags}); never itself a chain candidate, so
 	 * {@code entrySet}/{@code failedEntry} are always {@code null} here.
 	 */
+	@SuppressWarnings("assignment") // `next = this`: a never-read self-loop, see the doc above
 	MatcherConstruct(int flags) {
 		this.flags = flags;
 		this.entrySet = null;
@@ -113,7 +117,7 @@ abstract class MatcherConstruct {
 	 *  known successor is {@code next} -- folded in from the former SingleDispatchingMatcherConstruct
 	 *  (see {@link #next}'s own doc). */
 	MatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
-		owner.matcher = this;
+		owner.registerMatcher(this);
 		this.flags = owner.flags;
 		this.entrySet = owner.dispatchEntrySet;
 		this.failedEntry = owner.dispatchFailedEntry;
@@ -293,7 +297,7 @@ abstract class MatcherConstruct {
 		final CodePointSet validRanges;
 
 		SingleCharMatcherConstruct(ComplexCharacter owner) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 			this.validRanges = owner.validRanges();
 		}
 
@@ -323,7 +327,7 @@ abstract class MatcherConstruct {
 	 */
 	static final class GraphemeClusterMatcherConstruct extends MatcherConstruct {
 		GraphemeClusterMatcherConstruct(PatternConstruct.GraphemeClusterConstruct owner) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 		}
 
 		@Override
@@ -367,7 +371,7 @@ abstract class MatcherConstruct {
 		final String value;
 
 		LiteralMatcherConstruct(PatternConstruct owner, String value) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 			this.value = value;
 		}
 
@@ -438,7 +442,7 @@ abstract class MatcherConstruct {
 		final int captureConstructIndex;
 
 		BackReferenceMatcherConstruct(PatternConstruct owner, int captureConstructIndex) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 			this.captureConstructIndex = captureConstructIndex;
 		}
 
@@ -587,7 +591,7 @@ abstract class MatcherConstruct {
 		final BoundaryEnum type;
 
 		BoundaryMatcherConstruct(PatternConstruct owner, BoundaryEnum type) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 			this.type = type;
 		}
 
@@ -674,7 +678,7 @@ abstract class MatcherConstruct {
 		final boolean isLineBegin; // true: ^, false: $
 
 		LineBoundaryMatcherConstruct(PatternConstruct owner, boolean isLineBegin) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 			this.isLineBegin = isLineBegin;
 		}
 
@@ -779,7 +783,7 @@ abstract class MatcherConstruct {
 				PriorWordBoundaryMatchType priorMustBeWord,
 				PeekWordBoundaryMatchType peekMustBeWord,
 				boolean isWordBoundary) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 			if (priorMustBeWord == PriorWordBoundaryMatchType.Unchecked
 					&& peekMustBeWord == PeekWordBoundaryMatchType.Unchecked) {
 				// WordBoundaryConstruct.buildMatcher() never builds one of these with both sides
@@ -909,7 +913,7 @@ abstract class MatcherConstruct {
 
 		LookbehindMatcherConstruct(
 				PatternConstruct owner, boolean isPositive, CodePointSet lookSet, int captureConstructIndex) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 			this.isPositive = isPositive;
 			this.lookSet = lookSet;
 			this.captureConstructIndex = captureConstructIndex;
@@ -957,7 +961,7 @@ abstract class MatcherConstruct {
 	 */
 	static final class GraphemeBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 		GraphemeBoundaryMatcherConstruct(PatternConstruct owner) {
-			super(owner, owner.next.matcher);
+			super(owner, owner.next().matcher());
 		}
 
 		private static boolean holds(Matcher matcher) {
@@ -1042,12 +1046,12 @@ abstract class MatcherConstruct {
 			// more completed iteration -- regardless of which way the choice below then decides to go.
 			int loopCount = ++matcher.quantifiableCounts[quantifiableIndex];
 			return loopCount < max
-					? continuation.matcher.match(matcher, peeked)
+					? castNonNull(continuation.matcher).match(matcher, peeked)
 					: exitNode.match(matcher, peeked);
 		}
 
 		@VisibleForTesting
-		MatcherConstruct getContinuation() { return continuation.matcher; }
+		MatcherConstruct getContinuation() { return castNonNull(continuation.matcher); }
 	}
 
 	/**
@@ -1241,7 +1245,7 @@ abstract class MatcherConstruct {
 				return exitNode.match(matcher, peeked);
 			}
 			return count < shiftedMax
-					? continuation.matcher.match(matcher, peeked)
+					? castNonNull(continuation.matcher).match(matcher, peeked)
 					: exitNode.match(matcher, peeked);
 		}
 
@@ -1263,7 +1267,7 @@ abstract class MatcherConstruct {
 		}
 
 		@VisibleForTesting
-		MatcherConstruct getContinuation() { return continuation.matcher; }
+		MatcherConstruct getContinuation() { return castNonNull(continuation.matcher); }
 	}
 
 	/**

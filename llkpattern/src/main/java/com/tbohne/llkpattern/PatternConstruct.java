@@ -5,8 +5,11 @@ import com.tbohne.llkpattern.MatcherConstruct.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 
 import java.util.Map.Entry;
+import org.checkerframework.checker.initialization.qual.UnknownInitialization;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
+
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -107,6 +110,47 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * {@link #next}, for every read after {@link #compile} (or a parent's own buildEntryMap) has set
+	 * it. The field is only {@code @MonotonicNonNull} because it cannot be a constructor argument
+	 * (siblings are wired tail-to-front, and a loop's body points back at its own marker), so this
+	 * is the one place that turns "not wired yet" into a loud error instead of an NPE.
+	 */
+	PatternConstruct next() {
+		PatternConstruct n = next;
+		if (n == null) {
+			throw new IllegalStateException(getClass().getSimpleName() + " at pattern index " + startIndex
+					+ " read `next` before it was wired (did you mean to call compile(next) first?)");
+		}
+		return n;
+	}
+
+	/**
+	 * {@link #matcher}, for every read after this construct's {@link #compile} has run (or a
+	 * MatcherConstruct constructor self-registered on it). As {@link #next()}, the field stays
+	 * {@code @MonotonicNonNull} because matchers register themselves mid-construction to break cycles.
+	 */
+	final MatcherConstruct matcher() {
+		MatcherConstruct m = matcher;
+		if (m == null) {
+			throw new IllegalStateException(getClass().getSimpleName() + " at pattern index " + startIndex
+					+ " has no compiled matcher yet (did you mean to call compile(next) on it first?)");
+		}
+		return m;
+	}
+
+	/**
+	 * Called only from MatcherConstruct's constructors, which register {@code this} while still under
+	 * construction so that recursive references between nodes can be final fields (see
+	 * MatcherConstruct's class doc). The checker rightly can't prove an under-construction value safe to
+	 * store into an initialized object's field; it is safe here because nothing reads {@link #matcher}
+	 * until that constructor returns.
+	 */
+	@SuppressWarnings("initialization.field.write.initialized")
+	final void registerMatcher(@UnknownInitialization MatcherConstruct m) {
+		matcher = m;
+	}
+
+	/**
 	 * This construct's own entry point -- see design.md's "Entry-point computation vs. matcher
 	 * compilation" section. Lazily triggers {@link #buildEntryMap} on first call, independent of
 	 * whether this construct has been (or is being) {@link #compile}d.
@@ -130,7 +174,7 @@ abstract class PatternConstruct {
 			throw new EntryPointCycleException(startIndex);
 		}
 		entryPointState = ENTRY_POINT_CONSTRUCTING;
-		buildEntryMap(next);
+		buildEntryMap(next());
 		entryPointState = ENTRY_POINT_CONSTRUCTED;
 	}
 
@@ -300,7 +344,7 @@ abstract class PatternConstruct {
 	 */
 	private static PatternConstruct candidateAt(
 			List<PatternConstruct> candidates, @Nullable PatternConstruct extra, int index) {
-		return index < candidates.size() ? candidates.get(index) : extra;
+		return index < candidates.size() ? candidates.get(index) : castNonNull(extra);
 	}
 
 	private static int candidateCount(List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
@@ -589,6 +633,10 @@ abstract class PatternConstruct {
 			candidate.dispatchFailedEntry = lastUngated ? null : tail;
 			tail = candidate.compile(compileTarget);
 		}
+		if (tail == null) {
+			throw new IllegalStateException("buildFlattenedChain() was given no candidates and no elseTarget "
+					+ "(did the caller mean to skip building a chain for an empty union?)");
+		}
 		if (owner != null) {
 			MatcherConstruct.aliasOrPassThrough(owner, tail);
 		}
@@ -770,7 +818,7 @@ abstract class PatternConstruct {
 		void buildLoopMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
 			if (max == 0) {
 				// The body is never compiled: `X{0}` is a no-op, and its capture group (if any) stays unset.
-				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
+				MatcherConstruct.aliasOrPassThrough(this, next.matcher());
 				return;
 			}
 			boolean capturing = captureConstructIndex != -1;
@@ -798,6 +846,10 @@ abstract class PatternConstruct {
 			// not a fresh one, or that nested marker's `realNext.matcher` would never get filled in.
 			PatternConstruct bodyCompileTarget = loopBodyTarget(captureConstructIndex);
 			LoopBackMarker marker = loopBackMarker;
+			if (marker == null) {
+				throw new IllegalStateException("buildLoopMatcher() ran before loopBodyTarget() created the loop's back marker "
+						+ "(did you mean to call loopBodyTarget(captureConstructIndex) first?)");
+			}
 
 			// Decided once, here, before either the exit node or the marker-owned node is built --
 			// both need to already know which case they're in. See ReluctantLoopMatcherConstruct's own
@@ -807,12 +859,12 @@ abstract class PatternConstruct {
 			// directly via the body's own failedEntry, bypassing the marker-owned node entirely) has to
 			// agree on that same shifted meaning to stay consistent.
 			@Nullable List<MatcherConstruct.ZeroWidthAssertionGuard> exitAssertionChain =
-					reluctant ? next.matcher.exitAssertionChain() : null;
+					reluctant ? next.matcher().exitAssertionChain() : null;
 			boolean reluctantSafe = exitAssertionChain != null;
 			int shiftedMin = plusOneCapped(min);
 			int shiftedMax = plusOneCapped(max);
 			LoopMatcherExit exitNode = new LoopMatcherExit(
-					flags, quantifiableIndex, reluctantSafe ? shiftedMin : min, min == 0, next.matcher);
+					flags, quantifiableIndex, reluctantSafe ? shiftedMin : min, min == 0, next.matcher());
 
 			// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
 			// the marker-owned node itself; this one's `.matcher` is where that node's "continue"
@@ -1012,6 +1064,12 @@ abstract class PatternConstruct {
 			this.owner = owner;
 		}
 
+		/** Never wired by a parent: what follows a loop's back edge is the loop itself. */
+		@Override
+		PatternConstruct next() {
+			return owner;
+		}
+
 		@Override
 		void buildEntryMap(PatternConstruct next) {
 			entryMap = owner.getEntryPointMap();
@@ -1080,7 +1138,18 @@ abstract class PatternConstruct {
 		// @Nullable only because it has no meaningful value before buildEntryMap() runs -- by the
 		// time buildMatcher() reads it (unguarded), compile()'s ensureEntryPointBuilt() guarantees
 		// buildEntryMap() already has, in this (unquantified, non-empty-constructs) branch.
-		@Nullable PatternConstruct compileTarget;
+		@MonotonicNonNull PatternConstruct compileTarget;
+
+		/** {@link #compileTarget}, set by {@link #buildEntryMap} before any {@link #buildMatcher} reads it. */
+		PatternConstruct compileTarget() {
+			PatternConstruct t = compileTarget;
+			if (t == null) {
+				throw new IllegalStateException("QuantifiedUnion at pattern index " + startIndex
+						+ " read compileTarget before buildEntryMap() ran (did you mean to override "
+						+ "needsEntryPointBeforeMatcher() to return true?)");
+			}
+			return t;
+		}
 
 		QuantifiedUnion(String pattern, int startIndex) {
 			super(pattern, startIndex);
@@ -1099,7 +1168,7 @@ abstract class PatternConstruct {
 				// buildLoopEntryMap's `part.next = this`) -- whatever `next` turns out to be, if it's
 				// itself a QuantifiableConstruct it keeps the state-checked default below, so the
 				// cycle is still caught there, just one level further down.
-				return next.claimsEntryElse();
+				return next().claimsEntryElse();
 			}
 			return super.claimsEntryElse();
 		}
@@ -1107,10 +1176,10 @@ abstract class PatternConstruct {
 		@Override
 		boolean elseIsEndOfFind() {
 			if (!isUnquantified()) {
-				return loopElseIsEndOfFind(constructs, next);
+				return loopElseIsEndOfFind(constructs, next());
 			}
 			if (constructs.isEmpty()) {
-				return next.elseIsEndOfFind();
+				return next().elseIsEndOfFind();
 			}
 			return rawEntryElse != null && rawEntryElse.elseIsEndOfFind();
 		}
@@ -1118,10 +1187,10 @@ abstract class PatternConstruct {
 		@Override
 		boolean elseIsResidual() {
 			if (!isUnquantified()) {
-				return loopElseIsResidual(constructs, next);
+				return loopElseIsResidual(constructs, next());
 			}
 			if (constructs.isEmpty()) {
-				return next.elseIsResidual();
+				return next().elseIsResidual();
 			}
 			return rawEntryElse != null && rawEntryElse.elseIsResidual();
 		}
@@ -1165,13 +1234,14 @@ abstract class PatternConstruct {
 			// on. Deliberately doesn't compile() anything here (branches, or compileTarget itself) --
 			// see design.md's "Entry-point computation vs. matcher compilation" section; buildMatcher()
 			// does the real compiling, once `next` is guaranteed to already be compiled.
-			compileTarget = next;
+			PatternConstruct target = next;
 			if (isCapturing()) {
-				compileTarget = new CaptureEndMarker(startIndex, captureConstructIndex, next);
-				compileTarget.flags = flags;
+				target = new CaptureEndMarker(startIndex, captureConstructIndex, next);
+				target.flags = flags;
 			}
+			compileTarget = target;
 			for (PatternConstruct part : constructs) {
-				part.next = compileTarget;
+				part.next = target;
 			}
 			MergedEntries result = mergeEntryPoints(pattern, constructs, "union subpattern");
 			rawEntryElse = result.entryElse();
@@ -1191,20 +1261,20 @@ abstract class PatternConstruct {
 		@Override
 		void buildMatcher() {
 			if (!isUnquantified()) {
-				buildLoopMatcher(constructs, next, captureConstructIndex);
+				buildLoopMatcher(constructs, next(), captureConstructIndex);
 				return;
 			}
 			if (constructs.isEmpty()) {
 				// Bare flags-only group -- see buildEntryMap()'s matching case. `next` is guaranteed
 				// compiled by now (tail-to-front compile order), unlike when buildEntryMap() ran.
-				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
+				MatcherConstruct.aliasOrPassThrough(this, next().matcher());
 				return;
 			}
 			if (isCapturing()) {
 				// compileTarget (a CaptureEndMarker) must itself be compiled before the branches below,
 				// since building its own EndCaptureMatcherConstruct needs `next.matcher` -- guaranteed
 				// available now (unlike when buildEntryMap() computed compileTarget's entry point).
-				compileTarget.compile(next);
+				compileTarget().compile(next());
 			}
 			// Uses rawEntryElse (the real, non-identity-rewritten candidate), not the
 			// (rekeyed-to-`this`) entryMap/entryElse fields -- see rawEntryElse's doc: for the capturing
@@ -1234,7 +1304,7 @@ abstract class PatternConstruct {
 			PatternConstruct endOfFindCandidate =
 					rawEntryElse != null && rawEntryElse.elseIsEndOfFind() ? rawEntryElse : null;
 			PatternConstruct tailElse = endOfFindCandidate != null ? null : rawEntryElse;
-			MatcherConstruct elseTarget = tailElse != null ? tailElse.compile(compileTarget) : null;
+			MatcherConstruct elseTarget = tailElse != null ? tailElse.compile(compileTarget()) : null;
 			List<PatternConstruct> chainCandidates;
 			if (tailElse == null) {
 				chainCandidates = constructs;
@@ -1247,10 +1317,10 @@ abstract class PatternConstruct {
 				}
 			}
 			if (isCapturing()) {
-				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, tailElse, endOfFindCandidate);
+				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget(), elseTarget, tailElse, endOfFindCandidate);
 				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
 			} else {
-				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget, elseTarget, tailElse, endOfFindCandidate);
+				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget(), elseTarget, tailElse, endOfFindCandidate);
 			}
 		}
 
@@ -1342,6 +1412,12 @@ abstract class PatternConstruct {
 			this.realNext = realNext;
 		}
 
+		/** Never wired by a parent: it is constructed knowing its successor. */
+		@Override
+		PatternConstruct next() {
+			return realNext;
+		}
+
 		@Override
 		boolean claimsEntryElse() {
 			// realNext is a fixed field (unlike `next`, never reassigned to point back at some
@@ -1401,7 +1477,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildMatcher() {
-			new EndCaptureMatcherConstruct(this, captureConstructIndex, realNext.matcher);
+			new EndCaptureMatcherConstruct(this, captureConstructIndex, realNext.matcher());
 		}
 	}
 
@@ -1425,7 +1501,7 @@ abstract class PatternConstruct {
 		 * from compiling matters.
 		 */
 		private void wireElementNextPointers() {
-			PatternConstruct tail = next;
+			PatternConstruct tail = next();
 			for (int i = patterns.size() - 1; i >= 0; i--) {
 				patterns.get(i).next = tail;
 				tail = patterns.get(i);
@@ -1501,7 +1577,7 @@ abstract class PatternConstruct {
 			// Compile tail-to-front: the last element's next is this sequence's own next, and each
 			// earlier element's next is the element right after it (already compiled by the time we
 			// get to it).
-			PatternConstruct tail = next;
+			PatternConstruct tail = next();
 			for (int i = patterns.size() - 1; i >= 0; i--) {
 				PatternConstruct part = patterns.get(i);
 				if (part instanceof WordBoundaryConstruct && i > 0) {
@@ -1510,7 +1586,7 @@ abstract class PatternConstruct {
 				part.compile(tail);
 				tail = part;
 			}
-			matcher = patterns.get(0).matcher;
+			matcher = patterns.get(0).matcher();
 		}
 
 		@Override
@@ -1795,12 +1871,12 @@ abstract class PatternConstruct {
 
 		@Override
 		boolean elseIsEndOfFind() {
-			return !isUnquantified() && loopElseIsEndOfFind(List.of(delegate), next);
+			return !isUnquantified() && loopElseIsEndOfFind(List.of(delegate), next());
 		}
 
 		@Override
 		boolean elseIsResidual() {
-			return isUnquantified() ? delegate.residualElse : loopElseIsResidual(List.of(delegate), next);
+			return isUnquantified() ? delegate.residualElse : loopElseIsResidual(List.of(delegate), next());
 		}
 
 		@Override
@@ -1824,7 +1900,7 @@ abstract class PatternConstruct {
 		@Override
 		void buildMatcher() {
 			if (!isUnquantified()) {
-				buildLoopMatcher(List.of(delegate), next, -1);
+				buildLoopMatcher(List.of(delegate), next(), -1);
 				return;
 			}
 			// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
@@ -1834,8 +1910,8 @@ abstract class PatternConstruct {
 			// (created together, never independently compiled from anywhere else).
 			delegate.dispatchEntrySet = dispatchEntrySet;
 			delegate.dispatchFailedEntry = dispatchFailedEntry;
-			delegate.compile(next);
-			matcher = delegate.matcher;
+			delegate.compile(next());
+			matcher = delegate.matcher();
 		}
 
 		@Override
@@ -1945,12 +2021,12 @@ abstract class PatternConstruct {
 
 		@Override
 		final boolean elseIsEndOfFind() {
-			return next.elseIsEndOfFind();
+			return next().elseIsEndOfFind();
 		}
 
 		@Override
 		final boolean elseIsResidual() {
-			return next.elseIsResidual();
+			return next().elseIsResidual();
 		}
 
 		@Override
@@ -1961,7 +2037,7 @@ abstract class PatternConstruct {
 
 		@Override
 		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			CodePointSet rest = next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+			CodePointSet rest = next().skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 			if (!checkAssertions) {
 				return rest;
 			}
@@ -2037,12 +2113,12 @@ abstract class PatternConstruct {
 
 		@Override
 		boolean elseIsEndOfFind() {
-			return next.elseIsEndOfFind();
+			return next().elseIsEndOfFind();
 		}
 
 		@Override
 		boolean elseIsResidual() {
-			return next.elseIsResidual();
+			return next().elseIsResidual();
 		}
 
 		@Override
@@ -2057,7 +2133,7 @@ abstract class PatternConstruct {
 
 		@Override
 		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			return next.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
+			return next().skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
 		}
 	}
 
@@ -2226,7 +2302,7 @@ abstract class PatternConstruct {
 			Wordness prior = classify(priorCharSet, wordSet);
 			// next's own entry-point map is already exactly a plain CodePointSet -- no separate
 			// RangeSet needs building here any more.
-			CodePointSet peekRanges = next.getEntryElse() == null ? next.getEntryPointMap() : null;
+			CodePointSet peekRanges = next().getEntryElse() == null ? next().getEntryPointMap() : null;
 			Wordness peek = classify(peekRanges, wordSet);
 
 			if (prior != Wordness.UNKNOWN && peek != Wordness.UNKNOWN) {
@@ -2247,7 +2323,7 @@ abstract class PatternConstruct {
 				// `next` is shared/likely already compiled, so any dispatch gating of our own (if this
 				// construct is itself a chain candidate) can't be retrofitted onto it directly -- see
 				// MatcherConstruct#aliasOrPassThrough's own doc.
-				MatcherConstruct.aliasOrPassThrough(this, next.matcher);
+				MatcherConstruct.aliasOrPassThrough(this, next().matcher());
 				return;
 			}
 
@@ -2547,6 +2623,12 @@ abstract class PatternConstruct {
 		// its own already-built EndMatcherConstruct, likewise shared) across every compiled pattern
 		// removes a real, if small, per-compile allocation pair.
 		static final EndConstruct INSTANCE = new EndConstruct();
+
+		/** The pattern's terminal has no successor: like MatcherConstruct's own `next = this`, it is its own. */
+		@Override
+		PatternConstruct next() {
+			return this;
+		}
 
 		private EndConstruct() {
 			super(-1);

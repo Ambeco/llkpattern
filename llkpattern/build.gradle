@@ -16,6 +16,8 @@ if (project.hasProperty('enableChecker')) {
         ]
         // Explicitly pinned: the plugin's default-resolved 3.19.0 crashes against newer javac internals.
         version = '3.49.5'
+        // Generated, huge, and not worth annotating: skip checking its bodies.
+        extraJavacArgs = ['-AskipDefs=UnicodePredicates', '-Xmaxerrs', '5000']
     }
     tasks.withType(JavaCompile).configureEach {
         options.fork = true

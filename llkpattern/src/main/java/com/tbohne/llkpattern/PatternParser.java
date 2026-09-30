@@ -15,6 +15,7 @@ import java.nio.CharBuffer;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import static com.tbohne.llkpattern.Nullness.castNonNull;
 
 final class PatternParser {
   // Notes:
@@ -139,7 +140,7 @@ final class PatternParser {
   // per-entry Integer boxing, and (like closedGroupsByIndex below) a flat open-addressed table
   // instead of a linked Node per entry -- but most patterns have zero named groups, so skipping the
   // map object itself (not just its backing arrays) is worth it for the common case.
-  private MutableObjectIntMap<String> namedGroups;
+  private @Nullable MutableObjectIntMap<String> namedGroups;
   // captureConstructIndex -> the already-fully-parsed QuantifiedUnion for that group, populated at
   // the same point as namedGroups (parseGroup, once a group's ")" is reached). Backreferences
   // (tryParseBackReference) look a referenced group up here: only a group already present -- i.e.
@@ -155,7 +156,7 @@ final class PatternParser {
   // Null until the first capturing group closes -- see namedGroups' own doc just above for why
   // (this one only saves the allocation for patterns with no capturing groups at all, since any
   // capturing group populates it regardless of whether a backreference ever uses it).
-  private MutableIntObjectMap<QuantifiedUnion> closedGroupsByIndex;
+  private @Nullable MutableIntObjectMap<QuantifiedUnion> closedGroupsByIndex;
 
   PatternParser(String pattern, int flags) {
     // LITERAL wins over CANON_EQ, as in java.util.regex.
@@ -386,7 +387,7 @@ final class PatternParser {
     // level, i.e. often -- was pure waste (StringBuilder.<init> itself showed up as ~4.5% of
     // compile-time CPU in sampling). Reused across every impure run within this one parseUnion
     // call once it does exist, via setLength(0) at each flush site below (not re-nulled).
-    StringBuilder rawText = null;
+    @Nullable StringBuilder rawText = null;
     for (; ; ) {
       skipComments();
       // A plain == chain instead of a "()[]|.^$\0".indexOf(peek) string scan -- this runs once per
@@ -408,7 +409,7 @@ final class PatternParser {
           // now sits past that gap, which must not silently become part of the matched literal.
           CharSequence literalValue = rawTextIsPure
               ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-              : rawText.toString();
+              : castNonNull(rawText).toString();
           LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
           literal.flags = flags;
           accumulator = addToAlternative(accumulator, literal, altStartIndex);
@@ -574,11 +575,11 @@ final class PatternParser {
             // A quantifier belongs to this one escaped character, not to the literal run before it
             // -- same handling as an unescaped character followed by a quantifier, below.
             boolean hasPendingLiteral = rawTextStartIndex >= 0
-                && (rawTextIsPure ? rawTextPureEnd > rawTextStartIndex : rawText.length() > 0);
+                && (rawTextIsPure ? rawTextPureEnd > rawTextStartIndex : castNonNull(rawText).length() > 0);
             if (hasPendingLiteral) {
               CharSequence literalValue = rawTextIsPure
                   ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-                  : rawText.toString();
+                  : castNonNull(rawText).toString();
               LiteralString literal = new LiteralString(rawTextStartIndex, startIndex, literalValue);
               literal.flags = flags;
               accumulator = addToAlternative(accumulator, literal, altStartIndex);
@@ -612,7 +613,7 @@ final class PatternParser {
             // rawTextPureEnd, not `index` -- same reasoning as the top-of-loop flush above.
             CharSequence literalValue = rawTextIsPure
                 ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-                : rawText.toString();
+                : castNonNull(rawText).toString();
             LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             accumulator = addToAlternative(accumulator, literal, altStartIndex);
@@ -715,11 +716,11 @@ final class PatternParser {
           // stops being pure. Must check whichever of the two actually holds this run's content.
           boolean hasPendingLiteral = rawTextIsPure
               ? rawTextPureEnd > rawTextStartIndex
-              : rawText.length() > 0;
+              : castNonNull(rawText).length() > 0;
           if (hasPendingLiteral) {
             CharSequence literalValue = rawTextIsPure
                 ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-                : rawText.toString();
+                : castNonNull(rawText).toString();
             LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             accumulator = addToAlternative(accumulator, literal, altStartIndex);
@@ -736,7 +737,7 @@ final class PatternParser {
         } else if (rawTextIsPure) {
           rawTextPureEnd = afterFullChar;
         } else {
-          appendCodePoint(rawText, fullChar);
+          appendCodePoint(castNonNull(rawText), fullChar);
         }
       }
     }
@@ -1820,7 +1821,7 @@ final class PatternParser {
   // used escape is worth, so the running platform's own table is used, looked up reflectively because
   // this module compiles at source level 8.
   private static final class CharacterNames {
-    static final java.lang.reflect.Method CODE_POINT_OF;
+    static final java.lang.reflect.@Nullable Method CODE_POINT_OF;
 
     static {
       java.lang.reflect.Method method = null;
@@ -1834,6 +1835,8 @@ final class PatternParser {
   }
 
   /** Parses the {@code {name}} of a {@code \N{name}} escape (peek is at the opening brace). */
+  // Static-method reflection: Method.invoke takes a null receiver, which the checker's JDK stub rejects.
+  @SuppressWarnings("nullness:argument")
   private int parseCharacterName() {
     if (peek != '{') {
       throw throwUnexpectedChar(
@@ -1846,7 +1849,8 @@ final class PatternParser {
           "character name escape \"\\N{name}\" is missing the closing }");
     }
     String name = pattern.substring(nameStart, nameEnd);
-    if (CharacterNames.CODE_POINT_OF == null) {
+    java.lang.reflect.Method codePointOf = CharacterNames.CODE_POINT_OF;
+    if (codePointOf == null) {
       throw throwUnexpectedChar(
           "\\N{name} needs Character.codePointOf, which this runtime (Java "
               + System.getProperty("java.version") + ") doesn't have. Use \\x{...} with the "
@@ -1854,7 +1858,7 @@ final class PatternParser {
     }
     int codePoint;
     try {
-      codePoint = (Integer) CharacterNames.CODE_POINT_OF.invoke(null, name);
+      codePoint = (Integer) castNonNull(codePointOf.invoke(null, name));
     } catch (java.lang.reflect.InvocationTargetException e) {
       throw throwUnexpectedChar(
           "Unknown character name \"", name, "\" in \\N{name}. Names are the Unicode names, "
@@ -2003,7 +2007,8 @@ final class PatternParser {
   }
 
   static Object[] concatObjectArrays(Object[] array1, Object[] array2) {
-    Object[] result = Arrays.copyOf(array1, array1.length + array2.length);
+    Object[] result = new Object[array1.length + array2.length];
+    System.arraycopy(array1, 0, result, 0, array1.length);
     System.arraycopy(array2, 0, result, array1.length, array2.length);
     return result;
   }

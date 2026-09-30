@@ -7,6 +7,7 @@ import com.tbohne.llkpattern.NamedCharClass.*;
 import java.util.Map.Entry;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import static com.tbohne.llkpattern.Nullness.castNonNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -74,7 +75,7 @@ abstract class PatternConstruct {
 	// 2026-09-06 bug once did: exposing a PatternConstruct-valued map as an ancestor's entry map,
 	// breaking downstream `==` identity checks like a loop's continue-vs-exit classification.
 	CodePointSet entryMap = EMPTY_ENTRY_MAP;
-	@MonotonicNonNull PatternConstruct entryElse;
+	@Nullable PatternConstruct entryElse;
 
 	private static final int ENTRY_POINT_NOT_STARTED = 0;
 	private static final int ENTRY_POINT_CONSTRUCTING = 1;
@@ -1623,9 +1624,9 @@ abstract class PatternConstruct {
 	 */
 	static final class BackReference extends PatternConstruct {
 		final int captureConstructIndex;
-		final QuantifiedUnion referencedGroup;
+		final @Nullable QuantifiedUnion referencedGroup;
 
-		BackReference(int startIndex, int endIndex, int captureConstructIndex, QuantifiedUnion referencedGroup) {
+		BackReference(int startIndex, int endIndex, int captureConstructIndex, @Nullable QuantifiedUnion referencedGroup) {
 			super(startIndex, endIndex);
 			this.captureConstructIndex = captureConstructIndex;
 			this.referencedGroup = referencedGroup;
@@ -1633,7 +1634,7 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			CodePointSet firstChars = referencedGroup.firstCharSet();
+			CodePointSet firstChars = castNonNull(referencedGroup).firstCharSet();
 			if (firstChars == null) {
 				// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
 				// fall back to the catch-all entry set rather than risk silently wrong zero-width

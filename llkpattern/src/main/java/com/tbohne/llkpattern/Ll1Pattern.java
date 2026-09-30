@@ -241,7 +241,7 @@ public final class Ll1Pattern {
 				resultSize--;
 			}
 		}
-		return matchList.subList(0, resultSize).toArray(new String[resultSize]);
+		return matchList.subList(0, resultSize).toArray(new String[0]);
 	}
 
 	public Stream<String> splitAsStream(CharSequence input) {

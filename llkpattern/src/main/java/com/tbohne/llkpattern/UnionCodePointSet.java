@@ -1,6 +1,7 @@
 package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointSet.Range;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A read-only {@link CodePointSet} that's the union of two delegate sets, computed on the fly --
@@ -180,7 +181,7 @@ final class UnionCodePointSet implements CodePointSet {
   }
 
   @Override
-  public boolean equals(Object other) {
+  public boolean equals(@Nullable Object other) {
     if (!(other instanceof CodePointSet)) {
       return false;
     }

@@ -6,6 +6,9 @@ import java.util.function.Function;
 import java.util.regex.MatchResult;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import org.checkerframework.checker.initialization.qual.UnknownInitialization;
+import org.checkerframework.checker.nullness.qual.Nullable;
+import static com.tbohne.llkpattern.Nullness.castNonNull;
 
 /**
  * An engine that performs match operations on a character sequence by
@@ -368,11 +371,13 @@ public class Matcher implements MatchResult {
 		return false;
 	}
 
-	public String group() {
+	@SuppressWarnings("override.return") // MatchResult.group is documented to return null for a non-participating group
+	public @Nullable String group() {
 		return group(0);
 	}
 
-	public String group(int group) {
+	@SuppressWarnings("override.return") // MatchResult.group is documented to return null for a non-participating group
+	public @Nullable String group(int group) {
 		if (group == 0) {
 			requireMatch();
 			return input.substring(matchStart, matchEnd);
@@ -387,7 +392,8 @@ public class Matcher implements MatchResult {
 		return start < 0 ? null : input.substring(start, end);
 	}
 
-	public String group(String name) {
+	@SuppressWarnings("override.return") // MatchResult.group is documented to return null for a non-participating group
+	public @Nullable String group(String name) {
 		return group(groupIndexByName(name));
 	}
 
@@ -576,10 +582,10 @@ public class Matcher implements MatchResult {
 	}
 
 	private static final class Snapshot implements MatchResult {
-		private final String input; // null iff there was no match
+		private final @Nullable String input; // null iff there was no match
 		private final int[] bounds; // start,end per group, group 0 (the whole match) first
 
-		Snapshot(String input, int[] bounds) {
+		Snapshot(@Nullable String input, int[] bounds) {
 			this.input = input;
 			this.bounds = bounds;
 		}
@@ -610,13 +616,15 @@ public class Matcher implements MatchResult {
 			return bounds[checkGroup(group) + 1];
 		}
 
-		public String group() {
+		@SuppressWarnings("override.return") // MatchResult.group is documented to return null for a non-participating group
+		public @Nullable String group() {
 			return group(0);
 		}
 
-		public String group(int group) {
+		@SuppressWarnings("override.return") // MatchResult.group is documented to return null for a non-participating group
+		public @Nullable String group(int group) {
 			int i = checkGroup(group);
-			return bounds[i] < 0 ? null : input.substring(bounds[i], bounds[i + 1]);
+			return bounds[i] < 0 ? null : castNonNull(input).substring(bounds[i], bounds[i + 1]);
 		}
 
 		public int groupCount() {
@@ -771,7 +779,7 @@ public class Matcher implements MatchResult {
 	 *  -- called by every method that sets any of those three directly (as opposed to
 	 *  consume1CodePoint()/consumeCodeUnits(), which advance {@code pos} by a width they already
 	 *  know and can update {@code peeked} more cheaply themselves). */
-	private void syncPeeked() {
+	private void syncPeeked(@UnknownInitialization(Matcher.class) Matcher this) {
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
 		previousPeeked = UNKNOWN_PREVIOUS;
 	}

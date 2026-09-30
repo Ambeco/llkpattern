@@ -155,12 +155,12 @@ scans forward from a position it's already sitting at, never backward and never 
 construct.
 
 **Entry point: universal, not `.`-style catch-all.** `.` claims "whatever a sibling branch doesn't" (via
-`dotElse`), so it can coexist with a sibling that claims some of the domain explicitly. `\X` can't do this: its
+`residualElse`, see "`.`: all other options"), so it can coexist with a sibling that claims some of the domain explicitly. `\X` can't do this: its
 own width isn't statically known (a cluster could be one code point or many), so there's no way to characterize
 "whatever `\X` wouldn't otherwise claim" the way `.`'s complement-based mechanism does. `GraphemeClusterConstruct`
 therefore reports `entryMap = universalCodePointSet()` unconditionally -- every code point, claimed explicitly --
 which means `\X` can never safely sit next to another union branch or loop-exit candidate: `a|\X` and `\X*a` are
-both rejected as ambiguous at compile time, the same way `.+b` is (see README's "Intentional differences" list).
+both rejected as ambiguous at compile time, like any explicit class covering everything (see README's "Intentional differences" list).
 This is the conservative, always-correct choice given the width isn't known; a future refinement narrowing
 `\X`'s claimed entry set (e.g. to "definitely starts a cluster of exactly N code points" for some literal
 sibling) is possible in principle but not attempted here.
@@ -381,6 +381,16 @@ implementation.
 
 `CASE_INSENSITIVE` is applied to a class's members at parse time, never at match time, so `SingleCharMatcherConstruct` is a plain membership test. `PatternParser#addLiteral`/`addLiteralRange` (per bracket member) and `#singleCharacter` (a lone literal that had to become a class) expand each literal member through `CaseFolding`, mirroring `java.util.regex`: a lone character matches its whole case-equivalence class (`lower(upper(x))` key, so `(?iu)[s]` matches `ſ`), a `lo-hi` range matches any `x` with `x`, `upper(x)` or that key inside it. Without `UNICODE_CASE` only ASCII letters fold; `UNICODE_CHARACTER_CLASS` implies `UNICODE_CASE`. Folding is per literal member because the JDK never folds a named class (`\w`, scripts, blocks) or a nested class: it *substitutes* sets instead (`NamedCharClass#caseInsensitive`: `Lu`/`Ll`/`Lt` become `LC`, the case properties and POSIX `Upper`/`Lower` become the union of all cased letters or `[A-Za-z]`). A negated class is therefore a plain complement of the already-folded members. `CaseFolding` finds a set's preimage under `upper`/`key` through two sorted tables built once, lazily, from `Character`, so its cost does not grow with the size of the class.
 
+### `.`: all other options
+
+The parser gives `.` a `ComplexCharacter` with `residualElse` set. `ranges` is its accept set (everything, minus the line terminators unless `DOTALL`), used for the match-time membership check and as a ceiling on gates. But its entry point is an empty explicit set plus an else claim (`entryElse = this`, `elseIsResidual()`), so it can never overlap a sibling by construction. `elseIsResidual()` mirrors `elseIsEndOfFind()` through every construct that forwards an else claim (sequence head, capture marker, zero-width assertion, quantified wrapper, union). What each context does with the claim:
+
+- **Union**: the residual candidate is compiled as the ungated tail after every sibling's gate has missed, like any else candidate; its own membership check keeps line terminators out. Two else claimants (`.|.`, `.` and an unresolvable backreference) stay ambiguous.
+- **Loop**: `narrowResidualGates` gives a residual body part the gate `firstCharSet()` minus every other body part's gate and `next`'s entry set, so `.+b` iterates over `[^b]`. A residual body and an end-of-find exit coexist (`.*` at the end of a pattern; `mergeOneEntryPoint`'s `isLoopExit` case): the body takes what it can and the exit takes the rest. A residual `next` after a residual body (`.+.`) is rejected, since the exit would be left nothing. A residual body inside a possessive loop is rejected whenever a sibling or `next` claims part of its accept set (`.++b`): `java.util.regex` swallows the `b` there too, so `[^b]++b` would be a silent divergence.
+- **`LoopFirstEntryMatcherConstruct`** is not used for a loop with a residual part. Its proof (the outer gate already checked the first character against the body gate) doesn't hold when the loop is reached as another choice's ungated tail: `a|.+b` on `"b"` would let `.` consume the `b`.
+
+Since nothing backtracks, a loop over `.` stops at the first character the following part claims (`h.*o` finds `"hello"` in `"hello world"`). This is the one place the engine deliberately deviates from `java.util.regex` on an otherwise unambiguous pattern; `DotElseDifferentialTest` checks each `.` pattern against the same pattern with `.` rewritten to its explicit residual class.
+
 ## Alternatives Considered
 
 ### Successor dispatch via bound `MethodHandle` (`findSpecial`) instead of a plain virtual call
@@ -487,3 +497,25 @@ Rewrite a union with a nullable branch so that branch's empty alternative comes 
 - **Pros**: zero match-time cost; a clear error for a dead branch.
 - **Cons**: rejects `a*|b`, which is correct and meaningful under `matches()`; the JDK accepts it, and the mode-aware gate reproduces the JDK's behavior in every mode.
 - **Decision**: rejected in favour of the gate.
+
+### `.` as an ordinary explicit any-character class, instead of a residual else claim
+
+`.` registers its whole accept set as its entry point, so `a|.` and `.+b` are rejected as ambiguous.
+
+- **Pros**: no special case in unions or loops; every pattern that compiles agrees with `java.util.regex`.
+- **Cons**: rejects `.+b`, `a|.` and `.*x` -- some of the most common shapes in real patterns -- and contradicts the project's stated exception for `.`.
+- **Decision**: rejected in favour of the residual claim.
+
+### Resolving a residual loop body at match time, instead of computing its gate
+
+Leave the body part ungated and let its own membership check fail over to the exit.
+
+- **Pros**: no set difference at compile time.
+- **Cons**: the body node would accept the exit's characters (`.+b` would consume the `b`); a failed check falls through to a parent, not to the exit, so it would need new fallthrough wiring in every loop shape.
+- **Decision**: rejected in favour of `narrowResidualGates`.
+
+### Treating a possessive `.` loop as residual too
+
+- **Pros**: `.++b` compiles.
+- **Cons**: it would match as `[^b]++b`, where `java.util.regex` can never match it (the possessive loop swallows the `b`); a silent divergence is worse than the ambiguity error.
+- **Decision**: rejected; the pattern stays a compile error.

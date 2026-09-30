@@ -87,8 +87,8 @@ https?://[^\\s]+		https://example.com	FIND			MATCHhttps://example.com			MATCHh
 \\btest\\b		a test here	FIND			MATCHtest			MATCHtest	AGREES	
 (?:abc)+		abcabc	FIND			MATCHabcabc			MATCHabcabc	AGREES	
 (?:a|b)+		abab	FIND			MATCHabab			MATCHabab	AGREES	
-a.*b		aXXXb	FIND			MATCHaXXXb	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
-a.*?b		aXXXb	FIND			MATCHaXXXb	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+a.*b		aXXXb	FIND			MATCHaXXXb			MATCHaXXXb	AGREES	
+a.*?b		aXXXb	FIND			MATCHaXXXb			MATCHaXXXb	AGREES	
 [\\d]+		123	FIND			MATCH123			MATCH123	AGREES	
 [\\w]+		abc_123	FIND			MATCHabc_123			MATCHabc_123	AGREES	
 [\\s]+		   	FIND			MATCH   			MATCH   	AGREES	
@@ -125,7 +125,7 @@ https?://[a-zA-Z0-9.-]+		https://example.com	FIND			MATCHhttps://example.com			
 \\[[^\\]]*\\]		[1,2,3]	FIND			MATCH[1,2,3]			MATCH[1,2,3]	AGREES	
 <[a-zA-Z][^>]*>		<div>	FIND			MATCH<div>			MATCH<div>	AGREES	
 <[a-zA-Z][^>]*>		<a href='test'>	FIND			MATCH<a href='test'>			MATCH<a href='test'>	AGREES	
-<[a-zA-Z][^>]*>.*?</[a-zA-Z]+>		<div>content</div>	FIND			MATCH<div>content</div>	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+<[a-zA-Z][^>]*>.*?</[a-zA-Z]+>		<div>content</div>	FIND			MATCH<div>content</div>			MATCH<div>content</div>	AGREES	
 <([a-zA-Z]+)[^>]*>.*?</\\1>		<div>content</div>	FIND			MATCH<div>content</div>div	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
 \\d+\\.\\d+\\.\\d+		1.0.0	FIND			MATCH1.0.0			MATCH1.0.0	AGREES	
 \\d+\\.\\d+\\.\\d+		12.34.56	FIND			MATCH12.34.56			MATCH12.34.56	AGREES	
@@ -143,8 +143,8 @@ v?\\d+\\.\\d+\\.\\d+		v1.2.3	FIND			MATCHv1.2.3			MATCHv1.2.3	AGREES
 ([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}		aa-bb-cc-dd-ee-ff	FIND			MATCHaa-bb-cc-dd-ee-ffee-	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
 [a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.([a-zA-Z]{2,}))+		example.com	FIND			MATCHexample.comxample.comcom	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
 [a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.([a-zA-Z]{2,}))+		sub.domain.example.co.uk	FIND			MATCHsub.domain.example.co.ukub.ukuk	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
-.*abc.*		this contains abc inside	FIND			MATCHthis contains abc inside	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
-.*abc.*		no match	FIND			NOMATCH	PatternSyntaxException			EXPECTED_DIVERGENCE: correct LL(1) ambiguity rejection (compile-time PatternSyntaxException); java.util.regex resolves it by backtracking	
+.*abc.*		this contains abc inside	FIND			MATCHthis contains abc inside			MATCHins abc inside	EXPECTED_DIVERGENCE: '.' means all other options -- it claims only what its siblings/loop exit don't, so llk stops at the first character the later part claims where java.util.regex backtracks	
+.*abc.*		no match	FIND			NOMATCH			NOMATCH	AGREES	
 \\w+@\\w+\\.\\w+		simple@email.com	FIND			MATCHsimple@email.com			MATCHsimple@email.com	AGREES	
 \\d+		12345	FIND			MATCH12345			MATCH12345	AGREES	
 [a-z]+		lowercase	FIND			MATCHlowercase			MATCHlowercase	AGREES	

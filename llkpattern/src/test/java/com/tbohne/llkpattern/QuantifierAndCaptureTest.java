@@ -257,12 +257,19 @@ public class QuantifierAndCaptureTest {
   }
 
   @Test
-  public void dotQuantifier_ambiguousWithFollowingLiteral_rejectedAtCompileTime() {
-    // "." (which matches Z too) competing with a following literal Z for the same next character
-    // is exactly as ambiguous as "[a-z]+z" -- both must be compile-time errors, not a silently-
-    // wrong match.
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".*" + Z));
-    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".+" + Z));
+  public void dotQuantifier_followedByLiteral_meansAllOtherCharacters() {
+    // "." means "all other options": it claims only what the following literal Z doesn't, so ".*z" is
+    // "[^z]*z" (unlike "[a-z]+z", which really is ambiguous) -- stops at the first z instead of
+    // backtracking the way java.util.regex would (README's "Intentional differences").
+    assertThat(matches(".*" + Z, A + B + Z), is(true));
+    assertThat(matches(".+" + Z, A + B + Z), is(true));
+    assertThat(matches(".+" + Z, Z), is(false));
+    assertThat(matches(".*" + Z, A + Z + Z), is(false));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("[a-z]+z"));
+    // Possessive: java.util.regex never gives the z back, so it can never match -- rejected, not
+    // silently accepted as "[^z]++z".
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".++" + Z));
+    assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".*+" + Z));
   }
 
   // --- Three specific ambiguity shapes the project owner asked to confirm are covered: a plain

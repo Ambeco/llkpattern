@@ -4,20 +4,6 @@ Run `./gradlew :llkpattern:test` (with a JDK 17, 21 or 27 -- see [notes.md](note
 
 ## Matcher dispatch
 
-- [ ] **`.` is not yet "all other options" (needs its own session).** The design: `.` claims
-      whatever its siblings don't, so `a|.` means `a|[^a]` and `.+b` means `[^b]+b` (that is what
-      keeps them LL(1)). Today `.` is a plain explicit-range `ComplexCharacter` (everything but line
-      terminators, or everything under DOTALL), `ComplexCharacter.dotElse` is never assigned, and
-      `a|.`/`.+b` are rejected as ambiguous -- README.md line ~25 says so, while README.md's
-      overview, design.md and the `GraphemeClusterConstruct` doc describe the else behavior as live.
-      Work needed: (1) the parser sets the else claim (non-DOTALL `.` must still reject line
-      terminators at match time; the tail node's own `validRanges` re-check already does). (2) The
-      LOOP path: `buildLoopMatcher` gates each body part on its explicit entry set only, so a
-      catch-all body part (`.+b`) would get an empty gate and never dispatch -- its gate must be
-      "everything not claimed by the exit / other parts". (3) The union path already dispatches an
-      else candidate as the ungated tail, and (as of 2026-09-29) `buildFlattenedChain` checks its
-      explicit ranges for disjointness. (4) Reconcile every doc/comment above.
-
 - [x] ~~A greedy loop's `bodyHead` re-checks an entrySet its own caller may have already
       verified~~ -- implemented 2026-09-24 as `MatcherConstruct.LoopFirstEntryMatcherConstruct`
       (only for the byte-for-byte-identical case: single-alternative body, non-capturing,

@@ -44,24 +44,30 @@ public class RangeSetMigrationTest {
   }
 
   @Test
-  public void union_withDotAllBranch_ambiguityDetectionSeesItAsClaimingEverything() {
-    // DOTALL "." is an else-value map covering the whole domain -- "a|." is genuinely ambiguous
-    // (both branches claim 'a', same as real java.util.regex-style LL(1) engines would reject a
-    // union needing backtracking to disambiguate), so this must still throw -- not silently
-    // compile as if the else-value branch didn't claim anything, and not crash with some other
-    // exception while walking a branch that explicitly claims [0, MAX_CODE_POINT].
+  public void union_withDotAllBranch_dotClaimsOnlyWhatItsSiblingsDont() {
+    // DOTALL "." covers the whole domain but claims only "all other options": "a|." is "a|[^a]",
+    // so it compiles and 'a' still goes to the first branch, without crashing while walking a branch
+    // whose accept set is [0, MAX_CODE_POINT].
+    Ll1Pattern all = Ll1Pattern.compile("a|.", Ll1Pattern.DOTALL);
+    assertThat(all.matcher("a").matches(), is(true));
+    assertThat(all.matcher("z").matches(), is(true));
+    assertThat(all.matcher("\n").matches(), is(true));
+    assertThat(all.matcher("").matches(), is(false));
+
+    // Two "all other options" branches have nothing left to split, so that one IS ambiguous.
     try {
-      Ll1Pattern.compile("a|.", Ll1Pattern.DOTALL);
+      Ll1Pattern.compile(".|.", Ll1Pattern.DOTALL);
       throw new AssertionError("expected an ambiguity PatternSyntaxException");
     } catch (PatternSyntaxException expected) {
       // expected
     }
 
-    // A union where the non-dot branch's characters are genuinely disjoint from the rest is not
-    // ambiguous: "." excludes '\n' by default (no DOTALL), so "\n|." claims disjoint sets.
+    // "." excludes '\n' by default (no DOTALL): "\n|." still matches both.
     Ll1Pattern p = Ll1Pattern.compile("\\n|.");
     assertThat(p.matcher("\n").matches(), is(true));
     assertThat(p.matcher("z").matches(), is(true));
+    // ... but a plain "a|." must not let "." swallow a line terminator.
+    assertThat(Ll1Pattern.compile("a|.").matcher("\n").matches(), is(false));
 
     // A genuinely ambiguous union not involving "." must still be rejected too.
     try {

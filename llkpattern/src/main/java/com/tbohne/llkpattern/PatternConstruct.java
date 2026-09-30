@@ -181,6 +181,19 @@ abstract class PatternConstruct {
 	}
 
 	/**
+	 * Only meaningful once {@link #claimsEntryElse} is true: whether that catch-all is a residual
+	 * one -- {@code .}, which claims "whatever its siblings don't" out of its own {@link
+	 * #firstCharSet}, so {@code a|.} means {@code a|[^a]} and {@code .+b} means {@code [^b]+b} --
+	 * rather than end-of-find or an unresolvable backreference's genuine "any character". Two
+	 * residual claimants can't share a choice (which one gets the leftovers?), but one may share it
+	 * with an end-of-find exit ({@code .*} at the end of a pattern): the loop body takes whatever it
+	 * can and the exit takes what is left. Every override mirrors an {@link #elseIsEndOfFind} one.
+	 */
+	boolean elseIsResidual() {
+		return false;
+	}
+
+	/**
 	 * Compiles this construct (and, transitively, whatever it depends on) into a MatcherConstruct
 	 * graph, returning the node that represents "start matching this construct here". See
 	 * design.md's "The compile() algorithm and cycle handling" section.
@@ -362,10 +375,10 @@ abstract class PatternConstruct {
 		MutableCodePointSet ranges = new ArrayCodePointSet(capacityHint);
 		PatternConstruct elseCandidate = null;
 		for (int i = 0; i < candidates.size(); i++) {
-			elseCandidate = mergeOneEntryPoint(pattern, candidates.get(i), elseCandidate, candidateNounPlural, ranges);
+			elseCandidate = mergeOneEntryPoint(pattern, candidates.get(i), elseCandidate, candidateNounPlural, ranges, false);
 		}
 		if (extra != null) {
-			elseCandidate = mergeOneEntryPoint(pattern, extra, elseCandidate, candidateNounPlural, ranges);
+			elseCandidate = mergeOneEntryPoint(pattern, extra, elseCandidate, candidateNounPlural, ranges, true);
 		}
 		return new MergedEntries(ranges, elseCandidate);
 	}
@@ -392,8 +405,15 @@ abstract class PatternConstruct {
 	 *  this candidate and an earlier one both claim the any-other-character catch-all. */
 	private static @Nullable PatternConstruct mergeOneEntryPoint(
 			String pattern, PatternConstruct candidate, @Nullable PatternConstruct elseCandidate,
-			String candidateNounPlural, MutableCodePointSet ranges) {
+			String candidateNounPlural, MutableCodePointSet ranges, boolean isLoopExit) {
 		if (candidate.claimsEntryElse()) {
+			// Only for a loop's own exit (`extra`, never a union branch, whose end-of-find would be lost to
+			// the residual tail): a residual body (`.` in `.*`) and its end-of-find exit coexist: the body claims
+			// what it can and the exit gets the rest. The residual claimant stays the tracked one.
+			if (isLoopExit && elseCandidate != null && elseCandidate.elseIsResidual() && candidate.elseIsEndOfFind()) {
+				ranges.addAll(candidate.getEntryPointMap());
+				return elseCandidate;
+			}
 			if (elseCandidate != null) {
 				throw PatternSyntaxException.throwWithReferences(
 						pattern,
@@ -624,6 +644,18 @@ abstract class PatternConstruct {
 			return (max == 0 || min == 0) && next.claimsEntryElse() && next.elseIsEndOfFind();
 		}
 
+		/** {@link #elseIsResidual} for the quantified case, mirroring {@link #loopElseIsEndOfFind}. */
+		final boolean loopElseIsResidual(List<PatternConstruct> body, PatternConstruct next) {
+			if (max != 0) {
+				for (int i = 0; i < body.size(); i++) {
+					if (body.get(i).claimsEntryElse()) {
+						return body.get(i).elseIsResidual();
+					}
+				}
+			}
+			return (max == 0 || min == 0) && next.claimsEntryElse() && next.elseIsResidual();
+		}
+
 		/**
 		 * Computes this construct's own entry point for the quantified ({@code
 		 * !isUnquantified()}) case -- called from {@code buildEntryMap}. {@code FIRST(body)} (the
@@ -750,10 +782,9 @@ abstract class PatternConstruct {
 			// since skipZeroWidthEntrySet(..., false, ...) never reads it.
 			boolean checkAssertionAmbiguity = !reluctant && !possessive;
 			CodePointSet bodyLastCharSet = checkAssertionAmbiguity ? unionLastCharSet(body) : null;
-			CodePointSet[] gates =
-					checkDisjoint(pattern, flags, body, next,
-							next.skipZeroWidthEntrySet(checkAssertionAmbiguity, bodyLastCharSet),
-							"loop part");
+			CodePointSet nextEntrySet = next.skipZeroWidthEntrySet(checkAssertionAmbiguity, bodyLastCharSet);
+			CodePointSet[] gates = checkDisjoint(pattern, flags, body, next, nextEntrySet, "loop part");
+			boolean hasResidualPart = narrowResidualGates(body, next, gates);
 
 			// Reuses the SAME LoopBackMarker (and, when capturing, the same wrapping CaptureEndMarker)
 			// buildLoopEntryMap already handed to each body part as `next` -- see loopBodyTarget()'s own
@@ -850,13 +881,75 @@ abstract class PatternConstruct {
 			// rather than becoming a full duplicate node -- see its own doc for why this can't
 			// currently be generalized to a multi-alternative body or a min==0 loop.
 			boolean singleAlternativeUngatedFirstEntryEligible =
-					!reluctantSafe && !capturing && body.size() == 1 && min >= 1;
+					!reluctantSafe && !capturing && body.size() == 1 && min >= 1 && !hasResidualPart;
 			MatcherConstruct entryPoint = reluctantSafe
 					? loopNode
 					: singleAlternativeUngatedFirstEntryEligible
 							? new MatcherConstruct.LoopFirstEntryMatcherConstruct(flags, bodyHead)
 							: bodyHead;
 			MatcherConstruct.aliasOrPassThrough(this, entryPoint);
+		}
+
+		/**
+		 * Gives each residual body part ({@code .}, see {@link #elseIsResidual}) its real gate: whatever
+		 * it accepts that no other body part and not {@code next} (the last {@code gates} slot) claims,
+		 * so {@code .+b} loops over {@code [^b]}. {@link #checkDisjoint} left such a part's gate empty,
+		 * as the residual claims nothing explicitly. Two residual claimants in a row ({@code .+.}) would
+		 * have the body swallow everything and leave the exit nothing, so that is rejected here (a
+		 * nullable loop's version was already rejected by {@link #buildLoopEntryMap}'s merge). A
+		 * possessive loop can't take the residual either: {@code java.util.regex} really does swallow
+		 * the later part's characters there (so {@code .++b} can never match), and silently matching
+		 * as {@code [^b]++b} would be a worse divergence than the ambiguity error.
+		 * Returns whether any part was residual: such a loop's entry is not just {@code gates[0]}, so
+		 * {@code LoopFirstEntryMatcherConstruct}'s "outer gate already checked it" proof doesn't hold.
+		 */
+		private boolean narrowResidualGates(List<PatternConstruct> body, PatternConstruct next, CodePointSet[] gates) {
+			boolean any = false;
+			for (int i = 0; i < body.size(); i++) {
+				PatternConstruct part = body.get(i);
+				if (!part.claimsEntryElse() || !part.elseIsResidual()) {
+					continue;
+				}
+				any = true;
+				if (next.claimsEntryElse() && next.elseIsResidual()) {
+					throw PatternSyntaxException.throwWithReferences(
+							pattern,
+							next.startIndex,
+							"loop part starting at index ", part.startIndex,
+							" allows any other character, but the construct after the loop, starting at index ",
+							next.startIndex,
+							", does too, which is ambiguous (did you mean to exclude what the later part needs,"
+									+ " e.g. [^b]+b instead of .+b?)");
+				}
+				CodePointSet accept = part.firstCharSet();
+				if (possessive) {
+					for (int j = 0; j < gates.length; j++) {
+						if (j != i && (accept == null ? !gates[j].isEmpty() : accept.intersects(gates[j]))) {
+							throw PatternSyntaxException.throwWithReferences(
+									pattern,
+									part.startIndex,
+									"possessive loop part starting at index ", part.startIndex,
+									" allows any other character, so it would swallow characters the construct"
+											+ " after it (or a sibling part) needs, and java.util.regex never gives"
+											+ " those back from a possessive loop either -- did you mean a greedy"
+											+ " quantifier, or a character class excluding them (e.g. [^b]++b)?");
+						}
+					}
+				}
+				MutableCodePointSet gate = new ArrayCodePointSet();
+				if (accept == null) {
+					gate.invert();
+				} else {
+					gate.addAll(accept);
+				}
+				for (int j = 0; j < gates.length; j++) {
+					if (j != i) {
+						gate.removeAll(gates[j]);
+					}
+				}
+				gates[i] = gate;
+			}
+			return any;
 		}
 
 		/**
@@ -1014,6 +1107,17 @@ abstract class PatternConstruct {
 				return next.elseIsEndOfFind();
 			}
 			return rawEntryElse != null && rawEntryElse.elseIsEndOfFind();
+		}
+
+		@Override
+		boolean elseIsResidual() {
+			if (!isUnquantified()) {
+				return loopElseIsResidual(constructs, next);
+			}
+			if (constructs.isEmpty()) {
+				return next.elseIsResidual();
+			}
+			return rawEntryElse != null && rawEntryElse.elseIsResidual();
 		}
 
 		@Override
@@ -1243,6 +1347,11 @@ abstract class PatternConstruct {
 		}
 
 		@Override
+		boolean elseIsResidual() {
+			return realNext.elseIsResidual();
+		}
+
+		@Override
 		boolean needsEntryPointBeforeMatcher() {
 			// buildMatcher() below reads only realNext.matcher -- nothing buildEntryMap() sets.
 			return false;
@@ -1324,6 +1433,11 @@ abstract class PatternConstruct {
 		@Override
 		boolean elseIsEndOfFind() {
 			return patterns.get(0).elseIsEndOfFind();
+		}
+
+		@Override
+		boolean elseIsResidual() {
+			return patterns.get(0).elseIsResidual();
 		}
 
 		@Override
@@ -1556,7 +1670,10 @@ abstract class PatternConstruct {
 		// NamedCharClass/RegexCharacterClass static constant with no defensive copy, since nothing
 		// past construction ever mutates it.
 		final CodePointSet ranges;
-		@Nullable PatternConstruct dotElse;
+		// Set once by the parser for `.`: instead of explicitly claiming `ranges` at dispatch time, this
+		// character claims whatever its siblings don't (see elseIsResidual) -- `ranges` is then only its
+		// own accept set: the match-time re-check, and the ceiling on a loop body's residual gate.
+		boolean residualElse;
 
 		ComplexCharacter(int startIndex, CodePointSet ranges) {
 			super(startIndex);
@@ -1593,7 +1710,12 @@ abstract class PatternConstruct {
 
 		@Override
 		boolean claimsEntryElse() {
-			return dotElse != null; // mirrors buildEntryMap's `entryElse = dotElse` exactly.
+			return residualElse; // mirrors buildEntryMap's `entryElse = this` exactly.
+		}
+
+		@Override
+		boolean elseIsResidual() {
+			return residualElse;
 		}
 
 		@Override
@@ -1608,8 +1730,12 @@ abstract class PatternConstruct {
 			// Aliased directly: a character class's own entry point IS exactly its own valid ranges,
 			// not a separate copy of them -- entryMap and ranges/validRanges() were always meant to
 			// hold identical content, so there's nothing to gain from keeping them as two objects.
-			entryMap = validRanges();
-			entryElse = dotElse;
+			if (residualElse) {
+				entryMap = EMPTY_ENTRY_MAP;
+				entryElse = this;
+			} else {
+				entryMap = validRanges();
+			}
 		}
 
 		@Override
@@ -1649,13 +1775,18 @@ abstract class PatternConstruct {
 				// `[ab]{0,2}` -- see buildLoopEntryMap).
 				return super.claimsEntryElse();
 			}
-			// Unquantified: the unquantified case's buildEntryMap never sets entryElse.
-			return false;
+			// Unquantified: buildEntryMap sets entryElse only for a residual (`.`) delegate.
+			return delegate.residualElse;
 		}
 
 		@Override
 		boolean elseIsEndOfFind() {
 			return !isUnquantified() && loopElseIsEndOfFind(List.of(delegate), next);
+		}
+
+		@Override
+		boolean elseIsResidual() {
+			return isUnquantified() ? delegate.residualElse : loopElseIsResidual(List.of(delegate), next);
 		}
 
 		@Override
@@ -1668,7 +1799,12 @@ abstract class PatternConstruct {
 			// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
 			// that happens in buildMatcher(), below. Aliased directly, same reasoning as
 			// ComplexCharacter.buildEntryMap.
-			entryMap = delegate.validRanges();
+			if (delegate.residualElse) {
+				entryMap = EMPTY_ENTRY_MAP;
+				entryElse = this;
+			} else {
+				entryMap = delegate.validRanges();
+			}
 		}
 
 		@Override
@@ -1724,7 +1860,7 @@ abstract class PatternConstruct {
 	 * loop {@code \X*a} is rejected as ambiguous, same as {@code .+b} -- see README's "Intentional
 	 * differences" list). This is the conservative, always-correct choice: a grapheme cluster's own
 	 * width isn't statically known, so there's no way to carve out "whatever \X wouldn't otherwise
-	 * claim" the way {@code .}'s dotElse mechanism does.
+	 * claim" the way {@code .}'s residual else claim does.
 	 */
 	static final class GraphemeClusterConstruct extends PatternConstruct {
 		GraphemeClusterConstruct(int startIndex, int endIndex) {
@@ -1794,6 +1930,11 @@ abstract class PatternConstruct {
 		@Override
 		final boolean elseIsEndOfFind() {
 			return next.elseIsEndOfFind();
+		}
+
+		@Override
+		final boolean elseIsResidual() {
+			return next.elseIsResidual();
 		}
 
 		@Override
@@ -1881,6 +2022,11 @@ abstract class PatternConstruct {
 		@Override
 		boolean elseIsEndOfFind() {
 			return next.elseIsEndOfFind();
+		}
+
+		@Override
+		boolean elseIsResidual() {
+			return next.elseIsResidual();
 		}
 
 		@Override

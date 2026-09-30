@@ -3794,3 +3794,17 @@ Found by a 3-mode differential over nullable-tail patterns (`a?b*c{0,2}` and ~20
 other divergence, `(ab)?`/`(ab)*` on `"a"`, is the documented no-un-consume limit). Not modeled: an end-of-find
 branch that FAILS after being chosen (e.g. an assertion vetoes it) does not fall through to the next sibling.
 Tests: `EndOfFindUnionTest`. A/B (4 baseline + 4 changed): perf-neutral -- compile ratio 2.20x-2.34x vs 2.20x-2.24x, match 1.12x-1.19x vs 1.10x-1.13x (match B/op identical, so the small spread is noise). Pixel 3a single run: compile 31.67 ms (regex 60.42, ratio 0.52), match 4.80 ms (ratio 0.21).
+
+## `.` became a residual else claim (2026-09-29)
+
+`.` now claims "whatever siblings/exit don't" (design.md's "`.`: all other options"). Two traps found up front and
+guarded by `DotElseDifferentialTest`: `.*` at the end of a pattern needs the residual body to coexist with the
+end-of-find exit (else it stops compiling), and `LoopFirstEntryMatcherConstruct` must be skipped for a residual
+loop (`.+b` on `"bb"` matched). The oracle is the pattern with `.` rewritten to its explicit residual class -- a raw
+`java.util.regex` diff is useless here (no backtracking). Possessive `.++b` was first made residual and diverged
+from the JDK (it can never match there); reverted to a compile error. 68 golden rows flipped from "compile
+exception" to a real result (64 AGREES, 4 EXPECTED_DIVERGENCE for greedy `.*x`); refreshed with a scratch
+triage tool (`generateRow` per differing row, regex columns verified byte-identical). Tooling: running the suite on
+JDK 21 fails 8 Unicode-data tests (Emoji/Indic/CaseFold/CanonEq -- generated data is JDK 27's, pre-existing); use
+JDK 27 for `:llkpattern:test`. A scratch class using `MatchRunner` also needs the androidx `collection-jvm`,
+`annotation-jvm` and `kotlin-stdlib` jars on its classpath.

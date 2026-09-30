@@ -12,7 +12,7 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class DotLineTerminatorTest {
   private static final String[] PATTERNS = {
-    ".", ".+", "a.", "a.+", ".+a?", "(?d).+", "(?s).+", "(?d)a.", "(?s)(?d).+", "(?d:.+)x?", "[a.]+", "\\Q.\\E+",
+    ".", ".+", "a.", "a.+", "(?d).+", "(?s).+", "(?d)a.", "(?s)(?d).+", "(?d:.+)x?", "[a.]+", "\\Q.\\E+",
   };
 
   private static final String[] INPUTS = {

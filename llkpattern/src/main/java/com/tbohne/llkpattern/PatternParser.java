@@ -486,6 +486,7 @@ final class PatternParser {
                   ? RegexCharacterClass.DOT_UNIX_LINES : RegexCharacterClass.DOT).unicode);
             }
             dot.flags = flags;
+            dot.residualElse = true;
             // Bug fix (2026-09-07): parseQuantifiable(dot) used to be called BEFORE this advance(1),
             // so it checked for a quantifier suffix (?/*/+/{n,m}) while `peek` was still '.' itself --
             // never seeing the real following character, so "." was silently never quantifiable at

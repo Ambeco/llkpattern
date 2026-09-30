@@ -14,7 +14,7 @@ The project's priorities, in order:
 2. **The best exception messages we can give for invalid input**, even where `java.util.regex` wouldn't throw at all.
 3. **For patterns with unambiguous branches, match the results of `java.util.regex`** (again except for `.`).
 
-A note on `.` (dot): in V1, within a branching context, `.` matches "all other characters" — i.e., whatever isn't already claimed by a sibling branch — rather than "any character," to preserve unambiguous branch selection. Broader support for unconditionally selecting a first matching branch (e.g., using Unicode categories) may be added in a future version, but is out of scope for V1.
+A note on `.` (dot): within a branching context, `.` matches "all other characters" — i.e., whatever isn't already claimed by a sibling branch or by the part after a loop — rather than "any character," to preserve unambiguous branch selection (see "Intentional differences" below). Broader support for unconditionally selecting a first matching branch (e.g., using Unicode categories) may be added in a future version, but is out of scope for V1.
 
 The public API is intended to be a near drop-in replacement for `java.util.regex.Pattern`/`Matcher`, so existing regex-based code can adopt it with minimal changes (`Matcher` mirrors `java.util.regex.Matcher`'s method surface, and `PatternParser`'s grammar is documented as a regex-flavored BNF).
 
@@ -26,7 +26,7 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
 
 - **Ambiguity is a compile-time error.** If two `|` branches, or a loop's body and whatever follows it, could both
   start with the same character, `Ll1Pattern.compile` throws `PatternSyntaxException` instead of backtracking.
-  `a|ab`, `(aaa)?aaa`, `.+b` and `a(b){4,5}b` are rejected; `a(b){4,5}c` and `a|b` are fine. Under
+  `a|ab`, `(aaa)?aaa`, `[^\n]+b` and `a(b){4,5}b` are rejected; `a(b){4,5}c` and `a|b` are fine. Under
   `CASE_INSENSITIVE`, branches are compared after case folding, so `(?i:a|A)` and `(?i:[a-z]+)X` are rejected too.
   This also covers a GREEDY loop followed only by `\b`/`\B`/a `MULTILINE` `^`/`$`/a 1-codepoint lookbehind whose
   truth value depends on how many iterations the loop just consumed — e.g. `a+\B` (`\B` holds right after any
@@ -57,6 +57,13 @@ These are deliberate, and each is checked against `java.util.regex` by the scrap
     This also covers a backreference to a multi-code-point group used in a loop (`(ab)\1?` doesn't match `"aba"`);
     a backreference to a single-code-point group (including a multi-valued one, e.g. `([ab])\1?`) isn't affected,
     since a mismatch there is always caught before anything is consumed.
+- **`.` means "all other options", not "any character".** Where `.` sits next to another choice it claims only what
+  that choice doesn't, so `a|.` is `a|[^a]`, `.+b` is `[^b]+b`, `a*.` is `a*[^a]` and `(a|.)+b` is `(a|[^ab])+b` —
+  which is what keeps them unambiguous. The price is that a loop over `.` stops at the first character the following
+  part claims instead of backtracking: `h.*o` finds `"hello"` in `"hello world"` where `java.util.regex` finds
+  `"hello wo"`. A `.` nothing competes with (`.*`, `a.b`, `^.*$`) is an ordinary any-character (minus line
+  terminators unless `DOTALL`). Two `.` competing for the same choice (`.|.`, `.+.`) are ambiguous and rejected, as
+  is a possessive `.` loop that would swallow what follows (`.++b` can never match in `java.util.regex` either).
 - **A backreference to a group number with no group of that number open yet — forward references (`\1(a)`) and
   references to a group that never exists at all (`\141`, i.e. `\1` plus literal `"41"`) alike — is a compile-time
   error**, rather than the structurally-dead-on-arrival node `java.util.regex` compiles (one that can never match
@@ -123,7 +130,7 @@ Ll1Pattern.compile("a|ab"); // throws PatternSyntaxException: both branches star
 
 Intentional divergence: `\X` claims every code point as its own entry point (unlike `.`, which only claims
 "whatever a sibling doesn't"), since a cluster's width isn't statically known -- so `a|\X` and `\X*a` are rejected
-as ambiguous, the same way `.+b` is (see documents/design.md).
+as ambiguous, like any explicit class that covers everything (see documents/design.md).
 `\N{name}` looks the name up with the platform's `Character.codePointOf` (JDK 9+, Android with a recent enough ICU), so
 it knows exactly the characters the running platform's Unicode data does; where that method is missing it is a compile error
 suggesting `\x{...}`.

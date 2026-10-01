@@ -15,7 +15,7 @@ import java.util.Arrays;
  *       every {@code x} with {@code key(x) == key(c)}, plus {@code key(c)} itself, where {@code
  *       key(x) = lower(upper(x))} -- {@link #addSingle};
  *   <li>a range {@code [lo-hi]} matches {@code x} when {@code x}, {@code upper(x)} or {@code
- *       key(x)} lies in it -- {@link #addRange}.
+ *       key(x)} lies in it -- {@link #appendRange}.
  * </ul>
  *
  * Both need the preimage of a set under {@code upper}/{@code key}, not its image: {@code (?iu)[s]}
@@ -110,7 +110,7 @@ final class CaseFolding {
 
   /** Adds to {@code b} everything a lone {@code codePoint} matches under {@code CASE_INSENSITIVE}. */
   static void addSingle(CodePointSetBuilder b, int codePoint, boolean unicode) {
-    b.add(codePoint, codePoint + 1);
+    b.append(codePoint, codePoint + 1);
     if (!unicode) {
       if (codePoint >= 'a' && codePoint <= 'z') {
         b.add(codePoint - 32);
@@ -128,8 +128,8 @@ final class CaseFolding {
   }
 
   /** Adds {@code [min, max)} to {@code b}, plus what a {@code [lo-hi]} range matches beyond it. */
-  static void addRange(CodePointSetBuilder b, int min, int max, boolean unicode) {
-    b.add(min, max);
+  static void appendRange(CodePointSetBuilder b, int min, int max, boolean unicode) {
+    b.append(min, max);
     if (!unicode) {
       addAsciiShift(b, min, max, 'A', 'Z', 32);
       addAsciiShift(b, min, max, 'a', 'z', -32);
@@ -178,13 +178,13 @@ final class CaseFolding {
         int upperLo = Math.max(min, 'A');
         int upperHi = Math.min(max, 'Z' + 1);
         if (upperLo < upperHi) {
-          additions.add(upperLo + 32, upperHi + 32);
+          additions.append(upperLo + 32, upperHi + 32);
           any[0] = true;
         }
         int lowerLo = Math.max(min, 'a');
         int lowerHi = Math.min(max, 'z' + 1);
         if (lowerLo < lowerHi) {
-          additions.add(lowerLo - 32, lowerHi - 32);
+          additions.append(lowerLo - 32, lowerHi - 32);
           any[0] = true;
         }
       });
@@ -215,8 +215,8 @@ final class CaseFolding {
       return exact;
     }
     MutableCodePointSet result = new ArrayCodePointSet();
-    result.addAll(exact);
-    result.addAll(additions.build());
+    result.insertAll(exact);
+    result.insertAll(additions.build());
     return result;
   }
 
@@ -225,7 +225,7 @@ final class CaseFolding {
     int lo = Math.max(min, from);
     int hi = Math.min(max, to + 1);
     if (lo < hi) {
-      b.add(lo + delta, hi + delta);
+      b.append(lo + delta, hi + delta);
     }
   }
 

@@ -88,13 +88,13 @@ public interface CodePointSet {
    * Returns the intersection of this set and {@code other}: code points in both. Default
    * implementation is a plain nested range scan -- allocates one temporary {@link CodePointSet}
    * per range of this set (via {@link #intersection(int, int)}) plus one {@link
-   * MutableCodePointSet#set} per resulting sub-range -- fine for a cold path, but see {@link
+   * MutableCodePointSet#insert} per resulting sub-range -- fine for a cold path, but see {@link
    * ArrayCodePointSet}'s override for the allocation-light sweep merge real (parse-time-hot)
    * callers should get instead.
    */
   default CodePointSet intersection(CodePointSet other) {
     MutableCodePointSet result = new ArrayCodePointSet();
-    forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::set));
+    forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::insert));
     return result;
   }
 
@@ -129,21 +129,11 @@ public interface CodePointSet {
 
   interface MutableCodePointSet extends CodePointSet {
     default void set(int codePoint) {
-      set(codePoint, codePoint + 1);
+      insert(codePoint, codePoint + 1);
     }
 
     /** Adds every code point in {@code [min, max)} to this set. */
-    void set(int min, int max);
-
-    /**
-     * Bulk-adds a single range, skipping whatever overlap-checking/coalescing work {@link #set}
-     * normally does. Callers must supply ranges in ascending {@code min} order, building this set
-     * up from empty. Default just forwards to {@link #set}; {@link ArrayCodePointSet} provides the
-     * real O(1)-amortized override.
-     */
-    default void appendSorted(int min, int max) {
-      set(min, max);
-    }
+    void insert(int min, int max);
 
     /**
      * Optional capacity hint for implementations backed by a resizable array (see {@link
@@ -161,7 +151,7 @@ public interface CodePointSet {
     void invert();
 
     /** Adds every one of {@code other}'s members to this set. */
-    void addAll(CodePointSet other);
+    void insertAll(CodePointSet other);
 
     default void remove(int codePoint) {
       remove(codePoint, codePoint + 1);

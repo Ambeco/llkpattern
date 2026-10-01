@@ -4,7 +4,6 @@ import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.MatcherConstruct.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 
-import java.util.Map.Entry;
 import org.checkerframework.checker.initialization.qual.UnknownInitialization;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -409,7 +408,7 @@ abstract class PatternConstruct {
 		// together, never split them further), so this is a real Arrays.copyOf regrow avoided, not
 		// a guess. Plain ArrayCodePointSet, not a CodePointSetBuilder: a builder's extra sort/compact
 		// pass measurably cost MORE than this construct's usual 2-3-candidate merge saved by skipping
-		// ArrayCodePointSet#set's binary-search-insert-with-shift (see notes.md's 2026-09-25 entry) --
+		// ArrayCodePointSet#insert's binary-search-insert-with-shift (see notes.md's 2026-09-25 entry) --
 		// pre-sizing alone, without that pass, is the part that's worth keeping.
 		int capacityHint = rangeCountHint(candidateAt(candidates, extra, 0).getEntryPointMap());
 		int candidateCount = candidateCount(candidates, extra);
@@ -455,7 +454,7 @@ abstract class PatternConstruct {
 			// the residual tail): a residual body (`.` in `.*`) and its end-of-find exit coexist: the body claims
 			// what it can and the exit gets the rest. The residual claimant stays the tracked one.
 			if (isLoopExit && elseCandidate != null && elseCandidate.elseIsResidual() && candidate.elseIsEndOfFind()) {
-				ranges.addAll(candidate.getEntryPointMap());
+				ranges.insertAll(candidate.getEntryPointMap());
 				return elseCandidate;
 			}
 			if (elseCandidate != null) {
@@ -469,7 +468,7 @@ abstract class PatternConstruct {
 			}
 			elseCandidate = candidate;
 		}
-		ranges.addAll(candidate.getEntryPointMap());
+		ranges.insertAll(candidate.getEntryPointMap());
 		return elseCandidate;
 	}
 
@@ -996,7 +995,7 @@ abstract class PatternConstruct {
 				if (accept == null) {
 					gate.invert();
 				} else {
-					gate.addAll(accept);
+					gate.insertAll(accept);
 				}
 				for (int j = 0; j < gates.length; j++) {
 					if (j != i) {
@@ -1329,7 +1328,7 @@ abstract class PatternConstruct {
 			if (isUnquantified() && !constructs.isEmpty()) {
 				MutableCodePointSet result = new ArrayCodePointSet();
 				for (PatternConstruct branch : constructs) {
-					result.addAll(branch.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet));
+					result.insertAll(branch.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet));
 				}
 				return result;
 			}
@@ -1355,7 +1354,7 @@ abstract class PatternConstruct {
 				if (branchSet == null) {
 					return null;
 				}
-				result.addAll(branchSet);
+				result.insertAll(branchSet);
 			}
 			return result;
 		}
@@ -1389,7 +1388,7 @@ abstract class PatternConstruct {
 				if (inner == null || inner.captureConstructIndex != -1) {
 					return null;
 				}
-				result.addAll(inner.codePoints);
+				result.insertAll(inner.codePoints);
 			}
 			return new LookbehindConstruct.SingleCodePointBody(result, captureConstructIndex);
 		}
@@ -1778,7 +1777,7 @@ abstract class PatternConstruct {
 		ComplexCharacter(int startIndex, int character) {
 			super(startIndex);
 			MutableCodePointSet single = new ArrayCodePointSet();
-			single.set(character, character + 1);
+			single.insert(character, character + 1);
 			this.ranges = single;
 		}
 
@@ -2195,11 +2194,11 @@ abstract class PatternConstruct {
 		 */
 		private static CodePointSet lineTerminatorStartCodePoints(int flags) {
 			MutableCodePointSet result = new ArrayCodePointSet();
-			result.set('\n', '\n' + 1);
+			result.insert('\n', '\n' + 1);
 			if ((flags & Ll1Pattern.UNIX_LINES) == 0) {
-				result.set('\r', '\r' + 1);
-				result.set(0x0085, 0x0086);
-				result.set(0x2028, 0x202A);
+				result.insert('\r', '\r' + 1);
+				result.insert(0x0085, 0x0086);
+				result.insert(0x2028, 0x202A);
 			}
 			return result;
 		}
@@ -2442,11 +2441,11 @@ abstract class PatternConstruct {
 
 	private static CodePointSet singletonCodePointMap(int codePoint) {
 		MutableCodePointSet result = new ArrayCodePointSet();
-		result.set(codePoint, codePoint + 1);
+		result.insert(codePoint, codePoint + 1);
 		return result;
 	}
 
-	// Built once, not per call -- every call site only reads the result (union/addAll/intersects,
+	// Built once, not per call -- every call site only reads the result (union/insertAll/intersects,
 	// never mutates it back), so there's no need to pay universalCodePointSet's own
 	// set(0, MAX_CODE_POINT + 1) allocation-and-array-growth cost on every one of its callers'
 	// calls (measured as a real compile-time cost for \X: see documents/notes.md's 2026-09-26
@@ -2457,7 +2456,7 @@ abstract class PatternConstruct {
 
 	private static CodePointSet buildUniversalCodePointSet() {
 		MutableCodePointSet result = new ArrayCodePointSet();
-		result.set(0, CodePointSet.MAX_CODE_POINT + 1);
+		result.insert(0, CodePointSet.MAX_CODE_POINT + 1);
 		return result;
 	}
 
@@ -2470,8 +2469,8 @@ abstract class PatternConstruct {
 
 	private static CodePointSet union(CodePointSet a, CodePointSet b) {
 		MutableCodePointSet result = new ArrayCodePointSet();
-		result.addAll(a);
-		result.addAll(b);
+		result.insertAll(a);
+		result.insertAll(b);
 		return result;
 	}
 
@@ -2489,7 +2488,7 @@ abstract class PatternConstruct {
 			// see its own call sites), and every caller of unionLastCharSet's result only ever reads it
 			// (skipZeroWidthEntrySet passes it straight into an admittedInteriorExitPeekSet call, never
 			// mutates it) -- the overwhelmingly common single-alternative loop body (`a+`, `\w*`) would
-			// otherwise pay a whole addAll-driven copy of a set it's about to discard anyway.
+			// otherwise pay a whole insertAll-driven copy of a set it's about to discard anyway.
 			return body.get(0).lastCharSet();
 		}
 		// lastCharSet() (unlike getEntryPointMap()) isn't cached -- each call does real recursive
@@ -2513,7 +2512,7 @@ abstract class PatternConstruct {
 		// exact.
 		MutableCodePointSet result = new ArrayCodePointSet(capacityHint);
 		for (CodePointSet partLast : partLastSets) {
-			result.addAll(partLast);
+			result.insertAll(partLast);
 		}
 		return result;
 	}

@@ -157,12 +157,12 @@ enum NamedCharClass {
       Source.UProperty,
       build(
           m -> {
-            m.set(+'\t', +'\r' + 1); // U+0009-000D
+            m.insert(+'\t', +'\r' + 1); // U+0009-000D
             m.set(+' ');
             m.set(0x0085);
             m.set(0x00A0);
             m.set(0x1680);
-            m.set(0x2000, 0x200B);
+            m.insert(0x2000, 0x200B);
             m.set(0x2028);
             m.set(0x2029);
             m.set(0x202F);
@@ -192,37 +192,37 @@ enum NamedCharClass {
       Source.UProperty,
       build(
           m -> {
-            m.set(+'a', +'f' + 1);
-            m.set(+'A', +'F' + 1);
-            m.set(+'0', +'9' + 1);
-            m.set(0xFF41, 0xFF47);
-            m.set(0xFF21, 0xFF27);
-            m.set(0xFF10, 0xFF1A);
+            m.insert(+'a', +'f' + 1);
+            m.insert(+'A', +'F' + 1);
+            m.insert(+'0', +'9' + 1);
+            m.insert(0xFF41, 0xFF47);
+            m.insert(0xFF21, 0xFF27);
+            m.insert(0xFF10, 0xFF1A);
           })),
   Join_Control(
-      Source.UProperty, build(m -> m.set(0x200C, 0x200E))),
+      Source.UProperty, build(m -> m.insert(0x200C, 0x200E))),
   Noncharacter_Code_Point(
       Source.UProperty,
       build( // not public in Java :(
           m -> {
-            m.set(0xFDD0, 0xFDF0);
-            m.set(0xFFFE, 0x10000);
-            m.set(0x1FFFE, 0x20000);
-            m.set(0x2FFFE, 0x30000);
-            m.set(0x3FFFE, 0x40000);
-            m.set(0x4FFFE, 0x50000);
-            m.set(0x5FFFE, 0x60000);
-            m.set(0x6FFFE, 0x70000);
-            m.set(0x7FFFE, 0x80000);
-            m.set(0x8FFFE, 0x90000);
-            m.set(0x9FFFE, 0xA0000);
-            m.set(0xAFFFE, 0xB0000);
-            m.set(0xBFFFE, 0xC0000);
-            m.set(0xCFFFE, 0xD0000);
-            m.set(0xDFFFE, 0xE0000);
-            m.set(0xEFFFE, 0xF0000);
-            m.set(0xFFFFE, 0x100000);
-            m.set(0x10FFFE, 0x110000);
+            m.insert(0xFDD0, 0xFDF0);
+            m.insert(0xFFFE, 0x10000);
+            m.insert(0x1FFFE, 0x20000);
+            m.insert(0x2FFFE, 0x30000);
+            m.insert(0x3FFFE, 0x40000);
+            m.insert(0x4FFFE, 0x50000);
+            m.insert(0x5FFFE, 0x60000);
+            m.insert(0x6FFFE, 0x70000);
+            m.insert(0x7FFFE, 0x80000);
+            m.insert(0x8FFFE, 0x90000);
+            m.insert(0x9FFFE, 0xA0000);
+            m.insert(0xAFFFE, 0xB0000);
+            m.insert(0xBFFFE, 0xC0000);
+            m.insert(0xCFFFE, 0xD0000);
+            m.insert(0xDFFFE, 0xE0000);
+            m.insert(0xEFFFE, 0xF0000);
+            m.insert(0xFFFFE, 0x100000);
+            m.insert(0x10FFFE, 0x110000);
           })),
   Assigned(
       Source.UProperty,
@@ -266,10 +266,10 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.set(0x0021, 0x0030);
-            m.set(0x003a, 0x0041);
-            m.set(0x005B, 0x0061);
-            m.set(0x007B, 0x007F);
+            m.insert(0x0021, 0x0030);
+            m.insert(0x003a, 0x0041);
+            m.insert(0x005B, 0x0061);
+            m.insert(0x007B, 0x007F);
           }),
       Punctuation.unicode),
   Graph(
@@ -304,7 +304,7 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.set(0x0000, 0x0020); // U+0000-001F
+            m.insert(0x0000, 0x0020); // U+0000-001F
             m.set(0x007F); // U+007F
           }),
       UnicodePredicates.CONTROL),
@@ -312,7 +312,7 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.addAll(Graph.ascii);
+            m.insertAll(Graph.ascii);
             m.set(0x0020);
           }),
       difference(
@@ -375,7 +375,7 @@ enum NamedCharClass {
 
   /**
    * Builds an immutable {@link CodePointSet} via a scratch {@link ArrayCodePointSet}, for a
-   * hand-written literal set too irregular to express as a single {@code add} call. {@code add}
+   * hand-written literal set too irregular to express as a single {@code append} call. {@code append}
    * (unlike {@code appendSorted}, which the generated {@code UnicodePredicates} uses) tolerates
    * entries added out of order, which several of the literals below are (e.g. {@code Hex_Digit}'s
    * a-f/A-F/0-9/fullwidth-digits ordering).
@@ -580,8 +580,8 @@ enum NamedCharClass {
     static final CodePointSet CASED =
         unionOf(UnicodePredicates.isLowerCase, UnicodePredicates.isUpperCase, UnicodePredicates.isTitleCase);
     static final CodePointSet ASCII_LETTERS = build(m -> {
-      m.set('A', 'Z' + 1);
-      m.set('a', 'z' + 1);
+      m.insert('A', 'Z' + 1);
+      m.insert('a', 'z' + 1);
     });
   }
 
@@ -604,7 +604,7 @@ enum NamedCharClass {
             m.set(+'\n');
             m.set(+'\r');
             m.set(0x0085);
-            m.set(0x2028, 0x2029 + 1);
+            m.insert(0x2028, 0x2029 + 1);
           }).complement()),
     DOT_UNIX_LINES(build(m -> m.set(+'\n')).complement()),
     d(Digit),
@@ -620,7 +620,7 @@ enum NamedCharClass {
             m.set(0x202f);
             m.set(0x205f);
             m.set(0x3000);
-            m.set(0x2000, 0x200b);
+            m.insert(0x2000, 0x200b);
           })),
     H(h.unicode.complement()),
     // Bug fix (2026-09-06): now delegates to NamedCharClass.Space instead of duplicating its own
@@ -643,9 +643,9 @@ enum NamedCharClass {
     w(
         build(
             m -> {
-              m.set(+'a', +'z' + 1);
-              m.set(+'A', +'Z' + 1);
-              m.set(+'0', +'9' + 1);
+              m.insert(+'a', +'z' + 1);
+              m.insert(+'A', +'Z' + 1);
+              m.insert(+'0', +'9' + 1);
               m.set(+'_');
             }),
         Word.unicode),

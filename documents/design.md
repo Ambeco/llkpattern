@@ -65,7 +65,7 @@ A `PatternConstruct`'s `entryMap`/`entryElse` (its own advertised "what characte
 
 ##### `mergeEntryPoints`: merging by pulling, not tagging
 
-Merging several candidates' entry points (a union's branches, a loop's body parts plus its own `next`) unions each candidate's own `getEntryPointMap()` straight into a fresh `ArrayCodePointSet` via `addAll` -- one plain call per candidate, no per-candidate identity tagging. This forces every candidate's `entryMap` to materialize (each pull goes through the ordinary cached, cycle-guarded `getEntryPointMap()`, so a quantified construct's own body pointing `next` back at itself for a nullable loop, e.g. `(a?)+`, is still caught by that pull path's three-state guard and converted into a `PatternSyntaxException` rather than infinite recursion). `mergeEntryPoints` doesn't check disjointness itself -- that's matcher-build time's job (`checkDisjoint`, run from `buildForkChainInternal` against real `MatcherConstruct`s, and directly from `validateDisjointness` for the loop-body-vs-`next` runtime-dispatch case), since it's a plain `CodePointSet#intersection` scan against real matchers, not something merging entry points needs to compute itself. `claimsEntryElse()` exists as a separate method from `getEntryElse() != null` purely to give `mergeEntryPoints` a clean loop body over `candidates.size() > 1`.
+Merging several candidates' entry points (a union's branches, a loop's body parts plus its own `next`) unions each candidate's own `getEntryPointMap()` straight into a fresh `ArrayCodePointSet` via `insertAll` -- one plain call per candidate, no per-candidate identity tagging. This forces every candidate's `entryMap` to materialize (each pull goes through the ordinary cached, cycle-guarded `getEntryPointMap()`, so a quantified construct's own body pointing `next` back at itself for a nullable loop, e.g. `(a?)+`, is still caught by that pull path's three-state guard and converted into a `PatternSyntaxException` rather than infinite recursion). `mergeEntryPoints` doesn't check disjointness itself -- that's matcher-build time's job (`checkDisjoint`, run from `buildForkChainInternal` against real `MatcherConstruct`s, and directly from `validateDisjointness` for the loop-body-vs-`next` runtime-dispatch case), since it's a plain `CodePointSet#intersection` scan against real matchers, not something merging entry points needs to compute itself. `claimsEntryElse()` exists as a separate method from `getEntryElse() != null` purely to give `mergeEntryPoints` a clean loop body over `candidates.size() > 1`.
 
 ##### `needsEntryPointBeforeMatcher()`: not pulling what nothing needs
 
@@ -320,25 +320,25 @@ implementation.
   key's *extracted* `min` (always a non-negative `int` in `[0, MAX_CODE_POINT]`), never the raw packed key
   itself, specifically to sidestep any sign-bit concern from packing `min` into high bits (a code point at/above
   `0x100000`, plane 16, does land on the sign bit when packed).
-- Every mutator (`add`, `remove`, the bulk-append `appendSorted`) is localized to just the region of the array it
+- Every mutator (`insert`, `remove`, the package-private bulk-append `appendSorted`) is localized to just the region of the array it
   actually touches, found via the same lookup reads use — a single touched entry is a plain field edit or lone
   insert/delete, and multiple touched entries trim the first/last in place and shift out whatever's strictly
-  between, all without scanning the rest of the array. Building an n-entry set via n `add`/`appendSorted` calls is
+  between, all without scanning the rest of the array. Building an n-entry set via n `insert`/`appendSorted` calls is
   therefore O(n) amortized, not O(n^2) — an earlier version that rescanned the whole array on every mutation
   regressed a JMH benchmark by 3.4x before this was caught (see notes.md's 2026-09-08 entry, from before this
   class's rename from `ArrayCodePointMap`).
 - `rangeSet()`/`forEachRange` always yield ranges in ascending `min` order — a `CodePointSet`-interface-level
   contract (every implementation satisfies it for free, being a set of disjoint ranges over an ordered domain),
-  not just an `ArrayCodePointSet` detail. `MutableCodePointSet.addAll`'s optimized override relies on it directly:
-  rather than one `add()` call per source entry, it's a single sorted merge sweep over this set's own entries and
+  not just an `ArrayCodePointSet` detail. `MutableCodePointSet.insertAll`'s optimized override relies on it directly:
+  rather than one `insert()` call per source entry, it's a single sorted merge sweep over this set's own entries and
   the source's, degenerating automatically to a plain bulk append when the target starts empty. Every compile-time
   site that copies an already-known-sorted source into a fresh, empty destination set — every
   `PatternConstruct.buildEntryMap`/`buildMatcher` and `MatcherConstruct.populate`/loop-dispatch site that walks a
-  child's or a merge result's ranges via `forEachRange` — uses `appendSorted` rather than `add`/`addAll` for
-  exactly this reason: `add()`'s binary-search-and-splice is wasted work when the destination is empty and the
+  child's or a merge result's ranges via `forEachRange` — uses `appendSorted` rather than `insert`/`insertAll` for
+  exactly this reason: `insert()`'s binary-search-and-splice is wasted work when the destination is empty and the
   entries already arrive in order (a plain filter, i.e. skipping some source entries, doesn't break this — the
   ones kept are still ascending). Only genuinely irregular, out-of-order construction (e.g. `NamedCharClass`'s
-  hand-written literals, see below) still needs `add`.
+  hand-written literals, see below) still needs `append`.
 - Adjacent entries are always coalesced together on mutation (there's no "value" to disagree on, unlike an
   earlier generic-map design would have had — see this section's first bullet), except where doing so would
   exceed a single entry's 2048-code-point capacity (the 11-bit count field's range) — a longer logical range

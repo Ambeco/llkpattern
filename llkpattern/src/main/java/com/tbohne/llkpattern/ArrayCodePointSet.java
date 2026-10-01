@@ -1,6 +1,5 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.CodePointSet.Range;
 import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -20,7 +19,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * copy, to keep this class's instances independently mutable) rather than a real rebuild.
  *
  * <p>Homogeneous entries (there's no "value" to disagree on, unlike a generic map) also simplify
- * {@link #set}/{@link #appendSorted}: two overlapping or touching entries always merge
+ * {@link #insert}/{@link #appendSorted}: two overlapping or touching entries always merge
  * unconditionally, with no value-equality check needed anywhere.
  */
 public class ArrayCodePointSet implements MutableCodePointSet {
@@ -40,7 +39,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   // Package-private, not private: CodePointSetBuilder's own Impl subclasses this class directly
   // (rather than composing a separate builder object that hands a finished array off to a fresh
   // ArrayCodePointSet -- see that class's own doc for why) and needs to read/write these fields
-  // itself, both while accumulating (unsorted, via its own overridden #add) and in its own #build
+  // itself, both while accumulating (unsorted, via its own overridden #append) and in its own #build
   // (sorting/coalescing this same array in place before handing `this` back as the finished set).
   //
   // Kept sorted by min (equivalently, by key, since min occupies the packed key's high bits --
@@ -73,10 +72,10 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     size = 0;
   }
 
-  @SuppressWarnings("method.invocation") // addAllImpl is private and only touches this class's own (initialized) fields
+  @SuppressWarnings("method.invocation") // insertAllImpl is private and only touches this class's own (initialized) fields
   public ArrayCodePointSet(CodePointSet other) {
     this();
-    addAllImpl(other);
+    insertAllImpl(other);
   }
 
   /**
@@ -196,11 +195,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   /**
-   * Like {@link #windowStart}, but for {@link #set}/{@link #appendSorted}'s merge semantics: a
+   * Like {@link #windowStart}, but for {@link #insert}/{@link #appendSorted}'s merge semantics: a
    * merely-touching entry (its {@code max} exactly equal to {@code min}) counts too, since it's
    * about to be fused into one run with the new range rather than left as a separate one.
    */
-  private int addWindowStart(int min) {
+  private int insertWindowStart(int min) {
     int idx = floorIndex(keys, size, min);
     if (idx < 0 || keyMax(keys[idx]) < min) {
       idx++;
@@ -208,8 +207,8 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return idx;
   }
 
-  /** The {@link #addWindowStart} counterpart of {@link #windowEnd} -- touching entries included. */
-  private int addWindowEnd(int start, int max) {
+  /** The {@link #insertWindowStart} counterpart of {@link #windowEnd} -- touching entries included. */
+  private int insertWindowEnd(int start, int max) {
     int end = start;
     while (end < size && keyMin(keys[end]) <= max) {
       end++;
@@ -344,7 +343,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   /**
    * Overrides the interface default with an allocation-light two-pointer sweep over both sets'
    * raw {@code keys} arrays -- one temporary {@link ArrayCodePointSet} total (the result), versus
-   * the default's one-per-range-of-{@code this} plus a binary-search {@link #set} per emitted
+   * the default's one-per-range-of-{@code this} plus a binary-search {@link #insert} per emitted
    * sub-range. Falls back to the default for a non-{@link ArrayCodePointSet} {@code other} (e.g. a
    * lazy {@code UnionCodePointSet}) -- every real caller on the parse-time hot path
    * ({@code PatternParser}'s {@code &&} handling) already has both operands as concrete {@code
@@ -423,7 +422,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   /**
-   * {@code a}'s and {@code b}'s raw ranges, unioned via a linear merge (not {@link #addAll}).
+   * {@code a}'s and {@code b}'s raw ranges, unioned via a linear merge (not {@link #insertAll}).
    * Coalesces into a running {@code (curMin, curMax)} accumulator before ever calling {@link
    * #appendSorted} -- NOT simply "append whichever source's next range has the smaller min":
    * once a run merged from both sources spans more than 2048 code points, it's split across
@@ -490,29 +489,31 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   @Override
-  public void set(int min, int max) {
+  public void insert(int min, int max) {
     if (invert) {
       // keys are the EXCLUDED runs, so adding to the set means un-excluding.
       removeRaw(min, max);
       return;
     }
-    int start = addWindowStart(min);
-    int end = addWindowEnd(start, max);
-    addRange(start, end, min, max);
+    int start = insertWindowStart(min);
+    int end = insertWindowEnd(start, max);
+    insertRange(start, end, min, max);
   }
 
-  /** Bulk-appends a single range; see {@link MutableCodePointSet#appendSorted}'s contract. */
-  @Override
-  public void appendSorted(int min, int max) {
+  /**
+   * Bulk-appends a single range. Callers must supply ranges in ascending {@code min} order, building
+   * this set up from empty.
+   */
+  void appendSorted(int min, int max) {
     if (min >= max) {
-      return; // empty range -- guard needed since addRange treats an empty [start,end) touching
+      return; // empty range -- guard needed since insertRange treats an empty [start,end) touching
               // the last entry as "shrink it away", not "no-op".
     }
     // Sorted-append input can only ever touch/overlap the LAST existing entry (everything else is
     // strictly before it), so the merge window is found by a plain check instead of the binary
-    // search set() needs.
+    // search insert() needs.
     int start = (size > 0 && keyMax(keys[size - 1]) >= min) ? size - 1 : size;
-    addRange(start, size, min, max);
+    insertRange(start, size, min, max);
   }
 
   /**
@@ -523,7 +524,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
    * needs a separate coalesce pass, and writes the chunks directly into {@code keys} with no
    * intermediate array.
    */
-  private void addRange(int start, int end, int min, int max) {
+  private void insertRange(int start, int end, int min, int max) {
     int lo = (start < end) ? Math.min(min, keyMin(keys[start])) : min;
     int hi = (start < end) ? Math.max(max, keyMax(keys[end - 1])) : max;
     int chunkCount = (hi - lo + MAX_COUNT) / (MAX_COUNT + 1); // ceil((hi - lo) / 2048)
@@ -547,12 +548,12 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   @Override
-  public void addAll(CodePointSet other) {
-    addAllImpl(other);
+  public void insertAll(CodePointSet other) {
+    insertAllImpl(other);
   }
 
-  /** {@link #addAll}'s body, non-overridable so the copy constructor can call it safely. */
-  private void addAllImpl(CodePointSet other) {
+  /** {@link #insertAll}'s body, non-overridable so the copy constructor can call it safely. */
+  private void insertAllImpl(CodePointSet other) {
     if (other instanceof ArrayCodePointSet) {
       ArrayCodePointSet o = (ArrayCodePointSet) other;
       if (o == this) {
@@ -563,12 +564,12 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       }
       if (!invert && !o.invert) {
         if (size == 0) {
-          // Fast path: this set has nothing of its own yet, so addAll degenerates to a plain array
+          // Fast path: this set has nothing of its own yet, so insertAll degenerates to a plain array
           // copy -- but preserve `keys`' own capacity if a caller (e.g. PatternConstruct#
           // mergeEntryPoints/#unionLastCharSet, pre-sized via the (int initialCapacity) constructor
           // for a merge this is only the FIRST step of) already sized it bigger than `o.size`:
           // Arrays.copyOf here would otherwise silently throw that pre-sizing away, shrinking back
-          // down to fit just this one source before any later addAll ever runs (measured as real,
+          // down to fit just this one source before any later insertAll ever runs (measured as real,
           // not just theoretical -- see notes.md's 2026-09-25 entry). Safe even when `this` is a
           // still-accumulating CodePointSetBuilderImpl (see the sweepUnion note just below) since a
           // plain copy doesn't care about sort order.
@@ -590,22 +591,22 @@ public class ArrayCodePointSet implements MutableCodePointSet {
         //
         // Deliberately NOT a fallback to `sweepUnion` when `keys` doesn't have room: `sweepUnion`
         // always allocates a throwaway wrapper `ArrayCodePointSet` plus a fresh array, sized to the
-        // pessimistic `size + o.size` bound -- worse, not better, than the old per-range `set()`
+        // pessimistic `size + o.size` bound -- worse, not better, than the old per-range `insert()`
         // fallback below for an unsized target, which allocates nothing at all whenever an
-        // incoming range merely touches/overlaps an existing entry (`addRange`'s `delta <= 0` case)
+        // incoming range merely touches/overlaps an existing entry (`insertRange`'s `delta <= 0` case)
         // or 1.5x growth already left slack. Measured as a real, if small (~0.9%), desktop
         // compile-time allocation REGRESSION when tried (see notes.md) -- reverted in favor of just
         // falling through to the old fallback for this case.
         //
         // This in-place merge assumes `keys` is sorted, which holds for every ordinary
         // ArrayCodePointSet but NOT for a CodePointSetBuilderImpl still accumulating -- its own
-        // `add()` override deliberately appends unsorted until `build()` sorts in place (see that
-        // class's doc), so builders are excluded here (falling through to the per-range `set()`
-        // fallback below, which dispatches to the builder's own unsorted-append `add()` via its own
-        // `set()` override -- see that override's doc). `o` can never be a live builder --
+        // `append()` override deliberately appends unsorted until `build()` sorts in place (see that
+        // class's doc), so builders are excluded here (falling through to the per-range `insert()`
+        // fallback below, which dispatches to the builder's own unsorted-append `append()` via its own
+        // `insert()` override -- see that override's doc). `o` can never be a live builder --
         // CodePointSetBuilder doesn't expose itself as a CodePointSet until built, so no caller can
-        // pass one in as `other` -- only `this` can be, via CodePointSetBuilderImpl#addAll's own
-        // override calling straight into this method.
+        // pass one in as `other` -- only `this` can be, if something reaches a builder through a
+        // MutableCodePointSet-typed reference.
         if (!(this instanceof CodePointSetBuilder) && keys.length >= size + o.size) {
           mergeInPlace(o);
           return;
@@ -613,11 +614,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       }
     }
     // Fallback: not two concrete non-inverted ArrayCodePointSets (a lazy UnionCodePointSet on
-    // either side, or either side inverted) -- a plain range-at-a-time set() per source range, not
+    // either side, or either side inverted) -- a plain range-at-a-time insert() per source range, not
     // a sorted-sweep merge (no "other wins on overlap" semantics to preserve here -- a union just
-    // needs every source range folded in, and set() already merges anything it touches/overlaps).
+    // needs every source range folded in, and insert() already merges anything it touches/overlaps).
     if (!invert && other instanceof ArrayCodePointSet) {
-      // Each set() adds at most chunkBound new entries in total, so size once up front instead of
+      // Each insert() adds at most chunkBound new entries in total, so size once up front instead of
       // letting ensureCapacity regrow it range by range (an inverted source's few huge gap ranges
       // re-chunk into hundreds of 2048-wide entries each).
       int needed = size + ((ArrayCodePointSet) other).memberChunkBound();
@@ -625,11 +626,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
         keys = Arrays.copyOf(keys, needed);
       }
     }
-    other.forEachRange(this::set);
+    other.forEachRange(this::insert);
   }
 
   /**
-   * Capacity for an empty set that will {@code addAll(accept)} and then {@code removeAll} every
+   * Capacity for an empty set that will {@code insertAll(accept)} and then {@code removeAll} every
    * {@code removes} entry but index {@code skip} (a sibling's claim carved out of {@code accept}):
    * big enough that neither step regrows it. Each removed range adds at most one entry, and an
    * inverted operand emits at most {@code size + 1} ranges.
@@ -665,7 +666,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   /**
-   * {@link #addAll}'s in-place fast path: merges {@code o}'s raw ranges into this set's own {@code
+   * {@link #insertAll}'s in-place fast path: merges {@code o}'s raw ranges into this set's own {@code
    * keys}, given the caller already confirmed {@code keys.length >= size + o.size} (room for both
    * operands with no growth) and that neither side is inverted or a still-accumulating {@link
    * CodePointSetBuilder}. Shifts this set's own {@code size} entries to the tail of {@code keys}
@@ -726,7 +727,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   @Override
   public CodePointSet union(CodePointSet other) {
     ArrayCodePointSet result = new ArrayCodePointSet(this);
-    result.addAll(other);
+    result.insertAll(other);
     return result;
   }
 
@@ -743,9 +744,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       removeRaw(min, max);
     } else if (min < max) {
       // keys are the EXCLUDED runs, so removing from the set means excluding more.
-      int start = addWindowStart(min);
-      int end = addWindowEnd(start, max);
-      addRange(start, end, min, max);
+      int start = insertWindowStart(min);
+      int end = insertWindowEnd(start, max);
+      insertRange(start, end, min, max);
     }
   }
 
@@ -924,19 +925,16 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
   /**
    * A {@link CodePointSetBuilder} that IS an {@link ArrayCodePointSet} -- see that interface's own
-   * doc for why. Overrides {@link #add}, the one method whose semantics genuinely differ while
-   * accumulating (unsorted append here, vs. {@link ArrayCodePointSet#set}'s own
-   * sorted-insert-with-shift) -- and also overrides {@link #set} itself, purely as a guard: {@link
-   * ArrayCodePointSet}'s own {@code set} assumes sorted {@code keys}, which doesn't hold for this
-   * class mid-accumulation, so {@code set} is redirected straight to {@link #add} rather than left
+   * doc for why. Overrides {@link #append}, the one method whose semantics genuinely differ while
+   * accumulating (unsorted append here, vs. {@link ArrayCodePointSet#insert}'s own
+   * sorted-insert-with-shift) -- and also overrides {@link #insert} itself, purely as a guard: {@link
+   * ArrayCodePointSet}'s own {@code insert} assumes sorted {@code keys}, which doesn't hold for this
+   * class mid-accumulation, so {@code insert} is redirected straight to {@link #append} rather than left
    * to silently corrupt an in-progress build if something ever reaches this object through a {@link
-   * MutableCodePointSet}-typed reference (e.g. {@link ArrayCodePointSet#addAll}'s own per-range
-   * fallback). {@link #addAll}/{@link #invert} are overridden only to add the build-once guard, then
-   * delegate straight to the inherited implementation -- {@link ArrayCodePointSet#addAll}'s own fast
-   * path (a plain array copy when this is still empty) and its sweep-merge fast paths are excluded
-   * for a still-accumulating builder for the same sorted-{@code keys} reason, falling through to its
-   * general per-range fallback, which correctly reaches THIS class's overridden {@link #set} (and,
-   * through it, {@link #add}) via ordinary virtual dispatch. Lives here (nested in {@link
+   * MutableCodePointSet}-typed reference. {@link #appendAll} is this class's own explicit loop appending
+   * each source range (plus a packed-key copy when still empty) -- it never touches {@link
+   * ArrayCodePointSet#insertAll}'s sorted-merge paths, so those can't corrupt a still-accumulating
+   * build; {@link #invert} is overridden only to add the build-once guard. Lives here (nested in {@link
    * ArrayCodePointSet}, package-private, not in {@code CodePointSetBuilder.java}) since the two are
    * tightly intertwined implementation details of each other -- this class reaches into {@code
    * ArrayCodePointSet}'s own package-private {@code keys}/{@code size}/{@code packKey}/{@code
@@ -960,27 +958,27 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
     @Override
     public void add(int codePoint) {
-      add(codePoint, codePoint + 1);
+      append(codePoint, codePoint + 1);
     }
 
     @Override
-    public void add(int min, int max) {
+    public void append(int min, int max) {
       checkNotBuilt();
       // Packed immediately in ArrayCodePointSet's own compact key format -- not deferred to
       // #build -- chunking any range wider than MAX_COUNT into multiple entries here, the same way
-      // ArrayCodePointSet#addRange does for an incremental insert.
+      // ArrayCodePointSet#insertRange does for an incremental insert.
       for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
         int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
         appendKey(packKey(chunkMin, chunkMax - chunkMin - 1));
       }
     }
 
-    // See this class's own doc: redirects to #add rather than inheriting ArrayCodePointSet#set's
+    // See this class's own doc: redirects to #append rather than inheriting ArrayCodePointSet#insert's
     // sorted-insert-with-shift, which assumes sorted `keys` this class doesn't maintain until
-    // #build. checkNotBuilt() happens inside #add already, no need to repeat it here.
+    // #build. checkNotBuilt() happens inside #append already, no need to repeat it here.
     @Override
-    public void set(int min, int max) {
-      add(min, max);
+    public void insert(int min, int max) {
+      append(min, max);
     }
 
     private void appendKey(int key) {
@@ -992,9 +990,27 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     }
 
     @Override
-    public void addAll(CodePointSet source) {
+    public void appendAll(CodePointSet source) {
       checkNotBuilt();
-      super.addAll(source);
+      if (source instanceof ArrayCodePointSet) {
+        ArrayCodePointSet o = (ArrayCodePointSet) source;
+        if (size == 0 && !o.invert) {
+          // Nothing accumulated yet, so a packed-key copy beats unpack-and-repack per range.
+          if (keys.length >= o.size) {
+            System.arraycopy(o.keys, 0, keys, 0, o.size);
+          } else {
+            keys = Arrays.copyOf(o.keys, o.size);
+          }
+          size = o.size;
+          return;
+        }
+        // Each source range appends at most memberChunkBound() entries in total; size once.
+        int needed = size + o.memberChunkBound();
+        if (keys.length < needed) {
+          keys = Arrays.copyOf(keys, needed);
+        }
+      }
+      source.forEachRange(this::append);
     }
 
     @Override
@@ -1053,7 +1069,18 @@ public class ArrayCodePointSet implements MutableCodePointSet {
      * compare raw packed keys either).
      */
     private void sortInPlaceByMin() {
-      for (int i = 1; i < size; i++) {
+      int prevMin = Integer.MIN_VALUE;
+      int firstOutOfOrder = 0;
+      for (; firstOutOfOrder < size; firstOutOfOrder++) {
+        int min = keyMin(keys[firstOutOfOrder]);
+        if (min < prevMin) {
+          break;
+        }
+        prevMin = min;
+      }
+      // Already sorted (the common case) falls straight through; otherwise the sorted prefix is
+      // skipped.
+      for (int i = firstOutOfOrder; i < size; i++) {
         int key = keys[i];
         int min = keyMin(key);
         int j = i - 1;

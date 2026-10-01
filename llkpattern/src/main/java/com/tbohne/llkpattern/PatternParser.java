@@ -12,7 +12,6 @@ import androidx.collection.MutableObjectIntMap;
 import androidx.collection.ObjectIntMap;
 
 import java.nio.CharBuffer;
-import java.util.Arrays;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
@@ -1122,7 +1121,7 @@ final class PatternParser {
    */
   private void addLiteral(CodePointSetBuilder ranges, int codePoint) {
     if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
-      ranges.add(codePoint, codePoint + 1);
+      ranges.append(codePoint, codePoint + 1);
     } else {
       CaseFolding.addSingle(ranges, codePoint, CaseFolding.isUnicodeCase(flags));
     }
@@ -1131,9 +1130,9 @@ final class PatternParser {
   /** {@link #addLiteral} for an explicit {@code lo-hi} range ({@code max} exclusive). */
   private void addLiteralRange(CodePointSetBuilder ranges, int min, int max) {
     if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
-      ranges.add(min, max);
+      ranges.append(min, max);
     } else {
-      CaseFolding.addRange(ranges, min, max, CaseFolding.isUnicodeCase(flags));
+      CaseFolding.appendRange(ranges, min, max, CaseFolding.isUnicodeCase(flags));
     }
   }
 
@@ -1182,8 +1181,8 @@ final class PatternParser {
     // "&&" is seen) holds the running intersection of every completed operand run before it. A
     // CodePointSetBuilder, not a MutableCodePointSet, since members of a single operand run arrive
     // in whatever order the bracket expression wrote them (e.g. "[cba]" adds 'c', 'b', 'a') --
-    // CodePointSetBuilder#add is a plain O(1)-amortized append regardless of order, deferring the
-    // sort/coalesce ArrayCodePointSet#set would otherwise do on every single-character member to
+    // CodePointSetBuilder#append is a plain O(1)-amortized append regardless of order, deferring the
+    // sort/coalesce ArrayCodePointSet#insert would otherwise do on every single-character member to
     // one #build() call when this operand run is actually finished (at "&&" or the closing "]").
     @Nullable CodePointSet intersectionSoFar = null;
     for (; ; ) {
@@ -1202,12 +1201,12 @@ final class PatternParser {
             CodePointSet finalRanges = intersectionSoFar.intersection(completedRun);
             return negate ? finalRanges.complement() : finalRanges;
           } else {
-            ranges.add(+']', +']' + 1);
+            ranges.append(+']', +']' + 1);
             advance(1);
             break;
           }
         case '-':
-          ranges.add(+'-', +'-' + 1);
+          ranges.append(+'-', +'-' + 1);
           advance(1);
           break;
         case '\\':
@@ -1779,7 +1778,7 @@ final class PatternParser {
     advance(1);
     if (peek == ']') {
       addLiteral(ranges, startCodePoint);
-      ranges.add(+'-', +'-' + 1);
+      ranges.append(+'-', +'-' + 1);
     } else if (peek == '\\') {
       int endCodePoint = tryParseSingleCharEscape();
       if (endCodePoint == -1) {

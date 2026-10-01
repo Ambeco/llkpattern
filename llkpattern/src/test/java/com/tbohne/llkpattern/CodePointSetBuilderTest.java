@@ -11,7 +11,7 @@ public class CodePointSetBuilderTest {
   @Test
   public void build_singleRange_isMember() {
     CodePointSetBuilder builder = CodePointSetBuilder.create();
-    builder.add('a', 'd');
+    builder.append('a', 'd');
     CodePointSet set = builder.build();
     assertThat(set.contains('a'), is(true));
     assertThat(set.contains('c'), is(true));
@@ -34,8 +34,8 @@ public class CodePointSetBuilderTest {
   @Test
   public void build_overlappingRangesFromDifferentSources_merge() {
     CodePointSetBuilder builder = CodePointSetBuilder.create();
-    builder.add('a', 'c'); // 'a', 'b'
-    builder.add('b', 'd'); // 'b', 'c' -- overlaps, never a conflict for a plain set
+    builder.append('a', 'c'); // 'a', 'b'
+    builder.append('b', 'd'); // 'b', 'c' -- overlaps, never a conflict for a plain set
     CodePointSet set = builder.build();
     assertThat(set.contains('a'), is(true));
     assertThat(set.contains('b'), is(true));
@@ -44,11 +44,11 @@ public class CodePointSetBuilderTest {
   }
 
   @Test
-  public void addAll_pushesSourceSetsRanges() {
+  public void appendAll_pushesSourceSetsRanges() {
     CodePointSetBuilder builder = CodePointSetBuilder.create();
     MutableCodePointSet source = new ArrayCodePointSet();
-    source.set('x', 'z' + 1);
-    builder.addAll(source);
+    source.insert('x', 'z' + 1);
+    builder.appendAll(source);
     CodePointSet set = builder.build();
     assertThat(set.contains('x'), is(true));
     assertThat(set.contains('z'), is(true));
@@ -57,7 +57,7 @@ public class CodePointSetBuilderTest {
   @Test
   public void mergeRun_negatedLiteralsOnly_isComplementOfLiterals() {
     CodePointSetBuilder builder = CodePointSetBuilder.create();
-    builder.add('a', 'd');
+    builder.append('a', 'd');
     CodePointSet set = CodePointSetBuilder.mergeRun(builder, null, true);
     assertThat(set.contains('a'), is(false));
     assertThat(set.contains('e'), is(true));
@@ -66,7 +66,7 @@ public class CodePointSetBuilderTest {
   @Test
   public void mergeRun_negatedWithEmptyLiteralsAndRunUnion_returnsComplementCopy_leavesRunUnionUntouched() {
     MutableCodePointSet runUnion = new ArrayCodePointSet();
-    runUnion.set('a', 'd');
+    runUnion.insert('a', 'd');
     CodePointSetBuilder emptyBuilder = CodePointSetBuilder.create();
     CodePointSet set = CodePointSetBuilder.mergeRun(emptyBuilder, runUnion, true);
     assertThat(set.contains('a'), is(false));
@@ -80,9 +80,9 @@ public class CodePointSetBuilderTest {
   @Test
   public void mergeRun_negatedWithLiteralsAndRunUnion_isComplementOfUnion() {
     CodePointSetBuilder builder = CodePointSetBuilder.create();
-    builder.add('a', 'c'); // 'a', 'b'
+    builder.append('a', 'c'); // 'a', 'b'
     MutableCodePointSet runUnion = new ArrayCodePointSet();
-    runUnion.set('x', 'z' + 1);
+    runUnion.insert('x', 'z' + 1);
     CodePointSet set = CodePointSetBuilder.mergeRun(builder, runUnion, true);
     assertThat(set.contains('a'), is(false));
     assertThat(set.contains('x'), is(false));

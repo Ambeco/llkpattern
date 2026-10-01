@@ -253,6 +253,25 @@ public class ArrayCodePointSetTest {
   }
 
   @Test
+  public void addAll_ofInvertedSource_matchesPerRangeSetFormula_fuzzed() {
+    java.util.Random random = new java.util.Random(23);
+    for (int trial = 0; trial < 1000; trial++) {
+      ArrayCodePointSet target = randomNonInvertedSet(random);
+      ArrayCodePointSet inverted = new ArrayCodePointSet(randomNonInvertedSet(random));
+      inverted.invert();
+
+      MutableCodePointSet expected = new ArrayCodePointSet(target);
+      inverted.forEachRange(expected::set);
+
+      ArrayCodePointSet actual = new ArrayCodePointSet(target);
+      actual.addAll(inverted);
+      assertThat("trial " + trial + ": " + target + " + " + inverted,
+          coalesced(actual), equalTo(coalesced(expected)));
+      assertThat(actual.contains(0x10FFFF), is(true));
+    }
+  }
+
+  @Test
   public void removeAll_matchesPerRangeRemove_fuzzed() {
     java.util.Random random = new java.util.Random(7);
     for (int trial = 0; trial < 2000; trial++) {

@@ -992,7 +992,7 @@ abstract class PatternConstruct {
 						}
 					}
 				}
-				MutableCodePointSet gate = new ArrayCodePointSet();
+				MutableCodePointSet gate = new ArrayCodePointSet(ArrayCodePointSet.capacityHint(accept, gates, i));
 				if (accept == null) {
 					gate.invert();
 				} else {

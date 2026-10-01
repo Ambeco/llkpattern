@@ -616,7 +616,52 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     // either side, or either side inverted) -- a plain range-at-a-time set() per source range, not
     // a sorted-sweep merge (no "other wins on overlap" semantics to preserve here -- a union just
     // needs every source range folded in, and set() already merges anything it touches/overlaps).
+    if (!invert && other instanceof ArrayCodePointSet) {
+      // Each set() adds at most chunkBound new entries in total, so size once up front instead of
+      // letting ensureCapacity regrow it range by range (an inverted source's few huge gap ranges
+      // re-chunk into hundreds of 2048-wide entries each).
+      int needed = size + ((ArrayCodePointSet) other).memberChunkBound();
+      if (keys.length < needed) {
+        keys = Arrays.copyOf(keys, needed);
+      }
+    }
     other.forEachRange(this::set);
+  }
+
+  /**
+   * Capacity for an empty set that will {@code addAll(accept)} and then {@code removeAll} every
+   * {@code removes} entry but index {@code skip} (a sibling's claim carved out of {@code accept}):
+   * big enough that neither step regrows it. Each removed range adds at most one entry, and an
+   * inverted operand emits at most {@code size + 1} ranges.
+   */
+  static int capacityHint(@Nullable CodePointSet accept, CodePointSet[] removes, int skip) {
+    int capacity = accept instanceof ArrayCodePointSet ? ((ArrayCodePointSet) accept).memberChunkBound() : 0;
+    for (int j = 0; j < removes.length; j++) {
+      if (j != skip && removes[j] instanceof ArrayCodePointSet) {
+        capacity += ((ArrayCodePointSet) removes[j]).size + 1;
+      }
+    }
+    return capacity;
+  }
+
+  /** An upper bound on the packed entries {@link #forEachRange}'s ranges need once re-chunked. */
+  private int memberChunkBound() {
+    if (!invert) {
+      return size;
+    }
+    int total = 0;
+    int cursor = 0;
+    for (int i = 0; i < size; i++) {
+      int min = keyMin(keys[i]);
+      if (min > cursor) {
+        total += (min - cursor + MAX_COUNT) / (MAX_COUNT + 1);
+      }
+      cursor = keyMax(keys[i]);
+    }
+    if (cursor <= MAX_CODE_POINT) {
+      total += (MAX_CODE_POINT + 1 - cursor + MAX_COUNT) / (MAX_COUNT + 1);
+    }
+    return total;
   }
 
   /**

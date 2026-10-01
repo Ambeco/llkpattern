@@ -208,6 +208,73 @@ public class ArrayCodePointSetTest {
     }
   }
 
+  @Test
+  public void invertedSet_removeAndSetAndRemoveAll_actOnMembersNotExcludedRuns() {
+    ArrayCodePointSet everything = new ArrayCodePointSet();
+    everything.invert();
+    everything.remove('b');
+    assertThat(everything.contains('b'), is(false));
+    assertThat(everything.contains('a'), is(true));
+    everything.set('b');
+    assertThat(everything.contains('b'), is(true));
+
+    ArrayCodePointSet claimed = new ArrayCodePointSet();
+    claimed.appendSorted('x', 'z' + 1);
+    everything.removeAll(claimed);
+    assertThat(everything.contains('y'), is(false));
+    assertThat(everything.contains('w'), is(true));
+    assertThat(everything.contains(0x10FFFF), is(true));
+  }
+
+  @Test
+  public void invertedSet_mutators_matchNonInvertedComplement_fuzzed() {
+    java.util.Random random = new java.util.Random(11);
+    for (int trial = 0; trial < 1000; trial++) {
+      ArrayCodePointSet raw = randomNonInvertedSet(random);
+      ArrayCodePointSet other = randomNonInvertedSet(random);
+      boolean removing = random.nextBoolean();
+      ArrayCodePointSet inverted = new ArrayCodePointSet(raw);
+      inverted.invert();
+      ArrayCodePointSet normal = (ArrayCodePointSet) raw.complement(); // materialized members
+      CodePointSet.MutableCodePointSet expected = new ArrayCodePointSet();
+      normal.forEachRange(expected::set);
+      if (removing) {
+        inverted.removeAll(other);
+        other.forEachRange(expected::remove);
+      } else {
+        inverted.addAll(other);
+        other.forEachRange(expected::set);
+      }
+      for (int cp = 0; cp < 12000; cp++) {
+        assertThat("trial " + trial + " cp " + cp + (removing ? " - " : " + ") + other + " from !" + raw,
+            inverted.contains(cp), is(expected.contains(cp)));
+      }
+    }
+  }
+
+  @Test
+  public void removeAll_matchesPerRangeRemove_fuzzed() {
+    java.util.Random random = new java.util.Random(7);
+    for (int trial = 0; trial < 2000; trial++) {
+      ArrayCodePointSet a = randomNonInvertedSet(random);
+      ArrayCodePointSet b = randomNonInvertedSet(random);
+
+      MutableCodePointSet expected = new ArrayCodePointSet(a);
+      b.forEachRange(expected::remove);
+
+      MutableCodePointSet unsized = new ArrayCodePointSet(a);
+      unsized.removeAll(b);
+      assertThat("trial " + trial + " (exact-size): " + a + " - " + b,
+          coalesced(unsized), equalTo(coalesced(expected)));
+
+      ArrayCodePointSet roomy = new ArrayCodePointSet(a.size + b.size + 3);
+      roomy.addAll(a);
+      roomy.removeAll(b);
+      assertThat("trial " + trial + " (in-place): " + a + " - " + b,
+          coalesced(roomy), equalTo(coalesced(expected)));
+    }
+  }
+
   /** Like {@link #randomSet}, but never inverted -- addAll's fast paths only cover two non-inverted
    *  operands (an inverted operand falls back to the older per-range path, unchanged this session). */
   private static ArrayCodePointSet randomNonInvertedSet(java.util.Random random) {

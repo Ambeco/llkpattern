@@ -491,6 +491,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public void set(int min, int max) {
+    if (invert) {
+      // keys are the EXCLUDED runs, so adding to the set means un-excluding.
+      removeRaw(min, max);
+      return;
+    }
     int start = addWindowStart(min);
     int end = addWindowEnd(start, max);
     addRange(start, end, min, max);
@@ -689,6 +694,18 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public void remove(int min, int max) {
+    if (!invert) {
+      removeRaw(min, max);
+    } else if (min < max) {
+      // keys are the EXCLUDED runs, so removing from the set means excluding more.
+      int start = addWindowStart(min);
+      int end = addWindowEnd(start, max);
+      addRange(start, end, min, max);
+    }
+  }
+
+  /** Removes {@code [min, max)} from {@code keys}' recorded runs, ignoring {@link #invert}. */
+  private void removeRaw(int min, int max) {
     if (size == 0 || min >= max) {
       return;
     }
@@ -726,6 +743,30 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       end--;
     }
     deleteRange(start, end);
+  }
+
+  /**
+   * Bulk difference. The default per-range loop splits entries one hole at a time, each split a
+   * potential {@code keys} regrowth (the dominant cost of this in the compile-time allocation
+   * profile). Each removed range adds at most one entry (it can split only one), so growing {@code
+   * keys} once to exactly {@code size + other.size} -- if it isn't already that big -- makes every
+   * {@link #remove} below non-allocating. Kept per-range (binary search plus a small memmove each)
+   * rather than a linear sweep, which measured slower when {@code other} is small next to {@code
+   * this}. Inverted operands, lazy unions and self use the default loop.
+   */
+  @Override
+  public void removeAll(CodePointSet other) {
+    if (other instanceof ArrayCodePointSet && other != this && !invert
+        && !((ArrayCodePointSet) other).invert && !(this instanceof CodePointSetBuilder)) {
+      ArrayCodePointSet o = (ArrayCodePointSet) other;
+      if (size == 0 || o.size == 0) {
+        return;
+      }
+      if (keys.length < size + o.size) {
+        keys = Arrays.copyOf(keys, size + o.size);
+      }
+    }
+    MutableCodePointSet.super.removeAll(other);
   }
 
   private void deleteRange(int from, int to) {

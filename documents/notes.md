@@ -3818,3 +3818,18 @@ fixed and guarded by `LineEndCrLfUnixLinesTest`: `$`/`\Z` held between the halve
 one terminator), and `lineTerminatorStartCodePoints` counted `\r` as a MULTILINE `$` peek under UNIX_LINES (so
 `[^\n]+$` failed to compile). Also note `a?.` is `a.|[^a]`, not `a?[^a]`: a `?` has no back edge, so after a consumed
 `a` the `.` is unopposed. Benchmarks not re-run (only the `\n` branch of `lineTerminatorLengthAt` gained a check).
+
+## 2026-09-30: bulk `ArrayCodePointSet#removeAll`
+
+- The committed `llkCompile` alloc-sampling file showed `removeAll`->`insertSingle` growth at 25.8% of
+  weight; a fresh baseline on the same HEAD showed 5.3% (copyOf total 14.5%, not 33.9%). JFR alloc
+  sampling over-weights large arrays, and a committed profile can be stale: re-capture a baseline on
+  stashed HEAD before trusting one.
+- Tried: a linear in-place/exact-count sweep (`differenceInto`). Allocation moved rather than vanished
+  (`new int[count]` ~= the old growth) and it cost CPU (3 passes over `this` even when `other` is tiny):
+  compile ratio 2.51x-2.68x vs 2.36x-2.39x baseline. Dropped.
+- Kept: one exact `Arrays.copyOf(keys, size + other.size)` pre-grow, then the existing per-range
+  `remove`s (none can regrow). ~-2.3% compile B/op, ratio 2.41x-2.42x (within ~1-2% of baseline).
+- `ArrayCodePointSet#set`/`#remove` ignored `invert` (an inverted set's `keys` are the EXCLUDED runs);
+  fixed. Making both throw on an inverted set failed only the new unit tests, so no current test or
+  corpus row reaches it (`narrowResidualGates`' `accept == null` gate is the only suspect path).

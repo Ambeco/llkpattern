@@ -110,6 +110,34 @@ small and startup "vaguely reasonable".
     A/B was noisy with Dropbox syncing.
 - [ ] Decide on a CI setup (or at least a documented local command; the daemon must be JDK 17-25, tests want JDK 27 -- see notes.md) to run the suite "frequently" per the owner's stated preference.
 
+## `ArrayCodePointSet` / `CodePointSetBuilder` API cleanup (project owner, 2026-10-01)
+
+The refactor that split "sorted-insert" (`ArrayCodePointSet`) from "unsorted-append" (`CodePointSetBuilder`)
+left the naming and layering muddled. Do as its own session (touches ~30 test call sites; re-run the full
+benchmark checklist, since `addAll`'s hot paths are sensitive -- see notes.md, 2026-09-30).
+
+- [ ] Make `appendSorted` package-private on `ArrayCodePointSet` and drop it from `MutableCodePointSet`. Its
+      callers are all same-package: the sorted sweeps inside `ArrayCodePointSet`, generated `UnicodePredicates`
+      (always a concrete `ArrayCodePointSet`), and two tests.
+- [ ] Rename the search-and-insert methods `addRange`/`addAll`/`addAllImpl` to `setRange`/`setAll`/`setAllImpl`
+      (and `MutableCodePointSet.addAll` to match), so `set*` always means sorted-insert and `add*` always means
+      builder-append. Ripples to `PatternConstruct`, `CaseFolding`, `NamedCharClass`, `CodePointSetBuilder.mergeRun`
+      and tests.
+- [ ] `CodePointSetBuilderImpl.addAll` currently reaches the builder's own `add` only via
+      `ArrayCodePointSet.addAll`'s fallback `forEachRange(this::set)`, behind several `instanceof
+      CodePointSetBuilder` guards -- correct today but fragile: a new fast path in the sorted-merge code would
+      silently corrupt a still-accumulating builder. Make it an explicit loop appending each source range.
+- [ ] Keep the `ArrayCodePointSet(CodePointSet)` copy constructor (owner's decision). Its only non-test callers
+      are `union`/`difference`, which could instead use the existing `sweepUnion`/`sweepDifference` for two
+      non-inverted sets (one pass, one allocation), keeping the generic path only for inverted/lazy operands.
+- [ ] Measure `Arrays.sort` (TimSort/dual-pivot on `int[]`) vs `CodePointSetBuilderImpl#sortInPlaceByMin`'s
+      insertion sort on the shapes `build()` sees (small, near-sorted; and two concatenated sorted runs, as
+      `union` would produce). If TimSort-like behavior is effectively linear on already-sorted input, more
+      callers (e.g. `union`/`difference`, `mergeEntryPoints`) can become `CodePointSetBuilder` users. Note
+      `Arrays.sort(int[])` is dual-pivot quicksort, not TimSort (TimSort is only for object arrays), and the
+      packed keys do NOT compare correctly as raw ints above code point 0x100000 (see `sortInPlaceByMin`'s doc),
+      so a sort needs either an unpacked representation or a comparator over `keyMin`.
+
 ## Open questions
 
 ## Optional experiments (nothing here is required work)

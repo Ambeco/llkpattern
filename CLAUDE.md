@@ -96,6 +96,18 @@ confirming the final chosen design once the narrow question is settled. When rea
 `benchmarks/*_corpus_benchmark_results.json` (700+ lines) for a specific number, grep for the
 `"score"`/`"benchmark"` lines rather than reading the whole file.
 
+**Attributing a 1-2% compile regression: count call sites, don't read JFR shares.** JFR alloc-sampling
+percentages are too noisy at that size (the same code swung a leaf from 3% to 13% between runs). Instead
+temporarily add static counters (or a `new Throwable().getStackTrace()` histogram keyed by caller and operand
+sizes) to the suspect method, and run one corpus pass from a scratch driver, reading allocation with
+`com.sun.management.ThreadMXBean.getThreadAllocatedBytes` -- deterministic, takes minutes. Save the real file
+first (`cp` to the scratchpad) and restore it after. Classpath for the driver: `build/classes/java/{main,test}`
+plus guava, `androidx.collection:collection-jvm:1.5.0`, `kotlin-stdlib`, and `checker-util` (all `cygpath -w`'d).
+
+**Interleave the A/B, don't batch it.** Run change, baseline, change, baseline, change (stash between)
+rather than all baselines then all changes: the desktop drifts ~5% over a session (regex-only numbers moved
+with no code change), which otherwise reads as a regression. Compare the llk/regex ratio per pair.
+
 **Investigating a suspected regression via the existing sampling tasks.** When a change (or a
 scraped-corpus refresh) is suspected of regressing compile or match time but the golden corpus
 doesn't yet exercise the suspect pattern/input much or at all, don't just eyeball the aggregate

@@ -3837,3 +3837,17 @@ one terminator), and `lineTerminatorStartCodePoints` counted `\r` as a MULTILINE
 - `ArrayCodePointSet#set`/`#remove` ignored `invert` (an inverted set's `keys` are the EXCLUDED runs);
   fixed. Making both throw on an inverted set failed only the new unit tests, so no current test or
   corpus row reaches it (`narrowResidualGates`' `accept == null` gate is the only suspect path).
+
+## 2026-09-30: bulk `ArrayCodePointSet#addAll`/`removeAll` single-pass attempt
+
+- `removeAll` (kept): when both sets are non-inverted and `o.size * 8 >= size`, `subtractInPlace` shifts this
+  set's entries to the tail and sweeps forward into `keys` (no allocation beyond the existing pre-grow). Below
+  that ratio the per-range loop still wins (a linear sweep over a big target for a tiny `o` measured slower,
+  see the entry above). The corpus never takes the sweep path, so it is perf-neutral there by construction.
+- `addAll` (reverted): always merging (exact-size new array, skip the untouched prefix, in-place tail shift)
+  regressed `llkCompile` ~2.5% (ratio 2.43x vs 2.38x interleaved A/B), with alloc back at baseline; reverting
+  only `addAll` restored it (2.35x-2.44x vs 2.35x-2.40x). Cause not isolated; likely JIT inlining/branch cost on
+  the many 1-2-entry call sites. Hot large-target sites are `mergeOneEntryPoint` (545 entries + 1) and
+  `CodePointSetBuilder.mergeRun`, both pre-sized so they already use the in-place merge.
+- JFR alloc sampling shares were too noisy to attribute a 1-2% effect; an instrumented one-pass counter
+  (static `STAT` array, `ThreadMXBean.getThreadAllocatedBytes`) found the call sites in minutes.

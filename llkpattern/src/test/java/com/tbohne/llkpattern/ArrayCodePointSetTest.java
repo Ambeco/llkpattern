@@ -294,6 +294,28 @@ public class ArrayCodePointSetTest {
     }
   }
 
+  @Test
+  public void removeAll_comparableSizes_sweepsSameAsPerRangeRemove() {
+    // o.size * 8 >= size, so removeAll takes its single-pass sweep; includes a multi-chunk run that
+    // gets split by two holes, and holes that straddle several of this set's entries.
+    ArrayCodePointSet a = new ArrayCodePointSet();
+    ArrayCodePointSet b = new ArrayCodePointSet();
+    for (int i = 0; i < 200; i++) {
+      a.set(i * 10, i * 10 + 6);
+      b.set(i * 10 + 3, i * 10 + 8);
+    }
+    a.set(5000, 12000);
+    b.set(6000, 6100);
+    b.set(9000, 9500);
+    b.set(1990, 2105);
+
+    MutableCodePointSet expected = new ArrayCodePointSet(a);
+    b.forEachRange(expected::remove);
+    ArrayCodePointSet actual = new ArrayCodePointSet(a);
+    actual.removeAll(b);
+    assertThat(coalesced(actual), equalTo(coalesced(expected)));
+  }
+
   /** Like {@link #randomSet}, but never inverted -- addAll's fast paths only cover two non-inverted
    *  operands (an inverted operand falls back to the older per-range path, unchanged this session). */
   private static ArrayCodePointSet randomNonInvertedSet(java.util.Random random) {

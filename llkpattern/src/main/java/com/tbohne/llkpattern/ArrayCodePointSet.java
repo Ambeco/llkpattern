@@ -810,9 +810,57 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       if (keys.length < size + o.size) {
         keys = Arrays.copyOf(keys, size + o.size);
       }
+      if ((o.size << 3) >= size) {
+        subtractInPlace(o);
+        return;
+      }
     }
     MutableCodePointSet.super.removeAll(other);
   }
+
+  /**
+   * {@link #removeAll}'s single-pass path for two non-inverted sets, given {@code keys.length >=
+   * size + o.size}: shifts this set's entries to the tail, then sweeps forward from there into
+   * {@code keys[0..]}. Each of {@code o}'s ranges splits at most one entry, so output never outruns
+   * the shifted read cursor.
+   */
+  private void subtractInPlace(ArrayCodePointSet o) {
+    int aStart = o.size;
+    System.arraycopy(keys, 0, keys, aStart, size);
+    int aEnd = aStart + size;
+    int bi = 0;
+    int w = 0;
+    for (int ai = aStart; ai < aEnd; ai++) {
+      int cursor = keyMin(keys[ai]);
+      int aMax = keyMax(keys[ai]);
+      while (cursor < aMax) {
+        while (bi < o.size && keyMax(o.keys[bi]) <= cursor) {
+          bi++;
+        }
+        if (bi >= o.size || keyMin(o.keys[bi]) >= aMax) {
+          w = writeChunks(keys, w, cursor, aMax);
+          cursor = aMax;
+        } else {
+          int bMin = keyMin(o.keys[bi]);
+          if (cursor < bMin) {
+            w = writeChunks(keys, w, cursor, bMin);
+          }
+          cursor = Math.max(cursor, keyMax(o.keys[bi]));
+        }
+      }
+    }
+    size = w;
+  }
+
+  /** Writes {@code [min, max)} as packed chunks at {@code keys[w..]}; returns the new write index. */
+  private static int writeChunks(int[] dst, int w, int min, int max) {
+    for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
+      int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
+      dst[w++] = packKey(chunkMin, chunkMax - chunkMin - 1);
+    }
+    return w;
+  }
+
 
   private void deleteRange(int from, int to) {
     if (from >= to) {

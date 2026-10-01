@@ -165,7 +165,58 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public boolean intersects(CodePointSet other) {
-    return other.first(this::overlapsRange);
+    if (!invert && size == 0) {
+      return false;
+    }
+    if (other instanceof ArrayCodePointSet) {
+      ArrayCodePointSet o = (ArrayCodePointSet) other;
+      if (!o.invert) {
+        if (o.size == 0) {
+          return false;
+        }
+        if (invert || o.size <= SMALL_INTERSECT_SIZE) {
+          return o.anyEntryOverlaps(this);
+        }
+        if (size <= SMALL_INTERSECT_SIZE) {
+          return anyEntryOverlaps(o);
+        }
+        return sweepIntersects(o);
+      }
+      if (!invert) {
+        return anyEntryOverlaps(o);
+      }
+    }
+    return other.first(this::overlapsRange); // lazy or doubly-inverted operand
+  }
+
+  // At or below this many entries a set is cheaper to look up range by range in the other set
+  // (one binary search each) than to walk both sets' entries in a merge sweep.
+  private static final int SMALL_INTERSECT_SIZE = 4;
+
+  /** Whether any of this (non-inverted) set's entries overlaps {@code searched}, by binary search. */
+  private boolean anyEntryOverlaps(ArrayCodePointSet searched) {
+    for (int i = 0; i < size; i++) {
+      if (searched.overlapsRange(keyMin(keys[i]), keyMax(keys[i]))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** {@link #intersects} for two non-inverted sets: one linear merge walk over both entry lists. */
+  private boolean sweepIntersects(ArrayCodePointSet o) {
+    int i = 0;
+    int j = 0;
+    while (i < size && j < o.size) {
+      if (keyMax(keys[i]) <= keyMin(o.keys[j])) {
+        i++;
+      } else if (keyMax(o.keys[j]) <= keyMin(keys[i])) {
+        j++;
+      } else {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -508,6 +559,13 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     if (min >= max) {
       return; // empty range -- guard needed since insertRange treats an empty [start,end) touching
               // the last entry as "shrink it away", not "no-op".
+    }
+    if (max - min <= MAX_COUNT + 1 && (size == 0 || keyMax(keys[size - 1]) < min)) {
+      // Common case: a disjoint, single-chunk range just becomes one new trailing entry.
+      ensureCapacity(size + 1);
+      keys[size] = packKey(min, max - min - 1);
+      size++;
+      return;
     }
     // Sorted-append input can only ever touch/overlap the LAST existing entry (everything else is
     // strictly before it), so the merge window is found by a plain check instead of the binary

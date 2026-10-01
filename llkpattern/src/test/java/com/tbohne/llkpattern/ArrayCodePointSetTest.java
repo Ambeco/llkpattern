@@ -466,6 +466,57 @@ public class ArrayCodePointSetTest {
     }
   }
 
+  @Test
+  public void intersects_matchesNaiveRangePairFormula_fuzzed() {
+    // Sizes straddle intersects' small-set cutoff (4 entries) on both sides, widths straddle the
+    // 2048-per-chunk boundary, and either operand may be inverted -- every dispatch branch.
+    java.util.Random random = new java.util.Random(7);
+    for (int trial = 0; trial < 3000; trial++) {
+      ArrayCodePointSet a = randomSizedSet(random);
+      ArrayCodePointSet b = randomSizedSet(random);
+      boolean expected = false;
+      for (CodePointSet.Range ra : coalesced(a)) {
+        for (CodePointSet.Range rb : coalesced(b)) {
+          expected |= ra.min < rb.max && rb.min < ra.max;
+        }
+      }
+      assertThat("trial " + trial + ": " + a + " ? " + b, a.intersects(b), is(expected));
+      assertThat("trial " + trial + " (swapped): " + b + " ? " + a, b.intersects(a), is(expected));
+    }
+  }
+
+  @Test
+  public void appendSorted_matchesInsert_fuzzed() {
+    java.util.Random random = new java.util.Random(11);
+    for (int trial = 0; trial < 1000; trial++) {
+      ArrayCodePointSet appended = new ArrayCodePointSet();
+      ArrayCodePointSet inserted = new ArrayCodePointSet();
+      int cursor = random.nextInt(5);
+      for (int i = random.nextInt(12); i > 0; i--) {
+        int min = cursor + random.nextInt(3); // 0 gap == touching the previous entry
+        int width = random.nextBoolean() ? 1 + random.nextInt(5) : 1 + random.nextInt(5000);
+        appended.appendSorted(min, min + width);
+        inserted.insert(min, min + width);
+        cursor = min + width;
+      }
+      assertThat("trial " + trial, coalesced(appended), equalTo(coalesced(inserted)));
+    }
+  }
+
+  private static ArrayCodePointSet randomSizedSet(java.util.Random random) {
+    ArrayCodePointSet set = new ArrayCodePointSet();
+    int cursor = random.nextInt(50);
+    for (int i = random.nextInt(9); i > 0; i--) {
+      int width = random.nextBoolean() ? 1 + random.nextInt(4) : 1 + random.nextInt(3000);
+      set.appendSorted(cursor, cursor + width);
+      cursor += width + 1 + random.nextInt(random.nextBoolean() ? 3 : 40);
+    }
+    if (random.nextInt(4) == 0) {
+      set.invert();
+    }
+    return set;
+  }
+
   /** {@code set}'s members as a minimal, fully-coalesced range list -- the actual SET this
    * represents, independent of how many physical chunks its current representation happens to
    * split that into. */

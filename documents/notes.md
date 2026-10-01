@@ -3828,8 +3828,12 @@ one terminator), and `lineTerminatorStartCodePoints` counted `\r` as a MULTILINE
 - Tried: a linear in-place/exact-count sweep (`differenceInto`). Allocation moved rather than vanished
   (`new int[count]` ~= the old growth) and it cost CPU (3 passes over `this` even when `other` is tiny):
   compile ratio 2.51x-2.68x vs 2.36x-2.39x baseline. Dropped.
-- Kept: one exact `Arrays.copyOf(keys, size + other.size)` pre-grow, then the existing per-range
-  `remove`s (none can regrow). ~-2.3% compile B/op, ratio 2.41x-2.42x (within ~1-2% of baseline).
+- Kept: one exact `Arrays.copyOf(keys, size + other.size)` pre-grow in `removeAll`, then the existing
+  per-range `remove`s (none can regrow). ~-2.3% compile B/op.
+- Also tried: exact pre-size inside `addAllImpl`'s fallback alone: +1% B/op (worse) -- exact sizing leaves
+  no slack, so the following `removeAll` copies again. Fix that stuck: `narrowResidualGates` builds the gate
+  with `ArrayCodePointSet.capacityHint(accept, gates, i)` so addAll + all removeAlls fit one allocation:
+  ~-5.4% compile B/op, ratio 2.43x-2.45x vs 2.36x-2.39x baseline, absolute llkCompile time flat.
 - `ArrayCodePointSet#set`/`#remove` ignored `invert` (an inverted set's `keys` are the EXCLUDED runs);
   fixed. Making both throw on an inverted set failed only the new unit tests, so no current test or
   corpus row reaches it (`narrowResidualGates`' `accept == null` gate is the only suspect path).

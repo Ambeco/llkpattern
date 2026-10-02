@@ -58,6 +58,12 @@ sourceSets {
         runtimeClasspath += sourceSets.test.output
         resources.srcDirs += sourceSets.test.resources.srcDirs
     }
+    // Plain-Java benchmark statistics/bucketing shared with the Android build (app/build.gradle adds
+    // the same directory to androidTest). Compiled into `test` so its unit tests can see it; the jmh
+    // set gets it through test.output above.
+    test {
+        java.srcDir "${rootDir}/shared-bench"
+    }
 }
 
 // Named for the machine these benchmarks run on (see the Pixel 3a's own equivalently-named results
@@ -154,6 +160,37 @@ task jmhSampling(type: JavaExec) {
     ] + samplingBenchmarkNames
 }
 tasks.named('jmh').configure { finalizedBy jmhSampling }
+
+// Interleaved llk-vs-regex ratios with confidence intervals, per regex-feature bucket -- see
+// PairedRunner's javadoc. Not chained after `jmh`; tune with -Pforks/-Prounds/-PchainPairs/-PwarmupRounds,
+// and -PinjectPercent=N to slow the llk side by N% (validation only).
+task jmhPaired(type: JavaExec) {
+    group = 'verification'
+    description = 'Paired/interleaved llk-vs-regex timing; writes benchmarks/*_paired_ratio_results.json.'
+    dependsOn jmhJar
+    executable = benchmarkJvm
+    classpath = files(jmhJar.archiveFile)
+    mainClass = 'com.tbohne.llkpattern.corpus.PairedRunner'
+    args = [
+        benchmarkMachineName,
+        project.file("${rootDir}/benchmarks").toString(),
+        project.findProperty('forks') ?: '6',
+        project.findProperty('rounds') ?: '1500',
+        project.findProperty('chainPairs') ?: '4',
+        project.findProperty('warmupRounds') ?: '300',
+        project.findProperty('injectPercent') ?: '0',
+    ]
+    outputs.upToDateWhen { false }
+}
+
+// ./gradlew :llkpattern:pairedCompare -Pbefore=<a.json> -Pafter=<b.json>
+task pairedCompare(type: JavaExec) {
+    group = 'verification'
+    description = 'Per-bucket llk/regex change between two paired-benchmark result files, with z-scores.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.tbohne.llkpattern.corpus.PairedStats'
+    args = ['compare', project.findProperty('before') ?: '', project.findProperty('after') ?: '']
+}
 
 // Captures an allocation-stack sampling profile via JDK Flight Recorder's jdk.ObjectAllocationSample
 // event and writes benchmarks/<machine>_<benchmark>_alloc_sampling.txt -- see

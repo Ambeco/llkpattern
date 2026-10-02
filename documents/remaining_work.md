@@ -91,23 +91,20 @@ small and startup "vaguely reasonable".
 
 ## Toolchain and testing
 
-- [ ] **Make a single benchmark run statistically self-sufficient** (so sessions stop repeating whole runs to
-      estimate noise; see CLAUDE.md's A/B procedure). Own session -- touches the JMH config, the Android test and
-      the output formats:
-  - **Intel/JMH:** raise `forks` (between-fork variance -- JIT, layout, heap -- dominates, and iterations inside one
-    fork don't shrink it) and trim warmup iterations per fork; keep total wall time near today's ~2m50s.
-  - **Ratio helper:** a small script/Gradle task that reads the JMH JSON and prints llk/regex per table with an error
-    interval propagated from the two `scoreError`s, replacing the two-run eyeballing of overlapping bands.
-  - **Android:** record per-pass times (already measured, currently only averaged) and output stddev, a 99%
-    confidence interval and p50/p90/p99 next to the mean in `Google_Pixel_3a_sargo_corpus_benchmark_results.json`;
-    also emit the llk/regex ratio with its interval there. Update README/CLAUDE.md for the new fields.
-  - **Interleave llk and regex (both platforms):** investigate alternating llk and regex iterations/forks (JMH: one
-    fork running both benchmarks in alternation, or a combined benchmark method; Android: alternate llk/regex passes
-    in the test loop) so time-correlated noise (background load, thermal throttling, sync clients) hits numerator and
-    denominator equally and largely cancels in the ratio. Check it doesn't distort either side (shared JIT/ART state,
-    cache effects) before adopting.
-  - **Environment:** a pre-run checklist (pause Dropbox, close other sessions) belongs in CLAUDE.md; this session's Intel
-    A/B was noisy with Dropbox syncing.
+- [ ] **Paired benchmark follow-ups** (the paired runner itself is built: `:llkpattern:jmhPaired`,
+      `:llkpattern:pairedCompare`, Android `testPaired`; see CLAUDE.md and notes.md 2026-10-01):
+  - **Run `testPaired` on the Pixel 3a** (it compiles; the phone was locked when it was written), check that
+    `benchmarks/Google_Pixel_3a_sargo_paired_ratio_results.json` appears, and A/A + injected-slowdown validate it
+    like the desktop one. The Android side has no forks: blocks are 10 contiguous slices of one run.
+  - **Rewrite README's benchmark tables/CLAUDE.md A/B procedure around paired ratios** once both devices have a
+    validated baseline (CLAUDE.md currently only points at the new task alongside the JMH procedure).
+  - **CPU sampling:** replace JMH's safepoint-biased `stack` profiler with JFR `jdk.ExecutionSample` at a short
+    period (reuse `AllocationSamplingRunner`'s JFR-to-reversed-tree code), and add a sampling-diff tool reporting
+    per-leaf delta with a binomial SE sqrt(p(1-p)/n) so "leaf moved 3%->5%" can be judged against counting noise.
+  - **Version-interleaved A/B:** load a baseline jar (from a git worktree of HEAD) and the working tree in one JVM via
+    separate classloaders and interleave old-llk/new-llk/regex, removing the stash dance entirely.
+  - **Environment:** pause Dropbox (the repo lives in it; Gradle writes under build/ and benchmarks/ trigger syncs)
+    and consider a High power plan; optionally raise the child JVM priority/affinity in `PairedRunner`.
 - [ ] Decide on a CI setup (or at least a documented local command; the daemon must be JDK 17-25, tests want JDK 27 -- see notes.md) to run the suite "frequently" per the owner's stated preference.
 
 ## `ArrayCodePointSet` / `CodePointSetBuilder` API cleanup (project owner, 2026-10-01)

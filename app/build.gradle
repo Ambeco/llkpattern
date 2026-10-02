@@ -47,6 +47,9 @@ android {
         // copyGoldenAssetsForAndroidTest below, not checked in, so llkpattern's copies stay the
         // single source of truth (see documents/notes.md's on-device-benchmark entry).
         androidTest.assets.srcDirs += "$buildDir/generated/androidTestGoldenAssets"
+        // Benchmark statistics/bucketing shared with the desktop runner (plain Java 8) -- see
+        // PairedBench.
+        androidTest.java.srcDirs += "$rootDir/shared-bench"
     }
 }
 

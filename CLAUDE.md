@@ -1,5 +1,16 @@
 # Project-specific instructions
 
+## Low-noise ratios: `:llkpattern:jmhPaired`
+
+For llk/regex ratios use `./gradlew :llkpattern:jmhPaired` (JAVA_HOME = JDK 17; ~4 min; run in background) instead of
+two-run eyeballing of `jmh`: it interleaves regex and llk per feature bucket and writes
+`benchmarks/<machine>_paired_ratio_results.json` with 95% CIs. For an A/B, save the JSON, `git stash -u`, rerun,
+`git checkout -- benchmarks && git stash pop`, then
+`./gradlew :llkpattern:pairedCompare -Pbefore=<a.json> -Pafter=<b.json>` (flags `<--` on |t| > 99% critical; trust
+the ALL rows, per-bucket rows give attribution). `-PinjectPercent=2` slows llk by 2% to validate sensitivity.
+Allocation (B/op) and CPU sampling still come from `jmh`. The Android equivalent is `testPaired` (same outputs).
+Pause Dropbox first.
+
 ## After a performance-affecting change
 
 When a change is intended to affect (or plausibly could affect) compile-time or match-time

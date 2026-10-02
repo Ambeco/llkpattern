@@ -3859,3 +3859,16 @@ one terminator), and `lineTerminatorStartCodePoints` counted `\r` as a MULTILINE
 - Always-merge (threshold: both runs > 4) added a temp array on near-sorted literals: +1.9% compile alloc. Product threshold fixed it.
 - `mergeRun` appending into `literals` (no second set): +1.2% compile alloc (2,983K vs 2,948K B/op) even with the merge fix and with `CaseFolding` ruled out by bisecting; an inverted-runUnion guard made it worse (3,003K). Cause not isolated; exact pre-sized ArrayCodePointSet kept.
 - Left as MutableCodePointSet: mergeEntryPoints/unionLastCharSet (2026-09-25 rejections), `gate` (removeAll), union(a,b) and the three insertAll loops in PatternConstruct (small N; not yet tried).
+
+## 2026-10-01: paired (interleaved) benchmark runner
+
+Old JMH/Android ratios drifted +-7-10% run to run because regex and llk were timed in separate blocks. New:
+`shared-bench/` (PairedBench/PairedStats/RowBuckets, plain Java 8, compiled into llkpattern `test` and Android
+`androidTest`), desktop `PairedRunner` (`:llkpattern:jmhPaired`, 6 forks x 1500 rounds, ~4 min), Android `testPaired`.
+Chains R L R L ... per feature bucket; each llk pass is divided by its two adjacent regex passes; stats are one
+10%-trimmed mean log-ratio per block (fork), t-interval across blocks. Desktop validation: three identical-code runs
+agreed within ~1% on compile/ALL (2.23/2.25/2.24) and match/ALL (1.22/1.22/1.22); an injected 2% llk slowdown flagged
+at ALL (+3.3% compile, +2.0% match). `pairedCompare` flags |t| above the 99% Welch critical value; expect a lone
+false flag among ~20 per-bucket rows (seen once), act on ALL. Paired ratios (2.23/1.22) sit near the old JMH ones
+(2.35/1.17). `jmhPaired` needs a JDK 17 Gradle daemon (JAVA_HOME): a JDK 27 default fails with "major version 71".
+Buckets under 40 rows (backref, lookaround...) merge into `other`.

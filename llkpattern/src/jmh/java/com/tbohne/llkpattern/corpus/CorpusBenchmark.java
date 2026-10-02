@@ -51,9 +51,9 @@ public class CorpusBenchmark {
   private List<Pattern> regexPatterns;
   private List<Ll1Pattern> llkPatterns;
 
-  @Setup(Level.Trial)
-  public void setUp() {
-    agreesRows = new ArrayList<>();
+  /** Every usable row across all golden files; also used by {@link PairedRunner}. */
+  static List<GoldenRow> loadAgreesRows() {
+    List<GoldenRow> agreesRows = new ArrayList<>();
     for (Path goldenFile : goldenFiles()) {
       for (GoldenRow row : GoldenTsv.read(goldenFile)) {
         // "AGREES" alone isn't enough: it also covers rows where both engines agree by both
@@ -74,6 +74,12 @@ public class CorpusBenchmark {
               + "change away from AGREES? CorpusBenchmark has nothing to measure without at "
               + "least one.");
     }
+    return agreesRows;
+  }
+
+  @Setup(Level.Trial)
+  public void setUp() {
+    agreesRows = loadAgreesRows();
 
     regexPatterns = new ArrayList<>(agreesRows.size());
     llkPatterns = new ArrayList<>(agreesRows.size());
@@ -126,7 +132,7 @@ public class CorpusBenchmark {
     }
   }
 
-  private static boolean runRegexMatch(Pattern pattern, GoldenRow row) {
+  static boolean runRegexMatch(Pattern pattern, GoldenRow row) {
     java.util.regex.Matcher m = pattern.matcher(row.input);
     switch (row.mode) {
       case MATCHES:
@@ -140,7 +146,7 @@ public class CorpusBenchmark {
     }
   }
 
-  private static boolean runLlkMatch(Ll1Pattern pattern, GoldenRow row) {
+  static boolean runLlkMatch(Ll1Pattern pattern, GoldenRow row) {
     com.tbohne.llkpattern.Matcher m = pattern.matcher(row.input);
     switch (row.mode) {
       case MATCHES:

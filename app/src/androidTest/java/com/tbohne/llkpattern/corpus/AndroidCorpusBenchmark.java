@@ -88,11 +88,15 @@ public class AndroidCorpusBenchmark {
   // similar speed for better-averaged numbers, without risking an instrumentation timeout. A
   // much slower or faster device will land elsewhere -- lower both if a run is inconveniently
   // slow, since nothing else here depends on hitting any particular wall-clock target.
-  private static final int WARMUP_ITERATIONS = 100;
-  private static final int COMPILE_PERFORMANCE_ITERATIONS = 1000;
-  private static final int MATCH_PERFORMANCE_ITERATIONS = 3500;
+  // Paired (interleaved) run: 1 round = every bucket's compile and match chain once. Sized for ~2-3
+  // minutes on a Pixel 3a (one round ~0.5 s with 4-pair chains).
+  private static final int PAIRED_WARMUP_ROUNDS = 40;
+  private static final int PAIRED_ROUNDS = 300;
+  private static final int PAIRED_CHAIN_PAIRS = 4;
+  private static final int PAIRED_BLOCKS = 10;
+  private static final int MIN_BUCKET_ROWS = 40;
 
-  // Iterations for sampling's capture, below -- separate from PERFORMANCE_ITERATIONS since a 
+  // Iterations for sampling's capture, below -- separate from the paired run's rounds since a 
   // profile needs enough wall-clock time to collect a useful number of samples, not a small
   // number of precisely-timed iterations. Uncomment alongside that block.
   private static final int COMPILE_PROFILE_ITERATIONS = 600;
@@ -192,8 +196,8 @@ public class AndroidCorpusBenchmark {
     results.put("androidRelease", Build.VERSION.RELEASE);
     results.put("androidSdkInt", Build.VERSION.SDK_INT);
     results.put("fractionOfTestRows", FRACTION_OF_TEST_ROWS);
-    results.put("compileIterations", COMPILE_PERFORMANCE_ITERATIONS);
-    results.put("matchIterations", MATCH_PERFORMANCE_ITERATIONS);
+    results.put("pairedRounds", PAIRED_ROUNDS);
+    results.put("pairedChainPairs", PAIRED_CHAIN_PAIRS);
     results.put("rowCount", agreesRows.size());
   }
 
@@ -215,41 +219,119 @@ public class AndroidCorpusBenchmark {
     return sampled;
   }
 
+  /**
+   * Interleaved llk-vs-regex timing, split by regex feature -- see {@link PairedBench}. Replaces
+   * the four separate timed blocks this class used to run (regex compile, llk compile, regex match,
+   * llk match, back to back), whose ratio was dominated by device noise hitting one block but not
+   * the other. Writes two files: the legacy {@code corpus_benchmark_results.json} keys (absolute
+   * ms per corpus pass, now means of the interleaved passes) and {@code paired_ratio_results.json}
+   * (per-bucket ratios with confidence intervals; blocks are contiguous slices of this one run,
+   * standing in for the desktop runner's forks).
+   */
   @Test
-  public void testCompileRegex() {
-    runBenchmark("compileRegex", COMPILE_PERFORMANCE_ITERATIONS, () -> {
-      for (AndroidGoldenRow row : agreesRows) {
-        Pattern.compile(row.pattern, row.flagBits());
+  public void testPaired() {
+    List<PairedBench.Bucket> buckets = new ArrayList<>();
+    List<String> names = new ArrayList<>();
+    List<Integer> bucketRows = new ArrayList<>();
+    List<String> patternTexts = new ArrayList<>();
+    List<String> flagTexts = new ArrayList<>();
+    for (AndroidGoldenRow row : agreesRows) {
+      patternTexts.add(row.pattern);
+      flagTexts.add(row.flags);
+    }
+    for (Map.Entry<String, List<Integer>> e :
+        RowBuckets.group(patternTexts, flagTexts, MIN_BUCKET_ROWS).entrySet()) {
+      final List<AndroidGoldenRow> rows = new ArrayList<>();
+      final List<Pattern> regex = new ArrayList<>();
+      final List<Ll1Pattern> llk = new ArrayList<>();
+      for (int i : e.getValue()) {
+        rows.add(agreesRows.get(i));
+        regex.add(regexPatterns.get(i));
+        llk.add(llkPatterns.get(i));
       }
-    });
+      PairedBench.Pass regexCompile = () -> {
+        for (AndroidGoldenRow row : rows) {
+          sink ^= Pattern.compile(row.pattern, row.flagBits()).hashCode();
+        }
+      };
+      PairedBench.Pass llkCompile = () -> {
+        for (AndroidGoldenRow row : rows) {
+          sink ^= Ll1Pattern.compile(row.pattern, row.flagBits()).hashCode();
+        }
+      };
+      PairedBench.Pass regexMatch = () -> {
+        for (int i = 0; i < rows.size(); i++) {
+          sink ^= runMatchRegex(regex.get(i), rows.get(i)) ? 1 : 0;
+        }
+      };
+      PairedBench.Pass llkMatch = () -> {
+        for (int i = 0; i < rows.size(); i++) {
+          sink ^= runMatchLlk(llk.get(i), rows.get(i)) ? 1 : 0;
+        }
+      };
+      buckets.add(new PairedBench.Bucket(e.getKey(), rows.size(),
+          new PairedBench.Pass[] {regexCompile, regexMatch},
+          new PairedBench.Pass[] {llkCompile, llkMatch}));
+      names.add(e.getKey());
+      bucketRows.add(rows.size());
+    }
+
+    long gcBefore = Debug.getGlobalGcInvocationCount();
+    List<PairedBench.Sample> samples = PairedBench.run(buckets,
+        new PairedBench.GcCounter() {
+          @Override
+          public long count() {
+            return Debug.getGlobalGcInvocationCount();
+          }
+        },
+        PAIRED_WARMUP_ROUNDS, PAIRED_ROUNDS, PAIRED_CHAIN_PAIRS, PAIRED_BLOCKS);
+    long gcCount = Debug.getGlobalGcInvocationCount() - gcBefore;
+
+    List<PairedStats.Entry> entries = PairedStats.summarize(samples, names, bucketRows);
+    for (PairedStats.Entry e : entries) {
+      if (e.key.endsWith("/" + PairedStats.ALL)) {
+        boolean compile = e.key.startsWith("compile");
+        putLegacy(compile ? "compileLlk" : "matchLlk", e.llkMs, gcCount);
+        putLegacy(compile ? "compileRegex" : "matchRegex", e.regexMs, gcCount);
+      }
+    }
+    Map<String, String> meta = new LinkedHashMap<>();
+    meta.put("machine", deviceName());
+    meta.put("captured", Instant.now().toString());
+    meta.put("blocks", Integer.toString(PAIRED_BLOCKS));
+    meta.put("roundsTotal", Integer.toString(PAIRED_ROUNDS));
+    meta.put("chainPairs", Integer.toString(PAIRED_CHAIN_PAIRS));
+    meta.put("batteryTempTenthsC", Integer.toString(batteryTemperatureTenthsC()));
+    writeFile(deviceName() + "_paired_ratio_results.json", PairedStats.toJson(entries, meta));
+    System.out.print(PairedStats.toTable(entries));
   }
 
-  @Test
-  public void testCompileLlk() {
-    runBenchmark("compileLlk", COMPILE_PERFORMANCE_ITERATIONS, () -> {
-      for (AndroidGoldenRow row : agreesRows) {
-        Ll1Pattern.compile(row.pattern, row.flagBits());
-      }
-    });
+  private static void putLegacy(String name, double avgMillis, long gcCount) {
+    Map<String, Object> entry = new TreeMap<>();
+    entry.put("avgMillisPerCorpusPass", avgMillis);
+    entry.put("gcCountDuringMeasuredIterations", gcCount);
+    results.put(name, entry);
   }
 
-  @Test
-  public void testMatchRegex() {
-    runBenchmark("matchRegex", MATCH_PERFORMANCE_ITERATIONS, () -> {
-      for (int i = 0; i < agreesRows.size(); i++) {
-        runMatchRegex(regexPatterns.get(i), agreesRows.get(i));
-      }
-    });
+  /** Battery temperature is the cheap thermal-state proxy available to an instrumentation test;
+   *  recorded so a run on a warm phone is identifiable afterwards. -1 if unavailable. */
+  private static int batteryTemperatureTenthsC() {
+    Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+    android.content.Intent battery = context.registerReceiver(null,
+        new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+    return battery == null ? -1 : battery.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, -1);
   }
 
-  @Test
-  public void testMatchLlk() {
-    runBenchmark("matchLlk", MATCH_PERFORMANCE_ITERATIONS, ()-> {
-      for (int i = 0; i < agreesRows.size(); i++) {
-        runMatchLlk(llkPatterns.get(i), agreesRows.get(i));
-      }
-    });
+  private static void writeFile(String fileName, String content) {
+    try (OutputStream file = PlatformTestStorageRegistry.getInstance().openOutputFile(fileName)) {
+      file.write(content.getBytes(StandardCharsets.UTF_8));
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed writing benchmark results to " + fileName, e);
+    }
   }
+
+  /** Consumes every pass result so the JIT can't discard the benchmarked work. */
+  private static volatile int sink;
 
    /**
     * Captures a <b>sampling</b> profile (periodic stack snapshots, not per-call tracing -- this
@@ -501,36 +583,6 @@ public class AndroidCorpusBenchmark {
        default: return "th";
      }
    }
-
-  private interface CorpusPass {
-    void run();
-  }
-
-  /** Runs {@link #WARMUP_ITERATIONS} untimed passes, then measuredIterations timed
-   *  passes over the whole subsampled corpus, and records the average per-pass time plus GCs
-   *  triggered during the measured passes under {@code name} in {@link #results}. This is a much
-   *  cruder methodology than JMH's (no forked JVM per benchmark, no statistical error bars) --
-   *  good enough for coarse device comparisons, not for chasing single-digit-percent regressions
-   *  the way the desktop {@code CorpusBenchmark} run is used for. */
-  private static void runBenchmark(String name, int measuredIterations, CorpusPass pass) {
-    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      pass.run();
-    }
-
-    long gcCountBefore = Debug.getGlobalGcInvocationCount();
-    long startNanos = System.nanoTime();
-    for (int i = 0; i < measuredIterations; i++) {
-      pass.run();
-    }
-    long elapsedNanos = System.nanoTime() - startNanos;
-    long gcCount = Debug.getGlobalGcInvocationCount() - gcCountBefore;
-
-    double avgMillisPerPass = (elapsedNanos / 1_000_000.0) / measuredIterations;
-    Map<String, Object> entry = new TreeMap<>();
-    entry.put("avgMillisPerCorpusPass", avgMillisPerPass);
-    entry.put("gcCountDuringMeasuredIterations", gcCount);
-    results.put(name, entry);
-  }
 
   private static boolean runMatchRegex(Pattern pattern, AndroidGoldenRow row) {
     java.util.regex.Matcher m = pattern.matcher(row.input);

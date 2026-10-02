@@ -174,11 +174,12 @@ task jmhPaired(type: JavaExec) {
     args = [
         benchmarkMachineName,
         project.file("${rootDir}/benchmarks").toString(),
-        project.findProperty('forks') ?: '6',
-        project.findProperty('rounds') ?: '1500',
-        project.findProperty('chainPairs') ?: '4',
-        project.findProperty('warmupRounds') ?: '300',
+        project.findProperty('forks') ?: '8',
+        project.findProperty('rounds') ?: '300',
+        project.findProperty('chainPairs') ?: '2',
+        project.findProperty('warmupRounds') ?: '100',
         project.findProperty('injectPercent') ?: '0',
+        project.findProperty('rawOut') ?: '',  // absolute path: keep every chain for offline analysis
     ]
     outputs.upToDateWhen { false }
 }

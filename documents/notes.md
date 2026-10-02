@@ -3875,3 +3875,10 @@ Buckets under 40 rows (backref, lookaround...) merge into `other`.
 Pixel 3a `testPaired` (10 blocks of one run): compile/ALL 0.69, match/ALL 0.26, CIs about +-1-2%. Higher than the old
 single-run 0.50-0.62/0.20-0.25 partly because llk's absolute time reads ~39 ms vs ~31 ms before (interleaving/ART
 effects not isolated), so do not compare paired and pre-paired Pixel ratios directly.
+Speeding up jmhPaired (12 forks x 1500 rounds raw samples, then 8-fork reruns): precision is set by FORK COUNT, not
+rounds. Spread of compile/ALL over random fork subsets: 3 forks 0.4%, 4 0.33%, 6 0.23%, 8 0.17%; rounds 150 vs 1500
+made no difference (post-warmup ratio was flat from round 0 to 1500). Defaults are now 8 forks x 300 rounds x
+2-pair chains x 100 warmup rounds (~45 s, CI about +-0.8%, vs 4 min for the same CI before). Tried at 8x300: warmup 300/
+50/10 and chains of 4/2/1 pairs: all within ~1% except chain 1 (compile 2.17 vs ~2.23) and warmup 10 (2.20), likely
+residual warmup (those had the fewest warm-up pairs: 50 and 40, vs >=100 for the rest) -- keep >=100 warm pairs.
+Cross-day: a rerun with no code change matched the previous day's committed ratios within ~1%. Android not re-tuned.

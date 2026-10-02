@@ -30,7 +30,7 @@ import org.openjdk.jmh.infra.Blackhole;
  * ./gradlew :llkpattern:jmhPaired}. Compare two result files with {@code :llkpattern:pairedCompare}.
  *
  * <p>Args: {@code <machine> <benchmarksDir> <forks> <rounds> <chainPairs> <warmupRounds>
- * <injectPercent>}; a leading {@code --child <outFile>} runs one fork instead. {@code
+ * <injectPercent> [rawSamplesFile]}; a leading {@code --child <outFile>} runs one fork instead. {@code
  * injectPercent} re-runs that percent of each bucket's rows in the llk passes only -- a known,
  * source-free slowdown for validating that the method detects a small regression.
  */
@@ -48,7 +48,7 @@ public final class PairedRunner {
           Integer.parseInt(args[4]), Integer.parseInt(args[5]), Integer.parseInt(args[6]));
       return;
     }
-    if (args.length != 7) {
+    if (args.length != 7 && args.length != 8) {
       throw new IllegalArgumentException(
           "Usage: PairedRunner <machine> <benchmarksDir> <forks> <rounds> <chainPairs>"
               + " <warmupRounds> <injectPercent> (did the jmhPaired Gradle task's args change"
@@ -61,6 +61,7 @@ public final class PairedRunner {
     int chainPairs = Integer.parseInt(args[4]);
     int warmupRounds = Integer.parseInt(args[5]);
     int injectPercent = Integer.parseInt(args[6]);
+    Path rawOut = args.length == 8 && !args[7].isEmpty() ? Paths.get(args[7]) : null;
 
     List<PairedBench.Sample> all = new ArrayList<>();
     for (int fork = 0; fork < forks; fork++) {
@@ -97,6 +98,15 @@ public final class PairedRunner {
       } finally {
         Files.deleteIfExists(out);
       }
+    }
+
+    if (rawOut != null) {
+      // Every chain, block = fork index; lets offline analysis re-slice forks/rounds.
+      StringBuilder raw = new StringBuilder();
+      for (PairedBench.Sample sample : all) {
+        raw.append(sample.toTsv()).append(System.lineSeparator());
+      }
+      Files.write(rawOut, raw.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     // Bucket names/rows are recomputed here from the same deterministic corpus the children used.

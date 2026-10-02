@@ -1,0 +1,91 @@
+// Benchmark provenance: which source state produced each file under benchmarks/, and is it still current?
+//
+// Each benchmark task stamps its output files with a sidecar `<file>.srchash` holding a content hash of
+// the sources that can change that device's numbers (scope 'desktop' or 'android' below). `./gradlew
+// benchmarkStatus` recomputes the hashes and reports each file as CURRENT, STALE or UNKNOWN (no sidecar).
+// A content hash -- not a commit hash or mtime -- so it is the same whether the benchmark ran before or after
+// the commit, and the same in a fresh clone (CR bytes are skipped so CRLF working trees match LF checkouts).
+
+import java.security.MessageDigest
+
+def common = ['llkpattern/src/main', 'shared-bench', 'llkpattern/src/test/resources/golden']
+ext.benchmarkScopes = [
+    desktop: common + ['llkpattern/src/jmh'],
+    android: common + ['app/src/androidTest'],
+]
+
+ext.sourceHash = { String scope ->
+    def dirs = benchmarkScopes[scope]
+    if (dirs == null) {
+        throw new GradleException("Unknown benchmark scope '${scope}'; known: ${benchmarkScopes.keySet()}")
+    }
+    def md = MessageDigest.getInstance('SHA-256')
+    def files = []
+    dirs.each { d ->
+        def dir = rootProject.file(d)
+        if (!dir.isDirectory()) {
+            throw new GradleException("Benchmark scope '${scope}' lists missing directory ${dir}")
+        }
+        dir.eachFileRecurse { f -> if (f.isFile()) { files << f } }
+    }
+    files.sort { rootProject.projectDir.toPath().relativize(it.toPath()).toString().replace(File.separator, '/') }
+    files.each { f ->
+        md.update(rootProject.projectDir.toPath().relativize(f.toPath()).toString().replace(File.separator, '/').getBytes('UTF-8'))
+        md.update((byte) 0)
+        f.bytes.each { b -> if (b != (byte) 13) { md.update(b) } }
+        md.update((byte) 0)
+    }
+    return md.digest().encodeHex().toString().substring(0, 16)
+}
+
+// Stamps each named file (relative to benchmarks/) that exists. Called from the benchmark tasks' doLast.
+ext.stampBenchmarks = { List<String> names, String scope ->
+    def hash = sourceHash(scope)
+    names.each { n ->
+        def f = rootProject.file("benchmarks/${n}")
+        if (f.isFile()) {
+            rootProject.file("benchmarks/${n}.srchash").text =
+                "scope=${scope}\nhash=${hash}\nstamped=${new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX")}\n"
+        } else {
+            logger.warn("stampBenchmarks: expected benchmark output ${f} was not produced; not stamping it")
+        }
+    }
+}
+
+tasks.register('benchmarkStatus') {
+    group = 'verification'
+    description = 'Reports whether each file under benchmarks/ was produced by the current sources (CURRENT/STALE/UNKNOWN).'
+    doLast {
+        def current = [:]
+        benchmarkScopes.keySet().each { current[it] = sourceHash(it) }
+        def files = rootProject.file('benchmarks').listFiles().findAll { it.isFile() && !it.name.endsWith('.srchash') }
+        files.sort { it.name }.each { f ->
+            def side = new File(f.parentFile, f.name + '.srchash')
+            if (!side.isFile()) {
+                println String.format('%-8s %s  (no .srchash sidecar: measured before provenance stamping, or by a tool that does not stamp)', 'UNKNOWN', f.name)
+                return
+            }
+            def props = new Properties()
+            side.withInputStream { props.load(it) }
+            def scope = props.getProperty('scope')
+            def match = current[scope] == props.getProperty('hash')
+            println String.format('%-8s %s  (scope %s, stamped %s%s)', match ? 'CURRENT' : 'STALE', f.name, scope,
+                props.getProperty('stamped'), match ? '' : "; sources changed since -- rerun the ${scope} benchmark")
+        }
+    }
+}
+
+// Manual stamp for files known to match the current sources (e.g. adopting provenance for existing results):
+//   ./gradlew stampBenchmarkFiles -Pscope=android -Pfiles=a.json,b.txt     (names relative to benchmarks/)
+tasks.register('stampBenchmarkFiles') {
+    group = 'verification'
+    description = 'Stamps the named benchmarks/ files as measured on the CURRENT sources (use only when that is true).'
+    doLast {
+        def scope = project.findProperty('scope')
+        def files = project.findProperty('files')
+        if (!scope || !files) {
+            throw new GradleException('Usage: ./gradlew stampBenchmarkFiles -Pscope=desktop|android -Pfiles=name1,name2')
+        }
+        stampBenchmarks(files.toString().split(',').toList(), scope.toString())
+    }
+}

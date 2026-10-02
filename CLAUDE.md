@@ -12,6 +12,15 @@ Allocation (B/op) and CPU sampling still come from `jmh`. The Android equivalent
 Pass ABSOLUTE paths to `pairedCompare` (it runs from `llkpattern/`, so relative paths fail; Windows java also can't
 read Bash's `/tmp`). Pause Dropbox first.
 
+## Which benchmark files are current: `./gradlew benchmarkStatus`
+
+Every benchmark task stamps its outputs with `benchmarks/<file>.srchash` (a content hash of the sources that can change
+that device's numbers: scope `desktop` or `android`, see `gradle/benchmark-provenance.gradle`). `benchmarkStatus` prints
+CURRENT / STALE / UNKNOWN per file, so a session can see e.g. that the Pixel files are stale because the phone wasn't
+available. Commit the `.srchash` files with the results. Content hash, so no commit-ordering rules: it is the same
+whether the benchmark ran before or after the commit. `-Pscope=... -Pfiles=... stampBenchmarkFiles` stamps files you
+know match the current sources. The Intel JMH/sampling files are UNKNOWN until their next run.
+
 ## After a performance-affecting change
 
 When a change is intended to affect (or plausibly could affect) compile-time or match-time

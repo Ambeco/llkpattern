@@ -4,3 +4,6 @@ plugins {
     id 'com.android.application' version '8.13.2' apply false
     id 'com.android.library' version '8.13.2' apply false
 }
+
+// Benchmark provenance stamping + `benchmarkStatus` (see the script's header).
+apply from: 'gradle/benchmark-provenance.gradle'

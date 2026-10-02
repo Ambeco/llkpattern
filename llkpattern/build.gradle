@@ -160,6 +160,14 @@ task jmhSampling(type: JavaExec) {
     ] + samplingBenchmarkNames
 }
 tasks.named('jmh').configure { finalizedBy jmhSampling }
+// Provenance stamps (see gradle/benchmark-provenance.gradle): each task marks the files it wrote with the
+// source hash it ran against, so `./gradlew benchmarkStatus` can tell current from stale.
+tasks.named('jmh').configure {
+    doLast { rootProject.ext.stampBenchmarks(["${benchmarkMachineName}_corpus_benchmark_results.json".toString()], 'desktop') }
+}
+jmhSampling.doLast {
+    rootProject.ext.stampBenchmarks(samplingBenchmarkNames.collect { "${benchmarkMachineName}_${it}_sampling.txt".toString() }, 'desktop')
+}
 
 // Interleaved llk-vs-regex ratios with confidence intervals, per regex-feature bucket -- see
 // PairedRunner's javadoc. Not chained after `jmh`; tune with -Pforks/-Prounds/-PchainPairs/-PwarmupRounds,
@@ -182,6 +190,7 @@ task jmhPaired(type: JavaExec) {
         project.findProperty('rawOut') ?: '',  // absolute path: keep every chain for offline analysis
     ]
     outputs.upToDateWhen { false }
+    doLast { rootProject.ext.stampBenchmarks(["${benchmarkMachineName}_paired_ratio_results.json".toString()], 'desktop') }
 }
 
 // ./gradlew :llkpattern:pairedCompare -Pbefore=<a.json> -Pafter=<b.json>
@@ -217,6 +226,9 @@ task jmhAllocSampling(type: JavaExec) {
         // warmup/iteration counts since JFR's sampling has no wall-clock budget to size against.
         "45000",
     ] + samplingBenchmarkNames
+    doLast {
+        rootProject.ext.stampBenchmarks(samplingBenchmarkNames.collect { "${benchmarkMachineName}_${it}_alloc_sampling.txt".toString() }, 'desktop')
+    }
 }
 
 // Regenerates a scraped-corpus golden TSV file from a per-source "intermediate" TSV (see

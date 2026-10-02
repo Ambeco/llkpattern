@@ -104,6 +104,10 @@ tasks.register('copyBenchmarkResults') {
             def destFile = new File(into, sourceFile.name)
             destFile.bytes = sourceFile.bytes
         }
+        // Stamp what was just copied; assumes the sources did not change while the device run was in flight.
+        def copied = []
+        from.eachFile { if (it.isFile()) { copied << it.name } }
+        rootProject.ext.stampBenchmarks(copied, 'android')
     }
 }
 tasks.matching { it.name.startsWith('connectedDebugAndroidTest') }.all { testTask ->

@@ -9,7 +9,8 @@ two-run eyeballing of `jmh`: it interleaves regex and llk per feature bucket and
 `./gradlew :llkpattern:pairedCompare -Pbefore=<a.json> -Pafter=<b.json>` (flags `<--` on |t| > 99% critical; trust
 the ALL rows, per-bucket rows give attribution). `-PinjectPercent=2` slows llk by 2% to validate sensitivity.
 Allocation (B/op) and CPU sampling still come from `jmh`. The Android equivalent is `testPaired` (same outputs).
-Pause Dropbox first.
+Pass ABSOLUTE paths to `pairedCompare` (it runs from `llkpattern/`, so relative paths fail; Windows java also can't
+read Bash's `/tmp`). Pause Dropbox first.
 
 ## After a performance-affecting change
 

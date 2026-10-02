@@ -93,9 +93,8 @@ small and startup "vaguely reasonable".
 
 - [ ] **Paired benchmark follow-ups** (the paired runner itself is built: `:llkpattern:jmhPaired`,
       `:llkpattern:pairedCompare`, Android `testPaired`; see CLAUDE.md and notes.md 2026-10-01):
-  - **Run `testPaired` on the Pixel 3a** (it compiles; the phone was locked when it was written), check that
-    `benchmarks/Google_Pixel_3a_sargo_paired_ratio_results.json` appears, and A/A + injected-slowdown validate it
-    like the desktop one. The Android side has no forks: blocks are 10 contiguous slices of one run.
+  - **Pixel 3a injected-slowdown check:** `testPaired` is validated A/A (two runs: compile/ALL 0.687 vs 0.673,
+    match/ALL 0.261 vs 0.259, ~5 min each) but has no `-PinjectPercent` equivalent yet.
   - **Rewrite README's benchmark tables/CLAUDE.md A/B procedure around paired ratios** once both devices have a
     validated baseline (CLAUDE.md currently only points at the new task alongside the JMH procedure).
   - **CPU sampling:** replace JMH's safepoint-biased `stack` profiler with JFR `jdk.ExecutionSample` at a short

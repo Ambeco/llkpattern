@@ -3872,3 +3872,6 @@ at ALL (+3.3% compile, +2.0% match). `pairedCompare` flags |t| above the 99% Wel
 false flag among ~20 per-bucket rows (seen once), act on ALL. Paired ratios (2.23/1.22) sit near the old JMH ones
 (2.35/1.17). `jmhPaired` needs a JDK 17 Gradle daemon (JAVA_HOME): a JDK 27 default fails with "major version 71".
 Buckets under 40 rows (backref, lookaround...) merge into `other`.
+Pixel 3a `testPaired` (10 blocks of one run): compile/ALL 0.69, match/ALL 0.26, CIs about +-1-2%. Higher than the old
+single-run 0.50-0.62/0.20-0.25 partly because llk's absolute time reads ~39 ms vs ~31 ms before (interleaving/ART
+effects not isolated), so do not compare paired and pre-paired Pixel ratios directly.

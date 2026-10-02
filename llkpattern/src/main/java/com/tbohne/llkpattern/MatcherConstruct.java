@@ -1,7 +1,6 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
 import com.tbohne.llkpattern.PatternConstruct.QuantifiedUnion;

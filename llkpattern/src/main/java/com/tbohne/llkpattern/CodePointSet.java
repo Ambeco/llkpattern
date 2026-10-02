@@ -88,14 +88,14 @@ public interface CodePointSet {
    * Returns the intersection of this set and {@code other}: code points in both. Default
    * implementation is a plain nested range scan -- allocates one temporary {@link CodePointSet}
    * per range of this set (via {@link #intersection(int, int)}) plus one {@link
-   * MutableCodePointSet#insert} per resulting sub-range -- fine for a cold path, but see {@link
+   * CodePointSetBuilder#append} per resulting sub-range -- fine for a cold path, but see {@link
    * ArrayCodePointSet}'s override for the allocation-light sweep merge real (parse-time-hot)
    * callers should get instead.
    */
   default CodePointSet intersection(CodePointSet other) {
-    MutableCodePointSet result = new ArrayCodePointSet();
-    forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::insert));
-    return result;
+    CodePointSetBuilder result = CodePointSetBuilder.create();
+    forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::append));
+    return result.build();
   }
 
   /**

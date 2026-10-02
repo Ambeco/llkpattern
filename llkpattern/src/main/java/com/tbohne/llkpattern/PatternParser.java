@@ -1,6 +1,5 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import com.tbohne.llkpattern.PatternConstruct.*;
 import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
@@ -133,6 +132,15 @@ final class PatternParser {
   // would just sit empty. Safe to share across parses because it is read-only from the outside
   // (ObjectIntMap has no mutators) and this class never mutates it either -- see namedGroups below.
   private static final ObjectIntMap<String> EMPTY_NAMED_GROUPS = new MutableObjectIntMap<>(0);
+
+  // DOTALL's ".": shared like RegexCharacterClass.DOT, since ComplexCharacter.ranges is never mutated.
+  private static final CodePointSet EVERY_CODE_POINT = buildEveryCodePoint();
+
+  private static CodePointSet buildEveryCodePoint() {
+    CodePointSetBuilder everything = CodePointSetBuilder.create();
+    everything.invert();
+    return everything.build();
+  }
 
   // Null until the first named group is registered (parseGroup), rather than an eagerly-constructed
   // androidx.collection.MutableObjectIntMap instead of java.util.HashMap<String, Integer>: no
@@ -474,9 +482,7 @@ final class PatternParser {
               // "Everything" is exactly an inverted set with no explicit (excluded) entries -- see
               // CodePointSet#invert's doc for why that's always a finite, valid set here rather
               // than the mathematically-unbounded RangeSet Guava's complement() used to produce.
-              MutableCodePointSet everything = new ArrayCodePointSet();
-              everything.invert();
-              dot = new ComplexCharacter(index, everything);
+              dot = new ComplexCharacter(index, EVERY_CODE_POINT);
             } else {
               // Aliased directly, not copied: ComplexCharacter.ranges is effectively immutable
               // once constructed (see its own doc) -- nothing past this point ever mutates it, so

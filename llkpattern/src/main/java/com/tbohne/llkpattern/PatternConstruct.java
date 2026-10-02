@@ -1637,14 +1637,9 @@ abstract class PatternConstruct {
 
 		@Override
 		void buildEntryMap(PatternConstruct next) {
-			// A true leaf -- nothing to alias from -- so this is still a genuinely new (if tiny,
-			// single-entry) set, built via a local mutable variable since entryMap itself is a plain
-			// (non-Mutable) CodePointSet reference now -- see its own doc.
-			MutableCodePointSet set = new ArrayCodePointSet();
-			set.set(Character.codePointAt(value, 0));
 			// A literal is the one leaf whose set isn't already folded (a class's is, at parse time;
 			// a named class is never folded), so it is folded here rather than in checkDisjoint.
-			entryMap = MatcherConstruct.foldedEntrySet(set, flags);
+			entryMap = MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags);
 		}
 
 		@Override
@@ -1694,12 +1689,10 @@ abstract class PatternConstruct {
 			if (Character.codePointCount(value, 0, value.length()) != 1) {
 				return null;
 			}
-			MutableCodePointSet set = new ArrayCodePointSet();
-			set.set(Character.codePointAt(value, 0));
 			// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
 			// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
 			// UNICODE_CASE, exactly like LiteralString.buildEntryMap's own entryMap.
-			return new LookbehindConstruct.SingleCodePointBody(MatcherConstruct.foldedEntrySet(set, flags), -1);
+			return new LookbehindConstruct.SingleCodePointBody(MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags), -1);
 		}
 	}
 
@@ -1776,9 +1769,7 @@ abstract class PatternConstruct {
 
 		ComplexCharacter(int startIndex, int character) {
 			super(startIndex);
-			MutableCodePointSet single = new ArrayCodePointSet();
-			single.insert(character, character + 1);
-			this.ranges = single;
+			this.ranges = singletonCodePointMap(character);
 		}
 
 		/**
@@ -2193,14 +2184,14 @@ abstract class PatternConstruct {
 		 * first code point.
 		 */
 		private static CodePointSet lineTerminatorStartCodePoints(int flags) {
-			MutableCodePointSet result = new ArrayCodePointSet();
-			result.insert('\n', '\n' + 1);
+			CodePointSetBuilder result = CodePointSetBuilder.create();
+			result.add('\n');
 			if ((flags & Ll1Pattern.UNIX_LINES) == 0) {
-				result.insert('\r', '\r' + 1);
-				result.insert(0x0085, 0x0086);
-				result.insert(0x2028, 0x202A);
+				result.add('\r');
+				result.add(0x0085);
+				result.append(0x2028, 0x202A);
 			}
-			return result;
+			return result.build();
 		}
 	}
 
@@ -2455,9 +2446,9 @@ abstract class PatternConstruct {
 	private static final CodePointSet UNIVERSAL_CODE_POINT_SET = buildUniversalCodePointSet();
 
 	private static CodePointSet buildUniversalCodePointSet() {
-		MutableCodePointSet result = new ArrayCodePointSet();
-		result.insert(0, CodePointSet.MAX_CODE_POINT + 1);
-		return result;
+		CodePointSetBuilder result = CodePointSetBuilder.create();
+		result.append(0, CodePointSet.MAX_CODE_POINT + 1);
+		return result.build();
 	}
 
 	/** Every code point -- used by the {@code admittedInteriorExitPeekSet} methods below for the

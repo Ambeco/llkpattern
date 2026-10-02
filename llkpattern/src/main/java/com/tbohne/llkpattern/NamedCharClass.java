@@ -2,7 +2,6 @@ package com.tbohne.llkpattern;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
-import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -157,17 +156,17 @@ enum NamedCharClass {
       Source.UProperty,
       build(
           m -> {
-            m.insert(+'\t', +'\r' + 1); // U+0009-000D
-            m.set(+' ');
-            m.set(0x0085);
-            m.set(0x00A0);
-            m.set(0x1680);
-            m.insert(0x2000, 0x200B);
-            m.set(0x2028);
-            m.set(0x2029);
-            m.set(0x202F);
-            m.set(0x205F);
-            m.set(0x3000);
+            m.append(+'\t', +'\r' + 1); // U+0009-000D
+            m.add(+' ');
+            m.add(0x0085);
+            m.add(0x00A0);
+            m.add(0x1680);
+            m.append(0x2000, 0x200B);
+            m.add(0x2028);
+            m.add(0x2029);
+            m.add(0x202F);
+            m.add(0x205F);
+            m.add(0x3000);
           })),
   // There are TWO distinct predicates in java.util.regex that are both named "Digit", and this one
   // constant stands in for both (via its `ascii` and `unicode` sets):
@@ -192,37 +191,37 @@ enum NamedCharClass {
       Source.UProperty,
       build(
           m -> {
-            m.insert(+'a', +'f' + 1);
-            m.insert(+'A', +'F' + 1);
-            m.insert(+'0', +'9' + 1);
-            m.insert(0xFF41, 0xFF47);
-            m.insert(0xFF21, 0xFF27);
-            m.insert(0xFF10, 0xFF1A);
+            m.append(+'a', +'f' + 1);
+            m.append(+'A', +'F' + 1);
+            m.append(+'0', +'9' + 1);
+            m.append(0xFF41, 0xFF47);
+            m.append(0xFF21, 0xFF27);
+            m.append(0xFF10, 0xFF1A);
           })),
   Join_Control(
-      Source.UProperty, build(m -> m.insert(0x200C, 0x200E))),
+      Source.UProperty, build(m -> m.append(0x200C, 0x200E))),
   Noncharacter_Code_Point(
       Source.UProperty,
       build( // not public in Java :(
           m -> {
-            m.insert(0xFDD0, 0xFDF0);
-            m.insert(0xFFFE, 0x10000);
-            m.insert(0x1FFFE, 0x20000);
-            m.insert(0x2FFFE, 0x30000);
-            m.insert(0x3FFFE, 0x40000);
-            m.insert(0x4FFFE, 0x50000);
-            m.insert(0x5FFFE, 0x60000);
-            m.insert(0x6FFFE, 0x70000);
-            m.insert(0x7FFFE, 0x80000);
-            m.insert(0x8FFFE, 0x90000);
-            m.insert(0x9FFFE, 0xA0000);
-            m.insert(0xAFFFE, 0xB0000);
-            m.insert(0xBFFFE, 0xC0000);
-            m.insert(0xCFFFE, 0xD0000);
-            m.insert(0xDFFFE, 0xE0000);
-            m.insert(0xEFFFE, 0xF0000);
-            m.insert(0xFFFFE, 0x100000);
-            m.insert(0x10FFFE, 0x110000);
+            m.append(0xFDD0, 0xFDF0);
+            m.append(0xFFFE, 0x10000);
+            m.append(0x1FFFE, 0x20000);
+            m.append(0x2FFFE, 0x30000);
+            m.append(0x3FFFE, 0x40000);
+            m.append(0x4FFFE, 0x50000);
+            m.append(0x5FFFE, 0x60000);
+            m.append(0x6FFFE, 0x70000);
+            m.append(0x7FFFE, 0x80000);
+            m.append(0x8FFFE, 0x90000);
+            m.append(0x9FFFE, 0xA0000);
+            m.append(0xAFFFE, 0xB0000);
+            m.append(0xBFFFE, 0xC0000);
+            m.append(0xCFFFE, 0xD0000);
+            m.append(0xDFFFE, 0xE0000);
+            m.append(0xEFFFE, 0xF0000);
+            m.append(0xFFFFE, 0x100000);
+            m.append(0x10FFFE, 0x110000);
           })),
   Assigned(
       Source.UProperty,
@@ -266,10 +265,10 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.insert(0x0021, 0x0030);
-            m.insert(0x003a, 0x0041);
-            m.insert(0x005B, 0x0061);
-            m.insert(0x007B, 0x007F);
+            m.append(0x0021, 0x0030);
+            m.append(0x003a, 0x0041);
+            m.append(0x005B, 0x0061);
+            m.append(0x007B, 0x007F);
           }),
       Punctuation.unicode),
   Graph(
@@ -284,19 +283,19 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.set(+' ');
-            m.set(+'\t');
+            m.add(+' ');
+            m.add(+'\t');
           }),
       difference(
           White_Space.unicode,
           unionOf(
               build(
                   m -> {
-                    m.set(0x000a); // LF
-                    m.set(0x000b); // VT
-                    m.set(0x000c); // FF
-                    m.set(0x000d); // CR
-                    m.set(0x0085); // NEL
+                    m.add(0x000a); // LF
+                    m.add(0x000b); // VT
+                    m.add(0x000c); // FF
+                    m.add(0x000d); // CR
+                    m.add(0x0085); // NEL
                   }),
               UnicodePredicates.LINE_SEPARATOR,
               UnicodePredicates.PARAGRAPH_SEPARATOR))),
@@ -304,16 +303,16 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.insert(0x0000, 0x0020); // U+0000-001F
-            m.set(0x007F); // U+007F
+            m.append(0x0000, 0x0020); // U+0000-001F
+            m.add(0x007F); // U+007F
           }),
       UnicodePredicates.CONTROL),
   Print(
       Source.POSIX,
       build(
           m -> {
-            m.insertAll(Graph.ascii);
-            m.set(0x0020);
+            m.appendAll(Graph.ascii);
+            m.add(0x0020);
           }),
       difference(
           unionOf(Graph.unicode, Blank.unicode),
@@ -345,12 +344,12 @@ enum NamedCharClass {
       Source.POSIX,
       build(
           m -> {
-            m.set(+' ');
-            m.set(+'\t');
-            m.set(+'\n');
-            m.set(0x000B);
-            m.set(+'\f');
-            m.set(+'\r');
+            m.add(+' ');
+            m.add(+'\t');
+            m.add(+'\n');
+            m.add(0x000B);
+            m.add(+'\f');
+            m.add(+'\r');
           }),
       White_Space.unicode),
   ;
@@ -374,16 +373,16 @@ enum NamedCharClass {
   }
 
   /**
-   * Builds an immutable {@link CodePointSet} via a scratch {@link ArrayCodePointSet}, for a
+   * Builds an immutable {@link CodePointSet} via a {@link CodePointSetBuilder}, for a
    * hand-written literal set too irregular to express as a single {@code append} call. {@code append}
    * (unlike {@code appendSorted}, which the generated {@code UnicodePredicates} uses) tolerates
    * entries added out of order, which several of the literals below are (e.g. {@code Hex_Digit}'s
    * a-f/A-F/0-9/fullwidth-digits ordering).
    */
-  private static CodePointSet build(java.util.function.Consumer<MutableCodePointSet> filler) {
-    ArrayCodePointSet result = new ArrayCodePointSet();
+  private static CodePointSet build(java.util.function.Consumer<CodePointSetBuilder> filler) {
+    CodePointSetBuilder result = CodePointSetBuilder.create();
     filler.accept(result);
-    return result;
+    return result.build();
   }
 
   /**
@@ -580,8 +579,8 @@ enum NamedCharClass {
     static final CodePointSet CASED =
         unionOf(UnicodePredicates.isLowerCase, UnicodePredicates.isUpperCase, UnicodePredicates.isTitleCase);
     static final CodePointSet ASCII_LETTERS = build(m -> {
-      m.insert('A', 'Z' + 1);
-      m.insert('a', 'z' + 1);
+      m.append('A', 'Z' + 1);
+      m.append('a', 'z' + 1);
     });
   }
 
@@ -601,26 +600,26 @@ enum NamedCharClass {
     // only ever given a single character.
     DOT(build(
           m -> {
-            m.set(+'\n');
-            m.set(+'\r');
-            m.set(0x0085);
-            m.insert(0x2028, 0x2029 + 1);
+            m.add(+'\n');
+            m.add(+'\r');
+            m.add(0x0085);
+            m.append(0x2028, 0x2029 + 1);
           }).complement()),
-    DOT_UNIX_LINES(build(m -> m.set(+'\n')).complement()),
+    DOT_UNIX_LINES(build(m -> m.add(+'\n')).complement()),
     d(Digit),
     // \D complements `ascii` and `unicode` separately, so (like \d, \S and \W) it honors
     // UNICODE_CHARACTER_CLASS. A single-set `Digit.unicode.complement()` would be flag-insensitive.
     D(Digit.ascii.complement(), Digit.unicode.complement()),
     h(build(
           m -> {
-            m.set(+'\t');
-            m.set(0x00A0);
-            m.set(0x1680);
-            m.set(0x180e);
-            m.set(0x202f);
-            m.set(0x205f);
-            m.set(0x3000);
-            m.insert(0x2000, 0x200b);
+            m.add(+'\t');
+            m.add(0x00A0);
+            m.add(0x1680);
+            m.add(0x180e);
+            m.add(0x202f);
+            m.add(0x205f);
+            m.add(0x3000);
+            m.append(0x2000, 0x200b);
           })),
     H(h.unicode.complement()),
     // Bug fix (2026-09-06): now delegates to NamedCharClass.Space instead of duplicating its own
@@ -631,34 +630,34 @@ enum NamedCharClass {
     S(s.ascii.complement(), s.unicode.complement()),
     v(build(
           m -> {
-            m.set(+'\n');
-            m.set(0x000B);
-            m.set(+'\f');
-            m.set(+'\r');
-            m.set(0x0085);
-            m.set(0x2028);
-            m.set(0x2029);
+            m.add(+'\n');
+            m.add(0x000B);
+            m.add(+'\f');
+            m.add(+'\r');
+            m.add(0x0085);
+            m.add(0x2028);
+            m.add(0x2029);
           })),
     V(v.unicode.complement()),
     w(
         build(
             m -> {
-              m.insert(+'a', +'z' + 1);
-              m.insert(+'A', +'Z' + 1);
-              m.insert(+'0', +'9' + 1);
-              m.set(+'_');
+              m.append(+'a', +'z' + 1);
+              m.append(+'A', +'Z' + 1);
+              m.append(+'0', +'9' + 1);
+              m.add(+'_');
             }),
         Word.unicode),
     W(w.ascii.complement(), w.unicode.complement()),
     R(build(
           m -> {
-            m.set(+'\n');
-            m.set(+'\r');
-            m.set(0x000B);
-            m.set(0x000C);
-            m.set(0x0085);
-            m.set(0x2028);
-            m.set(0x2029);
+            m.add(+'\n');
+            m.add(+'\r');
+            m.add(0x000B);
+            m.add(0x000C);
+            m.add(0x0085);
+            m.add(0x2028);
+            m.add(0x2029);
           }));
 
     final CodePointSet ascii;

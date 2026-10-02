@@ -90,10 +90,17 @@ public class AndroidCorpusBenchmark {
   // slow, since nothing else here depends on hitting any particular wall-clock target.
   // Paired (interleaved) run: 1 round = every bucket's compile and match chain once. Sized for ~2-3
   // minutes on a Pixel 3a (one round ~0.5 s with 4-pair chains).
-  private static final int PAIRED_WARMUP_ROUNDS = 40;
-  private static final int PAIRED_ROUNDS = 300;
-  private static final int PAIRED_CHAIN_PAIRS = 4;
-  private static final int PAIRED_BLOCKS = 10;
+  // Overridable per run with instrumentation arguments, e.g. -Pandroid.testInstrumentationRunnerArguments.pairedRounds=1200
+  // (names: pairedWarmupRounds, pairedRounds, pairedChainPairs, pairedBlocks; rawSamples=true also dumps every chain).
+  private static final int PAIRED_WARMUP_ROUNDS = intArg("pairedWarmupRounds", 40);
+  private static final int PAIRED_ROUNDS = intArg("pairedRounds", 300);
+  private static final int PAIRED_CHAIN_PAIRS = intArg("pairedChainPairs", 4);
+  private static final int PAIRED_BLOCKS = intArg("pairedBlocks", 10);
+
+  private static int intArg(String name, int defaultValue) {
+    String v = InstrumentationRegistry.getArguments().getString(name);
+    return v == null ? defaultValue : Integer.parseInt(v);
+  }
   private static final int MIN_BUCKET_ROWS = 40;
 
   // Iterations for sampling's capture, below -- separate from the paired run's rounds since a 
@@ -288,6 +295,13 @@ public class AndroidCorpusBenchmark {
         PAIRED_WARMUP_ROUNDS, PAIRED_ROUNDS, PAIRED_CHAIN_PAIRS, PAIRED_BLOCKS);
     long gcCount = Debug.getGlobalGcInvocationCount() - gcBefore;
 
+    if ("true".equals(InstrumentationRegistry.getArguments().getString("rawSamples"))) {
+      StringBuilder raw = new StringBuilder();
+      for (PairedBench.Sample sample : samples) {
+        raw.append(sample.toTsv()).append("\n");
+      }
+      writeFile(deviceName() + "_paired_raw.tsv", raw.toString());
+    }
     List<PairedStats.Entry> entries = PairedStats.summarize(samples, names, bucketRows);
     for (PairedStats.Entry e : entries) {
       if (e.key.endsWith("/" + PairedStats.ALL)) {

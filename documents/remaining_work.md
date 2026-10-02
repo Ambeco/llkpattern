@@ -119,13 +119,7 @@ benchmark checklist, since `addAll`'s hot paths are sensitive -- see notes.md, 2
 - [ ] Keep the `ArrayCodePointSet(CodePointSet)` copy constructor (owner's decision). Its only non-test callers
       are `union`/`difference`, which could instead use the existing `sweepUnion`/`sweepDifference` for two
       non-inverted sets (one pass, one allocation), keeping the generic path only for inverted/lazy operands.
-- [ ] Measure `Arrays.sort` (TimSort/dual-pivot on `int[]`) vs `CodePointSetBuilderImpl#sortInPlaceByMin`'s
-      insertion sort on the shapes `build()` sees (small, near-sorted; and two concatenated sorted runs, as
-      `union` would produce). If TimSort-like behavior is effectively linear on already-sorted input, more
-      callers (e.g. `union`/`difference`, `mergeEntryPoints`) can become `CodePointSetBuilder` users. Note
-      `Arrays.sort(int[])` is dual-pivot quicksort, not TimSort (TimSort is only for object arrays), and the
-      packed keys do NOT compare correctly as raw ints above code point 0x100000 (see `sortInPlaceByMin`'s doc),
-      so a sort needs either an unpacked representation or a comparator over `keyMin`. If sorting is not linear on that shape, the alternative is for `build()` to detect one or two ascending runs and linearly merge them (no sort), falling back to the sort otherwise; moot if the sort is.
+- [ ] Remaining `MutableCodePointSet` sites (see notes.md, "MutableCodePointSet -> CodePointSetBuilder migration"): `union(a,b)` and the three `insertAll` loops in `PatternConstruct` (`skipZeroWidthEntrySet`/`firstCharSet`/`resolveSingleCodePointBody`) are untried; `build()` now merges two sorted runs linearly, so they are viable. Measure each batch (A/B plus the full benchmark cycle). `mergeRun` and `mergeEntryPoints`/`unionLastCharSet` regressed as builder users; `gate` needs `removeAll`.
 
 ## Open questions
 

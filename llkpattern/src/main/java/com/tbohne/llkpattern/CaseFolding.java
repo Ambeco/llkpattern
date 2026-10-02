@@ -1,6 +1,5 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
 import java.util.Arrays;
 
 /**
@@ -214,10 +213,8 @@ final class CaseFolding {
     if (!any[0]) {
       return exact;
     }
-    MutableCodePointSet result = new ArrayCodePointSet();
-    result.insertAll(exact);
-    result.insertAll(additions.build());
-    return result;
+    additions.appendAll(exact);
+    return additions.build();
   }
 
   private static void addAsciiShift(

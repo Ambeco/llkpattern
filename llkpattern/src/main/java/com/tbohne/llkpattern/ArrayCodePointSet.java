@@ -1008,6 +1008,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     // an inheritance-based rewrite temporarily lost it).
     private static final int BUILDER_INITIAL_CAPACITY = 4;
 
+    // Insertion sort shifts at most (first run length) x (second run length) entries; below this it beats the merge's temp-array copy.
+    private static final int MERGE_MIN_SHIFTS = 256;
+
     private boolean built = false;
 
     CodePointSetBuilderImpl() {
@@ -1109,6 +1112,54 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       return this;
     }
 
+    /**
+     * If {@code keys[0..size)} is exactly two ascending runs (the shape appending one sorted set
+     * after another produces) and both are long enough that insertion sort's shifts would add
+     * up, merges them linearly via a copy of the shorter run and returns true; otherwise leaves
+     * {@code keys} untouched and returns false.
+     */
+    private boolean mergeTwoRuns() {
+      int split = 1;
+      while (keyMin(keys[split]) >= keyMin(keys[split - 1])) {
+        split++;
+      }
+      int tailLength = size - split;
+      if (split * tailLength <= MERGE_MIN_SHIFTS) {
+        return false;
+      }
+      for (int i = split + 1; i < size; i++) {
+        if (keyMin(keys[i]) < keyMin(keys[i - 1])) {
+          return false;
+        }
+      }
+      if (split <= tailLength) {
+        // Copy the shorter head; merge forward. The write cursor never passes the tail's read cursor.
+        int[] head = Arrays.copyOfRange(keys, 0, split);
+        int i = 0;
+        int j = split;
+        int k = 0;
+        while (i < split) {
+          if (j < size && keyMin(keys[j]) < keyMin(head[i])) {
+            keys[k++] = keys[j++];
+          } else {
+            keys[k++] = head[i++];
+          }
+        }
+        return true;
+      }
+      int[] tail = Arrays.copyOfRange(keys, split, size);
+      int i = split - 1;
+      int j = tailLength - 1;
+      for (int k = size - 1; j >= 0; k--) {
+        if (i >= 0 && keyMin(keys[i]) > keyMin(tail[j])) {
+          keys[k] = keys[i--];
+        } else {
+          keys[k] = tail[j--];
+        }
+      }
+      return true;
+    }
+
     private void checkNotBuilt() {
       if (built) {
         throw new IllegalStateException(
@@ -1138,6 +1189,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       }
       // Already sorted (the common case) falls straight through; otherwise the sorted prefix is
       // skipped.
+      if (firstOutOfOrder < size && mergeTwoRuns()) {
+        return;
+      }
       for (int i = firstOutOfOrder; i < size; i++) {
         int key = keys[i];
         int min = keyMin(key);

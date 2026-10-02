@@ -88,4 +88,41 @@ public class CodePointSetBuilderTest {
     assertThat(set.contains('x'), is(false));
     assertThat(set.contains('m'), is(true));
   }
+
+  /** Random shapes -- one run, two runs (the linear-merge path), many runs -- vs a boolean-array oracle. */
+  @Test
+  public void build_randomRunShapes_matchOracle() {
+    java.util.Random random = new java.util.Random(12345);
+    for (int trial = 0; trial < 3000; trial++) {
+      boolean[] oracle = new boolean[400];
+      CodePointSetBuilder builder = CodePointSetBuilder.create();
+      int runs = 1 + random.nextInt(4);
+      for (int run = 0; run < runs; run++) {
+        int cursor = random.nextInt(20);
+        int count = random.nextInt(14);
+        for (int n = 0; n < count && cursor < 380; n++) {
+          int min = cursor + random.nextInt(6);
+          int max = min + 1 + random.nextInt(5);
+          builder.append(min, max);
+          for (int cp = min; cp < max; cp++) {
+            oracle[cp] = true;
+          }
+          cursor = max + random.nextInt(6);
+        }
+      }
+      CodePointSet set = builder.build();
+      for (int cp = 0; cp < oracle.length; cp++) {
+        assertThat("trial " + trial + " cp " + cp, set.contains(cp), is(oracle[cp]));
+      }
+      int[] ranges = {0};
+      set.forEachRange((min, max) -> ranges[0]++);
+      int expected = 0;
+      for (int cp = 0; cp < oracle.length; cp++) {
+        if (oracle[cp] && (cp == 0 || !oracle[cp - 1])) {
+          expected++;
+        }
+      }
+      assertThat("coalesced range count, trial " + trial, ranges[0], is(expected));
+    }
+  }
 }

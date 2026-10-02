@@ -3851,3 +3851,11 @@ one terminator), and `lineTerminatorStartCodePoints` counted `\r` as a MULTILINE
   `CodePointSetBuilder.mergeRun`, both pre-sized so they already use the in-place merge.
 - JFR alloc sampling shares were too noisy to attribute a 1-2% effect; an instrumented one-pass counter
   (static `STAT` array, `ThreadMXBean.getThreadAllocatedBytes`) found the call sites in minutes.
+
+### MutableCodePointSet -> CodePointSetBuilder migration, batches 1-2 (2026-10-01)
+
+- Batch 1 (NamedCharClass.build, CodePointSet#intersection default, line-terminator/universal sets, DOTALL `.` as a shared constant, singleton literals via singletonCodePointMap): perf-neutral.
+- Batch 2: `build()` merges two ascending runs linearly (shorter run copied) when worst-case insertion shifts > 256; `CaseFolding` appends into its existing builder. Perf-neutral.
+- Always-merge (threshold: both runs > 4) added a temp array on near-sorted literals: +1.9% compile alloc. Product threshold fixed it.
+- `mergeRun` appending into `literals` (no second set): +1.2% compile alloc (2,983K vs 2,948K B/op) even with the merge fix and with `CaseFolding` ruled out by bisecting; an inverted-runUnion guard made it worse (3,003K). Cause not isolated; exact pre-sized ArrayCodePointSet kept.
+- Left as MutableCodePointSet: mergeEntryPoints/unionLastCharSet (2026-09-25 rejections), `gate` (removeAll), union(a,b) and the three insertAll loops in PatternConstruct (small N; not yet tried).

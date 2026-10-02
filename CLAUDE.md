@@ -316,3 +316,11 @@ Java text containing `\`.
   flags x inputs) first; it finds the surprising cases in one run.
 - Keep a scratchpad script that prints the failure message for a test class from
   `llkpattern/build/test-results/test/TEST-*.xml` (set `PYTHONIOENCODING=utf-8`) instead of retyping it.
+
+## Gradle and allocation-bisecting shortcuts
+
+- `:llkpattern:checkNullness` (and so `:llkpattern:test`) sometimes fails instantly with "Failed to clean up
+  stale outputs". It is transient: re-run the same command once before investigating.
+- To bisect a compile-allocation regression among several conversions, revert ONE conversion at a time and
+  compare `gc.alloc.rate.norm` from a single `:llkpattern:jmh` run (~3 min). It is deterministic to ~0.1%
+  (the change tree's two runs agreed to within 30 B/op), unlike timing ratios. Save the file first, restore it after.

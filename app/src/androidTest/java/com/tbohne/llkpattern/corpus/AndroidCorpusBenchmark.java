@@ -191,6 +191,7 @@ public class AndroidCorpusBenchmark {
     }
 
     results.put("device", deviceName());
+    results.put("sourceHash", BuildConfig.SOURCE_HASH);
     results.put("buildTime", Instant.ofEpochMilli(BuildConfig.BUILD_TIME).toString());
     results.put("testTime", Instant.now().toString());
     results.put("androidRelease", Build.VERSION.RELEASE);
@@ -298,6 +299,7 @@ public class AndroidCorpusBenchmark {
     Map<String, String> meta = new LinkedHashMap<>();
     meta.put("machine", deviceName());
     meta.put("captured", Instant.now().toString());
+    meta.put("sourceHash", BuildConfig.SOURCE_HASH);
     meta.put("blocks", Integer.toString(PAIRED_BLOCKS));
     meta.put("roundsTotal", Integer.toString(PAIRED_ROUNDS));
     meta.put("chainPairs", Integer.toString(PAIRED_CHAIN_PAIRS));
@@ -492,6 +494,7 @@ public class AndroidCorpusBenchmark {
      List<ChainNode> leaves = allLeaves.subList(0, Math.min(CUTOFF_LEAF_RANK, allLeaves.size()));
 
      StringBuilder body = new StringBuilder();
+     body.append("sourceHash: ").append(BuildConfig.SOURCE_HASH).append("\n");
      body.append(String.format(Locale.ROOT,
          "Sampling profile of %s on %s%n"
              + "capture depth: %d frames, sample interval: %dms, profile iterations: %d, "

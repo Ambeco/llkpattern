@@ -234,6 +234,7 @@ public final class AllocationSamplingRunner {
     List<ChainNode> leaves = allLeaves.subList(0, Math.min(CUTOFF_LEAF_RANK, allLeaves.size()));
 
     StringBuilder body = new StringBuilder();
+    body.append("sourceHash: ").append(System.getProperty("llk.sourceHash", "unknown")).append("\n");
     body.append(String.format(Locale.ROOT,
         "Desktop allocation-sampling profile of CorpusBenchmark.%s on %s%n"
             + "Captured: %s, via JDK Flight Recorder's jdk.ObjectAllocationSample event, "

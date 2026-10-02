@@ -102,6 +102,7 @@ public final class SamplingRunner {
     }
 
     StringBuilder body = new StringBuilder();
+    body.append("sourceHash: ").append(System.getProperty("llk.sourceHash", "unknown")).append("\n");
     body.append("Desktop CPU-sampling profile of CorpusBenchmark.").append(name).append('\n');
     body.append("Device: ").append(machineName).append(" (this dev machine)\n");
     body.append("Captured: ")

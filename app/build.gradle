@@ -18,6 +18,9 @@ android {
         versionCode 1
         versionName "1.0"
         buildConfigField "Long", "BUILD_TIME", "${System.currentTimeMillis()}L"
+        // Content hash of the sources this APK was built from (see gradle/benchmark-provenance.gradle); the
+        // benchmark test writes it into every result file it produces.
+        buildConfigField "String", "SOURCE_HASH", "\"android:${rootProject.ext.sourceHash('android')}\""
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments clearPackageData: 'false'
@@ -104,10 +107,6 @@ tasks.register('copyBenchmarkResults') {
             def destFile = new File(into, sourceFile.name)
             destFile.bytes = sourceFile.bytes
         }
-        // Stamp what was just copied; assumes the sources did not change while the device run was in flight.
-        def copied = []
-        from.eachFile { if (it.isFile()) { copied << it.name } }
-        rootProject.ext.stampBenchmarks(copied, 'android')
     }
 }
 tasks.matching { it.name.startsWith('connectedDebugAndroidTest') }.all { testTask ->

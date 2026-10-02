@@ -14,12 +14,13 @@ read Bash's `/tmp`). Pause Dropbox first.
 
 ## Which benchmark files are current: `./gradlew benchmarkStatus`
 
-Every benchmark task stamps its outputs with `benchmarks/<file>.srchash` (a content hash of the sources that can change
-that device's numbers: scope `desktop` or `android`, see `gradle/benchmark-provenance.gradle`). `benchmarkStatus` prints
-CURRENT / STALE / UNKNOWN per file, so a session can see e.g. that the Pixel files are stale because the phone wasn't
-available. Commit the `.srchash` files with the results. Content hash, so no commit-ordering rules: it is the same
-whether the benchmark ran before or after the commit. `-Pscope=... -Pfiles=... stampBenchmarkFiles` stamps files you
-know match the current sources. The Intel JMH/sampling files are UNKNOWN until their next run.
+Every benchmark output embeds `sourceHash: <scope>:<hash>` (a content hash of the sources that can change that device's
+numbers: scope `desktop` or `android`, see `gradle/benchmark-provenance.gradle`; Android gets it from
+`BuildConfig.SOURCE_HASH`, i.e. the sources the APK was actually built from; JMH's own JSON gets it injected after the
+run). `benchmarkStatus` prints CURRENT / STALE / UNKNOWN (no embedded hash) per file, so a session can see e.g. that the
+Pixel files are stale because the phone wasn't available. Content hash, so no commit-ordering rules: it is the same
+whether the benchmark ran before or after the commit. `printSourceHash -Pscope=...` prints the value if you must
+hand-embed one into a file you know matches the current sources.
 
 ## After a performance-affecting change
 

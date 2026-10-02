@@ -1,10 +1,12 @@
 // Benchmark provenance: which source state produced each file under benchmarks/, and is it still current?
 //
-// Each benchmark task stamps its output files with a sidecar `<file>.srchash` holding a content hash of
-// the sources that can change that device's numbers (scope 'desktop' or 'android' below). `./gradlew
-// benchmarkStatus` recomputes the hashes and reports each file as CURRENT, STALE or UNKNOWN (no sidecar).
-// A content hash -- not a commit hash or mtime -- so it is the same whether the benchmark ran before or after
-// the commit, and the same in a fresh clone (CR bytes are skipped so CRLF working trees match LF checkouts).
+// Every benchmark output embeds `sourceHash: <scope>:<hash>` -- a content hash of the sources that can change that
+// device's numbers (scope 'desktop' or 'android' below). Runners get it via the llk.sourceHash system property
+// (desktop) or BuildConfig.SOURCE_HASH (Android, i.e. the sources the APK was actually built from); JMH's own JSON
+// gets it injected after the run. `./gradlew benchmarkStatus` recomputes the hashes and reports each file as
+// CURRENT, STALE or UNKNOWN (no embedded hash). A content hash -- not a commit hash or mtime -- so it is the same
+// whether the benchmark ran before or after the commit, and the same in a fresh clone (CR bytes are skipped so
+// CRLF working trees match LF checkouts).
 
 import java.security.MessageDigest
 
@@ -38,18 +40,26 @@ ext.sourceHash = { String scope ->
     return md.digest().encodeHex().toString().substring(0, 16)
 }
 
-// Stamps each named file (relative to benchmarks/) that exists. Called from the benchmark tasks' doLast.
-ext.stampBenchmarks = { List<String> names, String scope ->
-    def hash = sourceHash(scope)
-    names.each { n ->
-        def f = rootProject.file("benchmarks/${n}")
-        if (f.isFile()) {
-            rootProject.file("benchmarks/${n}.srchash").text =
-                "scope=${scope}\nhash=${hash}\nstamped=${new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX")}\n"
-        } else {
-            logger.warn("stampBenchmarks: expected benchmark output ${f} was not produced; not stamping it")
-        }
+// JMH writes its JSON itself (a top-level array of objects), so inject a "sourceHash" key into each element
+// after the run. Elements start at a line of exactly four spaces and a brace.
+ext.embedSourceHashInJmhJson = { File json, String scope ->
+    def text = json.getText('UTF-8')
+    def tag = "${scope}:${sourceHash(scope)}"
+    def out = text.replaceAll(/(?m)^(    )\{(\r?\n)/, { all, indent, eol -> "${indent}{${eol}${indent}    \"sourceHash\" : \"${tag}\",${eol}" })
+    if (out == text) {
+        throw new GradleException("Found no JMH result objects to tag in ${json}; did JMH's JSON layout change?")
     }
+    json.setText(out, 'UTF-8')
+}
+
+ext.embeddedHash = { File f ->
+    def m = f.getText('UTF-8') =~ /sourceHash"?\s*[:=]\s*"?(desktop|android):([0-9a-f]{16})/
+    return m.find() ? [m.group(1), m.group(2)] : null
+}
+
+tasks.register('printSourceHash') {
+    description = 'Prints "<scope>:<hash>" for -Pscope=desktop|android (to hand-embed into a result file known to match).'
+    doLast { println "${project.findProperty('scope')}:${sourceHash(project.findProperty('scope').toString())}" }
 }
 
 tasks.register('benchmarkStatus') {
@@ -58,34 +68,15 @@ tasks.register('benchmarkStatus') {
     doLast {
         def current = [:]
         benchmarkScopes.keySet().each { current[it] = sourceHash(it) }
-        def files = rootProject.file('benchmarks').listFiles().findAll { it.isFile() && !it.name.endsWith('.srchash') }
-        files.sort { it.name }.each { f ->
-            def side = new File(f.parentFile, f.name + '.srchash')
-            if (!side.isFile()) {
-                println String.format('%-8s %s  (no .srchash sidecar: measured before provenance stamping, or by a tool that does not stamp)', 'UNKNOWN', f.name)
-                return
+        rootProject.file('benchmarks').listFiles().findAll { it.isFile() }.sort { it.name }.each { f ->
+            def e = embeddedHash(f)
+            if (e == null) {
+                println String.format('%-8s %s  (no embedded sourceHash: measured before provenance embedding)', 'UNKNOWN', f.name)
+            } else if (current[e[0]] == e[1]) {
+                println String.format('%-8s %s  (scope %s)', 'CURRENT', f.name, e[0])
+            } else {
+                println String.format('%-8s %s  (scope %s: sources changed since it was measured -- rerun the %s benchmark)', 'STALE', f.name, e[0], e[0])
             }
-            def props = new Properties()
-            side.withInputStream { props.load(it) }
-            def scope = props.getProperty('scope')
-            def match = current[scope] == props.getProperty('hash')
-            println String.format('%-8s %s  (scope %s, stamped %s%s)', match ? 'CURRENT' : 'STALE', f.name, scope,
-                props.getProperty('stamped'), match ? '' : "; sources changed since -- rerun the ${scope} benchmark")
         }
-    }
-}
-
-// Manual stamp for files known to match the current sources (e.g. adopting provenance for existing results):
-//   ./gradlew stampBenchmarkFiles -Pscope=android -Pfiles=a.json,b.txt     (names relative to benchmarks/)
-tasks.register('stampBenchmarkFiles') {
-    group = 'verification'
-    description = 'Stamps the named benchmarks/ files as measured on the CURRENT sources (use only when that is true).'
-    doLast {
-        def scope = project.findProperty('scope')
-        def files = project.findProperty('files')
-        if (!scope || !files) {
-            throw new GradleException('Usage: ./gradlew stampBenchmarkFiles -Pscope=desktop|android -Pfiles=name1,name2')
-        }
-        stampBenchmarks(files.toString().split(',').toList(), scope.toString())
     }
 }

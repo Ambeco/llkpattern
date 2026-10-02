@@ -121,6 +121,7 @@ public final class PairedRunner {
     Map<String, String> meta = new LinkedHashMap<>();
     meta.put("machine", machine);
     meta.put("captured", LocalDate.now().toString());
+    meta.put("sourceHash", System.getProperty("llk.sourceHash", "unknown"));
     meta.put("forks", Integer.toString(forks));
     meta.put("roundsPerFork", Integer.toString(rounds));
     meta.put("chainPairs", Integer.toString(chainPairs));

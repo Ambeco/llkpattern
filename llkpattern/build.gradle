@@ -160,13 +160,11 @@ task jmhSampling(type: JavaExec) {
     ] + samplingBenchmarkNames
 }
 tasks.named('jmh').configure { finalizedBy jmhSampling }
-// Provenance stamps (see gradle/benchmark-provenance.gradle): each task marks the files it wrote with the
-// source hash it ran against, so `./gradlew benchmarkStatus` can tell current from stale.
+// Provenance (see gradle/benchmark-provenance.gradle): every output embeds the hash of the sources it ran against,
+// so `./gradlew benchmarkStatus` can tell current from stale. JMH's own JSON gets it injected after the run; the
+// runners below read it from the llk.sourceHash system property.
 tasks.named('jmh').configure {
-    doLast { rootProject.ext.stampBenchmarks(["${benchmarkMachineName}_corpus_benchmark_results.json".toString()], 'desktop') }
-}
-jmhSampling.doLast {
-    rootProject.ext.stampBenchmarks(samplingBenchmarkNames.collect { "${benchmarkMachineName}_${it}_sampling.txt".toString() }, 'desktop')
+    doLast { rootProject.ext.embedSourceHashInJmhJson(project.file("${rootDir}/benchmarks/${benchmarkMachineName}_corpus_benchmark_results.json"), 'desktop') }
 }
 
 // Interleaved llk-vs-regex ratios with confidence intervals, per regex-feature bucket -- see
@@ -190,7 +188,6 @@ task jmhPaired(type: JavaExec) {
         project.findProperty('rawOut') ?: '',  // absolute path: keep every chain for offline analysis
     ]
     outputs.upToDateWhen { false }
-    doLast { rootProject.ext.stampBenchmarks(["${benchmarkMachineName}_paired_ratio_results.json".toString()], 'desktop') }
 }
 
 // ./gradlew :llkpattern:pairedCompare -Pbefore=<a.json> -Pafter=<b.json>
@@ -226,9 +223,6 @@ task jmhAllocSampling(type: JavaExec) {
         // warmup/iteration counts since JFR's sampling has no wall-clock budget to size against.
         "45000",
     ] + samplingBenchmarkNames
-    doLast {
-        rootProject.ext.stampBenchmarks(samplingBenchmarkNames.collect { "${benchmarkMachineName}_${it}_alloc_sampling.txt".toString() }, 'desktop')
-    }
 }
 
 // Regenerates a scraped-corpus golden TSV file from a per-source "intermediate" TSV (see
@@ -253,4 +247,9 @@ afterEvaluate {
     tasks.named('compileJmhJava') {
         doFirst { options.compilerArgs.add('-AskipDefs=.*') }
     }
+}
+
+// Needs jmhPaired/jmhAllocSampling to exist, hence at the end of the file.
+[tasks.named('jmhSampling'), tasks.named('jmhAllocSampling'), tasks.named('jmhPaired')].each { t ->
+    t.configure { doFirst { systemProperty 'llk.sourceHash', 'desktop:' + rootProject.ext.sourceHash('desktop') } }
 }

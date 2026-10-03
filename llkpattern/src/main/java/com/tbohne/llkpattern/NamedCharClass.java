@@ -417,7 +417,7 @@ public enum NamedCharClass {
    * (a newer JDK than the one that ran {@code UnicodeAnalyzer}) is also {@code null} here, i.e.
    * reported as unknown.
    */
-  static @Nullable CodePointSet scriptByName(String name) {
+  public static @Nullable CodePointSet scriptByName(String name) {
     Character.UnicodeScript script;
     try {
       script = Character.UnicodeScript.forName(name);
@@ -434,7 +434,7 @@ public enum NamedCharClass {
    * constants. A block the running JDK knows but the checked-in {@code UnicodePredicates} predates
    * is reported unknown.
    */
-  static @Nullable CodePointSet blockByName(String name) {
+  public static @Nullable CodePointSet blockByName(String name) {
     Character.UnicodeBlock block;
     try {
       block = Character.UnicodeBlock.forName(name);
@@ -445,7 +445,7 @@ public enum NamedCharClass {
   }
 
   /** True if {@code name} is a named class that may be looked up under the {@code Is} prefix. */
-  static boolean isNamedClass(String name) {
+  public static boolean isNamedClass(String name) {
     try {
       return valueOfIs(name).allowedPrefixes.contains(CharacterClassPrefix.is);
     } catch (IllegalArgumentException e) {
@@ -462,7 +462,7 @@ public enum NamedCharClass {
    * and POSIX names match case-insensitively there ({@code \p{IsALPHABETIC}}), while categories
    * ({@code \p{IsLu}}) stay case-sensitive.
    */
-  static NamedCharClass valueOfIs(String name) {
+  public static NamedCharClass valueOfIs(String name) {
     try {
       return valueOf(name);
     } catch (IllegalArgumentException e) {
@@ -552,7 +552,7 @@ public enum NamedCharClass {
    * letter). Every other class is unaffected, including scripts and blocks. {@code plain} is what
    * {@link #get} returned.
    */
-  CodePointSet caseInsensitive(CharacterClassPrefix prefix, int flags, CodePointSet plain) {
+  public CodePointSet caseInsensitive(CharacterClassPrefix prefix, int flags, CodePointSet plain) {
     switch (this) {
       case Lu:
       case Ll:
@@ -584,7 +584,7 @@ public enum NamedCharClass {
     });
   }
 
-  enum CharacterClassPrefix {
+  public enum CharacterClassPrefix {
     none,
     java,
     is,
@@ -661,7 +661,7 @@ public enum NamedCharClass {
           }));
 
     final CodePointSet ascii;
-    final CodePointSet unicode;
+    public final CodePointSet unicode;
 
     RegexCharacterClass(CodePointSet unicode) {
       this.ascii = unicode.intersection(0, 0x80);

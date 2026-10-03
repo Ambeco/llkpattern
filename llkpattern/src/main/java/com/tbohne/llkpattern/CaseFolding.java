@@ -108,7 +108,7 @@ public final class CaseFolding {
   }
 
   /** Adds to {@code b} everything a lone {@code codePoint} matches under {@code CASE_INSENSITIVE}. */
-  static void addSingle(CodePointSetBuilder b, int codePoint, boolean unicode) {
+  public static void addSingle(CodePointSetBuilder b, int codePoint, boolean unicode) {
     b.append(codePoint, codePoint + 1);
     if (!unicode) {
       if (codePoint >= 'a' && codePoint <= 'z') {
@@ -127,7 +127,7 @@ public final class CaseFolding {
   }
 
   /** Adds {@code [min, max)} to {@code b}, plus what a {@code [lo-hi]} range matches beyond it. */
-  static void appendRange(CodePointSetBuilder b, int min, int max, boolean unicode) {
+  public static void appendRange(CodePointSetBuilder b, int min, int max, boolean unicode) {
     b.append(min, max);
     if (!unicode) {
       addAsciiShift(b, min, max, 'A', 'Z', 32);

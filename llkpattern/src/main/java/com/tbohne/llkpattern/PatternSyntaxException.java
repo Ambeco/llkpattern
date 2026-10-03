@@ -13,7 +13,7 @@ public class PatternSyntaxException extends java.util.regex.PatternSyntaxExcepti
 	public static class CodePointReference {
 		final int index;
 
-		CodePointReference(int index) {
+		public CodePointReference(int index) {
 			this.index = index;
 		}
 	}

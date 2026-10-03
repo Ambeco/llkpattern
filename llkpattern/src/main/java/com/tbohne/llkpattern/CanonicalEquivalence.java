@@ -33,7 +33,7 @@ public final class CanonicalEquivalence {
   // A cluster's starter can't be one of these; they keep their regex meaning.
   private static final String NON_STARTERS = "\\()[]{}|.^$?+*";
 
-  static String rewrite(String pattern, boolean unicodeFold) {
+  public static String rewrite(String pattern, boolean unicodeFold) {
     String nfd = Normalizer.normalize(pattern, Normalizer.Form.NFD);
     Map<String, Set<Integer>> originals = originalSpellings(pattern);
     int n = nfd.length();

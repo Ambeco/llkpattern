@@ -118,6 +118,24 @@ benchmark checklist, since `addAll`'s hot paths are sensitive -- see notes.md, 2
       non-inverted sets (one pass, one allocation), keeping the generic path only for inverted/lazy operands.
 - [ ] Remaining `MutableCodePointSet` sites (see notes.md, "MutableCodePointSet -> CodePointSetBuilder migration"): `union(a,b)` and the three `insertAll` loops in `PatternConstruct` (`skipZeroWidthEntrySet`/`firstCharSet`/`resolveSingleCodePointBody`) are untried; `build()` now merges two sorted runs linearly, so they are viable. Measure each batch (A/B plus the full benchmark cycle). `mergeRun` and `mergeEntryPoints`/`unionLastCharSet` regressed as builder users; `gate` needs `removeAll`.
 
+## Decompose `PatternParser#parseUnion` without regressing speed or allocation
+
+Phases 1-2 are done (`PatternLexer` <- `CharClassParser` <- `PatternParser`, in package `parser`). Measured
+2026-10-03: largest method bytecode is `parseUnion` 2001 B, `parseGroup` 1062 B, everything else under 810 B, so
+splitting can't change JIT compile/inline decisions; the goal is navigability only.
+
+- [ ] **Phase 3, decompose `parseUnion` (~400 lines; do regardless of the language question)**: split into private
+      methods on the same object (`endAlternative` for `|`, `finishUnion` for `)`/EOF, the two escape
+      paths, the plain-character path) and replace the three duplicated literal-flush blocks with one `flushLiteral`.
+      Idea to verify: every branch that recurses into `parseUnion` (`(`, `[`, ...) flushes the pending literal first,
+      so the literal-run state (`rawTextStartIndex`, `rawTextPureEnd`, `rawTextIsPure`, `rawText`) is empty at
+      recursion time and can live in parser fields (no per-level state object, one shared `StringBuilder`); only
+      `accumulator`/`altStartIndex` stay per-level locals. Check the quantifier path, which flushes only when a literal
+      is actually pending. Measure B/op. Kotlin (`value class`/`inline`) was considered and rejected for this: a value
+      class holds one field, `inline` can't carry state, and adopting Kotlin is a whole-project build decision.
+- Verification per move commit: `:llkpattern:jmh` `gc.alloc.rate.norm` must be byte-identical (pure move), then one
+  same-session interleaved `jmhPaired` A/B at the end (expected effect under 2%); Pixel run is a sanity check only.
+
 ## Open questions
 
 ## Optional experiments (nothing here is required work)

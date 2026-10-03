@@ -23,7 +23,7 @@ public final class UnionCodePointSet implements CodePointSet {
   private final CodePointSet a;
   private final CodePointSet b;
 
-  UnionCodePointSet(CodePointSet a, CodePointSet b) {
+  public UnionCodePointSet(CodePointSet a, CodePointSet b) {
     this.a = a;
     this.b = b;
   }

@@ -3,7 +3,6 @@ package com.tbohne.llkpattern.parser;
 import static com.tbohne.llkpattern.parser.PatternText.concatObjectArrays;
 import static com.tbohne.llkpattern.parser.PatternText.hexDigitValue;
 
-import com.tbohne.llkpattern.CanonicalEquivalence;
 import com.tbohne.llkpattern.PatternSyntaxException;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import java.util.regex.Pattern;

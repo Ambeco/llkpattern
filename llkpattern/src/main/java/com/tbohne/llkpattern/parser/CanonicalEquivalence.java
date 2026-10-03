@@ -1,5 +1,6 @@
-package com.tbohne.llkpattern;
+package com.tbohne.llkpattern.parser;
 
+import com.tbohne.llkpattern.PatternSyntaxException;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -24,7 +25,7 @@ import java.util.Set;
  * <p>Runs on the raw text, before escapes are decoded, so a character written as a
  * unicode escape in the pattern is not affected -- same as {@code java.util.regex}.
  */
-public final class CanonicalEquivalence {
+final class CanonicalEquivalence {
   private CanonicalEquivalence() {}
 
   // More marks than this makes the permutation count (k!) impractical.
@@ -33,7 +34,7 @@ public final class CanonicalEquivalence {
   // A cluster's starter can't be one of these; they keep their regex meaning.
   private static final String NON_STARTERS = "\\()[]{}|.^$?+*";
 
-  public static String rewrite(String pattern, boolean unicodeFold) {
+  static String rewrite(String pattern, boolean unicodeFold) {
     String nfd = Normalizer.normalize(pattern, Normalizer.Form.NFD);
     Map<String, Set<Integer>> originals = originalSpellings(pattern);
     int n = nfd.length();

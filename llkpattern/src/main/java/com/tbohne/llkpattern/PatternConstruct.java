@@ -1,7 +1,6 @@
 package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.CodePointSet.MutableCodePointSet;
-import com.tbohne.llkpattern.MatcherConstruct.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 
 import org.checkerframework.checker.initialization.qual.UnknownInitialization;
@@ -51,7 +50,7 @@ abstract class PatternConstruct {
 	// One shared instance rather than `new ArrayCodePointSet()` per construct instance, now that
 	// entryMap is a plain (immutable-from-here) CodePointSet reference, not something built up via
 	// per-construct mutation -- see entryMap's own doc below.
-	private static final CodePointSet EMPTY_ENTRY_MAP = new ArrayCodePointSet();
+	static final CodePointSet EMPTY_ENTRY_MAP = new ArrayCodePointSet();
 
 	// The set of code points this construct claims as its own entry point, once it (and anything
 	// it can trivially skip, e.g. an optional quantifier) has matched. Populated by buildEntryMap()
@@ -78,9 +77,9 @@ abstract class PatternConstruct {
 	CodePointSet entryMap = EMPTY_ENTRY_MAP;
 	@MonotonicNonNull PatternConstruct entryElse;
 
-	private static final int ENTRY_POINT_NOT_STARTED = 0;
-	private static final int ENTRY_POINT_CONSTRUCTING = 1;
-	private static final int ENTRY_POINT_CONSTRUCTED = 2;
+	static final int ENTRY_POINT_NOT_STARTED = 0;
+	static final int ENTRY_POINT_CONSTRUCTING = 1;
+	static final int ENTRY_POINT_CONSTRUCTED = 2;
 	private int entryPointState = ENTRY_POINT_NOT_STARTED;
 
 	/**
@@ -91,13 +90,6 @@ abstract class PatternConstruct {
 	 * by {@code Ll1Pattern.compile()}, which has the full pattern string this needs for a proper
 	 * message. See design.md's "Entry-point computation vs. matcher compilation" section.
 	 */
-	static final class EntryPointCycleException extends RuntimeException {
-		final int startIndex;
-
-		EntryPointCycleException(int startIndex) {
-			this.startIndex = startIndex;
-		}
-	}
 
 	PatternConstruct(int startIndex) {
 		this.startIndex = startIndex;
@@ -211,10 +203,10 @@ abstract class PatternConstruct {
 	 * may END here" ({@link EndConstruct}, seen through whatever nullable/zero-width/marker
 	 * constructs sit in front of it) rather than a construct that itself accepts any character (an
 	 * unresolvable backreference). End-of-find is mode-dependent, exactly like {@link
-	 * MatcherConstruct.EndMatcherConstruct}: under {@code lookingAt()}/{@code find()} the match is
+	 * EndMatcherConstruct}: under {@code lookingAt()}/{@code find()} the match is
 	 * complete as soon as it is reached, whatever code point follows, but under {@code matches()} only
 	 * end of input completes it. That is why an end-of-find branch keeps its natural priority
-	 * position in a union, behind a mode-aware gate (see {@link MatcherConstruct.EndOfFindGateMatcherConstruct}),
+	 * position in a union, behind a mode-aware gate (see {@link EndOfFindGateMatcherConstruct}),
 	 * instead of being a lowest-priority tail fallback. Every override mirrors an entry-point
 	 * construct that propagates {@code entryElse} from somewhere else; only called at matcher-build
 	 * time, for a union that actually has a catch-all candidate.
@@ -311,24 +303,6 @@ abstract class PatternConstruct {
 	 * PatternConstruct-valued map as an ancestor's {@code entryMap} (see that field's own doc for
 	 * why that would be a real bug, not just a style concern).
 	 */
-	static final class MergedEntries {
-		// Not MutableCodePointSet -- the candidates.size() == 1 fast path in mergeEntryPoints below
-		// aliases that lone candidate's own (immutable-from-here) entryMap directly, with no
-		// allocation of its own; only the real (>= 2 candidates) merge path actually builds a fresh
-		// MutableCodePointSet to hand back here.
-		final CodePointSet ranges;
-		// Whichever candidate claimed "matches any other character" (at most one is allowed to).
-		final @Nullable PatternConstruct elseCandidate;
-
-		MergedEntries(CodePointSet ranges, @Nullable PatternConstruct elseCandidate) {
-			this.ranges = ranges;
-			this.elseCandidate = elseCandidate;
-		}
-
-		@Nullable PatternConstruct entryElse() {
-			return elseCandidate != null ? elseCandidate.getEntryElse() : null;
-		}
-	}
 
 	/**
 	 * {@code candidates} with {@code extra} (or nothing, if {@code null}) logically appended as one
@@ -341,12 +315,12 @@ abstract class PatternConstruct {
 	 * {@code extra} specially anyway (the {@code candidates.isEmpty()} fast path), and never
 	 * indexes into the combined list positionally the way this does.
 	 */
-	private static PatternConstruct candidateAt(
+	static PatternConstruct candidateAt(
 			List<PatternConstruct> candidates, @Nullable PatternConstruct extra, int index) {
 		return index < candidates.size() ? candidates.get(index) : castNonNull(extra);
 	}
 
-	private static int candidateCount(List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
+	static int candidateCount(List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
 		return candidates.size() + (extra != null ? 1 : 0);
 	}
 
@@ -433,7 +407,7 @@ abstract class PatternConstruct {
 	 * read directly, no iteration), and a real (if rarer) count via {@link CodePointSet#forEachRange}
 	 * for any other {@link CodePointSet} implementation (e.g. a lazy {@code UnionCodePointSet}).
 	 */
-	private static int rangeCountHint(CodePointSet set) {
+	static int rangeCountHint(CodePointSet set) {
 		if (set instanceof ArrayCodePointSet) {
 			return ((ArrayCodePointSet) set).size;
 		}
@@ -446,7 +420,7 @@ abstract class PatternConstruct {
 	 *  #mergeEntryPoints}'s main-list loop and its {@code extra} candidate) -- unions its entry
 	 *  point into {@code ranges} and returns the (possibly updated) else-candidate, throwing if
 	 *  this candidate and an earlier one both claim the any-other-character catch-all. */
-	private static @Nullable PatternConstruct mergeOneEntryPoint(
+	static @Nullable PatternConstruct mergeOneEntryPoint(
 			String pattern, PatternConstruct candidate, @Nullable PatternConstruct elseCandidate,
 			String candidateNounPlural, MutableCodePointSet ranges, boolean isLoopExit) {
 		if (candidate.claimsEntryElse()) {
@@ -501,7 +475,7 @@ abstract class PatternConstruct {
 	 * other candidate (that's the whole point of a fallback bucket), so checking it here would
 	 * reject every pattern that has one.
 	 */
-	private static CodePointSet[] checkDisjoint(
+	static CodePointSet[] checkDisjoint(
 			String pattern, int flags, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
 			String candidateNounPlural) {
 		return checkDisjoint(pattern, flags, candidates, extra, null, candidateNounPlural);
@@ -514,7 +488,7 @@ abstract class PatternConstruct {
 	 * #skipZeroWidthEntrySet}'s own doc for why {@code QuantifiableConstruct.buildLoopMatcher} needs
 	 * this and {@link #buildFlattenedChain} doesn't.
 	 */
-	private static CodePointSet[] checkDisjoint(
+	static CodePointSet[] checkDisjoint(
 			String pattern, int flags, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
 			@Nullable CodePointSet extraEntrySet, String candidateNounPlural) {
 		int count = candidateCount(candidates, extra);
@@ -539,7 +513,7 @@ abstract class PatternConstruct {
 	 * pairwise {@link CodePointSet#intersects} scan otherwise avoids entirely) purely to name it in
 	 * the thrown exception.
 	 */
-	private static void throwOverlapError(String pattern, PatternConstruct candidate, int candidateNumber,
+	static void throwOverlapError(String pattern, PatternConstruct candidate, int candidateNumber,
 			String candidateNounPlural, CodePointSet own, CodePointSet prior) {
 		own.forEachRange((min, max) -> {
 			CodePointSet overlap = prior.intersection(min, max);
@@ -586,7 +560,7 @@ abstract class PatternConstruct {
 	 *
 	 * <p>{@code endOfFindCandidate} (a member of {@code candidates}, or {@code null}) is the one
 	 * candidate whose catch-all is end-of-find; it stays in list order but behind an {@link
-	 * MatcherConstruct.EndOfFindGateMatcherConstruct}. Its explicit ranges are checked with the rest
+	 * EndOfFindGateMatcherConstruct}. Its explicit ranges are checked with the rest
 	 * (it is in {@code candidates}), so {@code elseCandidate} is {@code null} in that case.
 	 *
 	 * <p>{@code elseTarget} is this chain's final fallback, or {@code null} for none, in which case
@@ -622,7 +596,7 @@ abstract class PatternConstruct {
 				// also admits end-of-find -- see elseIsEndOfFind.
 				candidate.dispatchEntrySet = null;
 				candidate.dispatchFailedEntry = null;
-				tail = new MatcherConstruct.EndOfFindGateMatcherConstruct(
+				tail = new EndOfFindGateMatcherConstruct(
 						candidate.flags, gates[i], candidate.compile(compileTarget), tail);
 				continue;
 			}
@@ -642,408 +616,15 @@ abstract class PatternConstruct {
 		return tail;
 	}
 
-	static abstract class QuantifiableConstruct extends PatternConstruct {
-		final String pattern;
-		int min = 1;
-		int max = 1;
-		int quantifiableIndex = -1;
-		// Set by PatternParser#parseQuantifiable when a trailing '?' follows the quantifier itself
-		// (e.g. "a+?"). Possessive '+' stays a no-op: this engine's no-backtrack greedy loop already
-		// makes the greedy/possessive choice unobservable (nothing to backtrack into), so possessive
-		// syntax is accepted purely for compatibility, not compiled differently.
-		boolean reluctant = false;
-		// Set by PatternParser#parseQuantifiable when a trailing '+' follows the quantifier itself
-		// (e.g. "a++"). Unlike reluctant, this doesn't change buildLoopMatcher's own matcher graph --
-		// see `reluctant`'s doc above -- but it DOES exempt the loop from the zero-width-assertion
-		// ambiguity check buildLoopMatcher runs for plain greedy syntax (see that method's own doc):
-		// java.util.regex's possessive quantifier never backtracks either, so this engine's
-		// always-non-backtracking compilation already agrees with it, with nothing to reject.
-		boolean possessive = false;
-
-		QuantifiableConstruct(String pattern, int startIndex) {
-			super(startIndex);
-			this.pattern = pattern;
-		}
-
-		QuantifiableConstruct(String pattern, int startIndex, int endIndex) {
-			super(startIndex, endIndex);
-			this.pattern = pattern;
-		}
-
-		/** True for a "plain" {@code {1,1}} construct -- i.e. no real repetition/optionality. */
-		boolean isUnquantified() {
-			return min == 1 && max == 1;
-		}
-
-		/**
-		 * {@link #elseIsEndOfFind} for the quantified case: {@link #buildLoopEntryMap}'s catch-all comes
-		 * from whichever single candidate ({@code body} part, or {@code next} when the loop can be
-		 * skipped) claimed it -- {@link #mergeEntryPoints} rejects two.
-		 */
-		final boolean loopElseIsEndOfFind(List<PatternConstruct> body, PatternConstruct next) {
-			if (max != 0) {
-				for (int i = 0; i < body.size(); i++) {
-					if (body.get(i).claimsEntryElse()) {
-						return body.get(i).elseIsEndOfFind();
-					}
-				}
-			}
-			return (max == 0 || min == 0) && next.claimsEntryElse() && next.elseIsEndOfFind();
-		}
-
-		/** {@link #elseIsResidual} for the quantified case, mirroring {@link #loopElseIsEndOfFind}. */
-		final boolean loopElseIsResidual(List<PatternConstruct> body, PatternConstruct next) {
-			if (max != 0) {
-				for (int i = 0; i < body.size(); i++) {
-					if (body.get(i).claimsEntryElse()) {
-						return body.get(i).elseIsResidual();
-					}
-				}
-			}
-			return (max == 0 || min == 0) && next.claimsEntryElse() && next.elseIsResidual();
-		}
-
-		/**
-		 * Computes this construct's own entry point for the quantified ({@code
-		 * !isUnquantified()}) case -- called from {@code buildEntryMap}. {@code FIRST(body)} (the
-		 * union of {@code body}'s own entry points, each body part's {@code next} pointed at {@link
-		 * #loopBodyTarget} since continuing the loop always eventually routes back here), unioned with
-		 * {@code next}'s own entry point when {@code min == 0} (skipping this construct entirely is
-		 * valid). Deliberately reads ONLY entry points, never {@code compile()}s anything -- see
-		 * design.md's "Entry-point computation vs. matcher compilation" section for why that's what
-		 * lets a loop nested inside another loop's body resolve without forcing a cycle.
-		 */
-		void buildLoopEntryMap(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
-			if (max == 0) {
-				// `X{0}` never matches X at all: its entry point is exactly `next`'s.
-				MergedEntries skipped = mergeEntryPoints(pattern, List.of(), next, "loop part");
-				entryMap = skipped.ranges;
-				if (skipped.entryElse() != null) {
-					entryElse = this;
-				}
-				return;
-			}
-			PatternConstruct target = loopBodyTarget(captureConstructIndex);
-			for (int i = 0; i < body.size(); i++) {
-				body.get(i).next = target;
-			}
-			// `body` handed straight to mergeEntryPoints, with `next` merged in via its own `extra`
-			// parameter instead of first being copied into a new ArrayList<>(body) just to append it
-			// -- see that overload's own doc.
-			MergedEntries result = mergeEntryPoints(pattern, body, min == 0 ? next : null, "loop part");
-			entryMap = result.ranges; // already Boolean-valued -- see mergeEntryPoints' own doc.
-			if (result.entryElse() != null) {
-				entryElse = this;
-			}
-		}
-
-		@MonotonicNonNull LoopBackMarker loopBackMarker;
-		@MonotonicNonNull PatternConstruct loopBodyTargetCache;
-
-		/**
-		 * The stable stand-in for "loop back to this construct's own entry point", used as every body
-		 * part's {@code next} during entry-point computation ({@link #buildLoopEntryMap}) -- for a
-		 * capturing loop, wrapped in a {@link CaptureEndMarker} first, since finishing one iteration
-		 * must end the capture before looping back. Memoized as a field, rather than built fresh in
-		 * each of {@link #buildLoopEntryMap}/{@link #buildLoopMatcher} separately, so that a NESTED
-		 * capturing body part's own {@code CaptureEndMarker} -- constructed once, during entry-point
-		 * computation, with this object as its {@code realNext} -- resolves against the exact same
-		 * marker instance that {@link #buildLoopMatcher} later fills in with a real {@code .matcher}.
-		 * Pointing body parts at {@code this} (the loop construct itself) directly, as this used to,
-		 * meant a nested capturing group's {@code CaptureEndMarker} permanently captured {@code this}
-		 * as {@code realNext} -- but {@code this.matcher} isn't set until the whole loop has finished
-		 * compiling, well after that marker's own {@code buildMatcher()} reads it at match-build time,
-		 * throwing a {@code NullPointerException} (a quantified group whose sole body is a capturing
-		 * group, e.g. {@code ((x))*}) -- see remaining_work.md's now-fixed entry on this.
-		 */
-		private PatternConstruct loopBodyTarget(int captureConstructIndex) {
-			if (loopBodyTargetCache == null) {
-				loopBackMarker = new LoopBackMarker(startIndex, this);
-				loopBackMarker.flags = flags;
-				if (captureConstructIndex == -1) {
-					loopBodyTargetCache = loopBackMarker;
-				} else {
-					PatternConstruct captureEnd = new CaptureEndMarker(startIndex, captureConstructIndex, loopBackMarker);
-					captureEnd.flags = flags;
-					loopBodyTargetCache = captureEnd;
-				}
-			}
-			return loopBodyTargetCache;
-		}
-
-		/**
-		 * Builds the actual loop matcher graph -- see design.md's "Quantifier/loop compilation"
-		 * section (flattened-dispatch experiment, 2026-09-18: see {@code MatcherConstruct}'s own
-		 * class doc for the overall design this replaced). Three nodes are involved:
-		 *
-		 * <ol>
-		 *   <li>The body's own dispatch chain (one node per {@code body} element, built via the same
-		 *       {@code dispatchEntrySet}/{@code dispatchFailedEntry} mechanism {@link
-		 *       #buildFlattenedChain} uses for a plain union -- see {@code MatcherConstruct}'s own
-		 *       "Flattened dispatch" doc) -- its head IS both this construct's own externally-visible
-		 *       entry point AND the loop-back target for a completed iteration, with no separate
-		 *       chain needed for either any more: a body part's own {@code failedEntry} naturally
-		 *       falls through to {@code exitNode} on a genuine non-match, at ANY position -- the very
-		 *       first attempt (where a {@code min == 0} loop skipping itself entirely is just
-		 *       {@code exitNode} immediately allowing that, since its own {@code min} check doesn't
-		 *       care how it was reached) exactly as much as a later re-check.
-		 *   <li>{@link MatcherConstruct.LoopMatcherConstruct} (greedy) or {@link
-		 *       MatcherConstruct.ReluctantLoopMatcherConstruct} (reluctant, only when {@link
-		 *       MatcherConstruct#exitIsPureEnd} proves stopping early is safe -- see that class's own
-		 *       doc), self-registered onto a {@link LoopBackMarker} BEFORE the body compiles against
-		 *       it, breaking the construction-time cycle every loop body creates (the same
-		 *       self-registration-first trick {@code MatcherConstruct}'s class doc describes). The
-		 *       greedy node is reached only as a completed body iteration's own continuation, and its
-		 *       whole job is enforcing {@code max}: dispatch back to the body's own head (another
-		 *       attempt) if under it, or straight to {@code exitNode} (forcing a stop) if not. The
-		 *       reluctant node is ALSO this construct's own externally-visible entry point (see its own
-		 *       doc for why, and for the {@code min}/{@code max} "+1" shift that makes reusing one node
-		 *       for both roles safe) -- neither tests code-point membership at all.
-		 *   <li>{@link MatcherConstruct.LoopMatcherExit}, this loop's "stop iterating" node --
-		 *       enforces {@code min} (the reluctant-safe case's own {@code min} pre-shifted the same
-		 *       way, to stay consistent with the counter's shifted meaning) and, on success, dispatches
-		 *       to {@code next}'s own matcher.
-		 * </ol>
-		 *
-		 * <p>When {@code captureConstructIndex != -1} (the construct is <i>also</i> a capturing group,
-		 * e.g. {@code (a)*}), the capture must re-fire every iteration -- last iteration wins, per real
-		 * regex semantics -- and must fire identically whether this is the very first attempt or a
-		 * re-check; since both now share the exact same body-chain head node, that's just a single
-		 * shared {@link MatcherConstruct.BeginCaptureMatcherConstruct} wrapping it. Each body part is
-		 * compiled against a {@link CaptureEndMarker} standing in for the {@link LoopBackMarker}
-		 * above, so finishing one iteration records the captured substring before looping back rather
-		 * than looping back directly.
-		 */
-		void buildLoopMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
-			if (max == 0) {
-				// The body is never compiled: `X{0}` is a no-op, and its capture group (if any) stays unset.
-				MatcherConstruct.aliasOrPassThrough(this, next.matcher());
-				return;
-			}
-			boolean capturing = captureConstructIndex != -1;
-
-			// Ambiguity check only, on entry points alone -- no compiling. Unlike the old
-			// ForkingMatcherConstruct-based design, dispatch fields must be set on each body part
-			// BEFORE it's ever compiled (compile() memoizes on first call), so this can't reuse a
-			// helper that compiles as a side effect. `next` is included as `extra` so this also
-			// validates that no body part is ambiguous with `next` itself, needed on every re-check,
-			// not just the min==0 entry case buildLoopEntryMap already validated.
-			// Plain greedy only (never reluctant or possessive -- see skipZeroWidthEntrySet's own
-			// `checkAssertions` doc): computing bodyLastCharSet is wasted work for the other two cases,
-			// since skipZeroWidthEntrySet(..., false, ...) never reads it.
-			boolean checkAssertionAmbiguity = !reluctant && !possessive;
-			CodePointSet bodyLastCharSet = checkAssertionAmbiguity ? unionLastCharSet(body) : null;
-			CodePointSet nextEntrySet = next.skipZeroWidthEntrySet(checkAssertionAmbiguity, bodyLastCharSet);
-			CodePointSet[] gates = checkDisjoint(pattern, flags, body, next, nextEntrySet, "loop part");
-			boolean hasResidualPart = narrowResidualGates(body, next, gates);
-
-			// Reuses the SAME LoopBackMarker (and, when capturing, the same wrapping CaptureEndMarker)
-			// buildLoopEntryMap already handed to each body part as `next` -- see loopBodyTarget()'s own
-			// doc for why identity, not just equal content, matters here: a nested capturing body part's
-			// own CaptureEndMarker (built during entry-point computation) is permanently pointed at
-			// whichever object loopBodyTarget() returned then, so this must be the exact same instance,
-			// not a fresh one, or that nested marker's `realNext.matcher` would never get filled in.
-			PatternConstruct bodyCompileTarget = loopBodyTarget(captureConstructIndex);
-			LoopBackMarker marker = loopBackMarker;
-			if (marker == null) {
-				throw new IllegalStateException("buildLoopMatcher() ran before loopBodyTarget() created the loop's back marker "
-						+ "(did you mean to call loopBodyTarget(captureConstructIndex) first?)");
-			}
-
-			// Decided once, here, before either the exit node or the marker-owned node is built --
-			// both need to already know which case they're in. See ReluctantLoopMatcherConstruct's own
-			// doc for the "+1" shift this drives: reached both as the loop's fresh entry (zero
-			// iterations done) and as the post-iteration continuation, so its own quantifiableCounts
-			// slot counts VISITS, not completed iterations, and LoopMatcherExit's `min` check (reached
-			// directly via the body's own failedEntry, bypassing the marker-owned node entirely) has to
-			// agree on that same shifted meaning to stay consistent.
-			@Nullable List<MatcherConstruct.ZeroWidthAssertionGuard> exitAssertionChain =
-					reluctant ? next.matcher().exitAssertionChain() : null;
-			boolean reluctantSafe = exitAssertionChain != null;
-			int shiftedMin = plusOneCapped(min);
-			int shiftedMax = plusOneCapped(max);
-			LoopMatcherExit exitNode = new LoopMatcherExit(
-					flags, quantifiableIndex, reluctantSafe ? shiftedMin : min, min == 0, next.matcher());
-
-			// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
-			// the marker-owned node itself; this one's `.matcher` is where that node's "continue"
-			// successor (the body chain's own head, not resolvable until after the body compiles)
-			// ends up, resolved via ordinary direct assignment further down, exactly like every other
-			// forward reference in this file -- no bespoke mutable field needed on either
-			// LoopMatcherConstruct or ReluctantLoopMatcherConstruct (see their own class docs).
-			LoopContinueMarker continueMarker = new LoopContinueMarker(startIndex);
-			continueMarker.flags = flags;
-			MatcherConstruct loopNode = reluctantSafe
-					? new MatcherConstruct.ReluctantLoopMatcherConstruct(
-							marker, quantifiableIndex, shiftedMin, shiftedMax, continueMarker, exitNode,
-							exitAssertionChain)
-					: new LoopMatcherConstruct(marker, quantifiableIndex, max, continueMarker, exitNode);
-
-			if (capturing) {
-				bodyCompileTarget.compile(marker);
-			}
-
-			// Body parts chain to each other tail-to-front, same mechanism as buildFlattenedChain --
-			// but unlike a plain union's own final candidate, a loop body part can never be left
-			// ungated: "doesn't match" always has somewhere real to go (exitNode, which itself
-			// enforces `min` and may allow an immediate min==0 skip), never just "the whole match
-			// fails" the way a truly catch-all-less union's last branch can rely on.
-			//
-			// When capturing, each part's OWN entry gate must be checked BEFORE the capture's start
-			// index is recorded -- not after, the way a single shared BeginCaptureMatcherConstruct
-			// wrapping the whole body chain's head would do it (tried first, reverted: it recorded a
-			// capture start even on a min==0 loop's very first, ultimately-zero-iteration attempt,
-			// since the shared wrapper ran unconditionally before the body's own gate ever got a say
-			// -- see notes.md's entry on this). So each part gets its own throwaway {@link
-			// LoopBodyPartGateMarker} carrying the gate instead, with the capture wrapped INSIDE it
-			// (compiled ungated, since gating already happened by the time it runs).
-			MatcherConstruct bodyTail = exitNode;
-			for (int i = body.size() - 1; i >= 0; i--) {
-				PatternConstruct part = body.get(i);
-				CodePointSet partEntrySet = gates[i];
-				if (capturing) {
-					MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
-					LoopBodyPartGateMarker gateMarker = new LoopBodyPartGateMarker(startIndex);
-					gateMarker.flags = flags;
-					gateMarker.dispatchEntrySet = partEntrySet;
-					gateMarker.dispatchFailedEntry = bodyTail;
-					bodyTail = new BeginCaptureMatcherConstruct(gateMarker, captureConstructIndex, rawPartMatcher);
-				} else {
-					part.dispatchEntrySet = partEntrySet;
-					part.dispatchFailedEntry = bodyTail;
-					bodyTail = part.compile(bodyCompileTarget);
-				}
-			}
-			MatcherConstruct bodyHead = bodyTail;
-			continueMarker.matcher = bodyHead;
-
-			// A greedy loop's own externally-visible entry point is exactly the body chain's head --
-			// see the class doc above for why no separate entry-only chain is needed. A reluctant-safe
-			// loop's entry point is `loopNode` itself instead (built above, before the body even
-			// compiled) -- ReluctantLoopMatcherConstruct's own doc explains why it needs to run before
-			// the very first iteration too, not just after each completed one.
-			//
-			// EXPERIMENT (2026-09-24, see design.md's "LoopFirstEntryMatcherConstruct"
-			// section): for a single-alternative, non-capturing, min>=1 loop, bodyHead's own entrySet
-			// check is PROVABLY redundant on first entry specifically -- buildLoopEntryMap's own
-			// `min == 0 ? next : null` means this loop's externally-exposed entry point (whatever an
-			// outer chain candidate's own gate, or an ungated top-level loop's own lack of one,
-			// already established before calling here) is EXACTLY gates[0], the same set bodyHead
-			// would re-check. Re-entry (the loop-back path via continueMarker/LoopMatcherConstruct,
-			// wired above) is UNAFFECTED -- it still goes straight to the real bodyHead, which keeps
-			// its own gate, since that path has no outer guarantee at all. LoopFirstEntryMatcherConstruct
-			// calls bodyHead.matchBody() directly (bypassing bodyHead.match()'s own entrySet check)
-			// rather than becoming a full duplicate node -- see its own doc for why this can't
-			// currently be generalized to a multi-alternative body or a min==0 loop.
-			boolean singleAlternativeUngatedFirstEntryEligible =
-					!reluctantSafe && !capturing && body.size() == 1 && min >= 1 && !hasResidualPart;
-			MatcherConstruct entryPoint = reluctantSafe
-					? loopNode
-					: singleAlternativeUngatedFirstEntryEligible
-							? new MatcherConstruct.LoopFirstEntryMatcherConstruct(flags, bodyHead)
-							: bodyHead;
-			MatcherConstruct.aliasOrPassThrough(this, entryPoint);
-		}
-
-		/**
-		 * Gives each residual body part ({@code .}, see {@link #elseIsResidual}) its real gate: whatever
-		 * it accepts that no other body part and not {@code next} (the last {@code gates} slot) claims,
-		 * so {@code .+b} loops over {@code [^b]}. {@link #checkDisjoint} left such a part's gate empty,
-		 * as the residual claims nothing explicitly. Two residual claimants in a row ({@code .+.}) would
-		 * have the body swallow everything and leave the exit nothing, so that is rejected here (a
-		 * nullable loop's version was already rejected by {@link #buildLoopEntryMap}'s merge). A
-		 * possessive loop can't take the residual either: {@code java.util.regex} really does swallow
-		 * the later part's characters there (so {@code .++b} can never match), and silently matching
-		 * as {@code [^b]++b} would be a worse divergence than the ambiguity error.
-		 * Returns whether any part was residual: such a loop's entry is not just {@code gates[0]}, so
-		 * {@code LoopFirstEntryMatcherConstruct}'s "outer gate already checked it" proof doesn't hold.
-		 */
-		private boolean narrowResidualGates(List<PatternConstruct> body, PatternConstruct next, CodePointSet[] gates) {
-			boolean any = false;
-			for (int i = 0; i < body.size(); i++) {
-				PatternConstruct part = body.get(i);
-				if (!part.claimsEntryElse() || !part.elseIsResidual()) {
-					continue;
-				}
-				any = true;
-				if (next.claimsEntryElse() && next.elseIsResidual()) {
-					throw PatternSyntaxException.throwWithReferences(
-							pattern,
-							next.startIndex,
-							"loop part starting at index ", part.startIndex,
-							" allows any other character, but the construct after the loop, starting at index ",
-							next.startIndex,
-							", does too, which is ambiguous (did you mean to exclude what the later part needs,"
-									+ " e.g. [^b]+b instead of .+b?)");
-				}
-				CodePointSet accept = part.firstCharSet();
-				if (possessive) {
-					for (int j = 0; j < gates.length; j++) {
-						if (j != i && (accept == null ? !gates[j].isEmpty() : accept.intersects(gates[j]))) {
-							throw PatternSyntaxException.throwWithReferences(
-									pattern,
-									part.startIndex,
-									"possessive loop part starting at index ", part.startIndex,
-									" allows any other character, so it would swallow characters the construct"
-											+ " after it (or a sibling part) needs, and java.util.regex never gives"
-											+ " those back from a possessive loop either -- did you mean a greedy"
-											+ " quantifier, or a character class excluding them (e.g. [^b]++b)?");
-						}
-					}
-				}
-				MutableCodePointSet gate = new ArrayCodePointSet(ArrayCodePointSet.capacityHint(accept, gates, i));
-				if (accept == null) {
-					gate.invert();
-				} else {
-					gate.insertAll(accept);
-				}
-				for (int j = 0; j < gates.length; j++) {
-					if (j != i) {
-						gate.removeAll(gates[j]);
-					}
-				}
-				gates[i] = gate;
-			}
-			return any;
-		}
-
-		/**
-		 * {@code n + 1}, capped (not wrapped) at {@link Integer#MAX_VALUE} -- the "+1" shift {@link
-		 * MatcherConstruct.ReluctantLoopMatcherConstruct} needs for both {@code min} and {@code max}
-		 * (see its own doc). A literal {@code n + 1} would silently overflow to {@link
-		 * Integer#MIN_VALUE} for an unbounded {@code max} (e.g. {@code a+?}/{@code a*?}, where {@code
-		 * max == Integer.MAX_VALUE}), which would make every {@code count < shiftedMax} comparison
-		 * false immediately and break every unbounded reluctant loop.
-		 */
-		private static int plusOneCapped(int n) {
-			return n == Integer.MAX_VALUE ? Integer.MAX_VALUE : n + 1;
-		}
-	}
-
 	/**
 	 * A zero-width vehicle for a single capturing loop body part's own entry gating -- see
 	 * {@code QuantifiableConstruct.buildLoopMatcher}'s own doc for why the gate has to live here,
 	 * one level above the {@code BeginCaptureMatcherConstruct} it owns, rather than on the body
 	 * part itself (which is compiled ungated and wrapped INSIDE the capture instead).
 	 */
-	static final class LoopBodyPartGateMarker extends PatternConstruct {
-		LoopBodyPartGateMarker(int startIndex) {
-			super(startIndex);
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			throw new AssertionError("LoopBodyPartGateMarker's entry point is never queried");
-		}
-
-		@Override
-		void buildMatcher() {
-			throw new AssertionError("LoopBodyPartGateMarker's own matcher is built directly, not via buildMatcher()");
-		}
-	}
 
 	/**
-	 * A zero-width marker standing in for a {@code MatcherConstruct.LoopMatcherConstruct} as a
+	 * A zero-width marker standing in for a {@code LoopMatcherConstruct} as a
 	 * loop body's own compile target, so that node can be self-registered onto this marker BEFORE
 	 * the body compiles against it (see {@code QuantifiableConstruct.buildLoopMatcher}'s doc for why
 	 * that ordering matters). Its own entry point IS queried, though -- a nullable construct nested
@@ -1055,33 +636,6 @@ abstract class PatternConstruct {
 	 * already-computed and cached, since {@code compile()} only reaches {@code buildLoopMatcher} after
 	 * {@code owner}'s {@link #ensureEntryPointBuilt}) entry point is exactly right, and cheap.
 	 */
-	static final class LoopBackMarker extends PatternConstruct {
-		final QuantifiableConstruct owner;
-
-		LoopBackMarker(int startIndex, QuantifiableConstruct owner) {
-			super(startIndex);
-			this.owner = owner;
-		}
-
-		/** Never wired by a parent: what follows a loop's back edge is the loop itself. */
-		@Override
-		PatternConstruct next() {
-			return owner;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			entryMap = owner.getEntryPointMap();
-			if (owner.getEntryElse() != null) {
-				entryElse = this;
-			}
-		}
-
-		@Override
-		void buildMatcher() {
-			throw new AssertionError("LoopBackMarker's own matcher is built directly, not via buildMatcher()");
-		}
-	}
 
 	/**
 	 * A second zero-width marker used by {@code QuantifiableConstruct.buildLoopMatcher}, distinct
@@ -1095,304 +649,6 @@ abstract class PatternConstruct {
 	 * Never has its {@code buildEntryMap}/{@code buildMatcher} invoked -- nothing ever calls {@code
 	 * compile()} on it -- so both just assert if ever reached.
 	 */
-	static final class LoopContinueMarker extends PatternConstruct {
-		LoopContinueMarker(int startIndex) {
-			super(startIndex);
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			throw new AssertionError("LoopContinueMarker's entry point is never queried");
-		}
-
-		@Override
-		void buildMatcher() {
-			throw new AssertionError("LoopContinueMarker's own matcher is assigned directly, not via buildMatcher()");
-		}
-	}
-
-	static final class QuantifiedUnion extends QuantifiableConstruct {
-		int captureConstructIndex = 0;
-		String captureName = "";
-		// Pre-sized to 4, not the JDK default of 10 -- corpus measurement (2026-09-27) found 99.63%
-		// of QuantifiedUnions end up with <=4 elements (mean 1.38), so the default's first-`add`
-		// grow to 10 wastes far more capacity than it saves growth copies for the rare larger case.
-		final List<PatternConstruct> constructs = new ArrayList<>(4);
-
-		// The real (non-identity-rewritten) catch-all candidate this union's OWN fork chain falls
-		// back to in buildMatcher() -- see that method below. Needed because the inherited
-		// entryElse field is deliberately re-keyed onto `this` (like Sequence's own fix, see its
-		// doc), for ancestors' identity checks -- but buildMatcher() reads the real candidate
-		// identity, not `this`, to resolve the actual MatcherConstruct target the fallback should
-		// dispatch to. (buildMatcher() otherwise builds its fork chain by walking `constructs`
-		// directly -- see mergeEntryPoints' own doc for why nothing here needs a
-		// PatternConstruct-valued entry map of its own any more.)
-		@Nullable PatternConstruct rawEntryElse;
-
-		// The unquantified-and-non-empty case's actual compile target (`next` itself, or a
-		// CaptureEndMarker for a capturing group) -- computed once in buildEntryMap() (cheaply, no
-		// compile() calls) and reused by buildMatcher() to actually compile the branches against it.
-		// Kept as a field rather than recomputed, since buildMatcher() needs the SAME CaptureEndMarker
-		// instance buildEntryMap() already used to compute rawEntryElse's identity.
-		// @Nullable only because it has no meaningful value before buildEntryMap() runs -- by the
-		// time buildMatcher() reads it (unguarded), compile()'s ensureEntryPointBuilt() guarantees
-		// buildEntryMap() already has, in this (unquantified, non-empty-constructs) branch.
-		@MonotonicNonNull PatternConstruct compileTarget;
-
-		/** {@link #compileTarget}, set by {@link #buildEntryMap} before any {@link #buildMatcher} reads it. */
-		PatternConstruct compileTarget() {
-			PatternConstruct t = compileTarget;
-			if (t == null) {
-				throw new IllegalStateException("QuantifiedUnion at pattern index " + startIndex
-						+ " read compileTarget before buildEntryMap() ran (did you mean to override "
-						+ "needsEntryPointBeforeMatcher() to return true?)");
-			}
-			return t;
-		}
-
-		QuantifiedUnion(String pattern, int startIndex) {
-			super(pattern, startIndex);
-		}
-
-		private boolean isCapturing() {
-			return captureConstructIndex != -1;
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			if (isUnquantified() && constructs.isEmpty()) {
-				// Bare flags-only group ("(?i)", no body) -- same aliasing as buildEntryMap: passes
-				// straight through to `next` (this union contributes nothing of its own). Safe even
-				// though `next` could resolve back to an ancestor loop still under construction (see
-				// buildLoopEntryMap's `part.next = this`) -- whatever `next` turns out to be, if it's
-				// itself a QuantifiableConstruct it keeps the state-checked default below, so the
-				// cycle is still caught there, just one level further down.
-				return next().claimsEntryElse();
-			}
-			return super.claimsEntryElse();
-		}
-
-		@Override
-		boolean elseIsEndOfFind() {
-			if (!isUnquantified()) {
-				return loopElseIsEndOfFind(constructs, next());
-			}
-			if (constructs.isEmpty()) {
-				return next().elseIsEndOfFind();
-			}
-			return rawEntryElse != null && rawEntryElse.elseIsEndOfFind();
-		}
-
-		@Override
-		boolean elseIsResidual() {
-			if (!isUnquantified()) {
-				return loopElseIsResidual(constructs, next());
-			}
-			if (constructs.isEmpty()) {
-				return next().elseIsResidual();
-			}
-			return rawEntryElse != null && rawEntryElse.elseIsResidual();
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			if (!isUnquantified()) {
-				buildLoopEntryMap(constructs, next, captureConstructIndex);
-				return;
-			}
-			if (constructs.isEmpty()) {
-				// Bug fix (2026-09-06): a bare flags-only group ("(?s)", no ":", no body) is the
-				// only way to reach this constructor with an empty `constructs` list -- every other
-				// path (a real "()"/"(?:)"/"(?<name>)") goes through parseUnion(), which rejects an
-				// empty body via throwEmptySequence before a QuantifiedUnion with zero constructs can
-				// ever exist. Previously this fell through to compileAndMergeCandidates() with an
-				// empty candidate list, producing an empty entryMap/entryElse -- i.e. a
-				// fork chain that matches nothing at all, silently breaking the
-				// surrounding sequence ("(?s)abx" stopped matching "abx"). A bare flags group is
-				// zero-width and always succeeds -- its only job was toggling `flags` for
-				// PatternParser, already done by the caller -- so just pass through to `next` exactly
-				// as an empty Sequence element would, instead of compiling as its own dispatch node.
-				// Aliased directly -- entryMap's values are always Boolean `true` regardless of which
-				// construct built it (see entryMap's own doc), so there's no PatternConstruct identity
-				// to lose by sharing next's own map instead of copying its entries.
-				entryMap = next.getEntryPointMap();
-				if (next.getEntryElse() != null) {
-					entryElse = this;
-				}
-				// matcher isn't assigned here (unlike the pre-split design) -- next.matcher may not be
-				// built yet at this point (see design.md's "Entry-point computation vs. matcher
-				// compilation" section); buildMatcher() assigns it once next really is compiled.
-				return;
-			}
-
-			// Determine every branch's compile target (tail-to-front relative to this union: each
-			// branch's "next" is this union's own "next" -- or, for a capturing group, a marker that
-			// ends the capture before reaching the real next -- since choosing a branch doesn't itself
-			// consume anything) and merge their entry points, rejecting any two branches that could
-			// both match the same next code point -- the core LL(1) restriction this library is built
-			// on. Deliberately doesn't compile() anything here (branches, or compileTarget itself) --
-			// see design.md's "Entry-point computation vs. matcher compilation" section; buildMatcher()
-			// does the real compiling, once `next` is guaranteed to already be compiled.
-			PatternConstruct target = next;
-			if (isCapturing()) {
-				target = new CaptureEndMarker(startIndex, captureConstructIndex, next);
-				target.flags = flags;
-			}
-			compileTarget = target;
-			for (PatternConstruct part : constructs) {
-				part.next = target;
-			}
-			MergedEntries result = mergeEntryPoints(pattern, constructs, "union subpattern");
-			rawEntryElse = result.entryElse();
-			// Re-keyed onto `this` rather than kept as whatever nested candidate built each range --
-			// see Sequence.buildEntryMap's doc for why (same fix, same reason: a containing loop's
-			// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
-			// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
-			if (rawEntryElse != null) {
-				entryElse = this;
-			}
-			// Safe to alias directly (unlike entryElse just above): result.ranges is already
-			// Boolean-valued -- see mergeEntryPoints' own doc -- so there's no PatternConstruct
-			// identity to lose by sharing it as-is instead of re-keying/copying.
-			entryMap = result.ranges;
-		}
-
-		@Override
-		void buildMatcher() {
-			if (!isUnquantified()) {
-				buildLoopMatcher(constructs, next(), captureConstructIndex);
-				return;
-			}
-			if (constructs.isEmpty()) {
-				// Bare flags-only group -- see buildEntryMap()'s matching case. `next` is guaranteed
-				// compiled by now (tail-to-front compile order), unlike when buildEntryMap() ran.
-				MatcherConstruct.aliasOrPassThrough(this, next().matcher());
-				return;
-			}
-			if (isCapturing()) {
-				// compileTarget (a CaptureEndMarker) must itself be compiled before the branches below,
-				// since building its own EndCaptureMatcherConstruct needs `next.matcher` -- guaranteed
-				// available now (unlike when buildEntryMap() computed compileTarget's entry point).
-				compileTarget().compile(next());
-			}
-			// Uses rawEntryElse (the real, non-identity-rewritten candidate), not the
-			// (rekeyed-to-`this`) entryMap/entryElse fields -- see rawEntryElse's doc: for the capturing
-			// case, `this.matcher` isn't set yet at this point; for the non-capturing case, the flattened
-			// chain's head node itself becomes `this.matcher`, so resolving branches through the
-			// rekeyed-to-`this` entryMap would resolve every entry back to this very node (an infinite
-			// self-dispatch loop) instead of to the actual branch matchers. Compiled here, deliberately
-			// with no dispatch gating of its own (dispatchEntrySet/dispatchFailedEntry left null), and
-			// EXCLUDED from the ordinary candidate list handed to buildFlattenedChain below -- unlike the
-			// old fork-chain design (which could cheaply wrap the SAME already-compiled, ungated
-			// candidate.matcher in two different fork nodes -- one at its own list position, one as the
-			// tail fallback -- since gating lived in the separate fork objects, not the node itself), this
-			// flattened design bakes gating into the candidate's own single compiled node, so the same
-			// node can't simultaneously be "gated at its natural position" and "the ungated final
-			// fallback". Dropping it from the ordinary list is only a behavior change when rawEntryElse
-			// ALSO claims real (non-empty) explicit ranges of its own (e.g. a nullable branch reaching the end of
-			// the pattern) -- those ranges are still checked for disjointness against every sibling's, by
-			// buildFlattenedChain's `elseCandidate` argument (mergeEntryPoints does NOT check overlap), so
-			// nothing goes unvalidated. The tail is only reached once every sibling's gate has missed, so a
-			// sibling can't claim those code points either, and their order relative to siblings is moot.
-			//
-			// EXCEPT an end-of-find catch-all (a branch that can complete the whole pattern without
-			// consuming anything, e.g. `a*` at the end of the pattern): that one is NOT lowest-priority --
-			// `java.util.regex` takes the first alternative that succeeds, and under find()/lookingAt() a
-			// branch that can end here succeeds whatever follows. So it keeps its own list position (in
-			// chainCandidates, behind a mode-aware gate) and there is no tail fallback for it.
-			PatternConstruct endOfFindCandidate =
-					rawEntryElse != null && rawEntryElse.elseIsEndOfFind() ? rawEntryElse : null;
-			PatternConstruct tailElse = endOfFindCandidate != null ? null : rawEntryElse;
-			MatcherConstruct elseTarget = tailElse != null ? tailElse.compile(compileTarget()) : null;
-			List<PatternConstruct> chainCandidates;
-			if (tailElse == null) {
-				chainCandidates = constructs;
-			} else {
-				chainCandidates = new ArrayList<>(constructs.size());
-				for (PatternConstruct c : constructs) {
-					if (c != tailElse) {
-						chainCandidates.add(c);
-					}
-				}
-			}
-			if (isCapturing()) {
-				MatcherConstruct dispatch = buildFlattenedChain(null, flags, pattern, chainCandidates, "union subpattern", compileTarget(), elseTarget, tailElse, endOfFindCandidate);
-				new BeginCaptureMatcherConstruct(this, captureConstructIndex, dispatch);
-			} else {
-				buildFlattenedChain(this, flags, pattern, chainCandidates, "union subpattern", compileTarget(), elseTarget, tailElse, endOfFindCandidate);
-			}
-		}
-
-		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			if (isUnquantified() && !constructs.isEmpty()) {
-				MutableCodePointSet result = new ArrayCodePointSet();
-				for (PatternConstruct branch : constructs) {
-					result.insertAll(branch.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet));
-				}
-				return result;
-			}
-			return super.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-		}
-
-		@Override
-		final @Nullable CodePointSet lastCharSet() {
-			if (min < 1 || constructs.isEmpty()) {
-				return null;
-			}
-			return unionLastCharSet(constructs);
-		}
-
-		@Override
-		final @Nullable CodePointSet firstCharSet() {
-			if (min < 1 || constructs.isEmpty()) {
-				return null;
-			}
-			MutableCodePointSet result = new ArrayCodePointSet();
-			for (PatternConstruct branch : constructs) {
-				CodePointSet branchSet = branch.firstCharSet();
-				if (branchSet == null) {
-					return null;
-				}
-				result.insertAll(branchSet);
-			}
-			return result;
-		}
-
-		@Override
-		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
-			if (min != 1 || max != 1 || constructs.isEmpty()) {
-				return null;
-			}
-			boolean isCapturing = captureConstructIndex >= 0;
-			if (constructs.size() == 1) {
-				LookbehindConstruct.SingleCodePointBody inner = constructs.get(0).resolveSingleCodePointBody();
-				if (inner == null) {
-					return null;
-				}
-				if (!isCapturing) {
-					return inner;
-				}
-				// A capturing group can't itself wrap another capturing group here -- there's only
-				// one code point behind this position for at most one group to claim.
-				return inner.captureConstructIndex == -1
-						? new LookbehindConstruct.SingleCodePointBody(inner.codePoints, captureConstructIndex)
-						: null;
-			}
-			// A real alternation: every branch must resolve with no capturing group of its own --
-			// only the whole alternation (via an enclosing capturing group on this union) may
-			// capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
-			MutableCodePointSet result = new ArrayCodePointSet();
-			for (PatternConstruct branch : constructs) {
-				LookbehindConstruct.SingleCodePointBody inner = branch.resolveSingleCodePointBody();
-				if (inner == null || inner.captureConstructIndex != -1) {
-					return null;
-				}
-				result.insertAll(inner.codePoints);
-			}
-			return new LookbehindConstruct.SingleCodePointBody(result, captureConstructIndex);
-		}
-	}
 
 	/**
 	 * A zero-width marker inserted as a capturing group's branches' "next", so that an
@@ -1401,300 +657,6 @@ abstract class PatternConstruct {
 	 * the same entry set as {@code realNext} -- inserting it must not change what characters are
 	 * considered ambiguous for the group's branches.
 	 */
-	static final class CaptureEndMarker extends PatternConstruct {
-		final int captureConstructIndex;
-		final PatternConstruct realNext;
-
-		CaptureEndMarker(int startIndex, int captureConstructIndex, PatternConstruct realNext) {
-			super(startIndex);
-			this.captureConstructIndex = captureConstructIndex;
-			this.realNext = realNext;
-		}
-
-		/** Never wired by a parent: it is constructed knowing its successor. */
-		@Override
-		PatternConstruct next() {
-			return realNext;
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			// realNext is a fixed field (unlike `next`, never reassigned to point back at some
-			// ancestor mid-construction), so delegating straight through can't participate in the
-			// one cycle this engine actually has (a nullable loop body) -- safe to bypass this
-			// marker's own cycle guard entirely, same reasoning as its buildEntryMap override.
-			return realNext.claimsEntryElse();
-		}
-
-		@Override
-		boolean elseIsEndOfFind() {
-			return realNext.elseIsEndOfFind();
-		}
-
-		@Override
-		boolean elseIsResidual() {
-			return realNext.elseIsResidual();
-		}
-
-		@Override
-		boolean needsEntryPointBeforeMatcher() {
-			// buildMatcher() below reads only realNext.matcher -- nothing buildEntryMap() sets.
-			return false;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			// realNext is already compiled by the time any of this marker's callers need it -- it's
-			// the capturing group's own `next`, which (like any `next`) was compiled before the group
-			// itself, tail-to-front.
-			//
-			// Bug fix (2026-09-06): this used to just alias `entryMap = realNext.entryMap` directly
-			// -- but that leaked every entry's VALUE as realNext itself (whatever realNext.buildEntryMap
-			// put there -- entryMap was PatternConstruct-valued at the time), not this marker. That
-			// silently broke identity checks like fork chain's loop-flavored
-			// constructor's `e.getValue() == next` (used to tell "the loop is exiting toward `next`"
-			// from "the loop is continuing") whenever THIS marker was passed in as that `next` -- i.e.
-			// any non-quantified capturing group whose content contains its own internal loop, e.g.
-			// "([a-z]+)!": the exit character got misclassified as "continue the loop, dispatch
-			// straight to realNext.matcher", bypassing this marker's own EndCaptureMatcherConstruct
-			// entirely, so the capture's `result` was set on entry but never finalized (group(n)
-			// returned null even though the whole pattern matched). Found via GroupSyntaxTest.
-			//
-			// entryMap has since been migrated to Boolean-only values (see its own doc) specifically
-			// because that value "carries zero information" -- so aliasing is safe again now, and
-			// re-keying (copying) is back to being pure wasted work: every consumer of THIS marker's
-			// entryMap only ever asks "which code points are in it", never anything realNext-specific,
-			// so sharing realNext's own (also always-Boolean-`true`) map changes nothing observable.
-			// Any identity check this bug was about reads a construct's own PatternConstruct-valued
-			// candidate list (e.g. `constructs`/`rawEntryElse`) or mergeEntryPoints' own transient
-			// merge (used only to run its ambiguity check), never this plain, Boolean-only entryMap.
-			entryMap = realNext.getEntryPointMap();
-			if (realNext.getEntryElse() != null) {
-				entryElse = this;
-			}
-		}
-
-		@Override
-		void buildMatcher() {
-			new EndCaptureMatcherConstruct(this, captureConstructIndex, realNext.matcher());
-		}
-	}
-
-
-	static final class Sequence extends PatternConstruct {
-		// Pre-sized to 4, not the JDK default of 10 -- corpus measurement (2026-09-27) found 100% of
-		// Sequences end up with <=4 elements (mean 1.15), so the default's first-`add` grow to 10 is
-		// pure waste here.
-		final List<PatternConstruct> patterns = new ArrayList<>(4);
-
-		Sequence(int startIndex) {
-			super(startIndex);
-		}
-
-		/**
-		 * Wires every element's {@code next} pointer tail-to-front (a plain field assignment, not a
-		 * {@code compile()} call) so a nullable element can still fold in what follows it when asked
-		 * for its own entry point -- shared by {@link #buildEntryMap} and {@link #claimsEntryElse},
-		 * since either one might run first (or, harmlessly, both -- this is idempotent). See
-		 * design.md's "Entry-point computation vs. matcher compilation" section for why the split
-		 * from compiling matters.
-		 */
-		private void wireElementNextPointers() {
-			PatternConstruct tail = next();
-			for (int i = patterns.size() - 1; i >= 0; i--) {
-				patterns.get(i).next = tail;
-				tail = patterns.get(i);
-			}
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			// Same aliasing as buildEntryMap below: a sequence's own entry point is exactly its
-			// first element's. patterns.get(0) is a fixed field (never reassigned the way `next`
-			// is), so delegating straight through can't itself introduce a cycle -- but its OWN
-			// entry-point computation still depends on the tail-to-front wiring below having run.
-			wireElementNextPointers();
-			return patterns.get(0).claimsEntryElse();
-		}
-
-		@Override
-		boolean elseIsEndOfFind() {
-			return patterns.get(0).elseIsEndOfFind();
-		}
-
-		@Override
-		boolean elseIsResidual() {
-			return patterns.get(0).elseIsResidual();
-		}
-
-		@Override
-		boolean needsEntryPointBeforeMatcher() {
-			// buildMatcher() below does its own tail-to-front `next` wiring independently (via each
-			// part.compile(tail) call), and never reads entryMap/entryElse -- so, unlike buildEntryMap
-			// above (whose wiring/entryMap-caching exists purely to answer an ANCESTOR's pull), this
-			// Sequence's own matcher build needs nothing buildEntryMap() would have computed. This is
-			// what lets a leaf branch reached only through a Sequence (e.g. a plain "a" union branch,
-			// always parsed as a one-element Sequence) skip its own entryMap allocation too --
-			// otherwise this Sequence's own compile() would force the pull right back regardless of
-			// what the leaf itself does.
-			return false;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			// A sequence's own entry point is exactly its first element's -- entering the sequence
-			// means entering its first element, regardless of what the rest of the sequence looks
-			// like. Wire every element's `next` pointer tail-to-front FIRST -- but deliberately don't
-			// compile() (build matchers for) anything here: that's buildMatcher()'s job, below. This
-			// split is what lets a loop nested at the tail of this sequence ask an enclosing loop
-			// (this sequence's own `next`, if it's a loop) for ITS entry point mid-construction,
-			// without forcing that enclosing loop's own (still in-progress) matcher build to finish
-			// first -- see design.md's "Entry-point computation vs. matcher compilation" section.
-			wireElementNextPointers();
-			// Aliased directly, not re-keyed -- unlike `entryElse` (a genuinely PatternConstruct-valued
-			// field, where re-keying onto `this` is load-bearing -- see QuantifiedUnion's own doc for
-			// the 2026-09-06 bug that motivated it), entryMap's values are always Boolean
-			// `true` regardless of which construct built it (see entryMap's own doc), so this
-			// Sequence's own entry point and its first element's are the exact same map, both in
-			// content AND in every consumer's eyes -- there's no identity to lose by sharing the
-			// object instead of copying its entries.
-			entryMap = patterns.get(0).getEntryPointMap();
-			if (patterns.get(0).getEntryElse() != null) {
-				entryElse = this;
-			}
-		}
-
-		@Override
-		void buildMatcher() {
-			// A Sequence has no matching behavior of its own -- it's exactly whatever its first
-			// element compiled to, so any dispatch gating of our own (if this sequence is itself a
-			// chain candidate) belongs on that first element's own node instead; safe to propagate
-			// directly (no aliasOrPassThrough wrapper needed) since `patterns.get(0)` is exclusively
-			// owned by this Sequence and hasn't been compiled by anyone else yet.
-			patterns.get(0).dispatchEntrySet = dispatchEntrySet;
-			patterns.get(0).dispatchFailedEntry = dispatchFailedEntry;
-			// Compile tail-to-front: the last element's next is this sequence's own next, and each
-			// earlier element's next is the element right after it (already compiled by the time we
-			// get to it).
-			PatternConstruct tail = next();
-			for (int i = patterns.size() - 1; i >= 0; i--) {
-				PatternConstruct part = patterns.get(i);
-				if (part instanceof WordBoundaryConstruct && i > 0) {
-					((WordBoundaryConstruct) part).priorCharSet = patterns.get(i - 1).lastCharSet();
-				}
-				part.compile(tail);
-				tail = part;
-			}
-			matcher = patterns.get(0).matcher();
-		}
-
-		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			return patterns.isEmpty()
-					? getEntryPointMap()
-					: patterns.get(0).skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-		}
-
-		@Override
-		final @Nullable CodePointSet lastCharSet() {
-			return patterns.isEmpty() ? null : patterns.get(patterns.size() - 1).lastCharSet();
-		}
-
-		@Override
-		final @Nullable CodePointSet firstCharSet() {
-			return patterns.isEmpty() ? null : patterns.get(0).firstCharSet();
-		}
-
-		@Override
-		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
-			return patterns.size() == 1 ? patterns.get(0).resolveSingleCodePointBody() : null;
-		}
-	}
-
-	static final class LiteralString extends PatternConstruct {
-		// A CharSequence, not a String: for a literal run PatternParser could decode verbatim from
-		// the pattern text (no escapes, no COMMENTS-mode gaps), it's a zero-copy
-		// java.nio.CharBuffer view of `pattern` rather than a materialized copy -- see
-		// PatternParser.parseUnion's own doc for why (java.lang.String.subSequence/substring both
-		// copy; CharBuffer.wrap doesn't).
-		final CharSequence value;
-
-		LiteralString(int startIndex, int endIndex, CharSequence value) {
-			super(startIndex, endIndex);
-			this.value = value;
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			return false; // never sets entryElse -- see buildEntryMap.
-		}
-
-		@Override
-		boolean needsEntryPointBeforeMatcher() {
-			// buildMatcher() below reads nothing buildEntryMap() sets -- see the base class doc.
-			return false;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			// A literal is the one leaf whose set isn't already folded (a class's is, at parse time;
-			// a named class is never folded), so it is folded here rather than in checkDisjoint.
-			entryMap = MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags);
-		}
-
-		@Override
-		void buildMatcher() {
-			// value.toString() here, not value directly: LiteralMatcherConstruct wants a real String
-			// (String#regionMatches is a JIT intrinsic -- real vectorized comparison -- and
-			// String#charAt/length are direct field/array reads; a CharBuffer's own versions of
-			// those are neither, measurably so per this project's own Android CPU sampling once
-			// tried -- see LiteralMatcherConstruct.value's own doc). This runs once per compile
-			// (same as buildMatcher() itself), not once per match attempt, so it's the same
-			// allocation this construct's value would have cost pre-CharBuffer if `value` is a
-			// CharBuffer view here (the "pure" case -- see parseUnion's own doc); if `value` is
-			// already a String (the "impure" case, escapes/COMMENTS-gaps), toString() is a free
-			// no-op (String#toString() returns `this`).
-			new LiteralMatcherConstruct(this, value.toString());
-		}
-
-		@Override
-		final @Nullable CodePointSet lastCharSet() {
-			if (value.length() == 0) {
-				return null;
-			}
-			int cp = Character.codePointBefore(value, value.length());
-			// Folded by this literal's OWN flags, same as buildEntryMap()'s entryMap -- a bare literal
-			// (unlike a bracket-class member) isn't folded at parse time, so the raw written code point
-			// alone would under-report what this literal could actually have matched under its own
-			// CASE_INSENSITIVE. Every other firstCharSet()/lastCharSet() override already returns an
-			// already-folded set (ComplexCharacter's ranges are folded at parse time; a nested class's
-			// or named class's isn't foldable at all under java.util.regex's own rules) -- this brings
-			// LiteralString in line with that contract instead of being the one exception. See
-			// BackReference.buildEntryMap's own doc for why this matters beyond \b/\B classification:
-			// entrySet built from an under-reported firstCharSet() is a real match-time dispatch gate,
-			// not just a compile-time approximation.
-			return MatcherConstruct.foldedEntrySet(singletonCodePointMap(cp), flags);
-		}
-
-		@Override
-		final @Nullable CodePointSet firstCharSet() {
-			if (value.length() == 0) {
-				return null;
-			}
-			return MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags);
-		}
-
-		@Override
-		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
-			if (Character.codePointCount(value, 0, value.length()) != 1) {
-				return null;
-			}
-			// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
-			// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
-			// UNICODE_CASE, exactly like LiteralString.buildEntryMap's own entryMap.
-			return new LookbehindConstruct.SingleCodePointBody(MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags), -1);
-		}
-	}
 
 	/**
 	 * {@code \1}/{@code \k<name>}. {@code referencedGroup} is resolved at parse time (see
@@ -1703,224 +665,6 @@ abstract class PatternConstruct {
 	 * undefined groups are rejected there, before a BackReference is ever constructed. See
 	 * design.md's "Backreferences" section for the full design.
 	 */
-	static final class BackReference extends PatternConstruct {
-		final int captureConstructIndex;
-		final QuantifiedUnion referencedGroup;
-
-		BackReference(int startIndex, int endIndex, int captureConstructIndex, QuantifiedUnion referencedGroup) {
-			super(startIndex, endIndex);
-			this.captureConstructIndex = captureConstructIndex;
-			this.referencedGroup = referencedGroup;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			CodePointSet firstChars = referencedGroup.firstCharSet();
-			if (firstChars == null) {
-				// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
-				// fall back to the catch-all entry set rather than risk silently wrong zero-width
-				// handling. See design.md's "Backreferences" section.
-				entryElse = this;
-				return;
-			}
-			// Aliased directly -- firstCharSet() already returns a plain CodePointSet (often itself an
-			// alias, e.g. straight through to a ComplexCharacter's own validRanges()), so there's no
-			// identity to lose by sharing it instead of copying its entries.
-			// Two layers of folding, not one: `firstChars` is already folded by the referenced group's
-			// OWN flags (e.g. under "(?i)(a)", the group could have literally captured 'A', not just
-			// 'a' -- see LiteralString#firstCharSet's own doc), since that's what the group's content
-			// could actually have consumed at match time, independent of what follows it. This
-			// method's own `foldedEntrySet` call then folds THAT by the backreference's own flags,
-			// since the backreference itself compares case-insensitively (codePointsMatch) according
-			// to ITS OWN flags, whatever the referenced group's own flags were -- e.g. "(?-i)(a)(?i)\1"
-			// must accept 'A' too, even though the group itself never could have captured it.
-			entryMap = MatcherConstruct.foldedEntrySet(firstChars, flags);
-		}
-
-		@Override
-		void buildMatcher() {
-			new BackReferenceMatcherConstruct(this, captureConstructIndex);
-		}
-	}
-
-	static final class ComplexCharacter
-			extends PatternConstruct {
-		// Effectively immutable once a ComplexCharacter exists: every constructor below sets this
-		// exactly once, from a set PatternParser finished building beforehand (see
-		// PatternParser#parseComplexCharacter's own local `ranges` accumulator) -- so it's typed as
-		// the plain (non-Mutable) CodePointSet here, and can be assigned directly from a
-		// NamedCharClass/RegexCharacterClass static constant with no defensive copy, since nothing
-		// past construction ever mutates it.
-		final CodePointSet ranges;
-		// Set once by the parser for `.`: instead of explicitly claiming `ranges` at dispatch time, this
-		// character claims whatever its siblings don't (see elseIsResidual) -- `ranges` is then only its
-		// own accept set: the match-time re-check, and the ceiling on a loop body's residual gate.
-		boolean residualElse;
-
-		ComplexCharacter(int startIndex, CodePointSet ranges) {
-			super(startIndex);
-			this.ranges = ranges;
-		}
-
-		ComplexCharacter(int startIndex, int endIndex, CodePointSet ranges) {
-			super(startIndex, endIndex);
-			this.ranges = ranges;
-		}
-
-		ComplexCharacter(int startIndex, int character) {
-			super(startIndex);
-			this.ranges = singletonCodePointMap(character);
-		}
-
-		/**
-		 * {@code ranges} itself -- kept as a method (rather than exposing the field directly to every
-		 * caller) since this used to also clamp to the code point domain before {@link CodePointMap}
-		 * existed: Guava {@code RangeSet#complement()} (negated classes via {@code [^...]}, {@code .},
-		 * built-ins like {@code \D}/{@code \S}/{@code \W}) produced a mathematically unbounded
-		 * result that could swallow {@code -1}, the sentinel {@code Matcher} uses for "no more input"
-		 * (see {@code Matcher#peek}). {@link CodePointSet}'s {@link CodePointSet#complement} is
-		 * always finite over {@code [0, MAX_CODE_POINT]} by construction (see its own doc), so no
-		 * clamping is needed here any more -- {@link MatcherConstruct.SingleCharMatcherConstruct} instead guards
-		 * {@code -1} directly, since an inverted {@code ranges} would otherwise report it a "member"
-		 * via the fill.
-		 */
-		CodePointSet validRanges() {
-			return ranges;
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			return residualElse; // mirrors buildEntryMap's `entryElse = this` exactly.
-		}
-
-		@Override
-		boolean elseIsResidual() {
-			return residualElse;
-		}
-
-		@Override
-		boolean needsEntryPointBeforeMatcher() {
-			// buildMatcher() below (new SingleCharMatcherConstruct(this)) reads `ranges` directly off
-			// this instance, not entryMap -- see the base class doc.
-			return false;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			// Aliased directly: a character class's own entry point IS exactly its own valid ranges,
-			// not a separate copy of them -- entryMap and ranges/validRanges() were always meant to
-			// hold identical content, so there's nothing to gain from keeping them as two objects.
-			if (residualElse) {
-				entryMap = EMPTY_ENTRY_MAP;
-				entryElse = this;
-			} else {
-				entryMap = validRanges();
-			}
-		}
-
-		@Override
-		void buildMatcher() {
-			new SingleCharMatcherConstruct(this);
-		}
-
-		@Override
-		final @Nullable CodePointSet lastCharSet() {
-			return validRanges();
-		}
-
-		@Override
-		final @Nullable CodePointSet firstCharSet() {
-			return validRanges();
-		}
-
-		@Override
-		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
-			return new LookbehindConstruct.SingleCodePointBody(validRanges(), -1);
-		}
-	}
-
-	static final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
-		final ComplexCharacter delegate;
-
-		ComplexQuantifiedCharacter(String pattern, int startIndex, ComplexCharacter delegate) {
-			super(pattern, startIndex, delegate.endIndex);
-			this.delegate = delegate;
-		}
-
-		@Override
-		boolean claimsEntryElse() {
-			if (!isUnquantified()) {
-				// Real dispatch/ambiguity-checked case -- must go through the ordinary cycle-guarded
-				// path (this construct's own `next` might loop back here, e.g. a nullable body like
-				// `[ab]{0,2}` -- see buildLoopEntryMap).
-				return super.claimsEntryElse();
-			}
-			// Unquantified: buildEntryMap sets entryElse only for a residual (`.`) delegate.
-			return delegate.residualElse;
-		}
-
-		@Override
-		boolean elseIsEndOfFind() {
-			return !isUnquantified() && loopElseIsEndOfFind(List.of(delegate), next());
-		}
-
-		@Override
-		boolean elseIsResidual() {
-			return isUnquantified() ? delegate.residualElse : loopElseIsResidual(List.of(delegate), next());
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			if (!isUnquantified()) {
-				buildLoopEntryMap(List.of(delegate), next, -1);
-				return;
-			}
-			// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
-			// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
-			// that happens in buildMatcher(), below. Aliased directly, same reasoning as
-			// ComplexCharacter.buildEntryMap.
-			if (delegate.residualElse) {
-				entryMap = EMPTY_ENTRY_MAP;
-				entryElse = this;
-			} else {
-				entryMap = delegate.validRanges();
-			}
-		}
-
-		@Override
-		void buildMatcher() {
-			if (!isUnquantified()) {
-				buildLoopMatcher(List.of(delegate), next(), -1);
-				return;
-			}
-			// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
-			// delegate ComplexCharacter -- propagate our own dispatch fields (if we're ourselves a
-			// chain candidate) onto `delegate` BEFORE compiling it, so its own compiled node ends up
-			// with the right gating; safe because `delegate` is exclusively owned by this construct
-			// (created together, never independently compiled from anywhere else).
-			delegate.dispatchEntrySet = dispatchEntrySet;
-			delegate.dispatchFailedEntry = dispatchFailedEntry;
-			delegate.compile(next());
-			matcher = delegate.matcher();
-		}
-
-		@Override
-		final @Nullable CodePointSet lastCharSet() {
-			return min >= 1 ? delegate.validRanges() : null;
-		}
-
-		@Override
-		final @Nullable CodePointSet firstCharSet() {
-			return min >= 1 ? delegate.validRanges() : null;
-		}
-
-		@Override
-		final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
-			return min == 1 && max == 1
-					? new LookbehindConstruct.SingleCodePointBody(delegate.validRanges(), -1)
-					: null;
-		}
-	}
 
 	/**
 	 * {@code \X} (extended grapheme cluster, UAX #29) -- consumes one full cluster starting at the
@@ -1942,27 +686,6 @@ abstract class PatternConstruct {
 	 * width isn't statically known, so there's no way to carve out "whatever \X wouldn't otherwise
 	 * claim" the way {@code .}'s residual else claim does.
 	 */
-	static final class GraphemeClusterConstruct extends PatternConstruct {
-		GraphemeClusterConstruct(int startIndex, int endIndex) {
-			super(startIndex, endIndex);
-		}
-
-		@Override
-		boolean needsEntryPointBeforeMatcher() {
-			// buildMatcher() below doesn't read entryMap/entryElse at all.
-			return false;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			entryMap = universalCodePointSet();
-		}
-
-		@Override
-		void buildMatcher() {
-			new MatcherConstruct.GraphemeClusterMatcherConstruct(this);
-		}
-	}
 
 	/**
 	 * Entry point of a zero-width assertion ({@code \b}, {@code ^}, a lookbehind, ...): whatever can
@@ -1999,52 +722,6 @@ abstract class PatternConstruct {
 	 * default -- just fewer of them). Not known in advance whether ART's inline caching actually
 	 * benefits from this; measured, not assumed -- see notes.md for the result.
 	 */
-	static abstract class ZeroWidthAssertionConstruct extends PatternConstruct {
-		ZeroWidthAssertionConstruct(int startIndex, int endIndex) {
-			super(startIndex, endIndex);
-		}
-
-		@Override
-		final void buildEntryMap(PatternConstruct next) {
-			buildZeroWidthEntryMap(this, next);
-		}
-
-		@Override
-		final boolean elseIsEndOfFind() {
-			return next().elseIsEndOfFind();
-		}
-
-		@Override
-		final boolean elseIsResidual() {
-			return next().elseIsResidual();
-		}
-
-		@Override
-		final boolean needsEntryPointBeforeMatcher() {
-			// buildMatcher() never reads this construct's own entryMap/entryElse (see buildZeroWidthEntryMap).
-			return false;
-		}
-
-		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			CodePointSet rest = next().skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-			if (!checkAssertions) {
-				return rest;
-			}
-			CodePointSet admitted = admittedInteriorExitPeekSet(bodyLastCharSet);
-			return admitted == null ? rest : union(rest, admitted);
-		}
-
-		/**
-		 * The set of peek code points for which a loop's interior exit through this assertion could
-		 * be ambiguous with the loop body simply continuing on, given that the body's own
-		 * last-consumed character is somewhere in {@code bodyLastCharSet} ({@code null} if that's
-		 * not statically known, in which case this must also return {@code null} -- "not statically
-		 * known" is always a safe fallback, just a missed optimization). See each override's own doc
-		 * for its own construct-specific reasoning.
-		 */
-		abstract @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet);
-	}
 
 	/**
 	 * {@code \b{g}} (grapheme boundary) -- unlike {@code \b}/{@code \B}, only the positive form
@@ -2053,79 +730,6 @@ abstract class PatternConstruct {
 	 * elision to a no-op or a compile error, since neither neighbor's grapheme-boundary-ness is
 	 * ever fully statically known the way \b/\B's word-ness sometimes is.
 	 */
-	static final class GraphemeBoundaryConstruct extends ZeroWidthAssertionConstruct {
-		GraphemeBoundaryConstruct(int startIndex, int endIndex) {
-			super(startIndex, endIndex);
-		}
-
-		@Override
-		void buildMatcher() {
-			new MatcherConstruct.GraphemeBoundaryMatcherConstruct(this);
-		}
-
-		/**
-		 * Deliberately conservative rather than precise: unlike \b/\B (whose truth depends on a
-		 * simple word/non-word classification of exactly one neighbor at a time) or a 1-code-point
-		 * lookbehind, \b{g}'s truth can depend on a whole chain of prior code points (GB9c/GB11/
-		 * GB12-13 -- see {@code GraphemeCluster#isBoundary}), which this loop-ambiguity check has no
-		 * way to reason about precisely. So whenever the loop body could plausibly have just
-		 * consumed ANY character at all ({@code bodyLastCharSet != null}), this treats \b{g} as
-		 * potentially holding for every peek code point -- i.e. always ambiguous with continuing the
-		 * loop. This over-rejects some loops that would actually be fine at match time (e.g. {@code
-		 * \X+\b{g}}, since a loop of whole clusters can never stop mid-cluster) in exchange for never
-		 * under-rejecting a genuinely ambiguous one -- the same tradeoff this project already accepts
-		 * for {@code \X} itself (see README's "Intentional differences").
-		 */
-		@Override
-		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
-			return bodyLastCharSet == null ? null : universalCodePointSet();
-		}
-	}
-
-	static final class BoundaryConstruct extends PatternConstruct {
-		enum BoundaryEnum {
-			InputBegin,
-			InputEndExceptTerminator,
-			InputEnd
-		}
-
-		final BoundaryEnum type;
-
-		BoundaryConstruct(int startIndex, int endIndex, BoundaryEnum type) {
-			super(startIndex, endIndex);
-			this.type = type;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			buildZeroWidthEntryMap(this, next);
-		}
-
-		@Override
-		boolean elseIsEndOfFind() {
-			return next().elseIsEndOfFind();
-		}
-
-		@Override
-		boolean elseIsResidual() {
-			return next().elseIsResidual();
-		}
-
-		@Override
-		boolean needsEntryPointBeforeMatcher() {
-			return false;
-		}
-
-		@Override
-		void buildMatcher() {
-			new BoundaryMatcherConstruct(this, type);
-		}
-
-		@Override
-		final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
-			return next().skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet);
-		}
-	}
 
 	/**
 	 * {@code ^} (line begin) / {@code $} (line end). Split out from {@link BoundaryConstruct}
@@ -2135,65 +739,6 @@ abstract class PatternConstruct {
 	 * one {@code BoundaryEnum}-keyed dispatch added indirection for no benefit. See design.md's
 	 * "Boundary matching" section for the matching design.
 	 */
-	static final class LineBoundaryConstruct extends ZeroWidthAssertionConstruct {
-		final boolean isLineBegin; // true: ^, false: $
-
-		LineBoundaryConstruct(int startIndex, int endIndex, boolean isLineBegin) {
-			super(startIndex, endIndex);
-			this.isLineBegin = isLineBegin;
-		}
-
-		@Override
-		void buildMatcher() {
-			new LineBoundaryMatcherConstruct(this, isLineBegin);
-		}
-
-		/**
-		 * Only ever contributes anything under {@code MULTILINE} (a non-MULTILINE ^/$ only ever
-		 * holds at the true input edges, never at an interior loop-exit position). {@code $} holds
-		 * whenever the PEEK character itself is a line terminator, regardless of what the loop
-		 * body's last-consumed character was, so its admitted set is exactly the terminator-starting
-		 * code points, unconditionally. {@code ^} holds whenever the PRIOR character was a line
-		 * terminator, regardless of peek, so its admitted set is "any code point" whenever the body
-		 * could plausibly have just consumed one, and empty (no interior exit possible via ^)
-		 * otherwise; returns {@code null} ("not statically known") when {@code bodyLastCharSet}
-		 * itself is {@code null}, same safe fallback {@code WordBoundaryConstruct}'s own version
-		 * uses.
-		 */
-		@Override
-		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
-			if ((flags & Ll1Pattern.MULTILINE) == 0) {
-				return null;
-			}
-			CodePointSet terminatorStarts = lineTerminatorStartCodePoints(flags);
-			if (!isLineBegin) {
-				return terminatorStarts;
-			}
-			if (bodyLastCharSet == null) {
-				return null;
-			}
-			return bodyLastCharSet.intersects(terminatorStarts) ? universalCodePointSet() : null;
-		}
-
-		/**
-		 * The code points that can BEGIN a line terminator (matching {@code MatcherConstruct}'s own
-		 * runtime {@code lineTerminatorLengthAt}/{@code lineTerminatorLengthBefore} scans, honoring
-		 * {@code UNIX_LINES}) -- sufficient for a single-code-point admitted-peek-set check, since
-		 * every terminator this engine recognizes ({@code \n}, {@code \r}, {@code "\r\n"} as one
-		 * unit, {@code \u0085}, {@code  }, {@code  }) is uniquely identified by its own
-		 * first code point.
-		 */
-		private static CodePointSet lineTerminatorStartCodePoints(int flags) {
-			CodePointSetBuilder result = CodePointSetBuilder.create();
-			result.add('\n');
-			if ((flags & Ll1Pattern.UNIX_LINES) == 0) {
-				result.add('\r');
-				result.add(0x0085);
-				result.append(0x2028, 0x202A);
-			}
-			return result.build();
-		}
-	}
 
 	/**
 	 * {@code \b} (word boundary) / {@code \B} (non-word-boundary). Split out from {@link
@@ -2201,150 +746,6 @@ abstract class PatternConstruct {
 	 * implementation, plus a compile-time optimization {@link BoundaryConstruct}'s other types
 	 * don't need -- see design.md's "Boundary matching" section for the full design.
 	 */
-	static final class WordBoundaryConstruct extends ZeroWidthAssertionConstruct {
-		final String pattern;
-		final boolean isWordBoundary; // true: \b, false: \B
-
-		// The set of code points that could be the last one consumed by whatever immediately
-		// precedes this boundary in its enclosing Sequence, if statically known -- set by
-		// Sequence.buildEntryMap (via lastCharSet(), below) before compile() runs; null (the
-		// default, e.g. when this boundary opens its Sequence, or isn't in one at all) means "not
-		// statically known", which is always a safe fallback, just a missed optimization.
-		@Nullable CodePointSet priorCharSet;
-
-		WordBoundaryConstruct(String pattern, int startIndex, int endIndex, boolean isWordBoundary) {
-			super(startIndex, endIndex);
-			this.pattern = pattern;
-			this.isWordBoundary = isWordBoundary;
-		}
-
-		private enum Wordness {
-			WORD,
-			NON_WORD,
-			UNKNOWN
-		}
-
-		/** True if every code point in {@code a} is also in {@code b}. */
-		private static boolean isSubsetOf(CodePointSet a, CodePointSet b) {
-			// first(), not entrySet(), so a violation short-circuits instead of scanning the rest of
-			// `a` regardless -- see CodePointSet#first's own doc.
-			return !a.first((min, max) -> !b.containsAll(min, max));
-		}
-
-		/** True if no code point in {@code a} is also in {@code b}. */
-		private static boolean isDisjointFrom(CodePointSet a, CodePointSet b) {
-			return !a.first((min, max) -> !b.intersection(min, max).isEmpty());
-		}
-
-		private static Wordness classify(@Nullable CodePointSet set, CodePointSet wordSet) {
-			if (set == null) {
-				return Wordness.UNKNOWN;
-			}
-			// Computed directly as subset/disjoint checks against wordSet, rather than via
-			// wordSet.complement() the way the old RangeSet#enclosesAll version did -- no need to
-			// materialize a complement just to test disjointness; it would still be correct here,
-			// just wasted work for a query this cheap already.
-			if (isSubsetOf(set, wordSet)) {
-				return Wordness.WORD;
-			}
-			if (isDisjointFrom(set, wordSet)) {
-				return Wordness.NON_WORD;
-			}
-			return Wordness.UNKNOWN;
-		}
-
-		/**
-		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s
-		 * {@code checkAssertions} doc. The set of peek code points for which a \b/\B sitting right
-		 * after a loop body could hold, given that the body's own last-consumed character is
-		 * somewhere in {@code bodyLastCharSet} -- i.e. the code points an interior exit through this
-		 * assertion could be ambiguous with the loop simply continuing on. Returns {@code null}
-		 * ("not statically known", same safe fallback as {@code lastCharSet}/{@code classify}) only
-		 * when {@code bodyLastCharSet} itself is {@code null}; a non-null but WORD-ness-mixed
-		 * {@code bodyLastCharSet} still resolves, to {@link PatternConstruct#universalCodePointSet}
-		 * (since some prior character in it always matches whatever word-ness the peek character
-		 * has, \b/\B can then hold for ANY peek).
-		 */
-		@Override
-		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
-			if (bodyLastCharSet == null) {
-				return null;
-			}
-			CodePointSet wordSet = RegexCharacterClass.w.get(flags);
-			Wordness prior = classify(bodyLastCharSet, wordSet);
-			if (prior == Wordness.UNKNOWN) {
-				return universalCodePointSet();
-			}
-			// Same "wantsWordPeek" formula buildMatcher() uses for its own statically-known-prior case.
-			boolean priorIsWord = prior == Wordness.WORD;
-			boolean wantsWordPeek = isWordBoundary != priorIsWord;
-			return wantsWordPeek ? wordSet : wordSet.complement();
-		}
-
-		@Override
-		void buildMatcher() {
-			// See design.md's "Boundary matching" section and the class doc for
-			// WordBoundaryMatcherConstruct for the full optimization rationale. In brief: both sides
-			// of the boundary (the character just consumed, and the one about to be) are classified
-			// as always-word/always-non-word/unknown at compile time; whichever side is statically
-			// known doesn't need to be checked at match time at all.
-			CodePointSet wordSet = RegexCharacterClass.w.get(flags);
-			Wordness prior = classify(priorCharSet, wordSet);
-			// next's own entry-point map is already exactly a plain CodePointSet -- no separate
-			// RangeSet needs building here any more.
-			CodePointSet peekRanges = next().getEntryElse() == null ? next().getEntryPointMap() : null;
-			Wordness peek = classify(peekRanges, wordSet);
-
-			if (prior != Wordness.UNKNOWN && peek != Wordness.UNKNOWN) {
-				boolean isBoundaryHere = (prior != peek);
-				if (isBoundaryHere != isWordBoundary) {
-					throw PatternSyntaxException.throwWithReferences(
-							pattern,
-							startIndex,
-							(isWordBoundary ? "\\b" : "\\B"),
-							" at index ", startIndex,
-							" can never match: the preceding and following characters are ",
-							(isBoundaryHere ? "always different word-ness" : "always the same word-ness"),
-							" here, which is the opposite of what ",
-							(isWordBoundary ? "\\b" : "\\B"),
-							" requires");
-				}
-				// Statically always satisfied, so nothing to check at match time -- except under
-				// transparent bounds at regionEnd (see ElidedWordBoundaryMatcherConstruct's own doc).
-				new MatcherConstruct.ElidedWordBoundaryMatcherConstruct(this, wordSet, isWordBoundary);
-				return;
-			}
-
-			WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType priorMatchType;
-			WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType peekMatchType;
-			if (peek == Wordness.UNKNOWN && prior == Wordness.UNKNOWN) {
-				// Neither side is statically known: fall back to comparing both at match time.
-				priorMatchType = WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.Unchecked;
-				peekMatchType = isWordBoundary
-						? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeOppositePrior
-						: WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeSameAsPrior;
-			} else if (peek == Wordness.UNKNOWN) {
-				// prior is statically known -- fold it into a fixed direction for the (already
-				// available, no extra call needed) peeked character; never need matcher.peekPrevious().
-				boolean priorIsWord = (prior == Wordness.WORD);
-				boolean wantsWordPeek = isWordBoundary != priorIsWord;
-				priorMatchType = WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.Unchecked;
-				peekMatchType = wantsWordPeek
-						? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeWord
-						: WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustNotBeWord;
-			} else {
-				// peek is statically known -- fold it into a fixed direction for matcher.peekPrevious(),
-				// which is the only case that still needs the extra backward-looking call.
-				boolean peekIsWord = (peek == Wordness.WORD);
-				boolean wantsWordPrior = isWordBoundary != peekIsWord;
-				priorMatchType = wantsWordPrior
-						? WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.PriorMustBeWord
-						: WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.PriorMustBeNonWord;
-				peekMatchType = WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.Unchecked;
-			}
-			new WordBoundaryMatcherConstruct(this, wordSet, priorMatchType, peekMatchType, isWordBoundary);
-		}
-	}
 
 	/**
 	 * {@code (?<=X)}/{@code (?<!X)}, restricted to a body {@code X} that always matches exactly one
@@ -2355,64 +756,6 @@ abstract class PatternConstruct {
 	 * #resolveSingleCodePointBody} -- unlike {@code WordBoundaryConstruct}, there's no neighbor
 	 * context to wait for, so this construct needs no {@code buildEntryMap}-time classification step.
 	 */
-	static final class LookbehindConstruct extends ZeroWidthAssertionConstruct {
-		final String pattern;
-		final boolean isPositive; // true: (?<=X), false: (?<!X)
-		final CodePointSet lookSet;
-		final int captureConstructIndex; // -1 if the body wasn't wrapped in a capturing group
-
-		LookbehindConstruct(
-				String pattern, int startIndex, int endIndex, boolean isPositive,
-				CodePointSet lookSet, int captureConstructIndex) {
-			super(startIndex, endIndex);
-			this.pattern = pattern;
-			this.isPositive = isPositive;
-			this.lookSet = lookSet;
-			this.captureConstructIndex = captureConstructIndex;
-		}
-
-		@Override
-		void buildMatcher() {
-			// Always a real check -- unlike \b/\B, there's no "peek" side to statically classify
-			// away: the previous character is never known at compile time, so this never collapses
-			// to a no-op or a compile-time error the way WordBoundaryConstruct sometimes does.
-			new MatcherConstruct.LookbehindMatcherConstruct(this, isPositive, lookSet, captureConstructIndex);
-		}
-
-		/** The result of {@link #resolveSingleCodePointBody}: the body's statically-known
-		 *  code point set, plus which capturing group (if any) wraps the whole body. */
-		static final class SingleCodePointBody {
-			final CodePointSet codePoints;
-			final int captureConstructIndex; // -1 if none
-
-			SingleCodePointBody(CodePointSet codePoints, int captureConstructIndex) {
-				this.codePoints = codePoints;
-				this.captureConstructIndex = captureConstructIndex;
-			}
-		}
-
-		/**
-		 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s {@code
-		 * checkAssertions} doc, and {@code WordBoundaryConstruct#admittedInteriorExitPeekSet}'s own
-		 * doc for why the coarse catch-all entry point ({@code entryElse = this}) isn't safe for a
-		 * loop's own continue-vs-exit ambiguity check. Simpler than that method's version: a
-		 * lookbehind's truth depends ONLY on the prior character, never on peek at all, so once {@code
-		 * bodyLastCharSet} shows this assertion COULD hold right after a body iteration, exiting
-		 * through it is ambiguous with continuing for literally every peek code point; otherwise it
-		 * contributes nothing.
-		 */
-		@Override
-		final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
-			if (bodyLastCharSet == null) {
-				return null;
-			}
-			// first(), not entrySet(), so a violation short-circuits -- same technique as
-			// WordBoundaryConstruct's own isSubsetOf/isDisjointFrom helpers.
-			boolean subsetOfLookSet = !bodyLastCharSet.first((min, max) -> !lookSet.containsAll(min, max));
-			boolean couldHold = isPositive ? bodyLastCharSet.intersects(lookSet) : !subsetOfLookSet;
-			return couldHold ? universalCodePointSet() : new ArrayCodePointSet();
-		}
-	}
 
 	/**
 	 * The set of code points that could be the LAST one consumed if this construct matches here, if
@@ -2430,7 +773,7 @@ abstract class PatternConstruct {
 		return null;
 	}
 
-	private static CodePointSet singletonCodePointMap(int codePoint) {
+	static CodePointSet singletonCodePointMap(int codePoint) {
 		MutableCodePointSet result = new ArrayCodePointSet();
 		result.insert(codePoint, codePoint + 1);
 		return result;
@@ -2443,9 +786,9 @@ abstract class PatternConstruct {
 	// entry -- GraphemeClusterConstruct.buildEntryMap calls this once per \X compiled, and adding
 	// that huge a range from empty triggered enough ArrayCodePointSet growth to show up at ~9% of
 	// sampled allocation weight in a corpus with real \X usage).
-	private static final CodePointSet UNIVERSAL_CODE_POINT_SET = buildUniversalCodePointSet();
+	static final CodePointSet UNIVERSAL_CODE_POINT_SET = buildUniversalCodePointSet();
 
-	private static CodePointSet buildUniversalCodePointSet() {
+	static CodePointSet buildUniversalCodePointSet() {
 		CodePointSetBuilder result = CodePointSetBuilder.create();
 		result.append(0, CodePointSet.MAX_CODE_POINT + 1);
 		return result.build();
@@ -2458,7 +801,7 @@ abstract class PatternConstruct {
 		return UNIVERSAL_CODE_POINT_SET;
 	}
 
-	private static CodePointSet union(CodePointSet a, CodePointSet b) {
+	static CodePointSet union(CodePointSet a, CodePointSet b) {
 		MutableCodePointSet result = new ArrayCodePointSet();
 		result.insertAll(a);
 		result.insertAll(b);
@@ -2473,7 +816,7 @@ abstract class PatternConstruct {
 	 * all-or-nothing (one unknown candidate gives up entirely, rather than unioning what the KNOWN
 	 * candidates contribute) -- same conservative-fallback philosophy as {@code lastCharSet} itself.
 	 */
-	private static @Nullable CodePointSet unionLastCharSet(List<PatternConstruct> body) {
+	static @Nullable CodePointSet unionLastCharSet(List<PatternConstruct> body) {
 		if (body.size() == 1) {
 			// No copy needed: lastCharSet() always returns a fresh set (or an already-immutable one --
 			// see its own call sites), and every caller of unionLastCharSet's result only ever reads it
@@ -2597,60 +940,4 @@ abstract class PatternConstruct {
 		return null;
 	}
 
-	static final class EndConstruct extends PatternConstruct {
-		// A true cross-compile singleton, not one-per-Ll1Pattern.compile() call: every field this
-		// class ever touches is fixed at construction time and never subsequently written --
-		// `flags`/`dispatchEntrySet`/`dispatchFailedEntry` stay at their class defaults (nothing ever
-		// assigns them, since this construct never appears as a buildFlattenedChain candidate or a
-		// parsed node the parser stamps flags onto), `next` is never assigned (compile()'s own
-		// `matcher != null` guard -- already true the moment this constructor returns -- short-
-		// circuits before the `this.next = next` line ever runs), and `matcher`/`entryElse` are set
-		// once, right here, to values that don't depend on which pattern is being compiled. Nothing
-		// reads `startIndex`/`endIndex` back out for this construct either (it's never a chain
-		// candidate, so it never appears in an ambiguity error message). Sharing one instance (with
-		// its own already-built EndMatcherConstruct, likewise shared) across every compiled pattern
-		// removes a real, if small, per-compile allocation pair.
-		static final EndConstruct INSTANCE = new EndConstruct();
-
-		/** The pattern's terminal has no successor: like MatcherConstruct's own `next = this`, it is its own. */
-		@Override
-		PatternConstruct next() {
-			return this;
-		}
-
-		private EndConstruct() {
-			super(-1);
-			// "The pattern's grammar is satisfied here" -- reachable regardless of what character (or
-			// lack of one) comes next, matching ANY of them via entryElse rather than only registering
-			// the -1 "no more input" sentinel (see Matcher#peek()). That distinction matters for a
-			// loop's "should I exit" dispatch (built by merging its body's entry ranges with `next`'s,
-			// same as any other branch choice): a plain "-1 only" registration made an optional loop's
-			// exit path unreachable at any position with real leftover characters -- which is exactly
-			// what lookingAt()/find() need (a matched prefix with more string after it), as opposed to
-			// matches() (which needs the *whole region* consumed). Both are supported by the same
-			// compiled graph: EndMatcherConstruct.match() enforces the stricter check only when
-			// Matcher#requireFullMatch says to -- see its doc.
-			entryElse = this;
-			new EndMatcherConstruct(this);
-		}
-
-		@Override
-		boolean elseIsEndOfFind() {
-			return true;
-		}
-
-		@Override
-		void buildEntryMap(PatternConstruct next) {
-			// An EndConstruct has no "next" -- it's the sentinel marking the end of the whole pattern.
-			// entryMap is populated in the constructor (compile() never reaches here -- its `matcher
-			// != null` guard short-circuits immediately, since the constructor above also sets
-			// `matcher`), but is written this way for anyone reading buildEntryMap for its own sake.
-		}
-
-		@Override
-		void buildMatcher() {
-			// matcher is already set by the constructor -- compile() never reaches this (see its
-			// `if (matcher == null)` guard) but it's implemented for completeness/symmetry.
-		}
-	}
 }

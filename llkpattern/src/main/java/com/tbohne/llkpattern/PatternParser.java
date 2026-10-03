@@ -1,8 +1,7 @@
 package com.tbohne.llkpattern;
 
 import com.tbohne.llkpattern.NamedCharClass.*;
-import com.tbohne.llkpattern.PatternConstruct.*;
-import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
+import com.tbohne.llkpattern.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 

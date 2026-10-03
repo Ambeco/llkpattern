@@ -1,9 +1,9 @@
 package com.tbohne.llkpattern;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.tbohne.llkpattern.PatternConstruct.BoundaryConstruct.BoundaryEnum;
-import com.tbohne.llkpattern.PatternConstruct.ComplexCharacter;
-import com.tbohne.llkpattern.PatternConstruct.QuantifiedUnion;
+import com.tbohne.llkpattern.BoundaryConstruct.BoundaryEnum;
+import com.tbohne.llkpattern.ComplexCharacter;
+import com.tbohne.llkpattern.QuantifiedUnion;
 import java.util.ArrayList;
 import java.util.List;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -180,15 +180,15 @@ abstract class MatcherConstruct {
 	 * {@code entrySet} already has any CASE_INSENSITIVE folding baked in at chain-construction time
 	 * -- see {@code PatternConstruct#checkDisjoint} and this class's own doc.
 	 */
-	private static boolean containsEntry(@Nullable CodePointSet entrySet, int peeked) {
+	static boolean containsEntry(@Nullable CodePointSet entrySet, int peeked) {
 		return entrySet == null || (peeked != -1 && entrySet.contains(peeked));
 	}
 
-	private static int foldAsciiUpper(int codePoint) {
+	static int foldAsciiUpper(int codePoint) {
 		return (codePoint >= 'a' && codePoint <= 'z') ? codePoint - ('a' - 'A') : codePoint;
 	}
 
-	private static int foldAsciiLower(int codePoint) {
+	static int foldAsciiLower(int codePoint) {
 		return (codePoint >= 'A' && codePoint <= 'Z') ? codePoint + ('a' - 'A') : codePoint;
 	}
 
@@ -253,21 +253,6 @@ abstract class MatcherConstruct {
 	 * A zero-width forwarding node -- see {@link #aliasOrPassThrough}'s own doc for when this is
 	 * needed instead of a plain alias.
 	 */
-	static final class PassThroughMatcherConstruct extends MatcherConstruct {
-		PassThroughMatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
-			super(owner, next);
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			return next.match(matcher, peeked);
-		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			return MatcherConstruct.collectExitAssertionChain(next, chain);
-		}
-	}
 
 	// A single-successor node (the large majority of nodes below) just extends MatcherConstruct
 	// directly, via the (PatternConstruct, MatcherConstruct)/(int, MatcherConstruct) constructors --
@@ -292,27 +277,6 @@ abstract class MatcherConstruct {
 	 * literal single character, or {@code [...]}), then advances to whatever comes next. A pure
 	 * membership test, not a dispatch: every member character leads to the same single successor.
 	 */
-	static final class SingleCharMatcherConstruct extends MatcherConstruct {
-		final CodePointSet validRanges;
-
-		SingleCharMatcherConstruct(ComplexCharacter owner) {
-			super(owner, owner.next().matcher());
-			this.validRanges = owner.validRanges();
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is never a real member, even
-			// of a negated class whose fill would otherwise report it "in".
-			if (peeked == -1 || !validRanges.contains(peeked)) {
-				if (peeked == -1) {
-					matcher.hitEnd = true;
-				}
-				return false;
-			}
-			return next.match(matcher, matcher.consume1CodePoint());
-		}
-	}
 
 	/**
 	 * Matches {@code \X} -- one whole extended grapheme cluster starting at the current position,
@@ -324,21 +288,6 @@ abstract class MatcherConstruct {
 	 * the consumed cluster happens to reach {@code regionEnd} (a faithful port, not a considered
 	 * choice -- see that class's own doc for why).
 	 */
-	static final class GraphemeClusterMatcherConstruct extends MatcherConstruct {
-		GraphemeClusterMatcherConstruct(PatternConstruct.GraphemeClusterConstruct owner) {
-			super(owner, owner.next().matcher());
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			if (peeked == -1) {
-				matcher.hitEnd = true;
-				return false;
-			}
-			int boundary = GraphemeCluster.nextBoundary(matcher.input, matcher.pos, matcher.regionEnd);
-			return next.match(matcher, matcher.consumeCodeUnits(boundary - matcher.pos));
-		}
-	}
 
 	/**
 	 * Matches a fixed literal string exactly, then advances to whatever comes next. Compares the
@@ -356,150 +305,12 @@ abstract class MatcherConstruct {
 	 * A-Z}, so treating a surrogate pair as two separate {@code char}s compares correctly without
 	 * ever needing to decode one).
 	 */
-	static final class LiteralMatcherConstruct extends MatcherConstruct {
-		// A real String, not the CharSequence LiteralString.value itself may be (a zero-copy
-		// CharBuffer view, for a literal run PatternParser could read straight off the pattern
-		// text -- see that field's own doc): LiteralString.buildMatcher() calls value.toString()
-		// once per compile to get here, deliberately, so match() below -- called once per match
-		// *attempt*, not once per compile -- can use String#regionMatches, a real JIT intrinsic
-		// (vectorized comparison), plus String#charAt/length's direct field/array reads. A
-		// CharSequence-typed `value` here once meant a hand-written per-char loop instead (no
-		// intrinsic) for every case below, which measurably cost real match-time CPU on Android
-		// (java.nio.CharBuffer's own charAt/length aren't free either) for a win that only ever
-		// existed at compile time -- not worth paying for on every match attempt afterward.
-		final String value;
-
-		LiteralMatcherConstruct(PatternConstruct owner, String value) {
-			super(owner, owner.next().matcher());
-			this.value = value;
-		}
-
-		boolean matchBody(Matcher matcher, int peeked) {
-			int end = matcher.pos + value.length();
-			if (end > matcher.regionEnd) {
-				// Only a hit-end if the input that IS left agrees with value so far -- a mismatch
-				// before the end never reads that far (java.util.regex's Slice behaves the same).
-				if (remainingInputIsPrefixOfValue(matcher)) {
-					matcher.hitEnd = true;
-				}
-				return false;
-			}
-			boolean matches;
-			if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-				matches = matcher.input.regionMatches(matcher.pos, value, 0, value.length());
-			} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
-				matches = matcher.input.regionMatches(true, matcher.pos, value, 0, value.length());
-			} else {
-				matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value, value.length());
-			}
-			if (!matches) {
-				return false;
-			}
-			if (end < matcher.regionEnd
-					&& Character.isHighSurrogate(value.charAt(value.length() - 1))
-					&& Character.isLowSurrogate(matcher.input.charAt(end))) {
-				// `value` ends on an unpaired high surrogate, but the input keeps going with a real
-				// low surrogate right there -- the input's actual code point at this position is the
-				// combined supplementary one, not the lone surrogate `value` means to match. Every
-				// other position is safe (two positions' raw units can only agree if their
-				// surrogate-pairing structure agrees too, since pairing is a pure function of the
-				// unit values themselves); only right at `value`'s own end does the comparison above
-				// stop looking one unit before it would matter.
-				return false;
-			}
-			return next.match(matcher, matcher.consumeCodeUnits(value.length()));
-		}
-
-		private boolean remainingInputIsPrefixOfValue(Matcher matcher) {
-			int available = matcher.regionEnd - matcher.pos;
-			if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
-				return matcher.input.regionMatches(matcher.pos, value, 0, available);
-			} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
-				return matcher.input.regionMatches(true, matcher.pos, value, 0, available);
-			}
-			return asciiFoldRegionMatches(matcher.input, matcher.pos, value, available);
-		}
-
-		private static boolean asciiFoldRegionMatches(String input, int offset, String value, int len) {
-			for (int i = 0; i < len; i++) {
-				char a = input.charAt(offset + i);
-				char b = value.charAt(i);
-				if (a != b && foldAsciiUpper(a) != foldAsciiUpper(b)) {
-					return false;
-				}
-			}
-			return true;
-		}
-	}
 
 	/**
 	 * Matches whatever {@code captureConstructIndex}'s group actually captured last, then advances
 	 * to whatever comes next -- {@code \1}/{@code \k<name>}, resolved to a fixed
-	 * {@code captureConstructIndex} at parse time (see {@code PatternConstruct.BackReference}).
+	 * {@code captureConstructIndex} at parse time (see {@code BackReference}).
 	 */
-	static final class BackReferenceMatcherConstruct extends MatcherConstruct {
-		final int captureConstructIndex;
-
-		BackReferenceMatcherConstruct(PatternConstruct owner, int captureConstructIndex) {
-			super(owner, owner.next().matcher());
-			this.captureConstructIndex = captureConstructIndex;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			int base = captureConstructIndex * 2;
-			int start = matcher.captureGroups[base];
-			int end = matcher.captureGroups[base + 1];
-			if (start < 0) {
-				// The referenced group never participated in the match (e.g. it's in a sibling
-				// alternation branch that wasn't taken) -- java.util.regex treats an unparticipated
-				// group's backreference as never matching, not as matching the empty string. Nothing
-				// has been consumed yet, so -- as below -- it's safe to defer to failedEntry (this
-				// node's own loop-exit/next-union-candidate, when it's a chain candidate at all)
-				// rather than failing the whole match outright.
-				return failedEntry != null && failedEntry.match(matcher, peeked);
-			}
-			if (start == end) {
-				return next.match(matcher, peeked);
-			}
-			// Compared straight against matcher.input by index rather than materializing the
-			// captured text as its own String/CharSequence first -- there's nothing here that needs
-			// one, and a backreference can be matched repeatedly (e.g. inside a loop), so avoiding an
-			// allocation per comparison (not just per capture) matters more than it would for a
-			// one-shot use.
-			String input = matcher.input;
-			int i = start;
-			do {
-				int next = input.codePointAt(i);
-				int units = Character.isSupplementaryCodePoint(next) ? 2 : 1;
-				if (!codePointsMatch(next, peeked, flags)) {
-					// java.util.regex's BackRef checks the whole group's length against the input
-					// left BEFORE comparing anything, so a too-short remainder is a hit-end even if
-					// it would also have mismatched.
-					if (matcher.pos + (end - i) > matcher.regionEnd) {
-						matcher.hitEnd = true;
-					}
-					// A mismatch on the very FIRST code point of this attempt (i == start) hasn't
-					// consumed anything yet, so it's exactly as safe to defer to failedEntry (this
-					// backreference's own loop-exit, when it's compiled as a loop body part -- see
-					// QuantifiableConstruct.buildLoopMatcher's per-part dispatchFailedEntry wiring,
-					// unchanged by this) as an entrySet miss would have been -- entrySet only gates on
-					// the group's overall (possibly multi-valued) first-character set, e.g.
-					// `([ab])\1?`, so this is the actual, precise check that set was too coarse to
-					// make. A mismatch AFTER already consuming one or more matching code points of a
-					// multi-character captured group, by contrast, has irreversibly committed input
-					// this engine can't un-consume -- deliberately a hard failure here (`return
-					// false`), the exact same "no backtracking" limitation as a plain multi-character
-					// loop body failing mid-iteration (see KnownDivergenceTest's
-					// multiCharLoopBodyThatFailsMidIterationIsNotRetried, and `ab(ab)?` vs "aba").
-					return i == start && failedEntry != null && failedEntry.match(matcher, peeked);
-				}
-				peeked = matcher.consumeCodeUnits(units);
-				i += units;
-			} while (i < end);
-			return next.match(matcher, peeked);
-		}
-	}
 
 	/**
 	 * Length (in chars) of the line terminator starting at {@code input.charAt(index)}, or 0 if
@@ -510,7 +321,7 @@ abstract class MatcherConstruct {
 	 * "opaque bounds" stance -- see {@code Matcher#peekPrevious()}). Shared by {@link
 	 * BoundaryMatcherConstruct} ({@code \Z}) and {@link LineBoundaryMatcherConstruct} ({@code $}).
 	 */
-	private static int lineTerminatorLengthAt(Matcher matcher, int flags) {
+	static int lineTerminatorLengthAt(Matcher matcher, int flags) {
 		if (matcher.pos >= matcher.anchorEnd) {
 			return 0;
 		}
@@ -546,7 +357,7 @@ abstract class MatcherConstruct {
 	 * {@code floor} (the region start) or at/past {@code limit} (the region end). Used only by
 	 * {@link LineBoundaryMatcherConstruct} ({@code ^}) -- nothing else looks backward.
 	 */
-	private static int lineTerminatorLengthBefore(String input, int index, int floor, int limit, int flags) {
+	static int lineTerminatorLengthBefore(String input, int index, int floor, int limit, int flags) {
 		if (index <= floor) {
 			return 0;
 		}
@@ -578,47 +389,12 @@ abstract class MatcherConstruct {
 	 * "Line terminators" section: without {@code MULTILINE}, {@code $} and {@code \Z} coincide) --
 	 * shared by {@link BoundaryMatcherConstruct} and {@link LineBoundaryMatcherConstruct}.
 	 */
-	private static boolean matchesEndExceptTerminator(Matcher matcher, int flags) {
+	static boolean matchesEndExceptTerminator(Matcher matcher, int flags) {
 		if (matcher.pos == matcher.anchorEnd) {
 			return true;
 		}
 		int len = lineTerminatorLengthAt(matcher, flags);
 		return len > 0 && matcher.pos + len == matcher.anchorEnd;
-	}
-
-	static final class BoundaryMatcherConstruct extends MatcherConstruct {
-		final BoundaryEnum type;
-
-		BoundaryMatcherConstruct(PatternConstruct owner, BoundaryEnum type) {
-			super(owner, owner.next().matcher());
-			this.type = type;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			boolean matchesHere;
-			switch (type) {
-				case InputBegin: // \A: always the true start of input, MULTILINE has no effect.
-					matchesHere = matcher.pos == matcher.anchorStart;
-					break;
-				case InputEnd: // \z: always the true end of input, MULTILINE has no effect.
-					matchesHere = matcher.pos == matcher.anchorEnd;
-					break;
-				case InputEndExceptTerminator: // \Z
-					matchesHere = matchesEndExceptTerminator(matcher, flags);
-					break;
-				default:
-					// Every BoundaryEnum value is handled above -- this is only reachable if a new one
-					// is ever added without updating this switch.
-					throw new AssertionError("Unhandled BoundaryEnum: " + type);
-			}
-			if (matchesHere && type != BoundaryEnum.InputBegin) {
-				// \z only hits the end; \Z (like $) also could be broken by more input.
-				matcher.hitEnd = true;
-				matcher.requireEnd |= type == BoundaryEnum.InputEndExceptTerminator;
-			}
-			return matchesHere && next.match(matcher, peeked);
-		}
 	}
 
 	/**
@@ -634,9 +410,6 @@ abstract class MatcherConstruct {
 	 * pre-existing, differentially tested) logic rather than being rewritten in terms of this, to
 	 * keep this addition isolated from that hot, already-correct path.
 	 */
-	interface ZeroWidthAssertionGuard {
-		boolean holdsHere(Matcher matcher, int peeked);
-	}
 
 	/**
 	 * Shared base for the {@link ZeroWidthAssertionGuard} implementers whose own {@link
@@ -652,18 +425,6 @@ abstract class MatcherConstruct {
 	 * all four subclasses dispatch to the exact same compiled method -- an attempt to reduce that
 	 * call site's megamorphism, not yet known whether it actually helps.
 	 */
-	static abstract class ZeroWidthAssertionMatcherConstruct extends MatcherConstruct
-			implements ZeroWidthAssertionGuard {
-		ZeroWidthAssertionMatcherConstruct(PatternConstruct owner, MatcherConstruct next) {
-			super(owner, next);
-		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			chain.add(this);
-			return MatcherConstruct.collectExitAssertionChain(next, chain);
-		}
-	}
 
 	/**
 	 * {@code ^} (line begin) / {@code $} (line end): without {@code MULTILINE}, exactly {@code \A}/
@@ -673,68 +434,6 @@ abstract class MatcherConstruct {
 	 * line terminator ({@link #lineTerminatorLengthAt}). See design.md's "Boundary matching"
 	 * section.
 	 */
-	static final class LineBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
-		final boolean isLineBegin; // true: ^, false: $
-
-		LineBoundaryMatcherConstruct(PatternConstruct owner, boolean isLineBegin) {
-			super(owner, owner.next().matcher());
-			this.isLineBegin = isLineBegin;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			boolean matchesHere;
-			boolean atEnd = false;
-			if (isLineBegin) {
-				if ((flags & Ll1Pattern.MULTILINE) != 0 && matcher.pos == matcher.anchorEnd) {
-					// java.util.regex never matches a MULTILINE ^ at the end of input (even after a
-					// terminator, or in empty input), and counts the attempt as hitting the end.
-					matcher.hitEnd = true;
-					return false;
-				}
-				matchesHere = matcher.pos == matcher.anchorStart
-						|| ((flags & Ll1Pattern.MULTILINE) != 0
-								&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.anchorStart, matcher.anchorEnd, flags) > 0);
-			} else {
-				// Without MULTILINE every $ match is at the end or before the final terminator, and
-				// java.util.regex flags both; with it only an actual end-of-input match is flagged.
-				if ((flags & Ll1Pattern.MULTILINE) == 0) {
-					matchesHere = matchesEndExceptTerminator(matcher, flags);
-					atEnd = matchesHere;
-				} else {
-					atEnd = matcher.pos == matcher.anchorEnd;
-					matchesHere = atEnd || lineTerminatorLengthAt(matcher, flags) > 0;
-				}
-			}
-			if (atEnd) {
-				matcher.hitEnd = true;
-				matcher.requireEnd = true;
-			}
-			return matchesHere && next.match(matcher, peeked);
-		}
-
-		/**
-		 * As {@link #matchBody}, but only the "does ^/$ hold here" question -- no {@code hitEnd}/
-		 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
-		 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
-		 * logic.
-		 */
-		@Override
-		public boolean holdsHere(Matcher matcher, int peeked) {
-			if (isLineBegin) {
-				if ((flags & Ll1Pattern.MULTILINE) != 0 && matcher.pos == matcher.anchorEnd) {
-					return false;
-				}
-				return matcher.pos == matcher.anchorStart
-						|| ((flags & Ll1Pattern.MULTILINE) != 0
-								&& lineTerminatorLengthBefore(matcher.input, matcher.pos, matcher.anchorStart, matcher.anchorEnd, flags) > 0);
-			}
-			if ((flags & Ll1Pattern.MULTILINE) == 0) {
-				return matchesEndExceptTerminator(matcher, flags);
-			}
-			return matcher.pos == matcher.anchorEnd || lineTerminatorLengthAt(matcher, flags) > 0;
-		}
-	}
 
 	/**
 	 * {@code \b} (word boundary) / {@code \B} (non-word-boundary): unlike every other construct,
@@ -749,147 +448,6 @@ abstract class MatcherConstruct {
 	 * constructing one of these) -- this class just interprets whichever of the two enums below ended
 	 * up not {@code Unchecked}.
 	 */
-	static final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
-		/** Whether {@code matchBody()} needs to independently check {@code matcher.peekPrevious()}. */
-		enum PriorWordBoundaryMatchType {
-			Unchecked,
-			PriorMustBeWord,
-			PriorMustBeNonWord
-		}
-
-		/**
-		 * Whether/how {@code matchBody()} needs to check {@code peeked} -- either against a fixed
-		 * word-ness (when the OTHER side, the preceding character, is statically known instead), or
-		 * against {@code matcher.peekPrevious()}'s actual word-ness (when neither side is statically
-		 * known).
-		 */
-		enum PeekWordBoundaryMatchType {
-			Unchecked,
-			PeekMustBeWord,
-			PeekMustNotBeWord,
-			PeekMustBeSameAsPrior,
-			PeekMustBeOppositePrior
-		}
-
-		final CodePointSet wordSet;
-		final PriorWordBoundaryMatchType priorMustBeWord;
-		final PeekWordBoundaryMatchType peekMustBeWord;
-		final boolean isWordBoundary; // true: \b, false: \B
-
-		WordBoundaryMatcherConstruct(
-				PatternConstruct owner,
-				CodePointSet wordSet,
-				PriorWordBoundaryMatchType priorMustBeWord,
-				PeekWordBoundaryMatchType peekMustBeWord,
-				boolean isWordBoundary) {
-			super(owner, owner.next().matcher());
-			if (priorMustBeWord == PriorWordBoundaryMatchType.Unchecked
-					&& peekMustBeWord == PeekWordBoundaryMatchType.Unchecked) {
-				// WordBoundaryConstruct.buildMatcher() never builds one of these with both sides
-				// Unchecked -- that's the fully-statically-known case, resolved at compile time into
-				// a compile error or a no-op pass-through instead of a WordBoundaryMatcherConstruct.
-				throw new IllegalStateException(
-						"WordBoundaryMatcherConstruct built with neither side checked");
-			}
-			this.wordSet = wordSet;
-			this.priorMustBeWord = priorMustBeWord;
-			this.peekMustBeWord = peekMustBeWord;
-			this.isWordBoundary = isWordBoundary;
-		}
-
-		// Static, with `wordSet` passed as a parameter, rather than an instance method reading
-		// `this.wordSet` -- part of the same experiment as ArrayCodePointSet#floorIndex (see its own
-		// doc); no measurable difference found here either (see notes.md's dated entry).
-		static boolean isWordChar(CodePointSet wordSet, int codePoint) {
-			return codePoint >= 0 && wordSet.contains(codePoint);
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			// peekPrevious() is only actually called when some check below needs it -- checkPrior
-			// is exactly that: either the prior side has a fixed target of its own, or the peek
-			// side needs to compare against it. checkPeek is the mirror image, for symmetry/clarity
-			// (peeked itself is already available for free, but isWordChar(peeked) is not free).
-			int ahead = matcher.peekForBoundary();
-			if (ahead == -1) {
-				// java.util.regex's Bound looks at the character after the position even when this
-				// engine's compile-time classification only needs the one before it.
-				matcher.hitEnd = true;
-				matcher.requireEnd = true;
-			}
-			if (peeked == -1 && ahead != -1) {
-				// Transparent bounds, at regionEnd: the compile-time classification below assumes the
-				// character next consumed is the one at pos, but nothing can consume past the region, so
-				// test the real boundary here; whatever follows then fails (and flags hitEnd) on its own.
-				boolean boundary = isWordChar(wordSet, matcher.peekPrevious()) != isWordChar(wordSet, ahead);
-				return boundary == isWordBoundary && next.match(matcher, peeked);
-			}
-			boolean checkPrior = priorMustBeWord !=PriorWordBoundaryMatchType.Unchecked
-					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
-					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;
-			boolean priorIsWord = checkPrior && isWordChar(wordSet, matcher.peekPrevious());
-			boolean checkPeek = peekMustBeWord != PeekWordBoundaryMatchType.Unchecked;
-			boolean peekIsWord = checkPeek && isWordChar(wordSet, ahead);
-
-			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
-				return false;
-			}
-			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeNonWord && priorIsWord) {
-				return false;
-			}
-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeWord && !peekIsWord) {
-				return false;
-			}
-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustNotBeWord && peekIsWord) {
-				return false;
-			}
-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior && peekIsWord != priorIsWord) {
-				return false;
-			}
-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior && peekIsWord == priorIsWord) {
-				return false;
-			}
-			return next.match(matcher, peeked);
-		}
-
-		/**
-		 * As {@link #matchBody}, but only the "does \b/\B hold here" question -- no {@code hitEnd}/
-		 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
-		 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
-		 * logic.
-		 */
-		@Override
-		public boolean holdsHere(Matcher matcher, int peeked) {
-			int ahead = matcher.peekForBoundary();
-			if (peeked == -1 && ahead != -1) {
-				boolean boundary = isWordChar(wordSet, matcher.peekPrevious()) != isWordChar(wordSet, ahead);
-				return boundary == isWordBoundary;
-			}
-			boolean checkPrior = priorMustBeWord != PriorWordBoundaryMatchType.Unchecked
-					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior
-					|| peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeOppositePrior;
-			boolean priorIsWord = checkPrior && isWordChar(wordSet, matcher.peekPrevious());
-			boolean checkPeek = peekMustBeWord != PeekWordBoundaryMatchType.Unchecked;
-			boolean peekIsWord = checkPeek && isWordChar(wordSet, ahead);
-
-			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeWord && !priorIsWord) {
-				return false;
-			}
-			if (priorMustBeWord == PriorWordBoundaryMatchType.PriorMustBeNonWord && priorIsWord) {
-				return false;
-			}
-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeWord && !peekIsWord) {
-				return false;
-			}
-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustNotBeWord && peekIsWord) {
-				return false;
-			}
-			if (peekMustBeWord == PeekWordBoundaryMatchType.PeekMustBeSameAsPrior && peekIsWord != priorIsWord) {
-				return false;
-			}
-			return peekMustBeWord != PeekWordBoundaryMatchType.PeekMustBeOppositePrior || peekIsWord != priorIsWord;
-		}
-	}
 
 	/**
 	 * A {@code \b}/{@code \B} whose both neighbours were statically known and always satisfy it
@@ -898,38 +456,10 @@ abstract class MatcherConstruct {
 	 * character can't actually be consumed (nothing consumes past the region) and the real next
 	 * character decides whether {@code java.util.regex} gets as far as flagging {@code hitEnd}.
 	 */
-	static final class ElidedWordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
-		final CodePointSet wordSet;
-		final boolean isWordBoundary; // true: \b, false: \B
-
-		ElidedWordBoundaryMatcherConstruct(PatternConstruct owner, CodePointSet wordSet, boolean isWordBoundary) {
-			super(owner, owner.next().matcher());
-			this.wordSet = wordSet;
-			this.isWordBoundary = isWordBoundary;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			return holdsHere(matcher, peeked) && next.match(matcher, peeked);
-		}
-
-		@Override
-		public boolean holdsHere(Matcher matcher, int peeked) {
-			if (peeked == -1) {
-				int ahead = matcher.peekForBoundary();
-				if (ahead != -1) {
-					boolean boundary = WordBoundaryMatcherConstruct.isWordChar(wordSet, matcher.peekPrevious())
-							!= WordBoundaryMatcherConstruct.isWordChar(wordSet, ahead);
-					return boundary == isWordBoundary;
-				}
-			}
-			return true;
-		}
-	}
 
 	/**
 	 * {@code (?<=X)}/{@code (?<!X)}, restricted at parse time to a body {@code X} that always
-	 * matches exactly one code point -- see {@code PatternConstruct.LookbehindConstruct}'s own doc
+	 * matches exactly one code point -- see {@code LookbehindConstruct}'s own doc
 	 * and design.md's "Boundary matching" section. Unlike {@code WordBoundaryMatcherConstruct}, this
 	 * never sets {@code hitEnd}/{@code requireEnd}: it only ever looks backward via {@code
 	 * matcher.peekPrevious()}, so (unlike \b/\B, which also peeks forward) nothing about its result
@@ -941,50 +471,9 @@ abstract class MatcherConstruct {
 	 * there's no possibility of a partial (begin-without-end) write the way a general capturing
 	 * construct has to guard against.
 	 */
-	static final class LookbehindMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
-		final boolean isPositive; // true: (?<=X), false: (?<!X)
-		final CodePointSet lookSet;
-		final int captureConstructIndex; // -1 if the body wasn't wrapped in a capturing group
-
-		LookbehindMatcherConstruct(
-				PatternConstruct owner, boolean isPositive, CodePointSet lookSet, int captureConstructIndex) {
-			super(owner, owner.next().matcher());
-			this.isPositive = isPositive;
-			this.lookSet = lookSet;
-			this.captureConstructIndex = captureConstructIndex;
-		}
-
-		private boolean holds(int prior) {
-			return (prior != -1 && lookSet.contains(prior)) == isPositive;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			int prior = matcher.peekPrevious();
-			if (!holds(prior)) {
-				return false;
-			}
-			if (captureConstructIndex >= 0) {
-				int base = captureConstructIndex * 2;
-				matcher.captureGroups[base] = matcher.pos - Character.charCount(prior);
-				matcher.captureGroups[base + 1] = matcher.pos;
-			}
-			return next.match(matcher, peeked);
-		}
-
-		/**
-		 * As {@link #matchBody}, but only the "does this lookbehind hold here" question -- no
-		 * capture-group write, no dispatch to {@code next}. See {@link ZeroWidthAssertionGuard}'s own
-		 * doc for why this duplicates rather than shares matchBody's logic.
-		 */
-		@Override
-		public boolean holdsHere(Matcher matcher, int peeked) {
-			return holds(matcher.peekPrevious());
-		}
-	}
 
 	/**
-	 * {@code \b{g}} (grapheme boundary) -- see {@code PatternConstruct.GraphemeBoundaryConstruct}'s
+	 * {@code \b{g}} (grapheme boundary) -- see {@code GraphemeBoundaryConstruct}'s
 	 * own doc and design.md's "Extended grapheme clusters" section. Unlike {@code
 	 * WordBoundaryMatcherConstruct}, there's no statically-known-neighbor optimization: the general
 	 * check is always run. Three positions are handled without ever calling {@link
@@ -994,41 +483,6 @@ abstract class MatcherConstruct {
 	 * always change a grapheme-boundary answer, unlike a 1-code-point lookbehind, which only ever
 	 * looks backward); anywhere strictly between the two delegates to the real check.
 	 */
-	static final class GraphemeBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
-		GraphemeBoundaryMatcherConstruct(PatternConstruct owner) {
-			super(owner, owner.next().matcher());
-		}
-
-		private static boolean holds(Matcher matcher) {
-			if (matcher.pos <= matcher.lookFloor) {
-				return true;
-			}
-			if (matcher.pos < matcher.lookCeil) {
-				return GraphemeCluster.isBoundary(matcher.input, matcher.pos, matcher.lookFloor);
-			}
-			return true;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			if (matcher.pos >= matcher.lookCeil) {
-				matcher.hitEnd = true;
-				matcher.requireEnd = true;
-			}
-			return holds(matcher) && next.match(matcher, peeked);
-		}
-
-		/**
-		 * As {@link #matchBody}, but only the "does \b{g} hold here" question -- no {@code hitEnd}/
-		 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
-		 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
-		 * logic.
-		 */
-		@Override
-		public boolean holdsHere(Matcher matcher, int peeked) {
-			return holds(matcher);
-		}
-	}
 
 	/**
 	 * A loop's own "continue or stop at max" node, used for a GREEDY loop and also for a reluctant
@@ -1048,7 +502,7 @@ abstract class MatcherConstruct {
 	 *
 	 * <p>Kept as its own top-level class rather than folded into the body chain directly, because
 	 * its "continue" successor -- the body chain's own head -- genuinely isn't known until AFTER
-	 * this node has already self-registered onto the {@link PatternConstruct.LoopBackMarker} it
+	 * this node has already self-registered onto the {@link LoopBackMarker} it
 	 * owns (breaking the construction-time cycle every loop body creates: the body's own compiled
 	 * matcher loops back to this very node). Rather than adding a mutable field to sidestep that,
 	 * {@code continuation} is a plain {@code final PatternConstruct} reference, and {@code
@@ -1058,36 +512,6 @@ abstract class MatcherConstruct {
 	 * that's allowed to be filled in after the fact) instead of inventing a second one scoped to
 	 * this class.
 	 */
-	static final class LoopMatcherConstruct extends MatcherConstruct {
-		final int quantifiableIndex;
-		final int max;
-		final PatternConstruct continuation;
-		final MatcherConstruct exitNode;
-
-		LoopMatcherConstruct(
-				PatternConstruct owner, int quantifiableIndex, int max,
-				PatternConstruct continuation, MatcherConstruct exitNode) {
-			super(owner);
-			this.quantifiableIndex = quantifiableIndex;
-			this.max = max;
-			this.continuation = continuation;
-			this.exitNode = exitNode;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			// Unconditional: reaching this node at all means a body pass (the very first, or another
-			// re-check after a prior successful one) has just finished, so this always represents one
-			// more completed iteration -- regardless of which way the choice below then decides to go.
-			int loopCount = ++matcher.quantifiableCounts[quantifiableIndex];
-			return loopCount < max
-					? castNonNull(continuation.matcher).match(matcher, peeked)
-					: exitNode.match(matcher, peeked);
-		}
-
-		@VisibleForTesting
-		MatcherConstruct getContinuation() { return castNonNull(continuation.matcher); }
-	}
 
 	/**
 	 * EXPERIMENT (2026-09-24): a loop's own externally-visible entry point, used INSTEAD OF the body
@@ -1108,16 +532,6 @@ abstract class MatcherConstruct {
 	 * QuantifiableConstruct.buildLoopMatcher}'s {@code continueMarker.matcher = bodyHead}) still goes
 	 * straight to it, since THAT path has no such outer guarantee.
 	 */
-	static final class LoopFirstEntryMatcherConstruct extends MatcherConstruct {
-		LoopFirstEntryMatcherConstruct(int flags, MatcherConstruct bodyHead) {
-			super(flags, bodyHead);
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			return next.matchBody(matcher, peeked);
-		}
-	}
 
 	/**
 	 * The gate for a union branch that can END the whole pattern without consuming anything (a
@@ -1131,25 +545,6 @@ abstract class MatcherConstruct {
 	 * matches()}, like {@code java.util.regex}. Its own {@code entrySet} is {@code null} (this node
 	 * does the gating in {@link #matchBody}), and the branch behind it is compiled ungated.
 	 */
-	static final class EndOfFindGateMatcherConstruct extends MatcherConstruct {
-		final CodePointSet explicit;
-		final @Nullable MatcherConstruct fallback;
-
-		EndOfFindGateMatcherConstruct(
-				int flags, CodePointSet explicit, MatcherConstruct branch, @Nullable MatcherConstruct fallback) {
-			super(flags, branch);
-			this.explicit = explicit;
-			this.fallback = fallback;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			if (peeked == -1 || !matcher.requireFullMatch || explicit.contains(peeked)) {
-				return next.match(matcher, peeked);
-			}
-			return fallback != null && fallback.match(matcher, peeked);
-		}
-	}
 
 	/**
 	 * A loop's own "stop iterating" node -- reached either because the body chain (see {@link
@@ -1161,41 +556,6 @@ abstract class MatcherConstruct {
 	 * failedEntry} (always {@code null}) -- every code-point decision that used to live in a
 	 * combined loop/exit dispatch table now lives entirely in the body chain's own entry checks.
 	 */
-	static final class LoopMatcherExit extends MatcherConstruct {
-		final int quantifiableIndex;
-		final int min;
-		// True iff the loop's TRUE min (before ReluctantLoopMatcherConstruct's own "+1" counting
-		// shift, if this exit belongs to a reluctant-safe loop) is 0 -- kept as its own field, rather
-		// than inferred from `min == 0` directly, because `min` itself may already be shifted (see
-		// QuantifiableConstruct.buildLoopMatcher), and exitIsPureEnd needs to ask about the real,
-		// unshifted quantifier semantics regardless of which counting convention this exit's owning
-		// loop happens to use for its own runtime check below.
-		final boolean minIsZero;
-
-		LoopMatcherExit(int flags, int quantifiableIndex, int min, boolean minIsZero, MatcherConstruct next) {
-			super(flags, next);
-			this.quantifiableIndex = quantifiableIndex;
-			this.min = min;
-			this.minIsZero = minIsZero;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			if (matcher.quantifiableCounts[quantifiableIndex] < min) {
-				return false;
-			}
-			// Never backtracks, so a failed attempt aborts the whole match rather than retrying
-			// with stale counter state -- this reset (only on the successful exit path) is enough
-			// to guarantee the slot is already 0 whenever this loop is next freshly (re-)entered.
-			matcher.quantifiableCounts[quantifiableIndex] = 0;
-			return next.match(matcher, peeked);
-		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			return minIsZero && MatcherConstruct.collectExitAssertionChain(next, chain);
-		}
-	}
 
 	/**
 	 * The reluctant counterpart to {@link LoopMatcherConstruct}, used INSTEAD of it (never both)
@@ -1235,75 +595,6 @@ abstract class MatcherConstruct {
 	 * BEFORE this node commits to the exit, so a false result here just means try again -- continue
 	 * greedily like any other not-yet-provable-safe iteration, never a rollback of anything.
 	 */
-	static final class ReluctantLoopMatcherConstruct extends MatcherConstruct {
-		final int quantifiableIndex;
-		final int shiftedMin;
-		final int shiftedMax;
-		final PatternConstruct continuation;
-		final MatcherConstruct exitNode;
-		final @Nullable List<ZeroWidthAssertionGuard> exitAssertionChain;
-
-		ReluctantLoopMatcherConstruct(
-				PatternConstruct owner, int quantifiableIndex, int shiftedMin, int shiftedMax,
-				PatternConstruct continuation, MatcherConstruct exitNode,
-				@Nullable List<ZeroWidthAssertionGuard> exitAssertionChain) {
-			super(owner);
-			this.quantifiableIndex = quantifiableIndex;
-			this.shiftedMin = shiftedMin;
-			this.shiftedMax = shiftedMax;
-			this.continuation = continuation;
-			this.exitNode = exitNode;
-			this.exitAssertionChain = exitAssertionChain;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			// Unconditional on every visit -- see class doc: this represents "one more visit to this
-			// decision point", not "one more completed iteration" (that's what the +1 shift in
-			// shiftedMin/shiftedMax corrects for).
-			int count = ++matcher.quantifiableCounts[quantifiableIndex];
-			// Under requireFullMatch (matches()), exiting is still safe once pos already reached
-			// regionEnd -- exitAssertionChain(next) already guarantees the rest of the pattern needs no
-			// further input once its own guards (if any) hold, so if there's none left to require,
-			// stopping here is exactly what a backtracking engine's reluctant loop does too, and (unlike
-			// letting the body run one more, doomed attempt) avoids spuriously peeking past the end and
-			// setting Matcher#hitEnd. This condition, if true, is checked BEFORE the ordinary max
-			// comparison below on purpose: since min <= max always holds (so shiftedMin <= shiftedMax
-			// too), whenever count has already reached shiftedMax this condition is either already true
-			// (exit either way) or blocked only by requireFullMatch/regionEnd/an unsatisfied assertion
-			// guard, in which case the max comparison below forces exactly the same exitNode call anyway
-			// (which then independently re-derives and correctly fails on the same unsatisfied guard, if
-			// that's what's blocking) -- so the two branches always agree on the max-reached case, and
-			// checking this one first just lets a reluctant loop stop before max when it can.
-			if (count >= shiftedMin && (!matcher.requireFullMatch || matcher.pos == matcher.regionEnd)
-					&& assertionChainHolds(matcher, peeked)) {
-				return exitNode.match(matcher, peeked);
-			}
-			return count < shiftedMax
-					? castNonNull(continuation.matcher).match(matcher, peeked)
-					: exitNode.match(matcher, peeked);
-		}
-
-		private boolean assertionChainHolds(Matcher matcher, int peeked) {
-			if (exitAssertionChain == null) {
-				return true;
-			}
-			for (ZeroWidthAssertionGuard guard : exitAssertionChain) {
-				if (!guard.holdsHere(matcher, peeked)) {
-					return false;
-				}
-			}
-			return true;
-		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			return MatcherConstruct.collectExitAssertionChain(exitNode, chain);
-		}
-
-		@VisibleForTesting
-		MatcherConstruct getContinuation() { return castNonNull(continuation.matcher); }
-	}
 
 	/**
 	 * Conservative check for whether {@code node} is a zero-width path that unconditionally reaches
@@ -1333,7 +624,7 @@ abstract class MatcherConstruct {
 		return collectExitAssertionChain(this, chain) ? chain : null;
 	}
 
-	private static boolean collectExitAssertionChain(
+	static boolean collectExitAssertionChain(
 			MatcherConstruct node, List<ZeroWidthAssertionGuard> chain) {
 		// Checked FIRST, before any type-specific dispatch: a chain-candidate node's own entrySet
 		// (e.g. the head of a following `b?`'s own body, OR a PassThroughMatcherConstruct standing in
@@ -1359,61 +650,6 @@ abstract class MatcherConstruct {
 		return node.collectExitAssertionChain(chain);
 	}
 
-	static final class BeginCaptureMatcherConstruct extends MatcherConstruct {
-		final int captureConstructIndex;
-
-		BeginCaptureMatcherConstruct(PatternConstruct owner, int captureConstructIndex, MatcherConstruct next) {
-			super(owner, next);
-			this.captureConstructIndex = captureConstructIndex;
-		}
-
-		/**
-		 * Internal (non-self-registering) variant used by a capturing loop's shared "begin the next
-		 * iteration" node -- see {@code QuantifiableConstruct.buildLoopMatcher}.
-		 */
-		BeginCaptureMatcherConstruct(int captureConstructIndex, int flags, MatcherConstruct next) {
-			super(flags, next);
-			this.captureConstructIndex = captureConstructIndex;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			int base = captureConstructIndex * 2;
-			matcher.captureGroups[base] = matcher.pos;
-			// Reset the end slot too: re-entering a capture inside a loop must fully overwrite the
-			// previous iteration's entry, not just its start, or a stale end from that earlier
-			// iteration would linger if (impossibly, given this engine's forward-only structure) this
-			// iteration's own EndCaptureMatcherConstruct somehow didn't run.
-			matcher.captureGroups[base + 1] = -1;
-			return next.match(matcher, peeked);
-		}
-	}
-
-	static final class EndCaptureMatcherConstruct extends MatcherConstruct {
-		final int captureConstructIndex;
-
-		EndCaptureMatcherConstruct(PatternConstruct.CaptureEndMarker owner, int captureConstructIndex, MatcherConstruct next) {
-			super(owner, next);
-			this.captureConstructIndex = captureConstructIndex;
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			// Just records the end index -- no substring materialized here anymore. The captured
-			// text is built lazily by Matcher#group(int), only if a caller actually asks for it (see
-			// allocation sampling in benchmarks/Intel-i7-9750H_llkMatch_alloc_sampling.txt), and
-			// BackReferenceMatcherConstruct above compares directly against these indices without
-			// ever needing a String/CharSequence view at all.
-			matcher.captureGroups[captureConstructIndex * 2 + 1] = matcher.pos;
-			return next.match(matcher, peeked);
-		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			return MatcherConstruct.collectExitAssertionChain(next, chain);
-		}
-	}
-
 	/**
 	 * Reached once the whole pattern has matched. Whether that's actually a *complete* match
 	 * depends on which Matcher operation is running: {@code matches()} requires consuming the
@@ -1423,19 +659,4 @@ abstract class MatcherConstruct {
 	 * satisfied, not how much of the region is left over. Has no successor at all, so it extends
 	 * neither Single- nor Multi-dispatching.
 	 */
-	static final class EndMatcherConstruct extends MatcherConstruct {
-		EndMatcherConstruct(PatternConstruct.EndConstruct owner) {
-			super(owner);
-		}
-
-		@Override
-		boolean matchBody(Matcher matcher, int peeked) {
-			return !matcher.requireFullMatch || matcher.pos == matcher.regionEnd;
-		}
-
-		@Override
-		final boolean collectExitAssertionChain(List<ZeroWidthAssertionGuard> chain) {
-			return true;
-		}
-	}
 }

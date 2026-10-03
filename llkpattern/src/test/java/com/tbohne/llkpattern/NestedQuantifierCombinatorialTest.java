@@ -20,7 +20,7 @@ import org.junit.runners.JUnit4;
  * {@code java.util.regex} as an oracle -- the scraped-corpus differential harness already does
  * that job); it only proves the guard added for "(a?)+"-style nullable loop bodies is reachable
  * for a wide range of shapes and never escapes as some other Throwable (a stack overflow, an NPE,
- * or the internal {@code PatternConstruct.EntryPointCycleException} itself leaking uncaught).
+ * or the internal {@code EntryPointCycleException} itself leaking uncaught).
  *
  * <p>Kept deliberately small (low hundreds of patterns, each just a compile -- no matching) so it
  * stays fast enough to run "frequently" per the project owner's stated testing preference, rather

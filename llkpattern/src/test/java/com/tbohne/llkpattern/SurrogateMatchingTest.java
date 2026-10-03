@@ -13,7 +13,7 @@ import org.junit.runners.JUnit4;
  * genuinely lone (unpaired) surrogate as its own character.
  *
  * <p>This is NOT a case where llk deliberately deviates from {@code java.util.regex} -- it was a
- * real bug (see {@link Matcher#find(int)}, and {@code PatternConstruct.ComplexCharacter#validRanges()})
+ * real bug (see {@link Matcher#find(int)}, and {@code ComplexCharacter#validRanges()})
  * fixed 2026-09-06. Verified directly against the installed JDK before fixing, since two different
  * AI assistants disagreed about the exact rule (one claimed a {@code x-brace} code-point escape
  * range behaves differently from a 16-bit escape range, a disjunction, or {@code p Cs} here; the

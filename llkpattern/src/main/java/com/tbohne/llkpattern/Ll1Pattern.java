@@ -46,8 +46,8 @@ public final class Ll1Pattern {
 		PatternConstruct parsed = parser.parse();
 		MatcherConstruct compiled;
 		try {
-			compiled = parsed.compile(PatternConstruct.EndConstruct.INSTANCE);
-		} catch (PatternConstruct.EntryPointCycleException e) {
+			compiled = parsed.compile(EndConstruct.INSTANCE);
+		} catch (EntryPointCycleException e) {
 			// See design.md's "Entry-point computation vs. matcher compilation" section: this fires
 			// only for a quantified construct whose entire body can match zero characters (e.g.
 			// "(a?)+"), which also makes it an infinite-loop hazard in its own right.
@@ -76,16 +76,16 @@ public final class Ll1Pattern {
 	// scanning, so a failed find() there isn't a hit-end (see Matcher#find).
 	private static boolean startsWithBeginAnchor(PatternConstruct parsed) {
 		// PatternParser#parse() unwraps a single-alternative root, so that's a bare Sequence here.
-		if (!(parsed instanceof PatternConstruct.Sequence)) {
+		if (!(parsed instanceof Sequence)) {
 			return false;
 		}
-		PatternConstruct first = ((PatternConstruct.Sequence) parsed).patterns.get(0);
-		if (first instanceof PatternConstruct.BoundaryConstruct) {
-			return ((PatternConstruct.BoundaryConstruct) first).type
-					== PatternConstruct.BoundaryConstruct.BoundaryEnum.InputBegin;
+		PatternConstruct first = ((Sequence) parsed).patterns.get(0);
+		if (first instanceof BoundaryConstruct) {
+			return ((BoundaryConstruct) first).type
+					== BoundaryConstruct.BoundaryEnum.InputBegin;
 		}
-		return first instanceof PatternConstruct.LineBoundaryConstruct
-				&& ((PatternConstruct.LineBoundaryConstruct) first).isLineBegin
+		return first instanceof LineBoundaryConstruct
+				&& ((LineBoundaryConstruct) first).isLineBegin
 				&& (first.flags & MULTILINE) == 0;
 	}
 

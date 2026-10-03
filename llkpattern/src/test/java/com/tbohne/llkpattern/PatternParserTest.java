@@ -7,8 +7,8 @@ import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertThrows;
 
-import com.tbohne.llkpattern.MatcherConstruct.EndMatcherConstruct;
-import com.tbohne.llkpattern.MatcherConstruct.LiteralMatcherConstruct;
+import com.tbohne.llkpattern.EndMatcherConstruct;
+import com.tbohne.llkpattern.LiteralMatcherConstruct;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -79,10 +79,10 @@ public class PatternParserTest {
 		// successor regardless of which member character was seen -- so chaining is via `.getNext()`.
 		MatcherConstruct compiled = compile("[" + A + "][" + B + "]");
 
-		assertThat(compiled, instanceOf(MatcherConstruct.SingleCharMatcherConstruct.class));
-		MatcherConstruct second = ((MatcherConstruct.SingleCharMatcherConstruct) compiled).getNext();
-		assertThat(second, instanceOf(MatcherConstruct.SingleCharMatcherConstruct.class));
-		assertThat(((MatcherConstruct.SingleCharMatcherConstruct) second).getNext(), instanceOf(EndMatcherConstruct.class));
+		assertThat(compiled, instanceOf(SingleCharMatcherConstruct.class));
+		MatcherConstruct second = ((SingleCharMatcherConstruct) compiled).getNext();
+		assertThat(second, instanceOf(SingleCharMatcherConstruct.class));
+		assertThat(((SingleCharMatcherConstruct) second).getNext(), instanceOf(EndMatcherConstruct.class));
 	}
 
 	@Test

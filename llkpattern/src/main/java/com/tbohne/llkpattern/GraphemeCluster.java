@@ -96,7 +96,7 @@ final class GraphemeCluster {
 	 * is assumed to already be a boundary) and never scanning past {@code limit} -- a direct port
 	 * of {@code jdk.internal.util.regex.Grapheme#nextBoundary}. A forward-only scan, so it fits
 	 * this engine's single-pass model with no architectural change: see {@code
-	 * MatcherConstruct.GraphemeClusterMatcherConstruct}.
+	 * GraphemeClusterMatcherConstruct}.
 	 */
 	static int nextBoundary(String src, int off, int limit) {
 		int ch0 = src.codePointAt(off);

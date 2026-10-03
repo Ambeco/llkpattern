@@ -114,7 +114,7 @@ public class Matcher implements MatchResult {
 	// either array non-fresh for whatever attempt comes next.
 	private boolean perAttemptStateIsFresh = true;
 
-	// Set by attemptMatch() before each match attempt, read by MatcherConstruct.EndMatcherConstruct:
+	// Set by attemptMatch() before each match attempt, read by EndMatcherConstruct:
 	// true for matches() (the whole region must be consumed), false for lookingAt()/find() (a
 	// prefix match starting at `pos` is enough). This is the one place the "same compiled graph"
 	// design needs a runtime switch -- see design.md.

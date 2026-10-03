@@ -3,6 +3,7 @@ package com.tbohne.llkpattern.corpus;
 import com.tbohne.llkpattern.Ll1Pattern;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,10 +46,11 @@ public final class PairedRunner {
   public static void main(String[] args) throws Exception {
     if (args.length > 0 && args[0].equals("--child")) {
       child(Paths.get(args[1]), Integer.parseInt(args[2]), Integer.parseInt(args[3]),
-          Integer.parseInt(args[4]), Integer.parseInt(args[5]), Integer.parseInt(args[6]));
+          Integer.parseInt(args[4]), Integer.parseInt(args[5]), Integer.parseInt(args[6]),
+          args[7].equals("true"));
       return;
     }
-    if (args.length != 7 && args.length != 8) {
+    if (args.length < 7 || args.length > 9) {
       throw new IllegalArgumentException(
           "Usage: PairedRunner <machine> <benchmarksDir> <forks> <rounds> <chainPairs>"
               + " <warmupRounds> <injectPercent> (did the jmhPaired Gradle task's args change"
@@ -61,7 +63,8 @@ public final class PairedRunner {
     int chainPairs = Integer.parseInt(args[4]);
     int warmupRounds = Integer.parseInt(args[5]);
     int injectPercent = Integer.parseInt(args[6]);
-    Path rawOut = args.length == 8 && !args[7].isEmpty() ? Paths.get(args[7]) : null;
+    Path rawOut = args.length >= 8 && !args[7].isEmpty() ? Paths.get(args[7]) : null;
+    boolean compareBlocked = args.length == 9 && args[8].equals("true");
 
     List<PairedBench.Sample> all = new ArrayList<>();
     for (int fork = 0; fork < forks; fork++) {
@@ -84,6 +87,7 @@ public final class PairedRunner {
         cmd.add(Integer.toString(warmupRounds));
         cmd.add(Integer.toString(injectPercent));
         cmd.add(Integer.toString(fork));
+        cmd.add(Boolean.toString(compareBlocked));
         System.out.println("PairedRunner: fork " + (fork + 1) + "/" + forks);
         Process p = new ProcessBuilder(cmd).inheritIO().start();
         if (p.waitFor() != 0) {
@@ -143,7 +147,7 @@ public final class PairedRunner {
   }
 
   private static void child(Path outFile, int rounds, int chainPairs, int warmupRounds,
-      int injectPercent, int fork) throws Exception {
+      int injectPercent, int fork, boolean compareBlocked) throws Exception {
     List<GoldenRow> rows = CorpusBenchmark.loadAgreesRows();
     Blackhole bh = new Blackhole(BLACKHOLE_MAGIC);
     List<Pattern> regexPatterns = new ArrayList<>(rows.size());
@@ -167,15 +171,36 @@ public final class PairedRunner {
               new LlkMatch(rows, llkPatterns, idx, extra, bh)}));
     }
     final List<GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
-    PairedBench.GcCounter gc = () -> {
-      long n = 0;
-      for (GarbageCollectorMXBean b : gcBeans) {
-        n += b.getCollectionCount();
+    final ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+    PairedBench.Env env = new PairedBench.Env() {
+      @Override
+      public long gcCount() {
+        long n = 0;
+        for (GarbageCollectorMXBean b : gcBeans) {
+          n += b.getCollectionCount();
+        }
+        return n;
       }
-      return n;
+
+      @Override
+      public long gcMillis() {
+        long n = 0;
+        for (GarbageCollectorMXBean b : gcBeans) {
+          n += b.getCollectionTime();
+        }
+        return n;
+      }
+
+      @Override
+      public long threadCpuNanos() {
+        return threads.getCurrentThreadCpuTime();
+      }
+
+      @Override
+      public void onRound(int round) {}
     };
     List<PairedBench.Sample> samples =
-        PairedBench.run(buckets, gc, warmupRounds, rounds, chainPairs, 1);
+        PairedBench.run(buckets, env, warmupRounds, rounds, chainPairs, 1, compareBlocked);
     StringBuilder sb = new StringBuilder("# fork " + fork + "\n");
     for (PairedBench.Sample s : samples) {
       sb.append(s.toTsv()).append('\n');

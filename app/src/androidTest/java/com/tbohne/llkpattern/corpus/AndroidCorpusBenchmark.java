@@ -92,10 +92,10 @@ public class AndroidCorpusBenchmark {
   // minutes on a Pixel 3a (one round ~0.5 s with 4-pair chains).
   // Overridable per run with instrumentation arguments, e.g. -Pandroid.testInstrumentationRunnerArguments.pairedRounds=1200
   // (names: pairedWarmupRounds, pairedRounds, pairedChainPairs, pairedBlocks; rawSamples=true also dumps every chain).
-  private static final int PAIRED_WARMUP_ROUNDS = intArg("pairedWarmupRounds", 40);
-  private static final int PAIRED_ROUNDS = intArg("pairedRounds", 300);
+  private static final int PAIRED_WARMUP_ROUNDS = intArg("pairedWarmupRounds", 100);
+  private static final int PAIRED_ROUNDS = intArg("pairedRounds", 150);
   private static final int PAIRED_CHAIN_PAIRS = intArg("pairedChainPairs", 4);
-  private static final int PAIRED_BLOCKS = intArg("pairedBlocks", 10);
+  private static final int PAIRED_BLOCKS = intArg("pairedBlocks", 15);
 
   private static int intArg(String name, int defaultValue) {
     String v = InstrumentationRegistry.getArguments().getString(name);
@@ -284,27 +284,63 @@ public class AndroidCorpusBenchmark {
       bucketRows.add(rows.size());
     }
 
-    long gcBefore = Debug.getGlobalGcInvocationCount();
-    List<PairedBench.Sample> samples = PairedBench.run(buckets,
-        new PairedBench.GcCounter() {
-          @Override
-          public long count() {
-            return Debug.getGlobalGcInvocationCount();
-          }
-        },
-        PAIRED_WARMUP_ROUNDS, PAIRED_ROUNDS, PAIRED_CHAIN_PAIRS, PAIRED_BLOCKS);
-    long gcCount = Debug.getGlobalGcInvocationCount() - gcBefore;
+    final boolean raw = "true".equals(InstrumentationRegistry.getArguments().getString("rawSamples"));
+    final boolean compareBlocked =
+        !"false".equals(InstrumentationRegistry.getArguments().getString("compareBlocked"));
+    final long startNanos = System.nanoTime();
+    final StringBuilder roundMarks = new StringBuilder();
+    final DeviceMonitor monitor = raw ? new DeviceMonitor(startNanos) : null;
+    if (monitor != null) {
+      monitor.start();
+    }
+    long gcBefore = artStat("art.gc.gc-count");
+    List<PairedBench.Sample> samples;
+    try {
+      samples = PairedBench.run(buckets,
+          new PairedBench.Env() {
+            @Override
+            public long gcCount() {
+              return artStat("art.gc.gc-count");
+            }
 
-    if ("true".equals(InstrumentationRegistry.getArguments().getString("rawSamples"))) {
-      StringBuilder raw = new StringBuilder();
-      for (PairedBench.Sample sample : samples) {
-        raw.append(sample.toTsv()).append("\n");
+            @Override
+            public long gcMillis() {
+              return artStat("art.gc.gc-time");
+            }
+
+            @Override
+            public long threadCpuNanos() {
+              return Debug.threadCpuTimeNanos();
+            }
+
+            @Override
+            public void onRound(int round) {
+              roundMarks.append(round).append('\t').append((System.nanoTime() - startNanos) / 1_000_000)
+                  .append('\n');
+            }
+          },
+          PAIRED_WARMUP_ROUNDS, PAIRED_ROUNDS, PAIRED_CHAIN_PAIRS, PAIRED_BLOCKS, compareBlocked);
+    } finally {
+      if (monitor != null) {
+        monitor.stop();
       }
-      writeFile(deviceName() + "_paired_raw.tsv", raw.toString());
+    }
+    long gcCount = artStat("art.gc.gc-count") - gcBefore;
+
+    if (monitor != null) {
+      writeFile(deviceName() + "_device_log.tsv", monitor.toTsv());
+      writeFile(deviceName() + "_round_marks.tsv", roundMarks.toString());
+    }
+    if (raw) {
+      StringBuilder rawTsv = new StringBuilder();
+      for (PairedBench.Sample sample : samples) {
+        rawTsv.append(sample.toTsv()).append("\n");
+      }
+      writeFile(deviceName() + "_paired_raw.tsv", rawTsv.toString());
     }
     List<PairedStats.Entry> entries = PairedStats.summarize(samples, names, bucketRows);
     for (PairedStats.Entry e : entries) {
-      if (e.key.endsWith("/" + PairedStats.ALL)) {
+      if (e.key.equals("compile/ALL") || e.key.equals("match/ALL")) {
         boolean compile = e.key.startsWith("compile");
         putLegacy(compile ? "compileLlk" : "matchLlk", e.llkMs, gcCount);
         putLegacy(compile ? "compileRegex" : "matchRegex", e.regexMs, gcCount);
@@ -320,6 +356,78 @@ public class AndroidCorpusBenchmark {
     meta.put("batteryTempTenthsC", Integer.toString(batteryTemperatureTenthsC()));
     writeFile(deviceName() + "_paired_ratio_results.json", PairedStats.toJson(entries, meta));
     System.out.print(PairedStats.toTable(entries));
+  }
+
+  /** ART runtime statistic ("art.gc.gc-count", "art.gc.gc-time" in ms, ...); 0 if unavailable. */
+  private static long artStat(String name) {
+    try {
+      String v = Debug.getRuntimeStat(name);
+      return v == null ? 0 : Long.parseLong(v);
+    } catch (RuntimeException e) {
+      return 0;
+    }
+  }
+
+  /** Logs every core's current frequency and the battery temperature every ~100 ms on a background
+   *  thread (sysfs thermal zones aren't readable by an app; battery temperature is the available proxy),
+   *  so a slow phase in the timing data can be matched against throttling. Only run with rawSamples. */
+  private static final class DeviceMonitor implements Runnable {
+    private final long startNanos;
+    private final StringBuilder log = new StringBuilder("ms\tbatteryTempTenthsC\tfreqKHz_cpu0..7\n");
+    private volatile boolean running = true;
+    private Thread thread;
+
+    DeviceMonitor(long startNanos) {
+      this.startNanos = startNanos;
+    }
+
+    void start() {
+      thread = new Thread(this, "device-monitor");
+      thread.setDaemon(true);
+      thread.start();
+    }
+
+    void stop() {
+      running = false;
+      try {
+        thread.join(2000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+
+    synchronized String toTsv() {
+      return log.toString();
+    }
+
+    @Override
+    public void run() {
+      while (running) {
+        StringBuilder line = new StringBuilder();
+        line.append((System.nanoTime() - startNanos) / 1_000_000).append('\t')
+            .append(batteryTemperatureTenthsC());
+        for (int cpu = 0; cpu < 8; cpu++) {
+          line.append('\t').append(readFreq(cpu));
+        }
+        synchronized (this) {
+          log.append(line).append('\n');
+        }
+        try {
+          Thread.sleep(100);
+        } catch (InterruptedException e) {
+          return;
+        }
+      }
+    }
+
+    private static String readFreq(int cpu) {
+      try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(
+          "/sys/devices/system/cpu/cpu" + cpu + "/cpufreq/scaling_cur_freq"))) {
+        return r.readLine();
+      } catch (IOException e) {
+        return "-1";
+      }
+    }
   }
 
   private static void putLegacy(String name, double avgMillis, long gcCount) {

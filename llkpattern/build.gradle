@@ -186,6 +186,7 @@ task jmhPaired(type: JavaExec) {
         project.findProperty('warmupRounds') ?: '100',
         project.findProperty('injectPercent') ?: '0',
         project.findProperty('rawOut') ?: '',  // absolute path: keep every chain for offline analysis
+        project.findProperty('compareBlocked') ?: 'true',  // also time non-interleaved (blocked) chains as kinds *-blocked
     ]
     outputs.upToDateWhen { false }
 }

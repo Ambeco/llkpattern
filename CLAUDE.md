@@ -8,6 +8,17 @@ two-run eyeballing of `jmh`: it interleaves regex and llk per feature bucket and
 `git checkout -- benchmarks && git stash pop`), then
 `./gradlew :llkpattern:pairedCompare -Pbefore=<a.json> -Pafter=<b.json>` (flags `<--` on |t| > 99% critical; trust
 the ALL rows, per-bucket rows give attribution). `-PinjectPercent=2` slows llk by 2% to validate sensitivity.
+Each result has TWO ratios: `compile`/`match` (interleaved: lowest noise, use for A/B regression detection) and
+`compile-blocked`/`match-blocked` (same work timed as 2*chainPairs llk passes then as many regex passes: closer to a
+real single-engine workload, and charges GC to the engine that allocates). They differ systematically: desktop compile
+2.25 interleaved vs 2.34 blocked (interleaving hides ~4% of llk's GC cost, and the old JMH ratio was 2.35); Pixel match
+0.26 vs 0.21 (interleaving evicts llk's cache working set, penalizing llk ~20%). Quote the blocked ratio for "how fast
+is llk vs regex", the interleaved one for "did this change regress". Also reported per entry: `cpuRatio` (thread-CPU
+time based; equals wall ratio on the Pixel, so no background-app stealing), `gcMsPerChain`, `ratioExcludingGc`.
+Android: `testPaired` alone starts cold (llk needs ~100 warmup rounds, default now 100); in a full run the sampling tests
+run first. Raw data/experiments: `-Pandroid.testInstrumentationRunnerArguments.rawSamples=true` (also writes a 100 ms
+cpu-frequency/battery log and round timestamps), `.pairedRounds=` etc.; `./gradlew ... -PrawOut=<abs path>` on desktop.
+Gradle runs from `connectedAndroidTest` take >10 min with raw+blocked: launch detached, not via run_in_background.
 Allocation (B/op) and CPU sampling still come from `jmh`. The Android equivalent is `testPaired` (same outputs).
 Pass ABSOLUTE paths to `pairedCompare` (it runs from `llkpattern/`, so relative paths fail; Windows java also can't
 read Bash's `/tmp`). Pause Dropbox first.

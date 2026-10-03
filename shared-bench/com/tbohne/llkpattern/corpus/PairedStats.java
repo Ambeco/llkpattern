@@ -45,10 +45,15 @@ public final class PairedStats {
     public final double medianChainRatio;
     public final double llkMs;
     public final double regexMs;
+    /** Same estimator over thread-CPU time instead of wall time (NaN if CPU time wasn't recorded). */
+    public final double cpuRatio;
+    public final double gcMsPerChain;
 
     Entry(String key, int rows, int blocks, int chains, double gcChainFraction, double logMean,
         double logSe, double ci, double ratioExcludingGc, double medianChainRatio, double llkMs,
-        double regexMs) {
+        double regexMs, double cpuRatio, double gcMsPerChain) {
+      this.cpuRatio = cpuRatio;
+      this.gcMsPerChain = gcMsPerChain;
       this.key = key;
       this.rows = rows;
       this.blocks = blocks;
@@ -69,7 +74,7 @@ public final class PairedStats {
   public static List<Entry> summarize(List<PairedBench.Sample> samples, List<String> bucketNames,
       List<Integer> bucketRows) {
     List<Entry> entries = new ArrayList<>();
-    for (int kind = 0; kind < 2; kind++) {
+    for (int kind = 0; kind < PairedBench.KIND_NAMES.length; kind++) {
       // (round-key) -> per-bucket samples, for the ALL aggregate and for per-bucket entries.
       List<List<PairedBench.Sample>> perBucket = new ArrayList<>();
       for (int b = 0; b < bucketNames.size(); b++) {
@@ -80,6 +85,13 @@ public final class PairedStats {
           perBucket.get(s.bucket).add(s);
         }
       }
+      boolean any = false;
+      for (List<PairedBench.Sample> l : perBucket) {
+        any |= !l.isEmpty();
+      }
+      if (!any) {
+        continue;
+      }
       String prefix = PairedBench.KIND_NAMES[kind] + "/";
       int totalRows = 0;
       for (int rows : bucketRows) {
@@ -89,7 +101,7 @@ public final class PairedStats {
       for (int b = 0; b < bucketNames.size(); b++) {
         List<Chain> chains = new ArrayList<>();
         for (PairedBench.Sample s : perBucket.get(b)) {
-          chains.add(new Chain(s.block, s.llkNs, s.regexNs, s.gc));
+          chains.add(new Chain(s.block, s.llkNs, s.regexNs, s.gc, s.llkCpuNs, s.regexCpuNs, s.gcMillis));
         }
         entries.add(entry(prefix + bucketNames.get(b), bucketRows.get(b), chains));
       }
@@ -102,12 +114,19 @@ public final class PairedStats {
     final double llkNs;
     final double regexNs;
     final boolean gc;
+    final double llkCpuNs;
+    final double regexCpuNs;
+    final double gcMs;
 
-    Chain(int block, double llkNs, double regexNs, boolean gc) {
+    Chain(int block, double llkNs, double regexNs, boolean gc, double llkCpuNs, double regexCpuNs,
+        double gcMs) {
       this.block = block;
       this.llkNs = llkNs;
       this.regexNs = regexNs;
       this.gc = gc;
+      this.llkCpuNs = llkCpuNs;
+      this.regexCpuNs = regexCpuNs;
+      this.gcMs = gcMs;
     }
   }
 
@@ -121,12 +140,15 @@ public final class PairedStats {
         long key = ((long) s.block << 32) | (s.round & 0xffffffffL);
         double[] sums = byRound.get(key);
         if (sums == null) {
-          sums = new double[2];
+          sums = new double[5];
           byRound.put(key, sums);
           gcByRound.put(key, Boolean.FALSE);
         }
         sums[0] += s.llkNs;
         sums[1] += s.regexNs;
+        sums[2] += s.llkCpuNs;
+        sums[3] += s.regexCpuNs;
+        sums[4] += s.gcMillis;
         if (s.gc) {
           gcByRound.put(key, Boolean.TRUE);
         }
@@ -134,8 +156,9 @@ public final class PairedStats {
     }
     List<Chain> chains = new ArrayList<>();
     for (Map.Entry<Long, double[]> e : byRound.entrySet()) {
-      chains.add(new Chain((int) (e.getKey() >> 32), e.getValue()[0], e.getValue()[1],
-          gcByRound.get(e.getKey())));
+      double[] v = e.getValue();
+      chains.add(new Chain((int) (e.getKey() >> 32), v[0], v[1], gcByRound.get(e.getKey()), v[2],
+          v[3], v[4]));
     }
     return chains;
   }
@@ -146,13 +169,15 @@ public final class PairedStats {
       maxBlock = Math.max(maxBlock, c.block);
     }
     int blocks = maxBlock + 1;
-    double[] est = blockEstimates(chains, blocks, false);
-    double[] estNoGc = blockEstimates(chains, blocks, true);
+    double[] est = blockEstimates(chains, blocks, false, false);
+    double[] estNoGc = blockEstimates(chains, blocks, true, false);
+    double[] estCpu = blockEstimates(chains, blocks, false, true);
     double mean = mean(est);
     double se = est.length > 1 ? sd(est) / Math.sqrt(est.length) : Double.NaN;
     double t = est.length > 1 ? (est.length - 2 < T95.length ? T95[est.length - 2] : 1.96) : Double.NaN;
     double[] all = new double[chains.size()];
     int gcCount = 0;
+    double gcMsTotal = 0;
     double llk = 0;
     double regex = 0;
     for (int i = 0; i < all.length; i++) {
@@ -163,15 +188,18 @@ public final class PairedStats {
       if (c.gc) {
         gcCount++;
       }
+      gcMsTotal += c.gcMs;
     }
     Arrays.sort(all);
     double median = all.length == 0 ? Double.NaN : all[all.length / 2];
     double n = Math.max(1, chains.size());
     return new Entry(key, rows, blocks, chains.size(), gcCount / n, mean, se, t * se,
-        Math.exp(mean(estNoGc)), median, llk / n / 1e6, regex / n / 1e6);
+        Math.exp(mean(estNoGc)), median, llk / n / 1e6, regex / n / 1e6,
+        estCpu.length == 0 ? Double.NaN : Math.exp(mean(estCpu)), gcMsTotal / n);
   }
 
-  private static double[] blockEstimates(List<Chain> chains, int blocks, boolean skipGc) {
+  private static double[] blockEstimates(List<Chain> chains, int blocks, boolean skipGc,
+      boolean cpu) {
     List<List<Double>> logs = new ArrayList<>();
     for (int b = 0; b < blocks; b++) {
       logs.add(new ArrayList<Double>());
@@ -180,7 +208,10 @@ public final class PairedStats {
       if (skipGc && c.gc) {
         continue;
       }
-      logs.get(c.block).add(Math.log(c.llkNs / c.regexNs));
+      double v = cpu ? Math.log(c.llkCpuNs / c.regexCpuNs) : Math.log(c.llkNs / c.regexNs);
+      if (!Double.isNaN(v)) {
+        logs.get(c.block).add(v);
+      }
     }
     List<Double> estimates = new ArrayList<>();
     for (List<Double> l : logs) {
@@ -242,10 +273,10 @@ public final class PairedStats {
           "    \"%s\": {\"logMean\": %.6f, \"logSe\": %.6f, \"ratio\": %.4f, \"ciLow\": %.4f, "
               + "\"ciHigh\": %.4f, \"ratioExcludingGc\": %.4f, \"medianChainRatio\": %.4f, "
               + "\"llkMs\": %.5f, \"regexMs\": %.5f, \"rows\": %d, \"blocks\": %d, \"chains\": %d, "
-              + "\"gcChainFraction\": %.4f}%s\n",
+              + "\"gcChainFraction\": %.4f, \"cpuRatio\": %.4f, \"gcMsPerChain\": %.4f}%s\n",
           e.key, e.logMean, e.logSe, e.ratio, e.ciLow, e.ciHigh, e.ratioExcludingGc,
           e.medianChainRatio, e.llkMs, e.regexMs, e.rows, e.blocks, e.chains, e.gcChainFraction,
-          i + 1 < entries.size() ? "," : ""));
+          e.cpuRatio, e.gcMsPerChain, i + 1 < entries.size() ? "," : ""));
     }
     sb.append("  }\n}\n");
     return sb.toString();
@@ -253,18 +284,18 @@ public final class PairedStats {
 
   public static String toTable(List<Entry> entries) {
     StringBuilder sb = new StringBuilder();
-    sb.append(String.format(Locale.ROOT, "%-26s %5s %-22s %8s %8s %8s %6s%n", "kind/bucket", "rows",
-        "llk/regex [95% CI]", "noGC", "llk ms", "regex ms", "gc%"));
+    sb.append(String.format(Locale.ROOT, "%-26s %5s %-22s %8s %8s %8s %6s %6s%n", "kind/bucket", "rows",
+        "llk/regex [95% CI]", "noGC", "llk ms", "regex ms", "gc%", "cpu"));
     for (Entry e : entries) {
-      sb.append(String.format(Locale.ROOT, "%-26s %5d %6.3f [%5.3f, %5.3f] %8.3f %8.4f %8.4f %5.1f%n",
+      sb.append(String.format(Locale.ROOT, "%-26s %5d %6.3f [%5.3f, %5.3f] %8.3f %8.4f %8.4f %5.1f %6.3f%n",
           e.key, e.rows, e.ratio, e.ciLow, e.ciHigh, e.ratioExcludingGc, e.llkMs, e.regexMs,
-          100 * e.gcChainFraction));
+          100 * e.gcChainFraction, e.cpuRatio));
     }
     return sb.toString();
   }
 
   private static final Pattern JSON_ENTRY =
-      Pattern.compile("^\\s*\"([a-z]+/[^\"]+)\": \\{(.*)\\}", Pattern.MULTILINE);
+      Pattern.compile("^\\s*\"([a-z-]+/[^\"]+)\": \\{(.*)\\}", Pattern.MULTILINE);
   private static final double[] T99 = {
       63.657, 9.925, 5.841, 4.604, 4.032, 3.707, 3.499, 3.355, 3.250, 3.169, 3.106, 3.055, 3.012,
       2.977, 2.947, 2.921, 2.898, 2.878, 2.861, 2.845, 2.831, 2.819, 2.807, 2.797, 2.787, 2.779,

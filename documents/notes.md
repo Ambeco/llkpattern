@@ -3882,3 +3882,13 @@ made no difference (post-warmup ratio was flat from round 0 to 1500). Defaults a
 50/10 and chains of 4/2/1 pairs: all within ~1% except chain 1 (compile 2.17 vs ~2.23) and warmup 10 (2.20), likely
 residual warmup (those had the fewest warm-up pairs: 50 and 40, vs >=100 for the rest) -- keep >=100 warm pairs.
 Cross-day: a rerun with no code change matched the previous day's committed ratios within ~1%. Android not re-tuned.
+Interleaving vs blocked control (2026-10-02, `compareBlocked`, now default): desktop compile 2.25 interleaved vs 2.34
+blocked (blocked chains saw ~2x the GC ms per chain; match equal at 1.23); Pixel compile 0.685 vs 0.651, match 0.258
+vs 0.211 (llk ms 5.67 interleaved vs 4.52 blocked, regex 21.75 vs 21.16: cache pollution from engine switching, not GC:
+excluding GC chains moved the ratio <2%). Pixel GC was invisible before (`Debug.getGlobalGcInvocationCount` never
+moved: 0 of 26,400 chains); `Debug.getRuntimeStat("art.gc.gc-count"/"art.gc.gc-time")` works: ~0.04 GCs and ~5 ms GC
+per chain. Thread CPU time / wall = 0.98 on the Pixel, cpuRatio == wall ratio. 100 ms cpufreq log: big cores ~1.9 GHz,
+little ~1.0-1.1 GHz, battery 32.3-32.8 C, flat. Standalone Pixel runs: compile ratio drifts 0.76 -> 0.685 over the first
+~125 rounds (llk JIT warmup; rare-path buckets worst), and one 1200-round run had a device-wide slow phase at rounds
+~180-400 (regex +25%, llk +40%, ratio +15%) that did not recur in later runs (cause unknown: no monitor was running).
+Android interval vs rounds (steady state): 100 rounds/10 blocks +-1.2%/1.7%, 200/20 +-0.7%/1.1%, flat beyond.

@@ -1,16 +1,16 @@
 {
   "device": "Google_Pixel_3a_sargo",
-  "sourceHash": "android:60bac68d864b270b",
-  "buildTime": "2026-10-02T21:54:05.431Z",
-  "testTime": "2026-10-02T21:54:36.413444Z",
+  "sourceHash": "android:0d8c1c199e1cb68a",
+  "buildTime": "2026-10-03T01:03:37.918Z",
+  "testTime": "2026-10-03T01:03:55.838423Z",
   "androidRelease": "12",
   "androidSdkInt": 32,
   "fractionOfTestRows": 1.0000,
-  "pairedRounds": 300,
+  "pairedRounds": 150,
   "pairedChainPairs": 4,
   "rowCount": 2412,
-  "compileLlk": {"avgMillisPerCorpusPass": 37.8929, "gcCountDuringMeasuredIterations": 0},
-  "compileRegex": {"avgMillisPerCorpusPass": 54.6423, "gcCountDuringMeasuredIterations": 0},
-  "matchLlk": {"avgMillisPerCorpusPass": 5.3342, "gcCountDuringMeasuredIterations": 0},
-  "matchRegex": {"avgMillisPerCorpusPass": 20.5116, "gcCountDuringMeasuredIterations": 0}
+  "compileLlk": {"avgMillisPerCorpusPass": 38.1014, "gcCountDuringMeasuredIterations": 420},
+  "compileRegex": {"avgMillisPerCorpusPass": 56.3874, "gcCountDuringMeasuredIterations": 420},
+  "matchLlk": {"avgMillisPerCorpusPass": 5.7680, "gcCountDuringMeasuredIterations": 420},
+  "matchRegex": {"avgMillisPerCorpusPass": 21.6095, "gcCountDuringMeasuredIterations": 420}
 }

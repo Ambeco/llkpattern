@@ -91,19 +91,20 @@ small and startup "vaguely reasonable".
 
 ## Toolchain and testing
 
-- [ ] **Paired benchmark follow-ups** (the paired runner itself is built: `:llkpattern:jmhPaired`,
-      `:llkpattern:pairedCompare`, Android `testPaired`; see CLAUDE.md and notes.md 2026-10-01):
-  - **Pixel 3a injected-slowdown check:** `testPaired` is validated A/A (two runs: compile/ALL 0.687 vs 0.673,
-    match/ALL 0.261 vs 0.259, ~5 min each) but has no `-PinjectPercent` equivalent yet.
-  - **Rewrite README's benchmark tables/CLAUDE.md A/B procedure around paired ratios** once both devices have a
-    validated baseline (CLAUDE.md currently only points at the new task alongside the JMH procedure).
+- [ ] **Paired benchmark follow-ups** (runner built: `:llkpattern:jmhPaired`, `:llkpattern:pairedCompare`, Android
+      `testPaired`; see CLAUDE.md and notes.md 2026-10-01/02):
+  - **Blocked chains: add an untimed burn-in pass** per block (first pass of each block is cache-cold, which probably
+    explains the blocked interval being 2-3x wider than interleaved on the Pixel: +-3% vs +-1.2%).
+  - **Pixel device-state episodes:** one run had a slow phase that shifted the ratio ~15% and did not recur. Rerun a
+    few cold 12-minute raw runs with the device monitor on to see whether it is thermal (then add a cooldown wait) or
+    background activity (then flag/skip such rounds by regex absolute time).
+  - **Pixel injected-slowdown check** (no `-PinjectPercent` equivalent for Android yet).
+  - **README tables/CLAUDE.md A/B procedure** still quote pre-paired numbers; rewrite around the two paired ratios.
   - **CPU sampling:** replace JMH's safepoint-biased `stack` profiler with JFR `jdk.ExecutionSample` at a short
-    period (reuse `AllocationSamplingRunner`'s JFR-to-reversed-tree code), and add a sampling-diff tool reporting
-    per-leaf delta with a binomial SE sqrt(p(1-p)/n) so "leaf moved 3%->5%" can be judged against counting noise.
-  - **Version-interleaved A/B:** load a baseline jar (from a git worktree of HEAD) and the working tree in one JVM via
-    separate classloaders and interleave old-llk/new-llk/regex, removing the stash dance entirely.
-  - **Environment:** pause Dropbox (the repo lives in it; Gradle writes under build/ and benchmarks/ trigger syncs)
-    and consider a High power plan; optionally raise the child JVM priority/affinity in `PairedRunner`.
+    period (reuse `AllocationSamplingRunner`'s JFR-to-reversed-tree code) and add a sampling-diff tool with per-leaf
+    binomial SE sqrt(p(1-p)/n), so "leaf moved 3%->5%" can be judged against counting noise.
+  - **Version-interleaved A/B:** load a baseline jar and the working tree in one JVM via separate classloaders.
+  - **Environment:** pause Dropbox; consider a High power plan; optionally raise child JVM priority/affinity.
 - [ ] Decide on a CI setup (or at least a documented local command; the daemon must be JDK 17-25, tests want JDK 27 -- see notes.md) to run the suite "frequently" per the owner's stated preference.
 
 ## `ArrayCodePointSet` / `CodePointSetBuilder` API cleanup (project owner, 2026-10-01)

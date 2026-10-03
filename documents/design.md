@@ -6,7 +6,7 @@
 
 ### Package layout
 
-Only the public API lives in `com.tbohne.llkpattern`: `Ll1Pattern`, `Matcher`, `PatternSyntaxException`. Everything else is under `com.tbohne.llkpattern.impl` and is not API (its members are `public` only so the layers can call each other): `impl.unicode` (the `CodePointSet` classes, `NamedCharClass`, `UnicodePredicates`, `CaseFolding`, `GraphemeCluster`; imports nothing from the other packages) <- `impl.constructs` <- `impl.parser` <- `Ll1Pattern`/`Matcher`. `CaseFolding.isUnicodeCase` reads `java.util.regex.Pattern`'s flag constants (which `Ll1Pattern`'s alias) so `impl.unicode` needs no upward dependency.
+Only the public API lives in `com.tbohne.llkpattern`: `Ll1Pattern`, `Matcher`, `PatternSyntaxException`. Everything else is under `com.tbohne.llkpattern.impl` and is not API (its members are `public` only so the layers can call each other): `impl.unicode` (the `CodePointSet` classes, `NamedCharClass`, `UnicodePredicates`, `CaseFolding`, `GraphemeCluster`; imports nothing from the other packages) <- `impl.constructs` <- `impl.parser` <- `Ll1Pattern`/`Matcher`. `impl.unicode.UnicodeFlags` owns the Unicode-related flag bits (`CANON_EQ`, `CASE_INSENSITIVE`, `UNICODE_CASE`, `UNICODE_CHARACTER_CLASS`; equal to `java.util.regex.Pattern`'s) and `Ll1Pattern`'s public constants of those names alias them, so `impl.unicode` needs no upward dependency.
 
 ### Parsing (`PatternParser` / `PatternConstruct`)
 

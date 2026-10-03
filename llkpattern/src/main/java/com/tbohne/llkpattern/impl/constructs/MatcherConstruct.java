@@ -140,7 +140,7 @@ public abstract class MatcherConstruct {
 	}
 
 	@VisibleForTesting
-	public MatcherConstruct getNext() { return next; }
+	public final MatcherConstruct getNext() { return next; }
 
 	/**
 	 * Checks {@link #entrySet} (if any), deferring to {@link #failedEntry} on a miss, then runs

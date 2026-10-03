@@ -3902,3 +3902,7 @@ compile 0.672-0.694, match 0.251-0.264 (sd ~1.5-2%); blocked compile 0.622-0.658
 frequencies in the two new cold runs (the earlier 1200-round slow phase remains unexplained). A burn-in pass before each
 blocked phase was tried and reverted: no interval improvement on either device (Pixel blocked CI +-1.9% before and after) and
 it shifted the blocked level (compile-blocked 0.62 vs 0.65), which would have invalidated the committed baselines.
+Desktop baseline-reuse drift check (2026-10-02, after a disk cleanup, same code): four fresh `jmhPaired` runs vs the committed
+baseline: interleaved compile 2.197/2.216/2.215/2.221 vs committed 2.246 (-2.2% then three at -1.1..-1.4%, each flagged by
+pairedCompare; the three agree with each other within 0.4%), compile-blocked within -1.3..0.0%, match within +-0.6%. So the
+committed baseline is trustworthy to ~1.5-2% on interleaved compile and ~0.6% on match; same-session A/B for smaller effects.

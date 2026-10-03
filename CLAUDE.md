@@ -4,7 +4,7 @@
 
 For llk/regex ratios use `./gradlew :llkpattern:jmhPaired` (JAVA_HOME = JDK 17; ~45 s with the defaults 8 forks x 300 rounds x 2-pair chains; run in background) instead of
 two-run eyeballing of `jmh`: it interleaves regex and llk per feature bucket and writes
-`benchmarks/<machine>_paired_ratio_results.json` with 95% CIs. A/B: the ratio is baseline-independent, so compare the change's run against the COMMITTED paired JSON (same-machine cross-day check: 2.227 vs 2.228/2.240 compile, 1.214 vs 1.224/1.219 match, same code) -- no stash needed unless the committed one is old or the machine setup changed (then save the JSON, `git stash -u`, rerun,
+`benchmarks/<machine>_paired_ratio_results.json` with 95% CIs. A/B: comparing against the COMMITTED paired JSON works for effects of ~2% or more, but not smaller ones: same code, same machine, different hours/days, the desktop interleaved compile ratio moved up to 1.3-2.2% (committed 2.246 vs four later runs 2.197/2.216/2.215/2.221; match within 0.6%, blocked compile within 1.3%; earlier cross-day agreement was within 1%). For anything you expect to move compile time by less than ~2%, do a same-session A/B instead (save the JSON, `git stash -u`, rerun,
 `git checkout -- benchmarks && git stash pop`), then
 `./gradlew :llkpattern:pairedCompare -Pbefore=<a.json> -Pafter=<b.json>` (flags `<--` on |t| > 99% critical; trust
 the ALL rows, per-bucket rows give attribution). `-PinjectPercent=2` slows llk by 2% to validate sensitivity.

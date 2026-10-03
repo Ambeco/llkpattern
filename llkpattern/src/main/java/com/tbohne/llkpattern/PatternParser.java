@@ -3,7 +3,7 @@ package com.tbohne.llkpattern;
 import com.tbohne.llkpattern.constructs.*;
 
 import com.tbohne.llkpattern.NamedCharClass.*;
-import com.tbohne.llkpattern.constructs.BoundaryConstruct.BoundaryEnum;
+import com.tbohne.llkpattern.constructs.BoundaryPatternConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 
@@ -134,7 +134,7 @@ final class PatternParser {
   // (ObjectIntMap has no mutators) and this class never mutates it either -- see namedGroups below.
   private static final ObjectIntMap<String> EMPTY_NAMED_GROUPS = new MutableObjectIntMap<>(0);
 
-  // DOTALL's ".": shared like RegexCharacterClass.DOT, since ComplexCharacter.ranges is never mutated.
+  // DOTALL's ".": shared like RegexCharacterClass.DOT, since ComplexCharacterPatternConstruct.ranges is never mutated.
   private static final CodePointSet EVERY_CODE_POINT = buildEveryCodePoint();
 
   private static CodePointSet buildEveryCodePoint() {
@@ -149,14 +149,14 @@ final class PatternParser {
   // instead of a linked Node per entry -- but most patterns have zero named groups, so skipping the
   // map object itself (not just its backing arrays) is worth it for the common case.
   private @Nullable MutableObjectIntMap<String> namedGroups;
-  // captureConstructIndex -> the already-fully-parsed QuantifiedUnion for that group, populated at
+  // captureConstructIndex -> the already-fully-parsed QuantifiedUnionPatternConstruct for that group, populated at
   // the same point as namedGroups (parseGroup, once a group's ")" is reached). Backreferences
   // (tryParseBackReference) look a referenced group up here: only a group already present -- i.e.
   // already closed, textually before the "\1"/"\k<name>" -- can be referenced; anything else is a
   // forward reference or an undefined group, both rejected at parse time. See design.md's
   // "Backreferences" section.
   //
-  // androidx.collection.MutableIntObjectMap instead of java.util.HashMap<Integer, QuantifiedUnion>:
+  // androidx.collection.MutableIntObjectMap instead of java.util.HashMap<Integer, QuantifiedUnionPatternConstruct>:
   // this used to show up at 9.4% of compile-time allocation just for the HashMap itself (every
   // compile() paid for one, whether or not the pattern has any backreferences at all -- see
   // benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt), plus a boxed Integer key and a
@@ -164,7 +164,7 @@ final class PatternParser {
   // Null until the first capturing group closes -- see namedGroups' own doc just above for why
   // (this one only saves the allocation for patterns with no capturing groups at all, since any
   // capturing group populates it regardless of whether a backreference ever uses it).
-  private @Nullable MutableIntObjectMap<QuantifiedUnion> closedGroupsByIndex;
+  private @Nullable MutableIntObjectMap<QuantifiedUnionPatternConstruct> closedGroupsByIndex;
 
   PatternParser(String pattern, int flags) {
     // LITERAL wins over CANON_EQ, as in java.util.regex.
@@ -313,9 +313,9 @@ final class PatternParser {
       return parseLiteralPattern();
     }
     // The whole pattern isn't a capturing group -- only parseGroup() should assign a real
-    // captureConstructIndex (-1 here, same as parseUnion's non-capturing callers). A QuantifiedUnion
+    // captureConstructIndex (-1 here, same as parseUnion's non-capturing callers). A QuantifiedUnionPatternConstruct
     // is only actually allocated (by parseUnion) if the pattern has a top-level "|"; a single
-    // alternative comes back as a bare Sequence, same shape #parse() has always returned for that
+    // alternative comes back as a bare SequencePatternConstruct, same shape #parse() has always returned for that
     // case.
     PatternConstruct root = parseUnion(0, flags, /* captureConstructIndex= */ -1, /* captureName= */ "");
     if (index < pattern.length()) {
@@ -328,15 +328,15 @@ final class PatternParser {
   /**
    * {@code LITERAL}: the whole pattern is plain text, with no metacharacters, escapes, quotation
    * or inline flags. Only {@code CASE_INSENSITIVE}/{@code UNICODE_CASE} still affect matching,
-   * as in {@code java.util.regex}. Returns the same bare {@code Sequence} shape {@link #parse()}
+   * as in {@code java.util.regex}. Returns the same bare {@code SequencePatternConstruct} shape {@link #parse()}
    * gives any single-alternative pattern.
    */
   private PatternConstruct parseLiteralPattern() {
     if (pattern.isEmpty()) {
       throw throwEmptySequence(0, 0);
     }
-    Sequence sequence = new Sequence(0);
-    LiteralString literal = new LiteralString(0, pattern.length(), pattern);
+    SequencePatternConstruct sequence = new SequencePatternConstruct(0);
+    LiteralPatternConstruct literal = new LiteralPatternConstruct(0, pattern.length(), pattern);
     literal.flags = flags;
     sequence.patterns.add(literal);
     sequence.endIndex = pattern.length();
@@ -347,25 +347,25 @@ final class PatternParser {
   /**
    * Parses one or more {@code '|'}-separated alternatives starting at the current position, up to
    * (not consuming) the matching {@code ')'} or end of pattern. {@code unionStartIndex}/{@code
-   * unionFlags} are the position/flags a wrapping {@code QuantifiedUnion} would have been
+   * unionFlags} are the position/flags a wrapping {@code QuantifiedUnionPatternConstruct} would have been
    * constructed with had one been pre-allocated by the caller (the old design); {@code
    * captureConstructIndex}/{@code captureName} are that union's capture identity, or -1/"" for a
    * non-capturing caller (a plain group body, a lookbehind body, or the whole pattern).
    *
-   * <p>A {@code QuantifiedUnion} is only actually allocated when one is structurally required: more
+   * <p>A {@code QuantifiedUnionPatternConstruct} is only actually allocated when one is structurally required: more
    * than one alternative was found, or {@code captureConstructIndex != -1} (a capturing group
    * always needs a real object to carry its index for backreferences/{@code closedGroupsByIndex}).
-   * Otherwise (exactly one alternative, non-capturing) the bare {@code Sequence} is returned
+   * Otherwise (exactly one alternative, non-capturing) the bare {@code SequencePatternConstruct} is returned
    * directly -- the caller (parseGroup's {@code quantifyGroupBody}, or #parse()) is responsible for
    * wrapping it later if it turns out to need quantifying after all.
    */
   private PatternConstruct parseUnion(
       int unionStartIndex, int unionFlags, int captureConstructIndex, String captureName) {
     // The current alternative's contents, built up lazily -- see #addToAlternative's own doc for
-    // why this saves an allocation (the Sequence itself, plus its ArrayList) for the very common
+    // why this saves an allocation (the SequencePatternConstruct itself, plus its ArrayList) for the very common
     // case of a single-element alternative (before a "|", or the only alternative in a
     // non-capturing group/pattern with none at all): null (empty), a bare PatternConstruct (one
-    // element so far), or a real Sequence (2+ elements, already flattened into it).
+    // element so far), or a real SequencePatternConstruct (2+ elements, already flattened into it).
     Object accumulator = null;
     int altStartIndex = index;
     // Lazily built: null until a second alternative is seen. `firstAlternative` holds the first
@@ -373,7 +373,7 @@ final class PatternParser {
     // that a pattern with exactly one "|" still only allocates the union once, right when the
     // second alternative actually shows up (or at the end, if there was exactly one "|" total).
     PatternConstruct firstAlternative = null;
-    QuantifiedUnion union = null;
+    QuantifiedUnionPatternConstruct union = null;
     int rawTextStartIndex = -1;
     // While true, the run accumulating since rawTextStartIndex is a byte-for-byte copy of
     // `pattern` in that span -- no escape has been decoded into it, and no COMMENTS-mode
@@ -418,7 +418,7 @@ final class PatternParser {
           CharSequence literalValue = rawTextIsPure
               ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
               : castNonNull(rawText).toString();
-          LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
+          LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, index, literalValue);
           literal.flags = flags;
           accumulator = addToAlternative(accumulator, literal, altStartIndex);
           if (rawText != null) {
@@ -446,9 +446,9 @@ final class PatternParser {
               throw throwEmptySequence(altStartIndex, unionStartIndex);
             }
             PatternConstruct altConstruct;
-            if (accumulator instanceof Sequence) {
-              ((Sequence) accumulator).endIndex = index;
-              altConstruct = (Sequence) accumulator;
+            if (accumulator instanceof SequencePatternConstruct) {
+              ((SequencePatternConstruct) accumulator).endIndex = index;
+              altConstruct = (SequencePatternConstruct) accumulator;
             } else {
               altConstruct = (PatternConstruct) accumulator;
             }
@@ -458,7 +458,7 @@ final class PatternParser {
               firstAlternative = altConstruct;
             } else {
               // Second alternative found -- only now is a real union structurally required.
-              union = new QuantifiedUnion(pattern, unionStartIndex);
+              union = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
               union.flags = unionFlags;
               union.captureConstructIndex = captureConstructIndex;
               union.captureName = captureName;
@@ -478,18 +478,18 @@ final class PatternParser {
             // reused directly below, always as "any character" regardless of
             // UNICODE_CHARACTER_CLASS -- "." matching only ASCII by default would be wrong, unlike
             // a POSIX/Unicode-property class like \s or \w where that split is exactly the point.
-            ComplexCharacter dot;
+            ComplexCharacterPatternConstruct dot;
             if ((flags & Pattern.DOTALL) != 0) {
               // "Everything" is exactly an inverted set with no explicit (excluded) entries -- see
               // CodePointSet#invert's doc for why that's always a finite, valid set here rather
               // than the mathematically-unbounded RangeSet Guava's complement() used to produce.
-              dot = new ComplexCharacter(index, EVERY_CODE_POINT);
+              dot = new ComplexCharacterPatternConstruct(index, EVERY_CODE_POINT);
             } else {
-              // Aliased directly, not copied: ComplexCharacter.ranges is effectively immutable
+              // Aliased directly, not copied: ComplexCharacterPatternConstruct.ranges is effectively immutable
               // once constructed (see its own doc) -- nothing past this point ever mutates it, so
               // there's no risk of corrupting the shared RegexCharacterClass.DOT.unicode instance,
               // and no allocation is needed at all (unlike rebuilding "\n"'s complement fresh).
-              dot = new ComplexCharacter(index, ((flags & Pattern.UNIX_LINES) != 0
+              dot = new ComplexCharacterPatternConstruct(index, ((flags & Pattern.UNIX_LINES) != 0
                   ? RegexCharacterClass.DOT_UNIX_LINES : RegexCharacterClass.DOT).unicode);
             }
             dot.flags = flags;
@@ -508,7 +508,7 @@ final class PatternParser {
             accumulator = addToAlternative(accumulator, parseQuantifiable(dot), altStartIndex);
             break;
           case '^':
-            LineBoundaryConstruct lineBegin = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ true);
+            LineBoundaryPatternConstruct lineBegin = new LineBoundaryPatternConstruct(index, index+1, /* isLineBegin= */ true);
             lineBegin.flags = flags;
             advance(1);
             if (keepZeroWidthAfterQuantifier()) {
@@ -516,7 +516,7 @@ final class PatternParser {
             }
             break;
           case '$':
-            LineBoundaryConstruct lineEnd = new LineBoundaryConstruct(index, index+1, /* isLineBegin= */ false);
+            LineBoundaryPatternConstruct lineEnd = new LineBoundaryPatternConstruct(index, index+1, /* isLineBegin= */ false);
             lineEnd.flags = flags;
             advance(1);
             if (keepZeroWidthAfterQuantifier()) {
@@ -528,15 +528,15 @@ final class PatternParser {
             if (accumulator == null) {
               throw throwEmptySequence(altStartIndex, unionStartIndex);
             }
-            // The final alternative is always kept as a real Sequence, even if it turns out to
+            // The final alternative is always kept as a real SequencePatternConstruct, even if it turns out to
             // have just one element -- unlike an alternative before a "|" (see #addToAlternative's
             // doc), this one's shape is a contract other code relies on (see CLAUDE.md's "Parser
             // root shape" note and Ll1Pattern#startsWithBeginAnchor).
-            Sequence finalSequence;
-            if (accumulator instanceof Sequence) {
-              finalSequence = (Sequence) accumulator;
+            SequencePatternConstruct finalSequence;
+            if (accumulator instanceof SequencePatternConstruct) {
+              finalSequence = (SequencePatternConstruct) accumulator;
             } else {
-              finalSequence = new Sequence(altStartIndex);
+              finalSequence = new SequencePatternConstruct(altStartIndex);
               finalSequence.patterns.add((PatternConstruct) accumulator);
             }
             finalSequence.endIndex = index;
@@ -548,7 +548,7 @@ final class PatternParser {
             if (firstAlternative != null) {
               // Exactly one "|" was seen overall -- two alternatives total, so a real union is
               // required, but only now (at the end) is that finally known.
-              QuantifiedUnion twoBranch = new QuantifiedUnion(pattern, unionStartIndex);
+              QuantifiedUnionPatternConstruct twoBranch = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
               twoBranch.flags = unionFlags;
               twoBranch.captureConstructIndex = captureConstructIndex;
               twoBranch.captureName = captureName;
@@ -558,16 +558,16 @@ final class PatternParser {
               return twoBranch;
             }
             if (captureConstructIndex != -1) {
-              // No "|" at all, but the caller needs a real QuantifiedUnion regardless (a capturing
+              // No "|" at all, but the caller needs a real QuantifiedUnionPatternConstruct regardless (a capturing
               // group) to carry its capture index.
-              QuantifiedUnion singleBranch = new QuantifiedUnion(pattern, unionStartIndex);
+              QuantifiedUnionPatternConstruct singleBranch = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
               singleBranch.captureConstructIndex = captureConstructIndex;
               singleBranch.captureName = captureName;
               singleBranch.constructs.add(finalSequence);
               singleBranch.endIndex = index;
               return singleBranch;
             }
-            // No "|", non-capturing: the bare Sequence is the whole result -- no QuantifiedUnion
+            // No "|", non-capturing: the bare SequencePatternConstruct is the whole result -- no QuantifiedUnionPatternConstruct
             // needed at all, deferring that allocation to the caller in case it needs one later
             // (quantifyGroupBody) or not at all (the common case).
             return finalSequence;
@@ -586,14 +586,14 @@ final class PatternParser {
               CharSequence literalValue = rawTextIsPure
                   ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
                   : castNonNull(rawText).toString();
-              LiteralString literal = new LiteralString(rawTextStartIndex, startIndex, literalValue);
+              LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, startIndex, literalValue);
               literal.flags = flags;
               accumulator = addToAlternative(accumulator, literal, altStartIndex);
               if (rawText != null) {
                 rawText.setLength(0);
               }
             }
-            ComplexCharacter complex = singleCharacter(startIndex, codePoint);
+            ComplexCharacterPatternConstruct complex = singleCharacter(startIndex, codePoint);
             complex.flags = flags;
             complex.endIndex = index;
             accumulator = addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
@@ -620,7 +620,7 @@ final class PatternParser {
             CharSequence literalValue = rawTextIsPure
                 ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
                 : castNonNull(rawText).toString();
-            LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
+            LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             accumulator = addToAlternative(accumulator, literal, altStartIndex);
             if (rawText != null) {
@@ -655,8 +655,8 @@ final class PatternParser {
           if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'X') {
             int graphemeStartIndex = index;
             advance(2);
-            GraphemeClusterConstruct graphemeCluster =
-                new GraphemeClusterConstruct(graphemeStartIndex, index);
+            GraphemeClusterPatternConstruct graphemeCluster =
+                new GraphemeClusterPatternConstruct(graphemeStartIndex, index);
             graphemeCluster.flags = flags;
             accumulator = addToAlternative(accumulator, quantifySingleConstruct(graphemeCluster), altStartIndex);
             continue;
@@ -667,13 +667,13 @@ final class PatternParser {
               accumulator = addToAlternative(accumulator, boundaryConstruct, altStartIndex);
             }
           } else {
-            // parseComplexEscape()'s result is assigned straight into ComplexCharacter.ranges (now
+            // parseComplexEscape()'s result is assigned straight into ComplexCharacterPatternConstruct.ranges (now
             // effectively immutable -- see its own doc), no defensive copy needed: unlike the
             // bracket-expression '\\' case above (which merges into an already-accumulating
             // ranges local via putAll), this escape is the construct's entire content.
             int escapeStartIndex = index;
             CodePointSet escapeRanges = parseComplexEscape(); // advances past the escape
-            ComplexCharacter escapeChar = new ComplexCharacter(escapeStartIndex, index, escapeRanges);
+            ComplexCharacterPatternConstruct escapeChar = new ComplexCharacterPatternConstruct(escapeStartIndex, index, escapeRanges);
             escapeChar.flags = flags;
             accumulator = addToAlternative(accumulator, parseQuantifiable(escapeChar), altStartIndex);
           }
@@ -717,7 +717,7 @@ final class PatternParser {
           // Unlike the other two flush sites, rawTextStartIndex alone isn't enough here: this
           // very character may have just opened the run (rawTextStartIndex == rawTextPureEnd,
           // nothing pure actually accumulated yet -- it's about to become its own quantified
-          // ComplexCharacter instead, never joining a literal at all) -- rawText.length() alone
+          // ComplexCharacterPatternConstruct instead, never joining a literal at all) -- rawText.length() alone
           // isn't enough either, symmetrically, since a pure run never touches rawText until it
           // stops being pure. Must check whichever of the two actually holds this run's content.
           boolean hasPendingLiteral = rawTextIsPure
@@ -727,14 +727,14 @@ final class PatternParser {
             CharSequence literalValue = rawTextIsPure
                 ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
                 : castNonNull(rawText).toString();
-            LiteralString literal = new LiteralString(rawTextStartIndex, index, literalValue);
+            LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, index, literalValue);
             literal.flags = flags;
             accumulator = addToAlternative(accumulator, literal, altStartIndex);
             if (rawText != null) {
               rawText.setLength(0);
             }
           }
-          ComplexCharacter complex = singleCharacter(startIndex, fullChar);
+          ComplexCharacterPatternConstruct complex = singleCharacter(startIndex, fullChar);
           complex.flags = flags;
           complex.endIndex = index;
           accumulator = addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
@@ -751,30 +751,30 @@ final class PatternParser {
 
   /**
    * Appends {@code pc} to the current alternative's lazily-built accumulator (see {@link
-   * #parseUnion}'s own doc on {@code accumulator}), allocating the real {@link Sequence} (and its
+   * #parseUnion}'s own doc on {@code accumulator}), allocating the real {@link SequencePatternConstruct} (and its
    * backing {@code ArrayList}) only once a second element actually shows up. Alloc sampling
    * showed this constructor (unconditional, once per alternative, in the old design) at 5.6% of
    * compile-time allocation -- a real cost for the common case of a single-element alternative
    * (a lone atom before a "|", or the sole element of a non-capturing group/pattern with no "|"
-   * at all), which never needed a wrapping {@code Sequence} in the first place.
+   * at all), which never needed a wrapping {@code SequencePatternConstruct} in the first place.
    *
    * @param accumulator the alternative's contents so far: {@code null} (empty), a bare {@code
-   *     PatternConstruct} (exactly one element, no {@code Sequence} needed yet), or a {@code
-   *     Sequence} (2+ elements, already flattened into it)
-   * @param altStartIndex the current alternative's start position, used as the {@code Sequence}'s
+   *     PatternConstruct} (exactly one element, no {@code SequencePatternConstruct} needed yet), or a {@code
+   *     SequencePatternConstruct} (2+ elements, already flattened into it)
+   * @param altStartIndex the current alternative's start position, used as the {@code SequencePatternConstruct}'s
    *     {@code startIndex} if/when one actually needs allocating
    * @return the updated accumulator, in the same three-shape encoding
    */
   private static Object addToAlternative(
       @Nullable Object accumulator, PatternConstruct pc, int altStartIndex) {
-    if (accumulator instanceof Sequence) {
-      ((Sequence) accumulator).patterns.add(pc);
+    if (accumulator instanceof SequencePatternConstruct) {
+      ((SequencePatternConstruct) accumulator).patterns.add(pc);
       return accumulator;
     }
     if (accumulator == null) {
       return pc;
     }
-    Sequence sequence = new Sequence(altStartIndex);
+    SequencePatternConstruct sequence = new SequencePatternConstruct(altStartIndex);
     sequence.patterns.add((PatternConstruct) accumulator);
     sequence.patterns.add(pc);
     return sequence;
@@ -852,11 +852,11 @@ final class PatternParser {
     int groupStartIndex = index;
     int entryFlags = flags;
     advance(1);
-    // Mirrors QuantifiedUnion.captureConstructIndex's own default (0, meaning "wants a real index,
+    // Mirrors QuantifiedUnionPatternConstruct.captureConstructIndex's own default (0, meaning "wants a real index,
     // not yet assigned") until parseUnion() actually needs to be told which one -- kept as locals
     // here (rather than pre-allocating the union itself) so a non-capturing, unquantified,
     // single-alternative group -- by far the common case for "(?:...)" -- never allocates a
-    // QuantifiedUnion at all.
+    // QuantifiedUnionPatternConstruct at all.
     int groupCaptureIndex = 0;
     String captureName = "";
     boolean restoreFlagsOnExit = false;
@@ -915,7 +915,7 @@ final class PatternParser {
         case '-': // negative-only flags, e.g. "(?-i)"
           // Bug fix (2026-09-06): a flags-only construct ("(?s)" or "(?s:...)") is non-capturing,
           // exactly like "(?:...)" (which sets this explicitly, above) -- but this branch never
-          // did, leaving QuantifiedUnion's captureConstructIndex at its default of 0, i.e.
+          // did, leaving QuantifiedUnionPatternConstruct's captureConstructIndex at its default of 0, i.e.
           // "capturing group 0". That corrupted the whole pattern's capture bookkeeping: the "(?s)"
           // construct got (wrongly) counted and compiled as a real capturing group despite never
           // going through the increment/parseUnion machinery below (the bare "(?...)" form returns
@@ -972,9 +972,9 @@ final class PatternParser {
           }
           if (peek == ')') {
             // A flags-only construct ("(?i)") isn't itself quantifiable and has no body to parse --
-            // still needs a real (empty) QuantifiedUnion, since that's the shape #parse()'s caller
+            // still needs a real (empty) QuantifiedUnionPatternConstruct, since that's the shape #parse()'s caller
             // (an ordinary sequence element) expects back.
-            QuantifiedUnion emptyUnion = new QuantifiedUnion(pattern, groupStartIndex);
+            QuantifiedUnionPatternConstruct emptyUnion = new QuantifiedUnionPatternConstruct(pattern, groupStartIndex);
             emptyUnion.captureConstructIndex = -1;
             emptyUnion.endIndex = index;
             advance(1);
@@ -1026,12 +1026,12 @@ final class PatternParser {
     }
     body.endIndex = index;
     if (groupCaptureIndex != -1) {
-      // parseUnion() guarantees a real QuantifiedUnion whenever captureConstructIndex != -1 -- see
+      // parseUnion() guarantees a real QuantifiedUnionPatternConstruct whenever captureConstructIndex != -1 -- see
       // its own doc.
       if (closedGroupsByIndex == null) {
         closedGroupsByIndex = new MutableIntObjectMap<>(4);
       }
-      closedGroupsByIndex.set(groupCaptureIndex, (QuantifiedUnion) body);
+      closedGroupsByIndex.set(groupCaptureIndex, (QuantifiedUnionPatternConstruct) body);
     }
     advance(1);
     PatternConstruct group = quantifyGroupBody(body, groupStartIndex, entryFlags);
@@ -1043,25 +1043,25 @@ final class PatternParser {
 
   /**
    * Applies a trailing quantifier (if any) to a just-closed group's body. If {@code body} is
-   * already a {@code QuantifiedUnion} (a capturing group, or a non-capturing group with more than
+   * already a {@code QuantifiedUnionPatternConstruct} (a capturing group, or a non-capturing group with more than
    * one alternative -- either way, {@link #parseUnion} already had to allocate one), the quantifier
    * is applied to it directly, exactly as it always was. Otherwise {@code body} is a bare {@code
-   * Sequence} (a non-capturing, single-alternative group, whose wrapping union {@link #parseUnion}
-   * deferred) -- wrapped in a fresh one-branch {@code QuantifiedUnion} only if a quantifier actually
+   * SequencePatternConstruct} (a non-capturing, single-alternative group, whose wrapping union {@link #parseUnion}
+   * deferred) -- wrapped in a fresh one-branch {@code QuantifiedUnionPatternConstruct} only if a quantifier actually
    * follows, the same wrap-and-check idiom {@link #quantifySingleConstruct} uses for a
    * backreference or {@code \X}.
    */
   private PatternConstruct quantifyGroupBody(
       PatternConstruct body, int groupStartIndex, int groupFlags) {
-    if (body instanceof QuantifiedUnion) {
-      parseQuantifiable((QuantifiedUnion) body);
+    if (body instanceof QuantifiedUnionPatternConstruct) {
+      parseQuantifiable((QuantifiedUnionPatternConstruct) body);
       return body;
     }
     skipComments();
     if (peek != '?' && peek != '*' && peek != '+' && peek != '{') {
       return body;
     }
-    QuantifiedUnion wrapper = new QuantifiedUnion(pattern, groupStartIndex);
+    QuantifiedUnionPatternConstruct wrapper = new QuantifiedUnionPatternConstruct(pattern, groupStartIndex);
     wrapper.captureConstructIndex = -1;
     wrapper.constructs.add(body);
     wrapper.endIndex = body.endIndex;
@@ -1091,7 +1091,7 @@ final class PatternParser {
     }
     body.endIndex = index;
     advance(1);
-    LookbehindConstruct.SingleCodePointBody resolved = body.resolveSingleCodePointBody();
+    LookbehindPatternConstruct.SingleCodePointBody resolved = body.resolveSingleCodePointBody();
     if (resolved == null) {
       throw throwUnexpectedChar(
           "lookbehind is only supported when its body always matches exactly one code point (a "
@@ -1101,7 +1101,7 @@ final class PatternParser {
           pattern.substring(startIndex, index),
           "\"?");
     }
-    LookbehindConstruct lookbehind = new LookbehindConstruct(
+    LookbehindPatternConstruct lookbehind = new LookbehindPatternConstruct(
         pattern, startIndex, index, isPositive, resolved.codePoints, resolved.captureConstructIndex);
     lookbehind.flags = flags;
     // Not itself quantifiable in this engine, same as \b/\B/^/$ -- see keepZeroWidthAfterQuantifier's
@@ -1109,13 +1109,13 @@ final class PatternParser {
     return keepZeroWidthAfterQuantifier() ? lookbehind : null;
   }
 
-  private ComplexCharacter parseComplexCharacter() {
+  private ComplexCharacterPatternConstruct parseComplexCharacter() {
     if (peek != '[') {
       throw new IllegalStateException("entered parseComplexCharacter at illegal start point");
     }
     int startIndex = index;
     CodePointSet finalRanges = parseComplexCharacterRanges(startIndex);
-    ComplexCharacter complex = new ComplexCharacter(startIndex, index, finalRanges);
+    ComplexCharacterPatternConstruct complex = new ComplexCharacterPatternConstruct(startIndex, index, finalRanges);
     complex.flags = flags;
     return complex;
   }
@@ -1143,14 +1143,14 @@ final class PatternParser {
     }
   }
 
-  /** A one-code-point {@code ComplexCharacter} (a literal that had to become a class, e.g. to be quantified). */
-  private ComplexCharacter singleCharacter(int startIndex, int codePoint) {
+  /** A one-code-point {@code ComplexCharacterPatternConstruct} (a literal that had to become a class, e.g. to be quantified). */
+  private ComplexCharacterPatternConstruct singleCharacter(int startIndex, int codePoint) {
     if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
-      return new ComplexCharacter(startIndex, codePoint);
+      return new ComplexCharacterPatternConstruct(startIndex, codePoint);
     }
     CodePointSetBuilder members = CodePointSetBuilder.create();
     addLiteral(members, codePoint);
-    return new ComplexCharacter(startIndex, members.build());
+    return new ComplexCharacterPatternConstruct(startIndex, members.build());
   }
 
   /**
@@ -1159,7 +1159,7 @@ final class PatternParser {
    * index} past the closing {@code "]"}. Split out from {@link #parseComplexCharacter} so a nested
    * class (the {@code '['} case below, e.g. {@code "[a-c[p-z]]"}) can recurse straight into this
    * -- merging the result directly into the enclosing accumulator via {@link #mergeInto} -- rather
-   * than building a whole separate {@code ComplexCharacter} object just to immediately discard
+   * than building a whole separate {@code ComplexCharacterPatternConstruct} object just to immediately discard
    * everything but its {@code ranges}.
    */
   private CodePointSet parseComplexCharacterRanges(int startIndex) {
@@ -1452,37 +1452,37 @@ final class PatternParser {
         if (peek == '{' && index + 2 < pattern.length()
             && pattern.charAt(index + 1) == 'g' && pattern.charAt(index + 2) == '}') {
           advance(3);
-          GraphemeBoundaryConstruct g = new GraphemeBoundaryConstruct(startIndex, index);
+          GraphemeBoundaryPatternConstruct g = new GraphemeBoundaryPatternConstruct(startIndex, index);
           g.flags = flags;
           return g;
         }
         rejectBoundaryType();
-        WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
+        WordBoundaryPatternConstruct b = new WordBoundaryPatternConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
         b.flags = flags;
         return b;
       }
       case 'B': {
         advance(2);
         rejectBoundaryType();
-        WordBoundaryConstruct b = new WordBoundaryConstruct(pattern, index-2, index, /* isWordBoundary= */ false);
+        WordBoundaryPatternConstruct b = new WordBoundaryPatternConstruct(pattern, index-2, index, /* isWordBoundary= */ false);
         b.flags = flags;
         return b;
       }
       case 'A': {
         advance(2);
-        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputBegin);
+        BoundaryPatternConstruct b = new BoundaryPatternConstruct(index-2, index, BoundaryEnum.InputBegin);
         b.flags = flags;
         return b;
       }
       case 'Z': {
         advance(2);
-        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputEndExceptTerminator);
+        BoundaryPatternConstruct b = new BoundaryPatternConstruct(index-2, index, BoundaryEnum.InputEndExceptTerminator);
         b.flags = flags;
         return b;
       }
       case 'z': {
         advance(2);
-        BoundaryConstruct b = new BoundaryConstruct(index-2, index, BoundaryEnum.InputEnd);
+        BoundaryPatternConstruct b = new BoundaryPatternConstruct(index-2, index, BoundaryEnum.InputEnd);
         b.flags = flags;
         return b;
       }
@@ -1500,7 +1500,7 @@ final class PatternParser {
   }
 
   /**
-   * Wraps a construct that isn't itself a {@code QuantifiableConstruct} (a backreference, or
+   * Wraps a construct that isn't itself a {@code QuantifiablePatternConstruct} (a backreference, or
    * {@code \X}) in a one-branch, non-capturing union so a following quantifier (e.g. {@code \X+})
    * has somewhere to attach; returns the construct as-is if nothing follows.
    */
@@ -1509,9 +1509,9 @@ final class PatternParser {
     if (peek != '?' && peek != '*' && peek != '+' && peek != '{') {
       return construct;
     }
-    QuantifiedUnion wrapper = new QuantifiedUnion(pattern, construct.startIndex);
+    QuantifiedUnionPatternConstruct wrapper = new QuantifiedUnionPatternConstruct(pattern, construct.startIndex);
     wrapper.captureConstructIndex = -1;
-    Sequence body = new Sequence(construct.startIndex);
+    SequencePatternConstruct body = new SequencePatternConstruct(construct.startIndex);
     body.patterns.add(construct);
     body.endIndex = construct.endIndex;
     wrapper.constructs.add(body);
@@ -1523,7 +1523,7 @@ final class PatternParser {
   /**
    * {@code \1}-{@code \9} (numbered backreference) or {@code \k<name>} (named backreference), or
    * null if {@code peek}/{@code peek2} don't start either form. Resolves the reference to its
-   * already-parsed {@code QuantifiedUnion} immediately (via {@code closedGroupsByIndex}/{@code
+   * already-parsed {@code QuantifiedUnionPatternConstruct} immediately (via {@code closedGroupsByIndex}/{@code
    * namedGroups}), rejecting forward references and references to undefined groups here at parse
    * time -- see design.md's "Backreferences" section and {@code closedGroupsByIndex}'s doc.
    *
@@ -1550,7 +1550,7 @@ final class PatternParser {
         digitsEnd++;
       }
       int referencedIndex = groupNumber - 1;
-      QuantifiedUnion referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
+      QuantifiedUnionPatternConstruct referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
       if (referenced == null) {
         throw PatternSyntaxException.throwWithReferences(
             pattern,
@@ -1560,7 +1560,7 @@ final class PatternParser {
             "supported) -- ", captureConstructIndex, " capturing group(s) defined so far");
       }
       advance(digitsEnd - index);
-      BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
+      BackReferencePatternConstruct backReference = new BackReferencePatternConstruct(startIndex, index, referencedIndex, referenced);
       backReference.flags = flags;
       return backReference;
     }
@@ -1595,7 +1595,7 @@ final class PatternParser {
             "hasn't been closed yet at this point in the pattern (forward references aren't ",
             "supported)");
       }
-      QuantifiedUnion referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
+      QuantifiedUnionPatternConstruct referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
       if (referenced == null) {
         throw PatternSyntaxException.throwWithReferences(
             pattern,
@@ -1603,7 +1603,7 @@ final class PatternParser {
             "backreference \\k<", name, "> refers to a named group that hasn't been closed yet at ",
             "this point in the pattern (forward references aren't supported)");
       }
-      BackReference backReference = new BackReference(startIndex, index, referencedIndex, referenced);
+      BackReferencePatternConstruct backReference = new BackReferencePatternConstruct(startIndex, index, referencedIndex, referenced);
       backReference.flags = flags;
       return backReference;
     }
@@ -1615,10 +1615,10 @@ final class PatternParser {
    * escape like {@code \n}, which {@link #tryParseSingleCharEscape} already handles before a
    * caller ever reaches here), advancing past it, and returns the {@link CodePointSet} it denotes.
    *
-   * <p>A pure function rather than one that mutates a {@code ComplexCharacter}/{@code ranges}
+   * <p>A pure function rather than one that mutates a {@code ComplexCharacterPatternConstruct}/{@code ranges}
    * parameter in place: every result here is either a {@code NamedCharClass}/{@code
    * RegexCharacterClass} static constant or a freshly built complement of one, both safe to hand
-   * back directly. A caller building a standalone {@code ComplexCharacter} for just this escape
+   * back directly. A caller building a standalone {@code ComplexCharacterPatternConstruct} for just this escape
    * (the common case -- a bare {@code \d} in running pattern text) can then assign the result
    * straight into that construct's (effectively immutable) {@code ranges} with no defensive copy;
    * a caller merging this into an already-accumulating bracket-expression {@code ranges} (e.g.
@@ -1808,14 +1808,14 @@ final class PatternParser {
     }
   }
 
-  private PatternConstruct parseQuantifiable(ComplexCharacter construct) {
-    // construct.flags is already set by whoever built it (every ComplexCharacter creation site
+  private PatternConstruct parseQuantifiable(ComplexCharacterPatternConstruct construct) {
+    // construct.flags is already set by whoever built it (every ComplexCharacterPatternConstruct creation site
     // sets it directly, since it also needs the correct value for the never-quantified case, which
     // never reaches here at all).
     //
     // skipComments() first, then peek for an actual quantifier suffix, so the overwhelmingly
     // common unquantified case (a lone bracket class/"."/ escape with nothing after it) can return
-    // `construct` itself unwrapped instead of always allocating a ComplexQuantifiedCharacter just
+    // `construct` itself unwrapped instead of always allocating a ComplexQuantifiedCharacterPatternConstruct just
     // to immediately discover there's nothing to quantify -- this was PatternParser's #3
     // allocation site by CPU-sampling weight (~6% of Pattern.compile's allocations; see notes.md).
     // Safe to skip the generic parseQuantifiable(T) overload entirely here: when none of
@@ -1826,7 +1826,7 @@ final class PatternParser {
     if (peek != '?' && peek != '*' && peek != '+' && peek != '{') {
       return construct;
     }
-    return parseQuantifiable(new ComplexQuantifiedCharacter(pattern, index, construct));
+    return parseQuantifiable(new ComplexQuantifiedCharacterPatternConstruct(pattern, index, construct));
   }
 
   // Character.codePointOf (JDK 9+, and Android from the release whose ICU has it) is the only source of
@@ -1896,22 +1896,12 @@ final class PatternParser {
       return true;
     }
     int savedQuantifiableIndex = quantifiableIndex;
-    QuantifiableConstruct quantifier = parseQuantifiable(new QuantifiableConstruct(pattern, index) {
-      @Override
-      protected void buildEntryMap(PatternConstruct next) {
-        throw new UnsupportedOperationException("scratch quantifier holder for a zero-width construct");
-      }
-
-      @Override
-      protected void buildMatcher() {
-        throw new UnsupportedOperationException("scratch quantifier holder for a zero-width construct");
-      }
-    });
+    QuantifiablePatternConstruct quantifier = parseQuantifiable(new ScratchQuantifierHolderPatternConstruct(pattern, index));
     quantifiableIndex = savedQuantifiableIndex; // the scratch holder needs no loop counter slot
     return quantifier.min >= 1;
   }
 
-  private <T extends QuantifiableConstruct> T parseQuantifiable(T construct) {
+  private <T extends QuantifiablePatternConstruct> T parseQuantifiable(T construct) {
     // Under COMMENTS, whitespace/comments between an atom and its quantifier suffix ("a *") are
     // insignificant too, same as everywhere else outside a character class.
     skipComments();
@@ -2006,11 +1996,11 @@ final class PatternParser {
       // stray literal '+' in the pattern that broke matching. See remaining_work.md.
       // Possessive ('+') is still compiled identically to plain greedy (this engine's no-backtrack
       // greedy loop already behaves as possessive -- nothing to backtrack into), but is recorded on
-      // the construct anyway -- see QuantifiableConstruct#possessive -- since the two are no longer
+      // the construct anyway -- see QuantifiablePatternConstruct#possessive -- since the two are no longer
       // interchangeable for the loop/zero-width-assertion ambiguity check buildLoopMatcher runs:
       // possessive genuinely never backtracks in java.util.regex either, so it's exempt from a
       // rejection that greedy syntax needs (see that field's own doc). Reluctant ('?') is recorded
-      // on the construct too -- see QuantifiableConstruct#reluctant.
+      // on the construct too -- see QuantifiablePatternConstruct#reluctant.
       construct.reluctant = peek == '?';
       construct.possessive = peek == '+';
       advance(1);

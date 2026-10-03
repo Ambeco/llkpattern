@@ -5,18 +5,18 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-public final class WordBoundaryConstruct extends ZeroWidthAssertionConstruct {
+public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatternConstruct {
 	final String pattern;
 	final boolean isWordBoundary; // true: \b, false: \B
 
 	// The set of code points that could be the last one consumed by whatever immediately
-	// precedes this boundary in its enclosing Sequence, if statically known -- set by
-	// Sequence.buildEntryMap (via lastCharSet(), below) before compile() runs; null (the
-	// default, e.g. when this boundary opens its Sequence, or isn't in one at all) means "not
+	// precedes this boundary in its enclosing SequencePatternConstruct, if statically known -- set by
+	// SequencePatternConstruct.buildEntryMap (via lastCharSet(), below) before compile() runs; null (the
+	// default, e.g. when this boundary opens its SequencePatternConstruct, or isn't in one at all) means "not
 	// statically known", which is always a safe fallback, just a missed optimization.
 	@Nullable CodePointSet priorCharSet;
 
-	public WordBoundaryConstruct(String pattern, int startIndex, int endIndex, boolean isWordBoundary) {
+	public WordBoundaryPatternConstruct(String pattern, int startIndex, int endIndex, boolean isWordBoundary) {
 		super(startIndex, endIndex);
 		this.pattern = pattern;
 		this.isWordBoundary = isWordBoundary;
@@ -86,7 +86,7 @@ public final class WordBoundaryConstruct extends ZeroWidthAssertionConstruct {
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		// See design.md's "Boundary matching" section and the class doc for
 		// WordBoundaryMatcherConstruct for the full optimization rationale. In brief: both sides
 		// of the boundary (the character just consumed, and the one about to be) are classified

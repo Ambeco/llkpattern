@@ -701,7 +701,7 @@ public class Matcher implements MatchResult {
 		// next whenever an attempt failed WITHOUT reaching its own EndLoopMatcherConstruct exit (the
 		// only place a counter gets reset to 0), which happens routinely: e.g. a bounded {n,m} loop
 		// whose body character overlaps with what comes after it (unavoidable when nothing follows
-		// the loop at all, since EndConstruct's catch-all entryElse always looks like "keep going")
+		// the loop at all, since EndPatternConstruct's catch-all entryElse always looks like "keep going")
 		// hits its own max bound and hard-fails via LoopMatcherConstruct's own "loopCount > max"
 		// check, leaving the counter non-zero. find()'s internal scan over successive start positions
 		// (and any other back-to-back matches() /lookingAt()/find() calls on a reused Matcher without

@@ -2,12 +2,12 @@ package com.tbohne.llkpattern.constructs;
 
 import com.tbohne.llkpattern.*;
 
-import com.tbohne.llkpattern.constructs.ComplexCharacter;
+import com.tbohne.llkpattern.constructs.ComplexCharacterPatternConstruct;
 
 public final class SingleCharMatcherConstruct extends MatcherConstruct {
 	final CodePointSet validRanges;
 
-	SingleCharMatcherConstruct(ComplexCharacter owner) {
+	SingleCharMatcherConstruct(ComplexCharacterPatternConstruct owner) {
 		super(owner, owner.next().matcher());
 		this.validRanges = owner.validRanges();
 	}

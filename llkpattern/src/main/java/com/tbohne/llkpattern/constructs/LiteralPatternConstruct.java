@@ -5,7 +5,7 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-public final class LiteralString extends PatternConstruct {
+public final class LiteralPatternConstruct extends PatternConstruct {
 	// A CharSequence, not a String: for a literal run PatternParser could decode verbatim from
 	// the pattern text (no escapes, no COMMENTS-mode gaps), it's a zero-copy
 	// java.nio.CharBuffer view of `pattern` rather than a materialized copy -- see
@@ -13,7 +13,7 @@ public final class LiteralString extends PatternConstruct {
 	// copy; CharBuffer.wrap doesn't).
 	final CharSequence value;
 
-	public LiteralString(int startIndex, int endIndex, CharSequence value) {
+	public LiteralPatternConstruct(int startIndex, int endIndex, CharSequence value) {
 		super(startIndex, endIndex);
 		this.value = value;
 	}
@@ -30,14 +30,14 @@ public final class LiteralString extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		// A literal is the one leaf whose set isn't already folded (a class's is, at parse time;
 		// a named class is never folded), so it is folded here rather than in checkDisjoint.
 		entryMap = MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags);
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		// value.toString() here, not value directly: LiteralMatcherConstruct wants a real String
 		// (String#regionMatches is a JIT intrinsic -- real vectorized comparison -- and
 		// String#charAt/length are direct field/array reads; a CharBuffer's own versions of
@@ -61,10 +61,10 @@ public final class LiteralString extends PatternConstruct {
 		// (unlike a bracket-class member) isn't folded at parse time, so the raw written code point
 		// alone would under-report what this literal could actually have matched under its own
 		// CASE_INSENSITIVE. Every other firstCharSet()/lastCharSet() override already returns an
-		// already-folded set (ComplexCharacter's ranges are folded at parse time; a nested class's
+		// already-folded set (ComplexCharacterPatternConstruct's ranges are folded at parse time; a nested class's
 		// or named class's isn't foldable at all under java.util.regex's own rules) -- this brings
-		// LiteralString in line with that contract instead of being the one exception. See
-		// BackReference.buildEntryMap's own doc for why this matters beyond \b/\B classification:
+		// LiteralPatternConstruct in line with that contract instead of being the one exception. See
+		// BackReferencePatternConstruct.buildEntryMap's own doc for why this matters beyond \b/\B classification:
 		// entrySet built from an under-reported firstCharSet() is a real match-time dispatch gate,
 		// not just a compile-time approximation.
 		return MatcherConstruct.foldedEntrySet(singletonCodePointMap(cp), flags);
@@ -79,13 +79,13 @@ public final class LiteralString extends PatternConstruct {
 	}
 
 	@Override
-	public final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+	public final LookbehindPatternConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
 		if (Character.codePointCount(value, 0, value.length()) != 1) {
 			return null;
 		}
 		// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
 		// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
-		// UNICODE_CASE, exactly like LiteralString.buildEntryMap's own entryMap.
-		return new LookbehindConstruct.SingleCodePointBody(MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags), -1);
+		// UNICODE_CASE, exactly like LiteralPatternConstruct.buildEntryMap's own entryMap.
+		return new LookbehindPatternConstruct.SingleCodePointBody(MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags), -1);
 	}
 }

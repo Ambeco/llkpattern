@@ -5,7 +5,7 @@ import com.tbohne.llkpattern.*;
 import java.util.List;
 
 public final class EndMatcherConstruct extends MatcherConstruct {
-	EndMatcherConstruct(EndConstruct owner) {
+	EndMatcherConstruct(EndPatternConstruct owner) {
 		super(owner);
 	}
 

@@ -284,7 +284,7 @@ instead of retyping the text.
 A new zero-width `PatternConstruct`/`MatcherConstruct` pair needs wiring into four places, not just
 its own `buildEntryMap`/`buildMatcher`:
 
-1. `buildEntryMap`: extend `ZeroWidthAssertionConstruct` (or call `buildZeroWidthEntryMap(this, next)`), so the entry point is what can start what FOLLOWS the assertion. Never a bare `entryElse = this` catch-all: it hid `\b[ab]c|a`-style overlaps from the ambiguity check.
+1. `buildEntryMap`: extend `ZeroWidthAssertionPatternConstruct` (or call `buildZeroWidthEntryMap(this, next)`), so the entry point is what can start what FOLLOWS the assertion. Never a bare `entryElse = this` catch-all: it hid `\b[ab]c|a`-style overlaps from the ambiguity check.
 2. `PatternConstruct#skipZeroWidthEntrySet`'s `checkAssertions` branch, via an
    `admittedInteriorExitPeekSet` static helper -- without this, a loop whose exit passes through
    the new construct can silently compile an unsound ambiguity (see design.md's "Boundary matching"
@@ -293,7 +293,7 @@ its own `buildEntryMap`/`buildMatcher`:
    early exit can check it.
 4. Implement `ZeroWidthAssertionGuard` (`holdsHere`) for #3 to call.
 
-Grep existing `WordBoundaryConstruct`/`WordBoundaryMatcherConstruct` references across
+Grep existing `WordBoundaryPatternConstruct`/`WordBoundaryMatcherConstruct` references across
 `constructs/PatternConstruct.java`/`constructs/MatcherConstruct.java` for the full pattern to mirror -- none of these four
 are cross-referenced from a single doc comment, so it's easy to add the construct pair and miss one.
 
@@ -333,8 +333,8 @@ give "Binary file matches"). Per-test failure messages are in
 
 ## Parser root shape
 
-`PatternParser.parse()` unwraps a single-alternative root, so `parsed` is a bare `Sequence`, not a
-`QuantifiedUnion`. Code inspecting the root construct (e.g. `Ll1Pattern.startsWithBeginAnchor`) must
+`PatternParser.parse()` unwraps a single-alternative root, so `parsed` is a bare `SequencePatternConstruct`, not a
+`QuantifiedUnionPatternConstruct`. Code inspecting the root construct (e.g. `Ll1Pattern.startsWithBeginAnchor`) must
 handle both shapes.
 
 ## Differential tests against `java.util.regex`

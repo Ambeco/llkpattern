@@ -5,13 +5,13 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-public final class LookbehindConstruct extends ZeroWidthAssertionConstruct {
+public final class LookbehindPatternConstruct extends ZeroWidthAssertionPatternConstruct {
 	final String pattern;
 	final boolean isPositive; // true: (?<=X), false: (?<!X)
 	final CodePointSet lookSet;
 	public final int captureConstructIndex; // -1 if the body wasn't wrapped in a capturing group
 
-	public LookbehindConstruct(
+	public LookbehindPatternConstruct(
 			String pattern, int startIndex, int endIndex, boolean isPositive,
 			CodePointSet lookSet, int captureConstructIndex) {
 		super(startIndex, endIndex);
@@ -22,10 +22,10 @@ public final class LookbehindConstruct extends ZeroWidthAssertionConstruct {
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		// Always a real check -- unlike \b/\B, there's no "peek" side to statically classify
 		// away: the previous character is never known at compile time, so this never collapses
-		// to a no-op or a compile-time error the way WordBoundaryConstruct sometimes does.
+		// to a no-op or a compile-time error the way WordBoundaryPatternConstruct sometimes does.
 		new LookbehindMatcherConstruct(this, isPositive, lookSet, captureConstructIndex);
 	}
 
@@ -43,7 +43,7 @@ public final class LookbehindConstruct extends ZeroWidthAssertionConstruct {
 
 	/**
 	 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s {@code
-	 * checkAssertions} doc, and {@code WordBoundaryConstruct#admittedInteriorExitPeekSet}'s own
+	 * checkAssertions} doc, and {@code WordBoundaryPatternConstruct#admittedInteriorExitPeekSet}'s own
 	 * doc for why the coarse catch-all entry point ({@code entryElse = this}) isn't safe for a
 	 * loop's own continue-vs-exit ambiguity check. Simpler than that method's version: a
 	 * lookbehind's truth depends ONLY on the prior character, never on peek at all, so once {@code
@@ -57,7 +57,7 @@ public final class LookbehindConstruct extends ZeroWidthAssertionConstruct {
 			return null;
 		}
 		// first(), not entrySet(), so a violation short-circuits -- same technique as
-		// WordBoundaryConstruct's own isSubsetOf/isDisjointFrom helpers.
+		// WordBoundaryPatternConstruct's own isSubsetOf/isDisjointFrom helpers.
 		boolean subsetOfLookSet = !bodyLastCharSet.first((min, max) -> !lookSet.containsAll(min, max));
 		boolean couldHold = isPositive ? bodyLastCharSet.intersects(lookSet) : !subsetOfLookSet;
 		return couldHold ? universalCodePointSet() : new ArrayCodePointSet();

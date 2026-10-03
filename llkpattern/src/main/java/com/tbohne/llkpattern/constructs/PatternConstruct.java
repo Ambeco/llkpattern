@@ -30,7 +30,7 @@ public abstract class PatternConstruct {
 
 	@MonotonicNonNull MatcherConstruct matcher;
 
-	// Set by a chain builder (see #buildFlattenedChain, QuantifiableConstruct#buildLoopMatcher) just
+	// Set by a chain builder (see #buildFlattenedChain, QuantifiablePatternConstruct#buildLoopMatcher) just
 	// before calling compile() on this construct as one candidate among several -- read by
 	// MatcherConstruct's owner-based constructor to become that node's own entrySet/failedEntry
 	// (see MatcherConstruct's "Flattened dispatch" class doc). Null for the overwhelming majority
@@ -47,8 +47,8 @@ public abstract class PatternConstruct {
 	// thread the continuation through again.
 	@MonotonicNonNull PatternConstruct next;
 
-	// A shared, never-mutated empty set -- the default for any construct (BoundaryConstruct,
-	// WordBoundaryConstruct) whose buildEntryMap() only ever sets entryElse, never entryMap itself.
+	// A shared, never-mutated empty set -- the default for any construct (BoundaryPatternConstruct,
+	// WordBoundaryPatternConstruct) whose buildEntryMap() only ever sets entryElse, never entryMap itself.
 	// One shared instance rather than `new ArrayCodePointSet()` per construct instance, now that
 	// entryMap is a plain (immutable-from-here) CodePointSet reference, not something built up via
 	// per-construct mutation -- see entryMap's own doc below.
@@ -57,15 +57,15 @@ public abstract class PatternConstruct {
 	// The set of code points this construct claims as its own entry point, once it (and anything
 	// it can trivially skip, e.g. an optional quantifier) has matched. Populated by buildEntryMap()
 	// (lazily, via ensureEntryPointBuilt() -- see getEntryPointMap()/getEntryElse() below);
-	// consumed while compiling a containing QuantifiedUnion/Sequence to detect ambiguous branches,
+	// consumed while compiling a containing QuantifiedUnionPatternConstruct/SequencePatternConstruct to detect ambiguous branches,
 	// and to build the MatcherConstruct graph. Never read directly outside this construct's own
 	// buildEntryMap() -- every other reader goes through the getters.
 	//
 	// Plain code-point-set membership (never a "code point -> owning construct" map) -- every
 	// entryMap-populating call in every buildEntryMap() override below either aliases another
 	// construct's own entryMap directly (a construct whose own entry point is exactly some other
-	// construct's -- Sequence's first element, CaptureEndMarker's realNext, a bare-flags-only
-	// union's next, a ComplexCharacter's own validRanges(), a BackReference's referenced group's
+	// construct's -- SequencePatternConstruct's first element, CaptureEndPatternConstruct's realNext, a bare-flags-only
+	// union's next, a ComplexCharacterPatternConstruct's own validRanges(), a BackReferencePatternConstruct's referenced group's
 	// firstCharSet -- see each override's own comment) or inserts a code point with no further
 	// payload, so there's never a PatternConstruct identity to lose. This is a plain (not Mutable)
 	// CodePointSet specifically so aliasing is safe: nothing can mutate an aliased set out from
@@ -178,22 +178,22 @@ public abstract class PatternConstruct {
 	 * #ensureEntryPointBuilt} call) -- calling it on every candidate up front would force every
 	 * candidate's entryMap to materialize, even ones {@link #mergeEntryPoints} otherwise wouldn't
 	 * need to (see {@link #getEntryPointMap()}'s own call in that method). A candidate that's a
-	 * pure leaf (e.g. {@code LiteralString}) or a pure alias ({@code Sequence}, {@code
-	 * CaptureEndMarker}) overrides this to answer straight from whatever it aliases instead --
+	 * pure leaf (e.g. {@code LiteralPatternConstruct}) or a pure alias ({@code SequencePatternConstruct}, {@code
+	 * CaptureEndPatternConstruct}) overrides this to answer straight from whatever it aliases instead --
 	 * skipping materializing its own {@code entryMap} purely to answer this one question.
 	 *
 	 * <p>Default just pulls through the ordinary cached, cycle-guarded {@link #getEntryElse()} --
 	 * correct for any construct, and REQUIRED (not just correct) for the "real consumers" that
-	 * actually own ambiguity-checked ranges of their own ({@code ComplexCharacter}'s own ranges,
-	 * and any {@code QuantifiedUnion}/{@code ComplexQuantifiedCharacter} that merges multiple
+	 * actually own ambiguity-checked ranges of their own ({@code ComplexCharacterPatternConstruct}'s own ranges,
+	 * and any {@code QuantifiedUnionPatternConstruct}/{@code ComplexQuantifiedCharacterPatternConstruct} that merges multiple
 	 * candidates via {@code buildLoopEntryMap}): overriding those to answer without going through
 	 * the cycle guard {@link #ensureEntryPointBuilt} provides would be wrong, since a quantified
 	 * construct's own body can point its {@code next} right back at this same construct for a
-	 * nullable loop (e.g. {@code (a?)+}) -- see {@code QuantifiableConstruct.buildLoopEntryMap}'s
+	 * nullable loop (e.g. {@code (a?)+}) -- see {@code QuantifiablePatternConstruct.buildLoopEntryMap}'s
 	 * {@code part.next = this}. Only override this for a construct that either has no recursion at
 	 * all (a true leaf) or delegates to exactly one other, structurally-fixed construct (never
 	 * blindly through {@code next}, unless whatever `next` might resolve to is itself guaranteed to
-	 * still be state-checked -- see {@code QuantifiedUnion}'s bare-flags-group override for the one
+	 * still be state-checked -- see {@code QuantifiedUnionPatternConstruct}'s bare-flags-group override for the one
 	 * case that does this safely).
 	 */
 	boolean claimsEntryElse() {
@@ -202,7 +202,7 @@ public abstract class PatternConstruct {
 
 	/**
 	 * Only meaningful once {@link #claimsEntryElse} is true: whether that catch-all is "the pattern
-	 * may END here" ({@link EndConstruct}, seen through whatever nullable/zero-width/marker
+	 * may END here" ({@link EndPatternConstruct}, seen through whatever nullable/zero-width/marker
 	 * constructs sit in front of it) rather than a construct that itself accepts any character (an
 	 * unresolvable backreference). End-of-find is mode-dependent, exactly like {@link
 	 * EndMatcherConstruct}: under {@code lookingAt()}/{@code find()} the match is
@@ -270,17 +270,17 @@ public abstract class PatternConstruct {
 	 * direct {@link #next} field assignment) -- see design.md's "Entry-point computation vs.
 	 * matcher compilation" section for why.
 	 */
-	protected abstract void buildEntryMap(PatternConstruct next);
+	abstract void buildEntryMap(PatternConstruct next);
 
-	protected abstract void buildMatcher();
+	abstract void buildMatcher();
 
 	/**
 	 * Whether {@link #compile} needs to run {@link #ensureEntryPointBuilt} before {@link
 	 * #buildMatcher} -- {@code true} by default, since most {@code buildMatcher()} overrides read
-	 * fields that only {@code buildEntryMap()} populates (e.g. {@code QuantifiedUnion}'s {@code
+	 * fields that only {@code buildEntryMap()} populates (e.g. {@code QuantifiedUnionPatternConstruct}'s {@code
 	 * compileTarget}/{@code rawEntryElse}). Override to {@code false} ONLY for
 	 * a construct whose {@code buildMatcher()} reads nothing {@code buildEntryMap()} sets -- a true
-	 * leaf like {@code LiteralString}/{@code ComplexCharacter}, whose matcher is built entirely
+	 * leaf like {@code LiteralPatternConstruct}/{@code ComplexCharacterPatternConstruct}, whose matcher is built entirely
 	 * from their own constructor-supplied data. This is what lets such a leaf, when reached only as
 	 * a merge candidate (via {@link #claimsEntryElse}), skip materializing its own {@link #entryMap}
 	 * entirely -- otherwise {@code compile()}'s own unconditional {@code ensureEntryPointBuilt()}
@@ -289,7 +289,7 @@ public abstract class PatternConstruct {
 	 * that participates in the entry-point cycle guard's graph, because a leaf's {@code
 	 * buildEntryMap()} never reads {@code next} at all -- leaving it at {@code
 	 * ENTRY_POINT_NOT_STARTED} after {@code compile()} can't corrupt anything a later, genuine pull
-	 * (e.g. {@code Sequence.buildEntryMap}'s {@code getEntryPointMap()} call) would need; it just
+	 * (e.g. {@code SequencePatternConstruct.buildEntryMap}'s {@code getEntryPointMap()} call) would need; it just
 	 * defers the same computation to whenever (if ever) that pull actually happens.
 	 */
 	boolean needsEntryPointBeforeMatcher() {
@@ -331,17 +331,17 @@ public abstract class PatternConstruct {
 	 * #getEntryElse}, not {@link #compile} -- see design.md's "Entry-point computation vs. matcher
 	 * compilation" section), rejecting the first ambiguity: two candidates whose entry ranges
 	 * overlap, or two candidates that both accept "any other character". Used for plain alternation
-	 * ({@code candidates} = a union's branches, by way of {@code QuantifiedUnion.buildEntryMap}) and
+	 * ({@code candidates} = a union's branches, by way of {@code QuantifiedUnionPatternConstruct.buildEntryMap}) and
 	 * for a quantified construct's own entry point ({@code candidates} = a loop's body parts, plus
 	 * its own {@code next} when the loop can match zero times, by way of {@code
-	 * QuantifiableConstruct.buildLoopEntryMap}). See {@link #checkDisjoint} for the sibling case
+	 * QuantifiablePatternConstruct.buildLoopEntryMap}). See {@link #checkDisjoint} for the sibling case
 	 * that needs the same ambiguity check but not the merged ranges themselves.
 	 */
 	/**
 	 * Unions {@code candidates}' own entry points and picks out whichever one (at most one is
 	 * allowed to) claims the any-other-character catch-all -- no ambiguity/overlap check here any
 	 * more: that's now {@link #checkDisjoint}'s job, run separately against entry points alone
-	 * (see {@link #buildFlattenedChain}/{@code QuantifiableConstruct#buildLoopMatcher}, its own
+	 * (see {@link #buildFlattenedChain}/{@code QuantifiablePatternConstruct#buildLoopMatcher}, its own
 	 * call sites), not here against {@code PatternConstruct}s while just computing this
 	 * construct's own entry point. This is what lets this method union plain {@code CodePointSet}s
 	 * directly instead of tagging every candidate's ranges into a {@code CodePointMap<PatternConstruct>} purely to
@@ -355,7 +355,7 @@ public abstract class PatternConstruct {
 	 * Same as {@link #mergeEntryPoints(String, List, String)}, plus one more candidate
 	 * ({@code extra}, or {@code null} for none) merged in without the caller having to copy
 	 * {@code candidates} into a new list just to append it -- {@code
-	 * QuantifiableConstruct.buildLoopEntryMap}'s own reason for existing: {@code next} joins the
+	 * QuantifiablePatternConstruct.buildLoopEntryMap}'s own reason for existing: {@code next} joins the
 	 * merge only when {@code min == 0}, and was previously always copied into a fresh {@code
 	 * ArrayList<>(body)} first, real work (an {@code arraycopy}) showing up in this project's own
 	 * on-device CPU sampling (Pixel 3a) even though `next` isn't part of the merge at all in the
@@ -487,7 +487,7 @@ public abstract class PatternConstruct {
 	 * As the four-{@code List}/{@code PatternConstruct} overload above, but lets the caller override
 	 * {@code extra}'s own entry set with {@code extraEntrySet} (used only for the overlap comparison
 	 * below -- {@code extra} itself is still what an error message blames) -- see {@link
-	 * #skipZeroWidthEntrySet}'s own doc for why {@code QuantifiableConstruct.buildLoopMatcher} needs
+	 * #skipZeroWidthEntrySet}'s own doc for why {@code QuantifiablePatternConstruct.buildLoopMatcher} needs
 	 * this and {@link #buildFlattenedChain} doesn't.
 	 */
 	static CodePointSet[] checkDisjoint(
@@ -620,7 +620,7 @@ public abstract class PatternConstruct {
 
 	/**
 	 * A zero-width vehicle for a single capturing loop body part's own entry gating -- see
-	 * {@code QuantifiableConstruct.buildLoopMatcher}'s own doc for why the gate has to live here,
+	 * {@code QuantifiablePatternConstruct.buildLoopMatcher}'s own doc for why the gate has to live here,
 	 * one level above the {@code BeginCaptureMatcherConstruct} it owns, rather than on the body
 	 * part itself (which is compiled ungated and wrapped INSIDE the capture instead).
 	 */
@@ -628,10 +628,10 @@ public abstract class PatternConstruct {
 	/**
 	 * A zero-width marker standing in for a {@code LoopMatcherConstruct} as a
 	 * loop body's own compile target, so that node can be self-registered onto this marker BEFORE
-	 * the body compiles against it (see {@code QuantifiableConstruct.buildLoopMatcher}'s doc for why
+	 * the body compiles against it (see {@code QuantifiablePatternConstruct.buildLoopMatcher}'s doc for why
 	 * that ordering matters). Its own entry point IS queried, though -- a nullable construct nested
 	 * inside the loop body (e.g. the {@code (a)?} in {@code (a)?+}) needs to look past itself at
-	 * "what comes after me" while computing its OWN entry point (see {@code Sequence.buildEntryMap}'s
+	 * "what comes after me" while computing its OWN entry point (see {@code SequencePatternConstruct.buildEntryMap}'s
 	 * {@code getEntryPointMap()} call for the general pattern), and what "comes after" a loop body is
 	 * -- semantically -- the loop itself: looping back around re-enters exactly the same entry point
 	 * {@code owner} already advertises externally. Delegating to {@code owner}'s own (by this point
@@ -640,8 +640,8 @@ public abstract class PatternConstruct {
 	 */
 
 	/**
-	 * A second zero-width marker used by {@code QuantifiableConstruct.buildLoopMatcher}, distinct
-	 * from {@link LoopBackMarker} (whose own {@code .matcher} is already claimed by the {@code
+	 * A second zero-width marker used by {@code QuantifiablePatternConstruct.buildLoopMatcher}, distinct
+	 * from {@link LoopBackPatternConstruct} (whose own {@code .matcher} is already claimed by the {@code
 	 * LoopMatcherConstruct} instance itself): this one's {@code .matcher} is where that same
 	 * instance's "continue" successor -- the body-part-selection chain, not resolvable until after
 	 * the loop body has compiled -- ends up, via an ordinary direct assignment once it's known. This
@@ -663,8 +663,8 @@ public abstract class PatternConstruct {
 	/**
 	 * {@code \1}/{@code \k<name>}. {@code referencedGroup} is resolved at parse time (see
 	 * PatternParser's {@code tryParseBackReference}) to the actual, already-fully-parsed
-	 * {@code QuantifiedUnion} the reference points at -- forward references and references to
-	 * undefined groups are rejected there, before a BackReference is ever constructed. See
+	 * {@code QuantifiedUnionPatternConstruct} the reference points at -- forward references and references to
+	 * undefined groups are rejected there, before a BackReferencePatternConstruct is ever constructed. See
 	 * design.md's "Backreferences" section for the full design.
 	 */
 
@@ -711,8 +711,8 @@ public abstract class PatternConstruct {
 	 * override has the exact same shape -- fold in whatever {@link #admittedInteriorExitPeekSet}
 	 * says a loop's interior exit through this assertion should treat as ambiguous, on top of
 	 * unconditionally seeing through to {@code next}'s own entry set otherwise -- {@code
-	 * WordBoundaryConstruct}/{@code LineBoundaryConstruct}/{@code LookbehindConstruct}/{@code
-	 * GraphemeBoundaryConstruct}. ({@code BoundaryConstruct} sees straight through with no
+	 * WordBoundaryPatternConstruct}/{@code LineBoundaryPatternConstruct}/{@code LookbehindPatternConstruct}/{@code
+	 * GraphemeBoundaryPatternConstruct}. ({@code BoundaryPatternConstruct} sees straight through with no
 	 * "admitted" concept at all, so it stays a direct {@code PatternConstruct} subclass instead.)
 	 *
 	 * <p>EXPERIMENTAL (2026-09-27, project owner's idea -- see remaining_work.md/notes.md): merges
@@ -720,7 +720,7 @@ public abstract class PatternConstruct {
 	 * {@code final} implementation here, so all four subclasses dispatch to the exact same compiled
 	 * method rather than each having their own -- an attempt to reduce that call site's
 	 * megamorphism (it still has several distinct override bodies system-wide -- this shared one,
-	 * plus {@code BoundaryConstruct}/{@code Sequence}/{@code QuantifiedUnion}'s own, plus the base
+	 * plus {@code BoundaryPatternConstruct}/{@code SequencePatternConstruct}/{@code QuantifiedUnionPatternConstruct}'s own, plus the base
 	 * default -- just fewer of them). Not known in advance whether ART's inline caching actually
 	 * benefits from this; measured, not assumed -- see notes.md for the result.
 	 */
@@ -728,24 +728,24 @@ public abstract class PatternConstruct {
 	/**
 	 * {@code \b{g}} (grapheme boundary) -- unlike {@code \b}/{@code \B}, only the positive form
 	 * exists (JDK 27 doesn't recognize {@code \B{g}} as special syntax either; see design.md).
-	 * Always a real, match-time check -- like {@link LookbehindConstruct}, there's no compile-time
+	 * Always a real, match-time check -- like {@link LookbehindPatternConstruct}, there's no compile-time
 	 * elision to a no-op or a compile error, since neither neighbor's grapheme-boundary-ness is
 	 * ever fully statically known the way \b/\B's word-ness sometimes is.
 	 */
 
 	/**
-	 * {@code ^} (line begin) / {@code $} (line end). Split out from {@link BoundaryConstruct}
+	 * {@code ^} (line begin) / {@code $} (line end). Split out from {@link BoundaryPatternConstruct}
 	 * (2026-09-07) for the same reason {@code \b}/{@code \B} were: a real, non-stub
 	 * implementation with its own logic (MULTILINE-aware line-terminator scanning), distinct
-	 * enough from {@code BoundaryConstruct}'s remaining, still-unimplemented types that sharing
+	 * enough from {@code BoundaryPatternConstruct}'s remaining, still-unimplemented types that sharing
 	 * one {@code BoundaryEnum}-keyed dispatch added indirection for no benefit. See design.md's
 	 * "Boundary matching" section for the matching design.
 	 */
 
 	/**
 	 * {@code \b} (word boundary) / {@code \B} (non-word-boundary). Split out from {@link
-	 * BoundaryConstruct} (2026-09-07) since these two are the only boundary types with an actual
-	 * implementation, plus a compile-time optimization {@link BoundaryConstruct}'s other types
+	 * BoundaryPatternConstruct} (2026-09-07) since these two are the only boundary types with an actual
+	 * implementation, plus a compile-time optimization {@link BoundaryPatternConstruct}'s other types
 	 * don't need -- see design.md's "Boundary matching" section for the full design.
 	 */
 
@@ -755,20 +755,20 @@ public abstract class PatternConstruct {
 	 * peekPrevious()} check (see design.md's "Boundary matching" section); wider lookbehind, and any
 	 * lookahead, are permanently out of scope (can't be evaluated in O(1) per position). {@code
 	 * lookSet} and {@code captureConstructIndex} are both fully resolved at parse time by {@link
-	 * #resolveSingleCodePointBody} -- unlike {@code WordBoundaryConstruct}, there's no neighbor
+	 * #resolveSingleCodePointBody} -- unlike {@code WordBoundaryPatternConstruct}, there's no neighbor
 	 * context to wait for, so this construct needs no {@code buildEntryMap}-time classification step.
 	 */
 
 	/**
 	 * The set of code points that could be the LAST one consumed if this construct matches here, if
-	 * that's statically known regardless of runtime input -- used by WordBoundaryConstruct's \b/\B
+	 * that's statically known regardless of runtime input -- used by WordBoundaryPatternConstruct's \b/\B
 	 * compile-time optimization (see design.md's "Boundary matching" section) to classify the
 	 * character immediately preceding a boundary as always/never a "word" character, the same way
 	 * an ordinary entryMap already classifies the character immediately following one. Returns null
 	 * ("not statically known") for anything that could match zero-width -- including a construct
 	 * type with no override here -- rather than chasing what an earlier sibling might contribute in
 	 * that case; that's always a safe fallback, just a missed optimization. Overridden by
-	 * LiteralString/ComplexCharacter/ComplexQuantifiedCharacter/QuantifiedUnion/Sequence -- see
+	 * LiteralPatternConstruct/ComplexCharacterPatternConstruct/ComplexQuantifiedCharacterPatternConstruct/QuantifiedUnionPatternConstruct/SequencePatternConstruct -- see
 	 * skipZeroWidthEntrySet's own doc for why a virtual method, not an `instanceof` chain.
 	 */
 	@Nullable CodePointSet lastCharSet() {
@@ -785,7 +785,7 @@ public abstract class PatternConstruct {
 	// never mutates it back), so there's no need to pay universalCodePointSet's own
 	// set(0, MAX_CODE_POINT + 1) allocation-and-array-growth cost on every one of its callers'
 	// calls (measured as a real compile-time cost for \X: see documents/notes.md's 2026-09-26
-	// entry -- GraphemeClusterConstruct.buildEntryMap calls this once per \X compiled, and adding
+	// entry -- GraphemeClusterPatternConstruct.buildEntryMap calls this once per \X compiled, and adding
 	// that huge a range from empty triggered enough ArrayCodePointSet growth to show up at ~9% of
 	// sampled allocation weight in a corpus with real \X usage).
 	static final CodePointSet UNIVERSAL_CODE_POINT_SET = buildUniversalCodePointSet();
@@ -813,7 +813,7 @@ public abstract class PatternConstruct {
 	/**
 	 * The union of {@link #lastCharSet} over every candidate in a loop's own {@code body} list, or
 	 * {@code null} if any candidate's own last-character set isn't statically known -- used only by
-	 * {@code QuantifiableConstruct.buildLoopMatcher}'s greedy-loop zero-width-assertion ambiguity
+	 * {@code QuantifiablePatternConstruct.buildLoopMatcher}'s greedy-loop zero-width-assertion ambiguity
 	 * check (see {@link #skipZeroWidthEntrySet}'s {@code checkAssertions} doc). Deliberately
 	 * all-or-nothing (one unknown candidate gives up entirely, rather than unioning what the KNOWN
 	 * candidates contribute) -- same conservative-fallback philosophy as {@code lastCharSet} itself.
@@ -855,9 +855,9 @@ public abstract class PatternConstruct {
 
 	/**
 	 * {@code pc}'s own entry point (see {@link #getEntryPointMap}), but seeing straight through any
-	 * zero-width assertion ({@code BoundaryConstruct}/{@code LineBoundaryConstruct}/{@code
-	 * WordBoundaryConstruct}) to whatever actually determines which code points can follow --
-	 * used ONLY by a loop's own ambiguity check ({@code QuantifiableConstruct.buildLoopMatcher}'s
+	 * zero-width assertion ({@code BoundaryPatternConstruct}/{@code LineBoundaryPatternConstruct}/{@code
+	 * WordBoundaryPatternConstruct}) to whatever actually determines which code points can follow --
+	 * used ONLY by a loop's own ambiguity check ({@code QuantifiablePatternConstruct.buildLoopMatcher}'s
 	 * {@link #checkDisjoint} call against its own {@code next}), never by ordinary union/dispatch
 	 * construction. A loop's body, once it decides to continue, has already (irreversibly, since
 	 * this engine never backtracks) consumed a code point -- so the real question for loop ambiguity
@@ -871,11 +871,11 @@ public abstract class PatternConstruct {
 	 * remaining_work.md's now-fixed "loop followed by a zero-width assertion" entry, e.g. {@code
 	 * a*^a}).
 	 *
-	 * <p>Recurses into a {@code Sequence}'s first element and an unquantified {@code
-	 * QuantifiedUnion}'s own branches (unioning them), the same shape {@link #firstCharSet}/{@link
+	 * <p>Recurses into a {@code SequencePatternConstruct}'s first element and an unquantified {@code
+	 * QuantifiedUnionPatternConstruct}'s own branches (unioning them), the same shape {@link #firstCharSet}/{@link
 	 * #lastCharSet} use, so a boundary buried inside a nested group ({@code (^a)}) or alternation
 	 * ({@code (^|x)}) is still seen through. Anything else (a quantified construct, {@code
-	 * CaptureEndMarker}, a leaf) is returned via its own, already-correct {@link
+	 * CaptureEndPatternConstruct}, a leaf) is returned via its own, already-correct {@link
 	 * #getEntryPointMap()} -- safe against the one real cycle this engine has (a loop nested in this
 	 * loop's own tail), since recursion here only ever continues through unquantified, non-looping
 	 * AST shapes.
@@ -893,20 +893,20 @@ public abstract class PatternConstruct {
 	 * through them can ALSO be valid at exactly the same code points the body would keep consuming
 	 * on (e.g. {@code a+\B}: after consuming an 'a', \B holds precisely when the next 'a' is also
 	 * there, since a word character never differs in word-ness from another word character -- see
-	 * {@code WordBoundaryConstruct#admittedInteriorExitPeekSet}/{@code
-	 * LineBoundaryConstruct#admittedInteriorExitPeekSet}). Only used for a plain greedy loop's own
+	 * {@code WordBoundaryPatternConstruct#admittedInteriorExitPeekSet}/{@code
+	 * LineBoundaryPatternConstruct#admittedInteriorExitPeekSet}). Only used for a plain greedy loop's own
 	 * check (never reluctant, whose early exit is instead proven safe/unsafe at MATCH time by
 	 * {@code MatcherConstruct#exitAssertionChain}, and never possessive, which -- like
 	 * {@code java.util.regex}'s own possessive quantifier -- never backtracks either, so this
 	 * engine's already-non-backtracking compilation can't newly disagree with it) -- see
-	 * {@code QuantifiableConstruct#buildLoopMatcher}.
+	 * {@code QuantifiablePatternConstruct#buildLoopMatcher}.
 	 */
 	// Default: this construct claims its own entry point normally -- overridden by the handful of
-	// zero-width-assertion/wrapper types below (WordBoundaryConstruct, LineBoundaryConstruct,
-	// BoundaryConstruct, LookbehindConstruct, GraphemeBoundaryConstruct, Sequence, QuantifiedUnion)
+	// zero-width-assertion/wrapper types below (WordBoundaryPatternConstruct, LineBoundaryPatternConstruct,
+	// BoundaryPatternConstruct, LookbehindPatternConstruct, GraphemeBoundaryPatternConstruct, SequencePatternConstruct, QuantifiedUnionPatternConstruct)
 	// that instead need to be "seen through" for a loop-exit ambiguity check. A plain virtual method
 	// here, rather than the `instanceof` chain this replaced (2026-09-27): every OTHER construct
-	// (LiteralString, ComplexCharacter, etc. -- the common case) used to have to fail all 7
+	// (LiteralPatternConstruct, ComplexCharacterPatternConstruct, etc. -- the common case) used to have to fail all 7
 	// `instanceof` tests before reaching this same fallback, and each new zero-width construct type
 	// added one more unconditional test to that chain (measured as a real, if small, ART-specific
 	// compile-time cost for \X/\b{g} -- see documents/notes.md's 2026-09-26 entries). A virtual
@@ -919,7 +919,7 @@ public abstract class PatternConstruct {
 	/**
 	 * The set of code points that could be the FIRST one consumed if this construct matches here, if
 	 * that's statically known regardless of runtime input -- the mirror image of {@link
-	 * #lastCharSet}, used by {@code BackReference}'s compile-time entry-set computation (see
+	 * #lastCharSet}, used by {@code BackReferencePatternConstruct}'s compile-time entry-set computation (see
 	 * design.md's "Backreferences" section): a backreference's possible first characters are
 	 * exactly the referenced group's possible first characters. Returns null ("not statically
 	 * known") for anything that could match zero-width, same safe fallback as {@code lastCharSet}.
@@ -935,10 +935,10 @@ public abstract class PatternConstruct {
 	 * (e.g. more than one code point wide, optional/repeated, or more than one capturing group).
 	 * Same recursive shape as {@link #lastCharSet}/{@link #firstCharSet} but stricter (needs total
 	 * width exactly 1, not just "last/first character known") and threads a capture index too.
-	 * Used only by {@code LookbehindConstruct} to resolve a 1-code-point lookbehind body; overridden
+	 * Used only by {@code LookbehindPatternConstruct} to resolve a 1-code-point lookbehind body; overridden
 	 * by the same construct types {@code lastCharSet}/{@code firstCharSet} are.
 	 */
-	public LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+	public LookbehindPatternConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
 		return null;
 	}
 

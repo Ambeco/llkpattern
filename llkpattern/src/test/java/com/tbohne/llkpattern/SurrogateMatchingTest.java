@@ -13,7 +13,7 @@ import org.junit.runners.JUnit4;
  * genuinely lone (unpaired) surrogate as its own character.
  *
  * <p>This is NOT a case where llk deliberately deviates from {@code java.util.regex} -- it was a
- * real bug (see {@link Matcher#find(int)}, and {@code ComplexCharacter#validRanges()})
+ * real bug (see {@link Matcher#find(int)}, and {@code ComplexCharacterPatternConstruct#validRanges()})
  * fixed 2026-09-06. Verified directly against the installed JDK before fixing, since two different
  * AI assistants disagreed about the exact rule (one claimed a {@code x-brace} code-point escape
  * range behaves differently from a 16-bit escape range, a disjunction, or {@code p Cs} here; the
@@ -133,7 +133,7 @@ public class SurrogateMatchingTest {
   // valid pair's high half are different char VALUES too, e.g. \uDC00 vs \uD800, so a char-level
   // comparator would already reject those correctly). A plain literal supplementary character is
   // the case that could actually hide a char-vs-code-point bug: PatternParser reads it as ONE
-  // ComplexCharacter/LiteralString with the real code point value, but if matching ever compared
+  // ComplexCharacterPatternConstruct/LiteralPatternConstruct with the real code point value, but if matching ever compared
   // char-by-char instead of by code point, a literal pattern's *first UTF-16 char* (\uD800, the
   // valid pair's own high surrogate) would spuriously equal a lone \uD800 in the input, or vice
   // versa -- exactly what these cases below would catch and the ones above structurally can't.

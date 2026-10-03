@@ -46,7 +46,7 @@ public class PatternParserTest {
 
 	@Test
 	public void compile_multiLetterLiteral_isSingleLiteralMatcher() {
-		// "AB" parses as one LiteralString (raw text accumulation), not two chained matchers.
+		// "AB" parses as one LiteralPatternConstruct (raw text accumulation), not two chained matchers.
 		MatcherConstruct compiled = compile(A + B);
 
 		assertThat(compiled, instanceOf(LiteralMatcherConstruct.class));
@@ -68,15 +68,15 @@ public class PatternParserTest {
 
 	@Test
 	public void match_literalFollowedByLiteral_actuallyMatches() {
-		// A Sequence of two distinct LiteralMatcherConstructs (not merged raw text) -- exercises
+		// A SequencePatternConstruct of two distinct LiteralMatcherConstructs (not merged raw text) -- exercises
 		// the first literal's elseDispatch handing off correctly to the second.
 		assertThat(Ll1Pattern.compile("[" + A + "]" + B).matcher(A + B).matches(), is(true));
 	}
 
 	@Test
 	public void compile_sequenceOfCharacterClasses_chainsToNext() {
-		// [A][B] is two separate ComplexQuantifiedCharacter nodes (not merged raw text), so this
-		// exercises Sequence's tail-to-front chaining between two distinct matcher nodes. Each
+		// [A][B] is two separate ComplexQuantifiedCharacterPatternConstruct nodes (not merged raw text), so this
+		// exercises SequencePatternConstruct's tail-to-front chaining between two distinct matcher nodes. Each
 		// SingleCharMatcherConstruct is Single-dispatching -- a character class has exactly one
 		// successor regardless of which member character was seen -- so chaining is via `.getNext()`.
 		MatcherConstruct compiled = compile("[" + A + "][" + B + "]");

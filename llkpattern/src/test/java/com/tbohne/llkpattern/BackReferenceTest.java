@@ -87,7 +87,7 @@ public class BackReferenceTest {
   public void backReference_toPossiblyEmptyGroup_isLowestPriorityCatchAll() {
     // "(a*)" can match zero-width, so \1's first-char-set is unknown, falling back to the
     // catch-all entry set (see design.md's "Backreferences" section) -- exactly like
-    // BackReference's original, pre-firstCharSet() stub. As a sole alternation sibling next to a
+    // BackReferencePatternConstruct's original, pre-firstCharSet() stub. As a sole alternation sibling next to a
     // branch with a specific, disjoint entry set ('b'), that's not itself ambiguous: 'b' claims
     // its own character and \1 is only ever reached otherwise.
     Ll1Pattern p = Ll1Pattern.compile("(" + A + "*)" + B + "(?:\\1|" + C + ")");
@@ -195,7 +195,7 @@ public class BackReferenceTest {
   }
 
   // --- \1's entry set folded by the referenced group's OWN case-folding, not just \1's own
-  // (2026-09-29 fix): a bare literal's firstCharSet()/lastCharSet() (LiteralString, unlike a
+  // (2026-09-29 fix): a bare literal's firstCharSet()/lastCharSet() (LiteralPatternConstruct, unlike a
   // bracket-class member) wasn't folded at parse time -- \1's compile-time entry set was
   // under-reporting what the group could actually have captured, a real match-time dispatch-gate
   // bug (not just an approximation), confirmed via a differential test before the fix (see notes.md).
@@ -256,8 +256,8 @@ public class BackReferenceTest {
     }
   }
 
-  // --- lastCharSet()'s own fold (Sequence's \b/\B prior-character classification, and a loop's own
-  // continue-vs-exit ambiguity check via unionLastCharSet) -- same underlying LiteralString fix.
+  // --- lastCharSet()'s own fold (SequencePatternConstruct's \b/\B prior-character classification, and a loop's own
+  // continue-vs-exit ambiguity check via unionLastCharSet) -- same underlying LiteralPatternConstruct fix.
 
   @Test
   public void wordBoundary_afterCaseInsensitiveLiteral_kelvinSignFold_matchesJdk() {
@@ -279,7 +279,7 @@ public class BackReferenceTest {
   public void wordBoundary_afterLoopOfCaseInsensitiveLiterals_asciiFold_matchesJdk() {
     // ASCII-only fold (plain (?i), not (?iu)): stays entirely within \w, so no change in behavior
     // from the fix -- included as a companion case to the Kelvin/long-s ones above, exercising
-    // unionLastCharSet's loop-tail path rather than Sequence's direct prior-character path.
+    // unionLastCharSet's loop-tail path rather than SequencePatternConstruct's direct prior-character path.
     assertBothMatch("(?i)(?:k)+\\b ", "kK ", true);
   }
 }

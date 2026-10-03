@@ -14,7 +14,7 @@ final class BeginCaptureMatcherConstruct extends MatcherConstruct {
 
 	/**
 	 * Internal (non-self-registering) variant used by a capturing loop's shared "begin the next
-	 * iteration" node -- see {@code QuantifiableConstruct.buildLoopMatcher}.
+	 * iteration" node -- see {@code QuantifiablePatternConstruct.buildLoopMatcher}.
 	 */
 	BeginCaptureMatcherConstruct(int captureConstructIndex, int flags, MatcherConstruct next) {
 		super(flags, next);

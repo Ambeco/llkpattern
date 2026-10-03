@@ -49,7 +49,7 @@ final class BackReferenceMatcherConstruct extends MatcherConstruct {
 				// A mismatch on the very FIRST code point of this attempt (i == start) hasn't
 				// consumed anything yet, so it's exactly as safe to defer to failedEntry (this
 				// backreference's own loop-exit, when it's compiled as a loop body part -- see
-				// QuantifiableConstruct.buildLoopMatcher's per-part dispatchFailedEntry wiring,
+				// QuantifiablePatternConstruct.buildLoopMatcher's per-part dispatchFailedEntry wiring,
 				// unchanged by this) as an entrySet miss would have been -- entrySet only gates on
 				// the group's overall (possibly multi-valued) first-character set, e.g.
 				// `([ab])\1?`, so this is the actual, precise check that set was too coarse to

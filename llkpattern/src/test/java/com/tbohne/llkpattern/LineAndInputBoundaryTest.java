@@ -193,9 +193,9 @@ public class LineAndInputBoundaryTest {
   // family as the boundary-free "a*a" case above -- see remaining_work.md's former "\B-near-
   // regionEnd match-result divergence"/"residual reluctant-loop-before-\B" entries (root-caused to
   // this gap, not a regionEnd-specific bug). \b and a non-MULTILINE $ never admit a real interior
-  // exit character this way (see WordBoundaryConstruct/LineBoundaryConstruct's own
+  // exit character this way (see WordBoundaryPatternConstruct/LineBoundaryPatternConstruct's own
   // admittedInteriorExitPeekSet docs), so they must keep compiling; possessive and reluctant loops
-  // are exempt too (see QuantifiableConstruct#possessive/#buildLoopMatcher) since a possessive loop
+  // are exempt too (see QuantifiablePatternConstruct#possessive/#buildLoopMatcher) since a possessive loop
   // never backtracks in java.util.regex either, and a reluctant loop is instead fixed at match time
   // -- see ReluctantQuantifierDifferentialTest/KnownDivergenceTest.
 

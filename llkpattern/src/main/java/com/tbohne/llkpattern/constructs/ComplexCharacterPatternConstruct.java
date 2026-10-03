@@ -5,9 +5,9 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-public final class ComplexCharacter
+public final class ComplexCharacterPatternConstruct
 		extends PatternConstruct {
-	// Effectively immutable once a ComplexCharacter exists: every constructor below sets this
+	// Effectively immutable once a ComplexCharacterPatternConstruct exists: every constructor below sets this
 	// exactly once, from a set PatternParser finished building beforehand (see
 	// PatternParser#parseComplexCharacter's own local `ranges` accumulator) -- so it's typed as
 	// the plain (non-Mutable) CodePointSet here, and can be assigned directly from a
@@ -19,17 +19,17 @@ public final class ComplexCharacter
 	// own accept set: the match-time re-check, and the ceiling on a loop body's residual gate.
 	public boolean residualElse;
 
-	public ComplexCharacter(int startIndex, CodePointSet ranges) {
+	public ComplexCharacterPatternConstruct(int startIndex, CodePointSet ranges) {
 		super(startIndex);
 		this.ranges = ranges;
 	}
 
-	public ComplexCharacter(int startIndex, int endIndex, CodePointSet ranges) {
+	public ComplexCharacterPatternConstruct(int startIndex, int endIndex, CodePointSet ranges) {
 		super(startIndex, endIndex);
 		this.ranges = ranges;
 	}
 
-	public ComplexCharacter(int startIndex, int character) {
+	public ComplexCharacterPatternConstruct(int startIndex, int character) {
 		super(startIndex);
 		this.ranges = singletonCodePointMap(character);
 	}
@@ -68,7 +68,7 @@ public final class ComplexCharacter
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		// Aliased directly: a character class's own entry point IS exactly its own valid ranges,
 		// not a separate copy of them -- entryMap and ranges/validRanges() were always meant to
 		// hold identical content, so there's nothing to gain from keeping them as two objects.
@@ -81,7 +81,7 @@ public final class ComplexCharacter
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		new SingleCharMatcherConstruct(this);
 	}
 
@@ -96,7 +96,7 @@ public final class ComplexCharacter
 	}
 
 	@Override
-	public final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
-		return new LookbehindConstruct.SingleCodePointBody(validRanges(), -1);
+	public final LookbehindPatternConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+		return new LookbehindPatternConstruct.SingleCodePointBody(validRanges(), -1);
 	}
 }

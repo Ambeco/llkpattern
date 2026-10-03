@@ -4,7 +4,7 @@ import com.tbohne.llkpattern.*;
 
 import com.tbohne.llkpattern.NamedCharClass.*;
 
-public final class EndConstruct extends PatternConstruct {
+public final class EndPatternConstruct extends PatternConstruct {
 	// A true cross-compile singleton, not one-per-Ll1Pattern.compile() call: every field this
 	// class ever touches is fixed at construction time and never subsequently written --
 	// `flags`/`dispatchEntrySet`/`dispatchFailedEntry` stay at their class defaults (nothing ever
@@ -17,7 +17,7 @@ public final class EndConstruct extends PatternConstruct {
 	// candidate, so it never appears in an ambiguity error message). Sharing one instance (with
 	// its own already-built EndMatcherConstruct, likewise shared) across every compiled pattern
 	// removes a real, if small, per-compile allocation pair.
-	public static final EndConstruct INSTANCE = new EndConstruct();
+	public static final EndPatternConstruct INSTANCE = new EndPatternConstruct();
 
 	/** The pattern's terminal has no successor: like MatcherConstruct's own `next = this`, it is its own. */
 	@Override
@@ -25,7 +25,7 @@ public final class EndConstruct extends PatternConstruct {
 		return this;
 	}
 
-	private EndConstruct() {
+	private EndPatternConstruct() {
 		super(-1);
 		// "The pattern's grammar is satisfied here" -- reachable regardless of what character (or
 		// lack of one) comes next, matching ANY of them via entryElse rather than only registering
@@ -47,15 +47,15 @@ public final class EndConstruct extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
-		// An EndConstruct has no "next" -- it's the sentinel marking the end of the whole pattern.
+	void buildEntryMap(PatternConstruct next) {
+		// An EndPatternConstruct has no "next" -- it's the sentinel marking the end of the whole pattern.
 		// entryMap is populated in the constructor (compile() never reaches here -- its `matcher
 		// != null` guard short-circuits immediately, since the constructor above also sets
 		// `matcher`), but is written this way for anyone reading buildEntryMap for its own sake.
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		// matcher is already set by the constructor -- compile() never reaches this (see its
 		// `if (matcher == null)` guard) but it's implemented for completeness/symmetry.
 	}

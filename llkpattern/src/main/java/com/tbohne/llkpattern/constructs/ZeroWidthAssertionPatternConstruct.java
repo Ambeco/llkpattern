@@ -5,13 +5,13 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-abstract class ZeroWidthAssertionConstruct extends PatternConstruct {
-	ZeroWidthAssertionConstruct(int startIndex, int endIndex) {
+abstract class ZeroWidthAssertionPatternConstruct extends PatternConstruct {
+	ZeroWidthAssertionPatternConstruct(int startIndex, int endIndex) {
 		super(startIndex, endIndex);
 	}
 
 	@Override
-	protected final void buildEntryMap(PatternConstruct next) {
+	final void buildEntryMap(PatternConstruct next) {
 		buildZeroWidthEntryMap(this, next);
 	}
 

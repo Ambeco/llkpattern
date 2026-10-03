@@ -9,7 +9,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-public abstract class QuantifiableConstruct extends PatternConstruct {
+public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	final String pattern;
 	public int min = 1;
 	public int max = 1;
@@ -27,12 +27,12 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 	// always-non-backtracking compilation already agrees with it, with nothing to reject.
 	public boolean possessive = false;
 
-	protected QuantifiableConstruct(String pattern, int startIndex) {
+	QuantifiablePatternConstruct(String pattern, int startIndex) {
 		super(startIndex);
 		this.pattern = pattern;
 	}
 
-	protected QuantifiableConstruct(String pattern, int startIndex, int endIndex) {
+	QuantifiablePatternConstruct(String pattern, int startIndex, int endIndex) {
 		super(startIndex, endIndex);
 		this.pattern = pattern;
 	}
@@ -104,20 +104,20 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 		}
 	}
 
-	@MonotonicNonNull LoopBackMarker loopBackMarker;
+	@MonotonicNonNull LoopBackPatternConstruct loopBackMarker;
 	@MonotonicNonNull PatternConstruct loopBodyTargetCache;
 
 	/**
 	 * The stable stand-in for "loop back to this construct's own entry point", used as every body
 	 * part's {@code next} during entry-point computation ({@link #buildLoopEntryMap}) -- for a
-	 * capturing loop, wrapped in a {@link CaptureEndMarker} first, since finishing one iteration
+	 * capturing loop, wrapped in a {@link CaptureEndPatternConstruct} first, since finishing one iteration
 	 * must end the capture before looping back. Memoized as a field, rather than built fresh in
 	 * each of {@link #buildLoopEntryMap}/{@link #buildLoopMatcher} separately, so that a NESTED
-	 * capturing body part's own {@code CaptureEndMarker} -- constructed once, during entry-point
+	 * capturing body part's own {@code CaptureEndPatternConstruct} -- constructed once, during entry-point
 	 * computation, with this object as its {@code realNext} -- resolves against the exact same
 	 * marker instance that {@link #buildLoopMatcher} later fills in with a real {@code .matcher}.
 	 * Pointing body parts at {@code this} (the loop construct itself) directly, as this used to,
-	 * meant a nested capturing group's {@code CaptureEndMarker} permanently captured {@code this}
+	 * meant a nested capturing group's {@code CaptureEndPatternConstruct} permanently captured {@code this}
 	 * as {@code realNext} -- but {@code this.matcher} isn't set until the whole loop has finished
 	 * compiling, well after that marker's own {@code buildMatcher()} reads it at match-build time,
 	 * throwing a {@code NullPointerException} (a quantified group whose sole body is a capturing
@@ -125,12 +125,12 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 	 */
 	private PatternConstruct loopBodyTarget(int captureConstructIndex) {
 		if (loopBodyTargetCache == null) {
-			loopBackMarker = new LoopBackMarker(startIndex, this);
+			loopBackMarker = new LoopBackPatternConstruct(startIndex, this);
 			loopBackMarker.flags = flags;
 			if (captureConstructIndex == -1) {
 				loopBodyTargetCache = loopBackMarker;
 			} else {
-				PatternConstruct captureEnd = new CaptureEndMarker(startIndex, captureConstructIndex, loopBackMarker);
+				PatternConstruct captureEnd = new CaptureEndPatternConstruct(startIndex, captureConstructIndex, loopBackMarker);
 				captureEnd.flags = flags;
 				loopBodyTargetCache = captureEnd;
 			}
@@ -157,7 +157,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 	 *   <li>{@link LoopMatcherConstruct} (greedy) or {@link
 	 *       ReluctantLoopMatcherConstruct} (reluctant, only when {@link
 	 *       MatcherConstruct#exitIsPureEnd} proves stopping early is safe -- see that class's own
-	 *       doc), self-registered onto a {@link LoopBackMarker} BEFORE the body compiles against
+	 *       doc), self-registered onto a {@link LoopBackPatternConstruct} BEFORE the body compiles against
 	 *       it, breaking the construction-time cycle every loop body creates (the same
 	 *       self-registration-first trick {@code MatcherConstruct}'s class doc describes). The
 	 *       greedy node is reached only as a completed body iteration's own continuation, and its
@@ -166,7 +166,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 	 *       reluctant node is ALSO this construct's own externally-visible entry point (see its own
 	 *       doc for why, and for the {@code min}/{@code max} "+1" shift that makes reusing one node
 	 *       for both roles safe) -- neither tests code-point membership at all.
-	 *   <li>{@link LoopMatcherExit}, this loop's "stop iterating" node --
+	 *   <li>{@link LoopExitMatcherConstruct}, this loop's "stop iterating" node --
 	 *       enforces {@code min} (the reluctant-safe case's own {@code min} pre-shifted the same
 	 *       way, to stay consistent with the counter's shifted meaning) and, on success, dispatches
 	 *       to {@code next}'s own matcher.
@@ -177,7 +177,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 	 * regex semantics -- and must fire identically whether this is the very first attempt or a
 	 * re-check; since both now share the exact same body-chain head node, that's just a single
 	 * shared {@link BeginCaptureMatcherConstruct} wrapping it. Each body part is
-	 * compiled against a {@link CaptureEndMarker} standing in for the {@link LoopBackMarker}
+	 * compiled against a {@link CaptureEndPatternConstruct} standing in for the {@link LoopBackPatternConstruct}
 	 * above, so finishing one iteration records the captured substring before looping back rather
 	 * than looping back directly.
 	 */
@@ -204,14 +204,14 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 		CodePointSet[] gates = checkDisjoint(pattern, flags, body, next, nextEntrySet, "loop part");
 		boolean hasResidualPart = narrowResidualGates(body, next, gates);
 
-		// Reuses the SAME LoopBackMarker (and, when capturing, the same wrapping CaptureEndMarker)
+		// Reuses the SAME LoopBackPatternConstruct (and, when capturing, the same wrapping CaptureEndPatternConstruct)
 		// buildLoopEntryMap already handed to each body part as `next` -- see loopBodyTarget()'s own
 		// doc for why identity, not just equal content, matters here: a nested capturing body part's
-		// own CaptureEndMarker (built during entry-point computation) is permanently pointed at
+		// own CaptureEndPatternConstruct (built during entry-point computation) is permanently pointed at
 		// whichever object loopBodyTarget() returned then, so this must be the exact same instance,
 		// not a fresh one, or that nested marker's `realNext.matcher` would never get filled in.
 		PatternConstruct bodyCompileTarget = loopBodyTarget(captureConstructIndex);
-		LoopBackMarker marker = loopBackMarker;
+		LoopBackPatternConstruct marker = loopBackMarker;
 		if (marker == null) {
 			throw new IllegalStateException("buildLoopMatcher() ran before loopBodyTarget() created the loop's back marker "
 					+ "(did you mean to call loopBodyTarget(captureConstructIndex) first?)");
@@ -221,7 +221,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 		// both need to already know which case they're in. See ReluctantLoopMatcherConstruct's own
 		// doc for the "+1" shift this drives: reached both as the loop's fresh entry (zero
 		// iterations done) and as the post-iteration continuation, so its own quantifiableCounts
-		// slot counts VISITS, not completed iterations, and LoopMatcherExit's `min` check (reached
+		// slot counts VISITS, not completed iterations, and LoopExitMatcherConstruct's `min` check (reached
 		// directly via the body's own failedEntry, bypassing the marker-owned node entirely) has to
 		// agree on that same shifted meaning to stay consistent.
 		@Nullable List<ZeroWidthAssertionGuard> exitAssertionChain =
@@ -229,7 +229,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 		boolean reluctantSafe = exitAssertionChain != null;
 		int shiftedMin = plusOneCapped(min);
 		int shiftedMax = plusOneCapped(max);
-		LoopMatcherExit exitNode = new LoopMatcherExit(
+		LoopExitMatcherConstruct exitNode = new LoopExitMatcherConstruct(
 				flags, quantifiableIndex, reluctantSafe ? shiftedMin : min, min == 0, next.matcher());
 
 		// A second, distinct marker from `marker` above -- `marker.matcher` is already claimed by
@@ -238,7 +238,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 		// ends up, resolved via ordinary direct assignment further down, exactly like every other
 		// forward reference in this file -- no bespoke mutable field needed on either
 		// LoopMatcherConstruct or ReluctantLoopMatcherConstruct (see their own class docs).
-		LoopContinueMarker continueMarker = new LoopContinueMarker(startIndex);
+		LoopContinuePatternConstruct continueMarker = new LoopContinuePatternConstruct(startIndex);
 		continueMarker.flags = flags;
 		MatcherConstruct loopNode = reluctantSafe
 				? new ReluctantLoopMatcherConstruct(
@@ -262,7 +262,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 		// capture start even on a min==0 loop's very first, ultimately-zero-iteration attempt,
 		// since the shared wrapper ran unconditionally before the body's own gate ever got a say
 		// -- see notes.md's entry on this). So each part gets its own throwaway {@link
-		// LoopBodyPartGateMarker} carrying the gate instead, with the capture wrapped INSIDE it
+		// LoopBodyPartGatePatternConstruct} carrying the gate instead, with the capture wrapped INSIDE it
 		// (compiled ungated, since gating already happened by the time it runs).
 		MatcherConstruct bodyTail = exitNode;
 		for (int i = body.size() - 1; i >= 0; i--) {
@@ -270,7 +270,7 @@ public abstract class QuantifiableConstruct extends PatternConstruct {
 			CodePointSet partEntrySet = gates[i];
 			if (capturing) {
 				MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
-				LoopBodyPartGateMarker gateMarker = new LoopBodyPartGateMarker(startIndex);
+				LoopBodyPartGatePatternConstruct gateMarker = new LoopBodyPartGatePatternConstruct(startIndex);
 				gateMarker.flags = flags;
 				gateMarker.dispatchEntrySet = partEntrySet;
 				gateMarker.dispatchFailedEntry = bodyTail;

@@ -5,7 +5,7 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-public final class BoundaryConstruct extends PatternConstruct {
+public final class BoundaryPatternConstruct extends PatternConstruct {
 	public enum BoundaryEnum {
 		InputBegin,
 		InputEndExceptTerminator,
@@ -14,13 +14,13 @@ public final class BoundaryConstruct extends PatternConstruct {
 
 	public final BoundaryEnum type;
 
-	public BoundaryConstruct(int startIndex, int endIndex, BoundaryEnum type) {
+	public BoundaryPatternConstruct(int startIndex, int endIndex, BoundaryEnum type) {
 		super(startIndex, endIndex);
 		this.type = type;
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		buildZeroWidthEntryMap(this, next);
 	}
 
@@ -40,7 +40,7 @@ public final class BoundaryConstruct extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		new BoundaryMatcherConstruct(this, type);
 	}
 

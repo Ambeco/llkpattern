@@ -5,9 +5,9 @@ import com.tbohne.llkpattern.*;
 
 
 public final class LiteralMatcherConstruct extends MatcherConstruct {
-	// A real String, not the CharSequence LiteralString.value itself may be (a zero-copy
+	// A real String, not the CharSequence LiteralPatternConstruct.value itself may be (a zero-copy
 	// CharBuffer view, for a literal run PatternParser could read straight off the pattern
-	// text -- see that field's own doc): LiteralString.buildMatcher() calls value.toString()
+	// text -- see that field's own doc): LiteralPatternConstruct.buildMatcher() calls value.toString()
 	// once per compile to get here, deliberately, so match() below -- called once per match
 	// *attempt*, not once per compile -- can use String#regionMatches, a real JIT intrinsic
 	// (vectorized comparison), plus String#charAt/length's direct field/array reads. A

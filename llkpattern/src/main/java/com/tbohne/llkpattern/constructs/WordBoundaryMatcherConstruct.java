@@ -40,7 +40,7 @@ final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstr
 		super(owner, owner.next().matcher());
 		if (priorMustBeWord == PriorWordBoundaryMatchType.Unchecked
 				&& peekMustBeWord == PeekWordBoundaryMatchType.Unchecked) {
-			// WordBoundaryConstruct.buildMatcher() never builds one of these with both sides
+			// WordBoundaryPatternConstruct.buildMatcher() never builds one of these with both sides
 			// Unchecked -- that's the fully-statically-known case, resolved at compile time into
 			// a compile error or a no-op pass-through instead of a WordBoundaryMatcherConstruct.
 			throw new IllegalStateException(

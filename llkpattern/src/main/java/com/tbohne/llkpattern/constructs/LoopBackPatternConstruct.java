@@ -4,10 +4,10 @@ import com.tbohne.llkpattern.*;
 
 import com.tbohne.llkpattern.NamedCharClass.*;
 
-final class LoopBackMarker extends PatternConstruct {
-	final QuantifiableConstruct owner;
+final class LoopBackPatternConstruct extends PatternConstruct {
+	final QuantifiablePatternConstruct owner;
 
-	LoopBackMarker(int startIndex, QuantifiableConstruct owner) {
+	LoopBackPatternConstruct(int startIndex, QuantifiablePatternConstruct owner) {
 		super(startIndex);
 		this.owner = owner;
 	}
@@ -19,7 +19,7 @@ final class LoopBackMarker extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		entryMap = owner.getEntryPointMap();
 		if (owner.getEntryElse() != null) {
 			entryElse = this;
@@ -27,7 +27,7 @@ final class LoopBackMarker extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildMatcher() {
-		throw new AssertionError("LoopBackMarker's own matcher is built directly, not via buildMatcher()");
+	void buildMatcher() {
+		throw new AssertionError("LoopBackPatternConstruct's own matcher is built directly, not via buildMatcher()");
 	}
 }

@@ -6,10 +6,10 @@ import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import java.util.List;
 
-public final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
-	final ComplexCharacter delegate;
+public final class ComplexQuantifiedCharacterPatternConstruct extends QuantifiablePatternConstruct {
+	final ComplexCharacterPatternConstruct delegate;
 
-	public ComplexQuantifiedCharacter(String pattern, int startIndex, ComplexCharacter delegate) {
+	public ComplexQuantifiedCharacterPatternConstruct(String pattern, int startIndex, ComplexCharacterPatternConstruct delegate) {
 		super(pattern, startIndex, delegate.endIndex);
 		this.delegate = delegate;
 	}
@@ -37,7 +37,7 @@ public final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		if (!isUnquantified()) {
 			buildLoopEntryMap(List.of(delegate), next, -1);
 			return;
@@ -45,7 +45,7 @@ public final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
 		// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
 		// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
 		// that happens in buildMatcher(), below. Aliased directly, same reasoning as
-		// ComplexCharacter.buildEntryMap.
+		// ComplexCharacterPatternConstruct.buildEntryMap.
 		if (delegate.residualElse) {
 			entryMap = EMPTY_ENTRY_MAP;
 			entryElse = this;
@@ -55,13 +55,13 @@ public final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		if (!isUnquantified()) {
 			buildLoopMatcher(List.of(delegate), next(), -1);
 			return;
 		}
 		// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
-		// delegate ComplexCharacter -- propagate our own dispatch fields (if we're ourselves a
+		// delegate ComplexCharacterPatternConstruct -- propagate our own dispatch fields (if we're ourselves a
 		// chain candidate) onto `delegate` BEFORE compiling it, so its own compiled node ends up
 		// with the right gating; safe because `delegate` is exclusively owned by this construct
 		// (created together, never independently compiled from anywhere else).
@@ -82,9 +82,9 @@ public final class ComplexQuantifiedCharacter extends QuantifiableConstruct {
 	}
 
 	@Override
-	public final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+	public final LookbehindPatternConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
 		return min == 1 && max == 1
-				? new LookbehindConstruct.SingleCodePointBody(delegate.validRanges(), -1)
+				? new LookbehindPatternConstruct.SingleCodePointBody(delegate.validRanges(), -1)
 				: null;
 	}
 }

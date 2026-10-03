@@ -9,7 +9,7 @@ import org.junit.runners.JUnit4;
 
 /**
  * Regression coverage for {@code LoopFirstEntryMatcherConstruct} (see its own doc
- * and {@code QuantifiableConstruct.buildLoopMatcher}): a single-alternative, non-capturing,
+ * and {@code QuantifiablePatternConstruct.buildLoopMatcher}): a single-alternative, non-capturing,
  * {@code min >= 1} loop's own externally-visible entry point skips its body head's own (provably
  * redundant, on that path only) {@code entrySet} check. Covers every eligibility axis (ungated
  * top-level loop, outer-gated union branch, {@code min > 1}, and the excluded

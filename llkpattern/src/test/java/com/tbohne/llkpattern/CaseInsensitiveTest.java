@@ -133,7 +133,7 @@ public class CaseInsensitiveTest {
   }
 
   // --- FIXED (2026-09-06): a bare flags-only group ("(?s)", no ":", no body) used to compile to
-  // an empty, un-parsed QuantifiedUnion that broke the surrounding sequence -- find() on a pattern
+  // an empty, un-parsed QuantifiedUnionPatternConstruct that broke the surrounding sequence -- find() on a pattern
   // with nothing but literal text after it incorrectly returned false. See
   // remaining_work.md/README.md; regression test added while fixing (found via corpus testing).
 
@@ -154,7 +154,7 @@ public class CaseInsensitiveTest {
 
   @Test
   public void bareFlagsGroup_asLastConstructInPattern_isZeroWidthNoOp() {
-    // Here `next` is the pattern's own EndConstruct, not another Sequence element -- a different
+    // Here `next` is the pattern's own EndPatternConstruct, not another SequencePatternConstruct element -- a different
     // path through the buildEntryMap passthrough than the other tests above.
     assertThat(Ll1Pattern.compile("abx(?s)").matcher("abx").matches(), is(true));
   }
@@ -223,8 +223,8 @@ public class CaseInsensitiveTest {
   }
 
   // Sanity check that the global (non-inline) CASE_INSENSITIVE path still reaches a \w-style
-  // named-escape ComplexCharacter and a negated [^...] class -- two of the several separate
-  // ComplexCharacter construction sites PatternParser now has to individually stamp with the
+  // named-escape ComplexCharacterPatternConstruct and a negated [^...] class -- two of the several separate
+  // ComplexCharacterPatternConstruct construction sites PatternParser now has to individually stamp with the
   // parser's current `flags` (see PatternConstruct#flags's doc) now that MatcherConstruct reads a
   // per-node local flags snapshot instead of the pattern-wide Ll1Pattern.compile flags.
   @Test

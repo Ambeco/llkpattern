@@ -4,11 +4,11 @@ import com.tbohne.llkpattern.*;
 
 import com.tbohne.llkpattern.NamedCharClass.*;
 
-final class CaptureEndMarker extends PatternConstruct {
+final class CaptureEndPatternConstruct extends PatternConstruct {
 	final int captureConstructIndex;
 	final PatternConstruct realNext;
 
-	CaptureEndMarker(int startIndex, int captureConstructIndex, PatternConstruct realNext) {
+	CaptureEndPatternConstruct(int startIndex, int captureConstructIndex, PatternConstruct realNext) {
 		super(startIndex);
 		this.captureConstructIndex = captureConstructIndex;
 		this.realNext = realNext;
@@ -46,7 +46,7 @@ final class CaptureEndMarker extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		// realNext is already compiled by the time any of this marker's callers need it -- it's
 		// the capturing group's own `next`, which (like any `next`) was compiled before the group
 		// itself, tail-to-front.
@@ -78,7 +78,7 @@ final class CaptureEndMarker extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		new EndCaptureMatcherConstruct(this, captureConstructIndex, realNext.matcher());
 	}
 }

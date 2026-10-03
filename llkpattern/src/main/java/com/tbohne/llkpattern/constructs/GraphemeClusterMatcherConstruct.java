@@ -5,7 +5,7 @@ import com.tbohne.llkpattern.*;
 
 
 final class GraphemeClusterMatcherConstruct extends MatcherConstruct {
-	GraphemeClusterMatcherConstruct(GraphemeClusterConstruct owner) {
+	GraphemeClusterMatcherConstruct(GraphemeClusterPatternConstruct owner) {
 		super(owner, owner.next().matcher());
 	}
 

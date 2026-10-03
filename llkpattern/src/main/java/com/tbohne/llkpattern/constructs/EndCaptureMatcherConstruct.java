@@ -7,7 +7,7 @@ import java.util.List;
 final class EndCaptureMatcherConstruct extends MatcherConstruct {
 	final int captureConstructIndex;
 
-	EndCaptureMatcherConstruct(CaptureEndMarker owner, int captureConstructIndex, MatcherConstruct next) {
+	EndCaptureMatcherConstruct(CaptureEndPatternConstruct owner, int captureConstructIndex, MatcherConstruct next) {
 		super(owner, next);
 		this.captureConstructIndex = captureConstructIndex;
 	}

@@ -8,7 +8,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * no entries are ever copied out of either delegate into a backing array of its own. Lets a caller
  * combine a small, locally-built set with a large shared one (e.g. a {@code NamedCharClass}
  * constant with hundreds of ranges) by reference, instead of paying to copy the shared set's
- * entries in just to build one combined set -- see {@code ComplexCharacter}'s own doc for the
+ * entries in just to build one combined set -- see {@code ComplexCharacterPatternConstruct}'s own doc for the
  * motivating case this was built for.
  *
  * <p>{@link #contains}/{@link #isEmpty} are O(1) delegate calls. {@link #forEachRange} does a real

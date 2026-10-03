@@ -9,7 +9,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class QuantifiedUnion extends QuantifiableConstruct {
+public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternConstruct {
 	public int captureConstructIndex = 0;
 	public String captureName = "";
 	// Pre-sized to 4, not the JDK default of 10 -- corpus measurement (2026-09-27) found 99.63%
@@ -19,7 +19,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 
 	// The real (non-identity-rewritten) catch-all candidate this union's OWN fork chain falls
 	// back to in buildMatcher() -- see that method below. Needed because the inherited
-	// entryElse field is deliberately re-keyed onto `this` (like Sequence's own fix, see its
+	// entryElse field is deliberately re-keyed onto `this` (like SequencePatternConstruct's own fix, see its
 	// doc), for ancestors' identity checks -- but buildMatcher() reads the real candidate
 	// identity, not `this`, to resolve the actual MatcherConstruct target the fallback should
 	// dispatch to. (buildMatcher() otherwise builds its fork chain by walking `constructs`
@@ -28,9 +28,9 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 	@Nullable PatternConstruct rawEntryElse;
 
 	// The unquantified-and-non-empty case's actual compile target (`next` itself, or a
-	// CaptureEndMarker for a capturing group) -- computed once in buildEntryMap() (cheaply, no
+	// CaptureEndPatternConstruct for a capturing group) -- computed once in buildEntryMap() (cheaply, no
 	// compile() calls) and reused by buildMatcher() to actually compile the branches against it.
-	// Kept as a field rather than recomputed, since buildMatcher() needs the SAME CaptureEndMarker
+	// Kept as a field rather than recomputed, since buildMatcher() needs the SAME CaptureEndPatternConstruct
 	// instance buildEntryMap() already used to compute rawEntryElse's identity.
 	// @Nullable only because it has no meaningful value before buildEntryMap() runs -- by the
 	// time buildMatcher() reads it (unguarded), compile()'s ensureEntryPointBuilt() guarantees
@@ -41,14 +41,14 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 	PatternConstruct compileTarget() {
 		PatternConstruct t = compileTarget;
 		if (t == null) {
-			throw new IllegalStateException("QuantifiedUnion at pattern index " + startIndex
+			throw new IllegalStateException("QuantifiedUnionPatternConstruct at pattern index " + startIndex
 					+ " read compileTarget before buildEntryMap() ran (did you mean to override "
 					+ "needsEntryPointBeforeMatcher() to return true?)");
 		}
 		return t;
 	}
 
-	public QuantifiedUnion(String pattern, int startIndex) {
+	public QuantifiedUnionPatternConstruct(String pattern, int startIndex) {
 		super(pattern, startIndex);
 	}
 
@@ -63,7 +63,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 			// straight through to `next` (this union contributes nothing of its own). Safe even
 			// though `next` could resolve back to an ancestor loop still under construction (see
 			// buildLoopEntryMap's `part.next = this`) -- whatever `next` turns out to be, if it's
-			// itself a QuantifiableConstruct it keeps the state-checked default below, so the
+			// itself a QuantifiablePatternConstruct it keeps the state-checked default below, so the
 			// cycle is still caught there, just one level further down.
 			return next().claimsEntryElse();
 		}
@@ -93,7 +93,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		if (!isUnquantified()) {
 			buildLoopEntryMap(constructs, next, captureConstructIndex);
 			return;
@@ -102,14 +102,14 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 			// Bug fix (2026-09-06): a bare flags-only group ("(?s)", no ":", no body) is the
 			// only way to reach this constructor with an empty `constructs` list -- every other
 			// path (a real "()"/"(?:)"/"(?<name>)") goes through parseUnion(), which rejects an
-			// empty body via throwEmptySequence before a QuantifiedUnion with zero constructs can
+			// empty body via throwEmptySequence before a QuantifiedUnionPatternConstruct with zero constructs can
 			// ever exist. Previously this fell through to compileAndMergeCandidates() with an
 			// empty candidate list, producing an empty entryMap/entryElse -- i.e. a
 			// fork chain that matches nothing at all, silently breaking the
 			// surrounding sequence ("(?s)abx" stopped matching "abx"). A bare flags group is
 			// zero-width and always succeeds -- its only job was toggling `flags` for
 			// PatternParser, already done by the caller -- so just pass through to `next` exactly
-			// as an empty Sequence element would, instead of compiling as its own dispatch node.
+			// as an empty SequencePatternConstruct element would, instead of compiling as its own dispatch node.
 			// Aliased directly -- entryMap's values are always Boolean `true` regardless of which
 			// construct built it (see entryMap's own doc), so there's no PatternConstruct identity
 			// to lose by sharing next's own map instead of copying its entries.
@@ -133,7 +133,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 		// does the real compiling, once `next` is guaranteed to already be compiled.
 		PatternConstruct target = next;
 		if (isCapturing()) {
-			target = new CaptureEndMarker(startIndex, captureConstructIndex, next);
+			target = new CaptureEndPatternConstruct(startIndex, captureConstructIndex, next);
 			target.flags = flags;
 		}
 		compileTarget = target;
@@ -143,7 +143,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 		MergedEntries result = mergeEntryPoints(pattern, constructs, "union subpattern");
 		rawEntryElse = result.entryElse();
 		// Re-keyed onto `this` rather than kept as whatever nested candidate built each range --
-		// see Sequence.buildEntryMap's doc for why (same fix, same reason: a containing loop's
+		// see SequencePatternConstruct.buildEntryMap's doc for why (same fix, same reason: a containing loop's
 		// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
 		// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
 		if (rawEntryElse != null) {
@@ -156,7 +156,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		if (!isUnquantified()) {
 			buildLoopMatcher(constructs, next(), captureConstructIndex);
 			return;
@@ -168,7 +168,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 			return;
 		}
 		if (isCapturing()) {
-			// compileTarget (a CaptureEndMarker) must itself be compiled before the branches below,
+			// compileTarget (a CaptureEndPatternConstruct) must itself be compiled before the branches below,
 			// since building its own EndCaptureMatcherConstruct needs `next.matcher` -- guaranteed
 			// available now (unlike when buildEntryMap() computed compileTarget's entry point).
 			compileTarget().compile(next());
@@ -258,13 +258,13 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 	}
 
 	@Override
-	public final LookbehindConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
+	public final LookbehindPatternConstruct.@Nullable SingleCodePointBody resolveSingleCodePointBody() {
 		if (min != 1 || max != 1 || constructs.isEmpty()) {
 			return null;
 		}
 		boolean isCapturing = captureConstructIndex >= 0;
 		if (constructs.size() == 1) {
-			LookbehindConstruct.SingleCodePointBody inner = constructs.get(0).resolveSingleCodePointBody();
+			LookbehindPatternConstruct.SingleCodePointBody inner = constructs.get(0).resolveSingleCodePointBody();
 			if (inner == null) {
 				return null;
 			}
@@ -274,7 +274,7 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 			// A capturing group can't itself wrap another capturing group here -- there's only
 			// one code point behind this position for at most one group to claim.
 			return inner.captureConstructIndex == -1
-					? new LookbehindConstruct.SingleCodePointBody(inner.codePoints, captureConstructIndex)
+					? new LookbehindPatternConstruct.SingleCodePointBody(inner.codePoints, captureConstructIndex)
 					: null;
 		}
 		// A real alternation: every branch must resolve with no capturing group of its own --
@@ -282,12 +282,12 @@ public final class QuantifiedUnion extends QuantifiableConstruct {
 		// capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
 		MutableCodePointSet result = new ArrayCodePointSet();
 		for (PatternConstruct branch : constructs) {
-			LookbehindConstruct.SingleCodePointBody inner = branch.resolveSingleCodePointBody();
+			LookbehindPatternConstruct.SingleCodePointBody inner = branch.resolveSingleCodePointBody();
 			if (inner == null || inner.captureConstructIndex != -1) {
 				return null;
 			}
 			result.insertAll(inner.codePoints);
 		}
-		return new LookbehindConstruct.SingleCodePointBody(result, captureConstructIndex);
+		return new LookbehindPatternConstruct.SingleCodePointBody(result, captureConstructIndex);
 	}
 }

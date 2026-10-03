@@ -5,13 +5,13 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-public final class GraphemeBoundaryConstruct extends ZeroWidthAssertionConstruct {
-	public GraphemeBoundaryConstruct(int startIndex, int endIndex) {
+public final class GraphemeBoundaryPatternConstruct extends ZeroWidthAssertionPatternConstruct {
+	public GraphemeBoundaryPatternConstruct(int startIndex, int endIndex) {
 		super(startIndex, endIndex);
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		new GraphemeBoundaryMatcherConstruct(this);
 	}
 

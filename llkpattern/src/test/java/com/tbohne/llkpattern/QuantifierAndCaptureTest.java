@@ -289,9 +289,9 @@ public class QuantifierAndCaptureTest {
   @Test
   public void optionalLiteral_ambiguousWithFollowingSameLiteral_rejectedAtCompileTime() {
     // "a?" can match zero characters, in which case what follows must determine the next branch on
-    // its own -- but "a?"'s own entry set (just 'a', a single-codepoint LiteralString) and the
+    // its own -- but "a?"'s own entry set (just 'a', a single-codepoint LiteralPatternConstruct) and the
     // following "a"'s entry set both claim 'a', so skipping "a?" is indistinguishable from matching
-    // it. This is QuantifiableConstruct.buildLoopEntryMap's min==0 body-vs-next merge, not a union's
+    // it. This is QuantifiablePatternConstruct.buildLoopEntryMap's min==0 body-vs-next merge, not a union's
     // branch-vs-branch merge (see the two tests above/below for those).
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(A + "?" + A));
   }
@@ -341,11 +341,11 @@ public class QuantifierAndCaptureTest {
 
   // --- A quantified/optional construct whose sole body is itself a capturing group -- see
   // remaining_work.md's former "Crash: a quantified group whose sole body is a capturing group"
-  // entry: the nested group's own CaptureEndMarker used to be built (during entry-point
+  // entry: the nested group's own CaptureEndPatternConstruct used to be built (during entry-point
   // computation) against the outer loop construct itself, whose `.matcher` isn't set until the
   // whole loop finishes compiling -- throwing a NullPointerException at match time the first time
   // that nested marker's `buildMatcher()` ran. Fixed by giving the loop body a stable
-  // (QuantifiableConstruct.loopBodyTarget) marker shared between entry-point computation and
+  // (QuantifiablePatternConstruct.loopBodyTarget) marker shared between entry-point computation and
   // matcher compilation. ---
 
   @Test

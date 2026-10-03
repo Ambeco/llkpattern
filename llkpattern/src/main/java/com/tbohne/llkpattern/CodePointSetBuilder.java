@@ -64,7 +64,7 @@ public interface CodePointSetBuilder {
    * PatternParser#parseComplexCharacterRanges}'s doc on that field) only exists to avoid copying a
    * large set's entries into the builder *while the run is still being parsed* -- once the run is
    * finished, the result must be a concrete {@link ArrayCodePointSet} before it can go anywhere
-   * near a compiled matcher (as {@code ComplexCharacter.ranges}, a chain node's own {@code
+   * near a compiled matcher (as {@code ComplexCharacterPatternConstruct.ranges}, a chain node's own {@code
    * entrySet}, etc.), since a {@link UnionCodePointSet}'s {@code contains}/{@code containsAll}/
    * {@code forEachRange} are all measurably more expensive than {@code ArrayCodePointSet}'s -- see
    * its own class doc. So this materializes eagerly here, at the one point (a completed run) where

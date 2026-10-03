@@ -211,7 +211,7 @@ public class LookbehindTest {
     // After consuming an 'a', (?<=a) always holds -- so at the next 'a', this engine's flattened
     // (no-lookahead) dispatch genuinely can't tell "continue the loop" from "exit via the
     // lookbehind, then match b" apart -- admittedInteriorExitPeekSet (mirroring
-    // WordBoundaryConstruct's a+\B example in design.md) must surface this as a real ambiguity,
+    // WordBoundaryPatternConstruct's a+\B example in design.md) must surface this as a real ambiguity,
     // not silently pick one, since java.util.regex's own backtracking makes the choice contextually.
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("a+(?<=a)b"));
   }

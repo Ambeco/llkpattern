@@ -4,8 +4,8 @@ import com.tbohne.llkpattern.*;
 
 import com.tbohne.llkpattern.NamedCharClass.*;
 
-public final class GraphemeClusterConstruct extends PatternConstruct {
-	public GraphemeClusterConstruct(int startIndex, int endIndex) {
+public final class GraphemeClusterPatternConstruct extends PatternConstruct {
+	public GraphemeClusterPatternConstruct(int startIndex, int endIndex) {
 		super(startIndex, endIndex);
 	}
 
@@ -16,12 +16,12 @@ public final class GraphemeClusterConstruct extends PatternConstruct {
 	}
 
 	@Override
-	protected void buildEntryMap(PatternConstruct next) {
+	void buildEntryMap(PatternConstruct next) {
 		entryMap = universalCodePointSet();
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		new GraphemeClusterMatcherConstruct(this);
 	}
 }

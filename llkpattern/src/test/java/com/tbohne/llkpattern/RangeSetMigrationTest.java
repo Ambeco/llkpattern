@@ -10,7 +10,7 @@ import org.junit.runners.JUnit4;
 
 /**
  * Regression coverage for the Guava {@code RangeSet} -> {@code CodePointMap} migration of
- * {@code ComplexCharacter}/{@code containsFolded} (see notes.md's entry for that migration).
+ * {@code ComplexCharacterPatternConstruct}/{@code containsFolded} (see notes.md's entry for that migration).
  * Targets the two specific failure modes an else-value-backed character class introduces that a
  * bounded Guava {@code RangeSet} couldn't: (1) a negated/DOTALL class's else-value fill wrongly
  * reporting the {@code -1} end-of-input sentinel as a member, and (2) an else-value-backed
@@ -21,7 +21,7 @@ import org.junit.runners.JUnit4;
 public class RangeSetMigrationTest {
   @Test
   public void negatedClass_doesNotMatchAtEndOfInput() {
-    // A negated class is an else-value map (see ComplexCharacter#validRanges/containsFolded's
+    // A negated class is an else-value map (see ComplexCharacterPatternConstruct#validRanges/containsFolded's
     // -1 guard) -- this would previously fail if -1 were ever treated as a "member" of the fill.
     Ll1Pattern p = Ll1Pattern.compile("a[^a]?");
     assertThat(p.matcher("a").matches(), is(true)); // the optional [^a] matches zero-width here
@@ -92,7 +92,7 @@ public class RangeSetMigrationTest {
 
   @Test
   public void wordBoundary_stillWorksAfterElseValueMigration() {
-    // \b's compile-time optimization (WordBoundaryConstruct.classify) now does subset/disjoint
+    // \b's compile-time optimization (WordBoundaryPatternConstruct.classify) now does subset/disjoint
     // checks against a CodePointMap<Boolean> instead of RangeSet#enclosesAll/complement.
     Ll1Pattern p = Ll1Pattern.compile("\\bfoo\\b");
     assertThat(p.matcher("foo").matches(), is(true));

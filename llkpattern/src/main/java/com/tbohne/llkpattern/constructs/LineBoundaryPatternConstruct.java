@@ -5,16 +5,16 @@ import com.tbohne.llkpattern.*;
 import com.tbohne.llkpattern.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-public final class LineBoundaryConstruct extends ZeroWidthAssertionConstruct {
+public final class LineBoundaryPatternConstruct extends ZeroWidthAssertionPatternConstruct {
 	public final boolean isLineBegin; // true: ^, false: $
 
-	public LineBoundaryConstruct(int startIndex, int endIndex, boolean isLineBegin) {
+	public LineBoundaryPatternConstruct(int startIndex, int endIndex, boolean isLineBegin) {
 		super(startIndex, endIndex);
 		this.isLineBegin = isLineBegin;
 	}
 
 	@Override
-	protected void buildMatcher() {
+	void buildMatcher() {
 		new LineBoundaryMatcherConstruct(this, isLineBegin);
 	}
 
@@ -27,7 +27,7 @@ public final class LineBoundaryConstruct extends ZeroWidthAssertionConstruct {
 	 * terminator, regardless of peek, so its admitted set is "any code point" whenever the body
 	 * could plausibly have just consumed one, and empty (no interior exit possible via ^)
 	 * otherwise; returns {@code null} ("not statically known") when {@code bodyLastCharSet}
-	 * itself is {@code null}, same safe fallback {@code WordBoundaryConstruct}'s own version
+	 * itself is {@code null}, same safe fallback {@code WordBoundaryPatternConstruct}'s own version
 	 * uses.
 	 */
 	@Override

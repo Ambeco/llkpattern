@@ -3,9 +3,9 @@ package com.tbohne.llkpattern.constructs;
 import com.tbohne.llkpattern.*;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.tbohne.llkpattern.constructs.BoundaryConstruct.BoundaryEnum;
-import com.tbohne.llkpattern.constructs.ComplexCharacter;
-import com.tbohne.llkpattern.constructs.QuantifiedUnion;
+import com.tbohne.llkpattern.constructs.BoundaryPatternConstruct.BoundaryEnum;
+import com.tbohne.llkpattern.constructs.ComplexCharacterPatternConstruct;
+import com.tbohne.llkpattern.constructs.QuantifiedUnionPatternConstruct;
 import java.util.ArrayList;
 import java.util.List;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -65,7 +65,7 @@ public abstract class MatcherConstruct {
 	// statically-known successor for the large majority of nodes, whose own matchBody() calls
 	// `next.match(matcher, peeked)` directly (no separate matchNext() wrapper -- one less frame on
 	// the match-time call stack). A node with no single successor of its own (a loop's own
-	// LoopMatcherConstruct/LoopMatcherExit/ReluctantLoopMatcherConstruct, each of which dispatches
+	// LoopMatcherConstruct/LoopExitMatcherConstruct/ReluctantLoopMatcherConstruct, each of which dispatches
 	// via its own differently-named field(s) instead -- continuation/exitNode -- since it has more
 	// than one possible successor; or EndMatcherConstruct, which has none at all) uses one of the
 	// two below constructors that don't take a next, and gets `this` as a harmless, never-read
@@ -100,8 +100,8 @@ public abstract class MatcherConstruct {
 	/**
 	 * For internal/synthetic nodes that aren't the externally-visible entry point of any single
 	 * PatternConstruct -- e.g. the plain alternation dispatch wrapped inside a capturing loop's or
-	 * capturing union's Begin/EndCapture pair (see {@code QuantifiableConstruct.buildLoopMatcher}
-	 * and {@code QuantifiedUnion.buildMatcher}). Skips self-registration since there's no single
+	 * capturing union's Begin/EndCapture pair (see {@code QuantifiablePatternConstruct.buildLoopMatcher}
+	 * and {@code QuantifiedUnionPatternConstruct.buildMatcher}). Skips self-registration since there's no single
 	 * owning construct to register into, so the caller must supply the local flags directly
 	 * (normally the owning construct's own {@code flags}); never itself a chain candidate, so
 	 * {@code entrySet}/{@code failedEntry} are always {@code null} here.
@@ -236,8 +236,8 @@ public abstract class MatcherConstruct {
 	 * gating of its own ({@code owner.dispatchEntrySet}/{@code owner.dispatchFailedEntry} both
 	 * null -- the common case), or wraps it in a {@link PassThroughMatcherConstruct} when it does.
 	 * Needed anywhere a construct's own {@code buildMatcher()} would otherwise just alias {@code
-	 * matcher = someOtherConstruct.matcher} (e.g. {@code Sequence}, a bare flags-only {@code
-	 * QuantifiedUnion}, {@code buildFlattenedChain}'s own {@code owner} handling): {@code target}
+	 * matcher = someOtherConstruct.matcher} (e.g. {@code SequencePatternConstruct}, a bare flags-only {@code
+	 * QuantifiedUnionPatternConstruct}, {@code buildFlattenedChain}'s own {@code owner} handling): {@code target}
 	 * may already be fully compiled (or, for a chain's own head, gated for an INNER reason
 	 * unrelated to {@code owner}'s own OUTER gating), so retrofitting {@code owner}'s dispatch
 	 * fields onto it after the fact wouldn't work -- {@code owner}'s gating has to live on a node
@@ -311,7 +311,7 @@ public abstract class MatcherConstruct {
 	/**
 	 * Matches whatever {@code captureConstructIndex}'s group actually captured last, then advances
 	 * to whatever comes next -- {@code \1}/{@code \k<name>}, resolved to a fixed
-	 * {@code captureConstructIndex} at parse time (see {@code BackReference}).
+	 * {@code captureConstructIndex} at parse time (see {@code BackReferencePatternConstruct}).
 	 */
 
 	/**
@@ -421,7 +421,7 @@ public abstract class MatcherConstruct {
 	 * LookbehindMatcherConstruct}, {@link GraphemeBoundaryMatcherConstruct}.
 	 *
 	 * <p>EXPERIMENTAL (2026-09-27, project owner's idea -- see remaining_work.md/notes.md): the
-	 * {@code PatternConstruct} counterpart of this merge ({@code ZeroWidthAssertionConstruct}) has
+	 * {@code PatternConstruct} counterpart of this merge ({@code ZeroWidthAssertionPatternConstruct}) has
 	 * the full rationale and caveats. Same idea here: one shared, {@code final} {@code
 	 * collectExitAssertionChain} implementation instead of four separate (but identical) ones, so
 	 * all four subclasses dispatch to the exact same compiled method -- an attempt to reduce that
@@ -445,7 +445,7 @@ public abstract class MatcherConstruct {
 	 * word character" classifications; but per the project owner (2026-09-07), \b/\B very often sits
 	 * next to a literal character or character class that is statically always-word or
 	 * always-non-word, in which case only ONE side needs checking at match time. {@code
-	 * WordBoundaryConstruct.buildMatcher()} does that compile-time classification (and folds the fully
+	 * WordBoundaryPatternConstruct.buildMatcher()} does that compile-time classification (and folds the fully
 	 * statically-known case into either a compile error or a zero-width no-op, never even
 	 * constructing one of these) -- this class just interprets whichever of the two enums below ended
 	 * up not {@code Unchecked}.
@@ -453,7 +453,7 @@ public abstract class MatcherConstruct {
 
 	/**
 	 * A {@code \b}/{@code \B} whose both neighbours were statically known and always satisfy it
-	 * (see {@code WordBoundaryConstruct.buildMatcher()}), so nothing needs checking at match time --
+	 * (see {@code WordBoundaryPatternConstruct.buildMatcher()}), so nothing needs checking at match time --
 	 * except under transparent bounds at {@code regionEnd}, where the statically-known following
 	 * character can't actually be consumed (nothing consumes past the region) and the real next
 	 * character decides whether {@code java.util.regex} gets as far as flagging {@code hitEnd}.
@@ -461,7 +461,7 @@ public abstract class MatcherConstruct {
 
 	/**
 	 * {@code (?<=X)}/{@code (?<!X)}, restricted at parse time to a body {@code X} that always
-	 * matches exactly one code point -- see {@code LookbehindConstruct}'s own doc
+	 * matches exactly one code point -- see {@code LookbehindPatternConstruct}'s own doc
 	 * and design.md's "Boundary matching" section. Unlike {@code WordBoundaryMatcherConstruct}, this
 	 * never sets {@code hitEnd}/{@code requireEnd}: it only ever looks backward via {@code
 	 * matcher.peekPrevious()}, so (unlike \b/\B, which also peeks forward) nothing about its result
@@ -475,7 +475,7 @@ public abstract class MatcherConstruct {
 	 */
 
 	/**
-	 * {@code \b{g}} (grapheme boundary) -- see {@code GraphemeBoundaryConstruct}'s
+	 * {@code \b{g}} (grapheme boundary) -- see {@code GraphemeBoundaryPatternConstruct}'s
 	 * own doc and design.md's "Extended grapheme clusters" section. Unlike {@code
 	 * WordBoundaryMatcherConstruct}, there's no statically-known-neighbor optimization: the general
 	 * check is always run. Three positions are handled without ever calling {@link
@@ -491,9 +491,9 @@ public abstract class MatcherConstruct {
 	 * loop where stopping early isn't provably safe (see {@link ReluctantLoopMatcherConstruct} for
 	 * the reluctant-safe counterpart, used instead of this one -- never both -- when it is).
 	 * Compiled as a loop body's own continuation -- reached only that way (see
-	 * {@code QuantifiableConstruct.buildLoopMatcher}), never as the loop's actual entry point (a
+	 * {@code QuantifiablePatternConstruct.buildLoopMatcher}), never as the loop's actual entry point (a
 	 * loop's body chain head IS its own entry point in this flattened design -- see this class's own
-	 * doc and {@code QuantifiableConstruct.buildLoopMatcher}'s doc for why no separate entry chain is
+	 * doc and {@code QuantifiablePatternConstruct.buildLoopMatcher}'s doc for why no separate entry chain is
 	 * needed any more). Conceptually: "one more body iteration just finished -- continue (retry the
 	 * body) if under {@code max}, otherwise force an exit (via {@link #exitNode}, which itself
 	 * enforces {@code min})." Neither this node nor {@link #exitNode} test code-point membership at
@@ -504,7 +504,7 @@ public abstract class MatcherConstruct {
 	 *
 	 * <p>Kept as its own top-level class rather than folded into the body chain directly, because
 	 * its "continue" successor -- the body chain's own head -- genuinely isn't known until AFTER
-	 * this node has already self-registered onto the {@link LoopBackMarker} it
+	 * this node has already self-registered onto the {@link LoopBackPatternConstruct} it
 	 * owns (breaking the construction-time cycle every loop body creates: the body's own compiled
 	 * matcher loops back to this very node). Rather than adding a mutable field to sidestep that,
 	 * {@code continuation} is a plain {@code final PatternConstruct} reference, and {@code
@@ -519,7 +519,7 @@ public abstract class MatcherConstruct {
 	 * EXPERIMENT (2026-09-24): a loop's own externally-visible entry point, used INSTEAD OF the body
 	 * chain's head ({@code bodyHead}) directly, for the narrow case where {@code bodyHead}'s own
 	 * {@link #entrySet} check is provably redundant on first entry -- see {@code
-	 * QuantifiableConstruct.buildLoopMatcher}'s own doc for the eligibility conditions (a single-
+	 * QuantifiablePatternConstruct.buildLoopMatcher}'s own doc for the eligibility conditions (a single-
 	 * alternative, non-capturing, {@code min >= 1} loop) and design.md's "LoopFirstEntryMatcherConstruct"
 	 * section for why those conditions matter and can't currently be relaxed.
 	 *
@@ -531,7 +531,7 @@ public abstract class MatcherConstruct {
 	 * an ungated top-level loop) already establishes everything {@code bodyHead}'s own check would
 	 * have reconfirmed, by the eligibility conditions above. {@code bodyHead} itself is unchanged
 	 * and keeps its own gate -- the loop-back re-entry path ({@code
-	 * QuantifiableConstruct.buildLoopMatcher}'s {@code continueMarker.matcher = bodyHead}) still goes
+	 * QuantifiablePatternConstruct.buildLoopMatcher}'s {@code continueMarker.matcher = bodyHead}) still goes
 	 * straight to it, since THAT path has no such outer guarantee.
 	 */
 
@@ -564,7 +564,7 @@ public abstract class MatcherConstruct {
 	 * for a reluctant loop where stopping early is provably safe -- {@code min} has been satisfied
 	 * AND {@link #exitNode}'s own continuation is a zero-width path that unconditionally reaches
 	 * {@link EndMatcherConstruct} (see {@link #exitIsPureEnd}), decided once at compile time by
-	 * {@code QuantifiableConstruct.buildLoopMatcher}. Unlike {@link LoopMatcherConstruct}, this node
+	 * {@code QuantifiablePatternConstruct.buildLoopMatcher}. Unlike {@link LoopMatcherConstruct}, this node
 	 * IS the loop's own externally-visible entry point as well as the body's loop-back continuation
 	 * target (both roles resolve to the exact same instance) -- merging the two roles this way is
 	 * what lets the "should I stop here" check run before the very first iteration too (needed for
@@ -577,10 +577,10 @@ public abstract class MatcherConstruct {
 	 * {@code completedIterations + 1}. {@link #shiftedMin}/{@link #shiftedMax} are {@code min}/
 	 * {@code max} pre-shifted by that same +1 (capped, not wrapped, for an unbounded {@code max})
 	 * so every comparison against the shifted count stays correct without ever needing to tell the
-	 * two invocation paths apart. The loop's own {@link LoopMatcherExit} (reached directly via the
+	 * two invocation paths apart. The loop's own {@link LoopExitMatcherConstruct} (reached directly via the
 	 * body's own {@code failedEntry} when it doesn't match at all, bypassing this node) is built
 	 * with the SAME shifted {@code min} for consistency -- see
-	 * {@code QuantifiableConstruct.buildLoopMatcher}.
+	 * {@code QuantifiablePatternConstruct.buildLoopMatcher}.
 	 *
 	 * <p>Whether the exit actually succeeds also depends on {@link Matcher#requireFullMatch}, read
 	 * here at match time since one compiled pattern serves {@code matches()}, {@code find()}, and
@@ -633,7 +633,7 @@ public abstract class MatcherConstruct {
 		// for a gated owner -- see aliasOrPassThrough) always takes precedence over what that node
 		// would otherwise do when its own gate misses. That entrySet was itself checked for
 		// disjointness against OUR loop's body by the very checkDisjoint call that is about to gate
-		// this loop (see QuantifiableConstruct#buildLoopMatcher's `extraEntrySet`) -- so whenever this
+		// this loop (see QuantifiablePatternConstruct#buildLoopMatcher's `extraEntrySet`) -- so whenever this
 		// exit path is actually taken with a peeked code point that's in our body's own entry set,
 		// this node's entrySet is guaranteed to miss, and the match cascades to failedEntry exactly as
 		// if the body itself had failed to match and fallen through to this same exitNode naturally.

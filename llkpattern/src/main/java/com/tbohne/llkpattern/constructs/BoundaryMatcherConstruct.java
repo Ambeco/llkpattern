@@ -2,7 +2,7 @@ package com.tbohne.llkpattern.constructs;
 
 import com.tbohne.llkpattern.*;
 
-import com.tbohne.llkpattern.constructs.BoundaryConstruct.BoundaryEnum;
+import com.tbohne.llkpattern.constructs.BoundaryPatternConstruct.BoundaryEnum;
 
 final class BoundaryMatcherConstruct extends MatcherConstruct {
 	final BoundaryEnum type;

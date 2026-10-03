@@ -20,7 +20,7 @@ dependencies {
 //   ./gradlew :unicodeanalyzer:generateUnicodePredicates
 task generateUnicodePredicates(type: JavaExec) {
     group = 'codegen'
-    description = 'Regenerates llkpattern/UnicodePredicates.java from the running JDK.'
+    description = 'Regenerates llkpattern/impl/unicode/UnicodePredicates.java from the running JDK.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.tbohne.llkpattern.unicodeanalyzer.UnicodeAnalyzer'
     // Opening (and thus truncating) the output file must be deferred to task-execution time via
@@ -29,6 +29,6 @@ task generateUnicodePredicates(type: JavaExec) {
     // build (even ":llkpattern:compileJava"), silently truncating UnicodePredicates.java each time.
     doFirst {
         standardOutput = new FileOutputStream(
-            "${rootDir}/llkpattern/src/main/java/com/tbohne/llkpattern/UnicodePredicates.java")
+            "${rootDir}/llkpattern/src/main/java/com/tbohne/llkpattern/impl/unicode/UnicodePredicates.java")
     }
 }

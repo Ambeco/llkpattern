@@ -184,7 +184,7 @@ run against the mutated patterns if the suspect syntax isn't valid `java.util.re
 
 ## `MatcherConstruct` fields must be `final`
 
-Every field on a `MatcherConstruct` (`constructs/MatcherConstruct.java`) and its subclasses must be `final` --
+Every field on a `MatcherConstruct` (`impl/constructs/MatcherConstruct.java`) and its subclasses must be `final` --
 including dispatch/successor fields, not just data fields. If a node's successor genuinely can't be
 known until after it self-registers to break a construction-time cycle (a loop's own back edge),
 don't add a mutable (or wrapped-mutable) field to sidestep that -- indirect through a
@@ -294,7 +294,7 @@ its own `buildEntryMap`/`buildMatcher`:
 4. Implement `ZeroWidthAssertionGuard` (`holdsHere`) for #3 to call.
 
 Grep existing `WordBoundaryPatternConstruct`/`WordBoundaryMatcherConstruct` references across
-`constructs/PatternConstruct.java`/`constructs/MatcherConstruct.java` for the full pattern to mirror -- none of these four
+`constructs/PatternConstruct.java`/`impl/constructs/MatcherConstruct.java` for the full pattern to mirror -- none of these four
 are cross-referenced from a single doc comment, so it's easy to add the construct pair and miss one.
 
 ## Scraped-corpus `-Punescape` must match the scraper's own escaping

@@ -1,7 +1,7 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.parser.PatternParser;
-import com.tbohne.llkpattern.constructs.*;
+import com.tbohne.llkpattern.impl.parser.PatternParser;
+import com.tbohne.llkpattern.impl.constructs.*;
 
 import androidx.collection.ObjectIntMap;
 

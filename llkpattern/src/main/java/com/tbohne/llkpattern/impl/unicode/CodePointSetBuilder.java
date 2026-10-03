@@ -1,0 +1,121 @@
+package com.tbohne.llkpattern.impl.unicode;
+
+import com.tbohne.llkpattern.impl.unicode.CodePointSet.MutableCodePointSet;
+import org.checkerframework.checker.nullness.qual.Nullable;
+
+/**
+ * Accumulates code point ranges from possibly many sources without maintaining sort order or
+ * coalescing as each one is added, then sorts and coalesces them all at once in {@link #build} --
+ * a plain O(1)-amortized append per {@link #append} instead of one sorted-insert each, for every
+ * source whose ranges are homogeneous membership (every entry the same "in the set", with nothing
+ * to disagree on). Two overlapping ranges from different sources both just mean "these code points
+ * are in the set" -- always mergeable, never a conflict -- so {@link #build} never throws.
+ *
+ * <p>This interface declares only {@link #append}/{@link #appendAll}/{@link #invert}/{@link #build} --
+ * deliberately not a {@link CodePointSet}, so an in-progress (unsorted) accumulation can never be
+ * queried by a caller holding this type and getting a wrong answer back. {@link #create}'s actual
+ * implementation ({@link ArrayCodePointSet.CodePointSetBuilderImpl}, nested in {@link
+ * ArrayCodePointSet} rather than here since the two are tightly intertwined implementation details
+ * of each other) IS an {@link ArrayCodePointSet} under the hood -- {@link #build} sorts/coalesces
+ * its own inherited array in place and returns {@code this}, rather than handing a finished array
+ * off to a SEPARATE, freshly-allocated {@link ArrayCodePointSet} -- so a built {@link
+ * CodePointSetBuilder} costs exactly one object, the same as directly mutating an {@link
+ * ArrayCodePointSet} would, while still getting {@link #append}'s O(1)-amortized append (measured as
+ * a real win over {@link ArrayCodePointSet#insert}'s binary-search-insert-with-shift for this
+ * interface's own real caller, a bracket expression's literal members -- see notes.md). Only the
+ * implementation's own methods ever see it as the mutable {@link ArrayCodePointSet} it actually is;
+ * every other caller sees only this narrow interface until {@link #build} hands back a plain
+ * {@link CodePointSet} -- not even {@link CodePointSet.MutableCodePointSet} -- so `append` isn't
+ * reachable post-build through ordinary typed use either.
+ */
+public interface CodePointSetBuilder {
+  static CodePointSetBuilder create() {
+    return new ArrayCodePointSet.CodePointSetBuilderImpl();
+  }
+
+  /** Records that {@code [min, max)} is in the set. Order doesn't matter -- see class doc. */
+  void append(int min, int max);
+
+  default void add(int codePoint) {
+    append(codePoint, codePoint + 1);
+  }
+
+  /**
+   * Adds every one of {@code source}'s ranges -- via {@link CodePointSet#forEachRange}, so no
+   * {@code Range} is allocated per source entry.
+   */
+  void appendAll(CodePointSet source);
+
+  /** Flips whether the built set means "these ranges" or "everything but these ranges". */
+  void invert();
+
+  /**
+   * Sorts and coalesces every range added so far into a single {@link CodePointSet}. Overlapping or
+   * touching ranges always merge (see class doc -- there's no value to disagree on), so this never
+   * throws. Build-once: calling {@link #append}/{@link #appendAll}/{@link #invert}/{@link #build} again
+   * afterward throws {@link IllegalStateException} instead of silently corrupting the set just
+   * returned -- create a new builder per {@link CodePointSet} instead of reusing one.
+   */
+  CodePointSet build();
+
+  /**
+   * Combines a run's literal-member builder with its (possibly null) lazily-unioned large sets,
+   * optionally negating the result. The laziness in {@code runUnion} (see {@code
+   * PatternParser#parseComplexCharacterRanges}'s doc on that field) only exists to avoid copying a
+   * large set's entries into the builder *while the run is still being parsed* -- once the run is
+   * finished, the result must be a concrete {@link ArrayCodePointSet} before it can go anywhere
+   * near a compiled matcher (as {@code ComplexCharacterPatternConstruct.ranges}, a chain node's own {@code
+   * entrySet}, etc.), since a {@link UnionCodePointSet}'s {@code contains}/{@code containsAll}/
+   * {@code forEachRange} are all measurably more expensive than {@code ArrayCodePointSet}'s -- see
+   * its own class doc. So this materializes eagerly here, at the one point (a completed run) where
+   * the saved copy would otherwise turn into a permanent cost on the match-time hot path instead of
+   * a one-time parse-time saving.
+   *
+   * <p>{@code negate} is applied here, by flipping a fresh set's own {@code invert} bit in place,
+   * rather than by the caller calling {@link CodePointSet#complement()} on this method's return
+   * value -- {@code complement()} always allocates a copy (see {@link ArrayCodePointSet}'s own
+   * doc), which is redundant work whenever this method already built (or is about to build) a set
+   * nothing else holds a reference to yet. The one path where that doesn't hold is where this
+   * method returns {@code runUnion} itself unchanged (no literals to merge it with): that object
+   * may be a shared {@code NamedCharClass} constant (e.g. plain {@code \d} with no other bracket
+   * members), so it's copied via {@code complement()} there instead of mutated. Callers whose
+   * negation cannot be pushed this far down (e.g. it applies only after an enclosing {@code "&&"}
+   * intersection) must pass {@code negate = false} here and negate the eventual result themselves.
+   */
+  static CodePointSet mergeRun(
+      CodePointSetBuilder literals, @Nullable CodePointSet runUnion, boolean negate) {
+    if (runUnion == null) {
+      if (negate) {
+        literals.invert();
+      }
+      return literals.build();
+    }
+    CodePointSet literalSet = literals.build();
+    // runUnion is a bare escape/nested-class result (already concrete -- see this method's own
+    // recursive use) unless this run combined *multiple* large sets (e.g. "[\d\w]"), in which case
+    // it's a UnionCodePointSet that must be materialized here too, same as when literalSet is
+    // non-empty -- either way, nothing but a concrete ArrayCodePointSet may leave this method.
+    if (literalSet.isEmpty() && !(runUnion instanceof UnionCodePointSet)) {
+      return negate ? runUnion.complement() : runUnion;
+    }
+    // Pre-size when both operands are ArrayCodePointSets so the first insertAll's fast-path copy
+    // (ArrayCodePointSet#insertAll's `size == 0` case) doesn't hand the second insertAll a keys array
+    // sized to fit only the first operand, forcing it to grow via ensureCapacity's Arrays.copyOf
+    // before every insert() -- same fix as mergeEntryPoints/unionLastCharSet (notes.md, 2026-09-25).
+    // `size` is a count of packed ints, not ranges (ArrayCodePointSet's own `keys` unit), so
+    // summing it directly is the right unit for `initialCapacity`. Not visible in the full-corpus
+    // JMH ratio (too small a share of llkCompile's ~2.7 MB/op total to clear run-to-run noise),
+    // but a deterministic per-call allocation probe confirms a real ~55-60% bytes/op cut at this
+    // operation (notes.md, 2026-09-27).
+    int hint = literalSet instanceof ArrayCodePointSet && runUnion instanceof ArrayCodePointSet
+        ? ((ArrayCodePointSet) runUnion).size + ((ArrayCodePointSet) literalSet).size
+        : 0;
+    MutableCodePointSet result = new ArrayCodePointSet(hint);
+    result.insertAll(runUnion);
+    result.insertAll(literalSet);
+    if (negate) {
+      result.invert();
+    }
+    return result;
+  }
+}

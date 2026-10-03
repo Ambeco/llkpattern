@@ -1,6 +1,6 @@
 package com.tbohne.llkpattern;
 
-import com.tbohne.llkpattern.constructs.*;
+import com.tbohne.llkpattern.impl.constructs.*;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
@@ -9,8 +9,8 @@ import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertThrows;
 
-import com.tbohne.llkpattern.constructs.EndMatcherConstruct;
-import com.tbohne.llkpattern.constructs.LiteralMatcherConstruct;
+import com.tbohne.llkpattern.impl.constructs.EndMatcherConstruct;
+import com.tbohne.llkpattern.impl.constructs.LiteralMatcherConstruct;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;

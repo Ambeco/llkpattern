@@ -7,7 +7,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 final class EndOfFindGateMatcherConstruct extends MatcherConstruct {
 	final CodePointSet explicit;
-	final @Nullable MatcherConstruct fallback;
+	private final @Nullable MatcherConstruct fallback;
 
 	EndOfFindGateMatcherConstruct(
 			int flags, CodePointSet explicit, MatcherConstruct branch, @Nullable MatcherConstruct fallback) {

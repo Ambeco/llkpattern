@@ -107,8 +107,8 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 		}
 	}
 
-	@MonotonicNonNull LoopBackPatternConstruct loopBackMarker;
-	@MonotonicNonNull PatternConstruct loopBodyTargetCache;
+	private @MonotonicNonNull LoopBackPatternConstruct loopBackMarker;
+	private @MonotonicNonNull PatternConstruct loopBodyTargetCache;
 
 	/**
 	 * The stable stand-in for "loop back to this construct's own entry point", used as every body

@@ -503,7 +503,7 @@ public enum NamedCharClass {
     this.unicode = unicode;
   }
 
-  static final boolean SLICED_ASCII = true;
+  private static final boolean SLICED_ASCII = true;
   NamedCharClass(
       Source source, CodePointSet unicode, boolean slicedAscii) {
     this(source.allowedPrefixes, source, unicode, slicedAscii);

@@ -6,7 +6,7 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 
 final class CaptureEndPatternConstruct extends PatternConstruct {
 	final int captureConstructIndex;
-	final PatternConstruct realNext;
+	private final PatternConstruct realNext;
 
 	CaptureEndPatternConstruct(int startIndex, int captureConstructIndex, PatternConstruct realNext) {
 		super(startIndex);

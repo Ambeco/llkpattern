@@ -7,7 +7,7 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 
 public final class BackReferencePatternConstruct extends PatternConstruct {
 	final int captureConstructIndex;
-	final QuantifiedUnionPatternConstruct referencedGroup;
+	private final QuantifiedUnionPatternConstruct referencedGroup;
 
 	public BackReferencePatternConstruct(int startIndex, int endIndex, int captureConstructIndex, QuantifiedUnionPatternConstruct referencedGroup) {
 		super(startIndex, endIndex);

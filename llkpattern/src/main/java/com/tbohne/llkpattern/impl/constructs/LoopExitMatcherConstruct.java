@@ -13,7 +13,7 @@ final class LoopExitMatcherConstruct extends MatcherConstruct {
 	// QuantifiablePatternConstruct.buildLoopMatcher), and exitIsPureEnd needs to ask about the real,
 	// unshifted quantifier semantics regardless of which counting convention this exit's owning
 	// loop happens to use for its own runtime check below.
-	final boolean minIsZero;
+	private final boolean minIsZero;
 
 	LoopExitMatcherConstruct(int flags, int quantifiableIndex, int min, boolean minIsZero, MatcherConstruct next) {
 		super(flags, next);

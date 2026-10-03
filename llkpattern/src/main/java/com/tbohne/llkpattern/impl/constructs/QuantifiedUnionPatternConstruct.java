@@ -27,7 +27,7 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 	// dispatch to. (buildMatcher() otherwise builds its fork chain by walking `constructs`
 	// directly -- see mergeEntryPoints' own doc for why nothing here needs a
 	// PatternConstruct-valued entry map of its own any more.)
-	@Nullable PatternConstruct rawEntryElse;
+	private @Nullable PatternConstruct rawEntryElse;
 
 	// The unquantified-and-non-empty case's actual compile target (`next` itself, or a
 	// CaptureEndPatternConstruct for a capturing group) -- computed once in buildEntryMap() (cheaply, no

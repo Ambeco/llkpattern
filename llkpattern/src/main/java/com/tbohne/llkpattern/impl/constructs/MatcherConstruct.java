@@ -186,7 +186,7 @@ public abstract class MatcherConstruct {
 	 * {@code entrySet} already has any CASE_INSENSITIVE folding baked in at chain-construction time
 	 * -- see {@code PatternConstruct#checkDisjoint} and this class's own doc.
 	 */
-	static boolean containsEntry(@Nullable CodePointSet entrySet, int peeked) {
+	private static boolean containsEntry(@Nullable CodePointSet entrySet, int peeked) {
 		return entrySet == null || (peeked != -1 && entrySet.contains(peeked));
 	}
 
@@ -194,7 +194,7 @@ public abstract class MatcherConstruct {
 		return (codePoint >= 'a' && codePoint <= 'z') ? codePoint - ('a' - 'A') : codePoint;
 	}
 
-	static int foldAsciiLower(int codePoint) {
+	private static int foldAsciiLower(int codePoint) {
 		return (codePoint >= 'A' && codePoint <= 'Z') ? codePoint + ('a' - 'A') : codePoint;
 	}
 

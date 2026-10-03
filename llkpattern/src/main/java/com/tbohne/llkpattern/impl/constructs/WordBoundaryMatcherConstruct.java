@@ -28,8 +28,8 @@ final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstr
 	}
 
 	final CodePointSet wordSet;
-	final PriorWordBoundaryMatchType priorMustBeWord;
-	final PeekWordBoundaryMatchType peekMustBeWord;
+	private final PriorWordBoundaryMatchType priorMustBeWord;
+	private final PeekWordBoundaryMatchType peekMustBeWord;
 	final boolean isWordBoundary; // true: \b, false: \B
 
 	WordBoundaryMatcherConstruct(

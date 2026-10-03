@@ -83,9 +83,9 @@ public abstract class PatternConstruct {
 	CodePointSet entryMap = EMPTY_ENTRY_MAP;
 	@MonotonicNonNull PatternConstruct entryElse;
 
-	static final int ENTRY_POINT_NOT_STARTED = 0;
-	static final int ENTRY_POINT_CONSTRUCTING = 1;
-	static final int ENTRY_POINT_CONSTRUCTED = 2;
+	private static final int ENTRY_POINT_NOT_STARTED = 0;
+	private static final int ENTRY_POINT_CONSTRUCTING = 1;
+	private static final int ENTRY_POINT_CONSTRUCTED = 2;
 	private int entryPointState = ENTRY_POINT_NOT_STARTED;
 
 	/**
@@ -321,12 +321,12 @@ public abstract class PatternConstruct {
 	 * {@code extra} specially anyway (the {@code candidates.isEmpty()} fast path), and never
 	 * indexes into the combined list positionally the way this does.
 	 */
-	static PatternConstruct candidateAt(
+	private static PatternConstruct candidateAt(
 			List<PatternConstruct> candidates, @Nullable PatternConstruct extra, int index) {
 		return index < candidates.size() ? candidates.get(index) : castNonNull(extra);
 	}
 
-	static int candidateCount(List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
+	private static int candidateCount(List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
 		return candidates.size() + (extra != null ? 1 : 0);
 	}
 
@@ -413,7 +413,7 @@ public abstract class PatternConstruct {
 	 * read directly, no iteration), and a real (if rarer) count via {@link CodePointSet#forEachRange}
 	 * for any other {@link CodePointSet} implementation (e.g. a lazy {@code UnionCodePointSet}).
 	 */
-	static int rangeCountHint(CodePointSet set) {
+	private static int rangeCountHint(CodePointSet set) {
 		if (set instanceof ArrayCodePointSet) {
 			return ((ArrayCodePointSet) set).size;
 		}
@@ -426,7 +426,7 @@ public abstract class PatternConstruct {
 	 *  #mergeEntryPoints}'s main-list loop and its {@code extra} candidate) -- unions its entry
 	 *  point into {@code ranges} and returns the (possibly updated) else-candidate, throwing if
 	 *  this candidate and an earlier one both claim the any-other-character catch-all. */
-	static @Nullable PatternConstruct mergeOneEntryPoint(
+	private static @Nullable PatternConstruct mergeOneEntryPoint(
 			String pattern, PatternConstruct candidate, @Nullable PatternConstruct elseCandidate,
 			String candidateNounPlural, MutableCodePointSet ranges, boolean isLoopExit) {
 		if (candidate.claimsEntryElse()) {
@@ -519,7 +519,7 @@ public abstract class PatternConstruct {
 	 * pairwise {@link CodePointSet#intersects} scan otherwise avoids entirely) purely to name it in
 	 * the thrown exception.
 	 */
-	static void throwOverlapError(String pattern, PatternConstruct candidate, int candidateNumber,
+	private static void throwOverlapError(String pattern, PatternConstruct candidate, int candidateNumber,
 			String candidateNounPlural, CodePointSet own, CodePointSet prior) {
 		own.forEachRange((min, max) -> {
 			CodePointSet overlap = prior.intersection(min, max);
@@ -792,9 +792,9 @@ public abstract class PatternConstruct {
 	// entry -- GraphemeClusterPatternConstruct.buildEntryMap calls this once per \X compiled, and adding
 	// that huge a range from empty triggered enough ArrayCodePointSet growth to show up at ~9% of
 	// sampled allocation weight in a corpus with real \X usage).
-	static final CodePointSet UNIVERSAL_CODE_POINT_SET = buildUniversalCodePointSet();
+	private static final CodePointSet UNIVERSAL_CODE_POINT_SET = buildUniversalCodePointSet();
 
-	static CodePointSet buildUniversalCodePointSet() {
+	private static CodePointSet buildUniversalCodePointSet() {
 		CodePointSetBuilder result = CodePointSetBuilder.create();
 		result.append(0, CodePointSet.MAX_CODE_POINT + 1);
 		return result.build();

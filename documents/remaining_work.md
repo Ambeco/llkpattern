@@ -93,12 +93,12 @@ small and startup "vaguely reasonable".
 
 - [ ] **Paired benchmark follow-ups** (runner built: `:llkpattern:jmhPaired`, `:llkpattern:pairedCompare`, Android
       `testPaired`; see CLAUDE.md and notes.md 2026-10-01/02):
-  - **Blocked chains: add an untimed burn-in pass** per block (first pass of each block is cache-cold, which probably
-    explains the blocked interval being 2-3x wider than interleaved on the Pixel: +-3% vs +-1.2%).
-  - **Pixel device-state episodes:** one run had a slow phase that shifted the ratio ~15% and did not recur. Rerun a
-    few cold 12-minute raw runs with the device monitor on to see whether it is thermal (then add a cooldown wait) or
-    background activity (then flag/skip such rounds by regex absolute time).
-  - **Pixel injected-slowdown check** (no `-PinjectPercent` equivalent for Android yet).
+  - **Android multi-run harness:** run-to-run noise (~2-4%) exceeds the within-run CI, so a 2% change is not detectable from one
+    run. Build the fork analogue: N separate processes (e.g. `adb shell am instrument` repeated without a Gradle rebuild, or N
+    Gradle invocations), each short (100 warmup rounds is the floor, ~3.5 min), merged as blocks by `PairedStats`; then redo
+    the injected-slowdown check (`pairedInjectPercent=2`) with that. The harness side (`pairedInjectPercent`) already exists.
+  - **Pixel device-state episodes:** one 1200-round standalone run had a slow phase (rounds ~180-400, ratio +15%) that never
+    recurred in later runs with the device monitor on; if it shows up again, the monitor log will show whether it is thermal.
   - **README tables/CLAUDE.md A/B procedure** still quote pre-paired numbers; rewrite around the two paired ratios.
   - **CPU sampling:** replace JMH's safepoint-biased `stack` profiler with JFR `jdk.ExecutionSample` at a short
     period (reuse `AllocationSamplingRunner`'s JFR-to-reversed-tree code) and add a sampling-diff tool with per-leaf

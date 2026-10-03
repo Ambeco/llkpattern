@@ -3892,3 +3892,13 @@ little ~1.0-1.1 GHz, battery 32.3-32.8 C, flat. Standalone Pixel runs: compile r
 ~125 rounds (llk JIT warmup; rare-path buckets worst), and one 1200-round run had a device-wide slow phase at rounds
 ~180-400 (regex +25%, llk +40%, ratio +15%) that did not recur in later runs (cause unknown: no monitor was running).
 Android interval vs rounds (steady state): 100 rounds/10 blocks +-1.2%/1.7%, 200/20 +-0.7%/1.1%, flat beyond.
+Android run-to-run noise (2026-10-02, three cold standalone testPaired runs, 100 warmup + 150 rounds, 15 blocks, raw+monitor
+on): same code twice gave compile 0.694/0.681, match 0.251/0.263, compile-blocked 0.622/0.639 (each run's CI only +-1-2%).
+Run-level variance (ART/JIT/device state per process) exceeds the within-run CI by ~2x, so Android needs several separate
+runs (the fork analogue) to resolve small effects. A 2% injected llk slowdown (`pairedInjectPercent=2`) was NOT reliably
+detected from single runs: vs one baseline compile-blocked +6.7% (flagged), vs the other +3.9%, interleaved compile +1.3%/
++3.2%, interleaved match +1.9%/-2.5%; A/A itself gave a false match flag (+4.5%). Interleaved Pixel ratios across 5 runs:
+compile 0.672-0.694, match 0.251-0.264 (sd ~1.5-2%); blocked compile 0.622-0.658 (sd ~2.4%). No slow phase and flat cpu
+frequencies in the two new cold runs (the earlier 1200-round slow phase remains unexplained). A burn-in pass before each
+blocked phase was tried and reverted: no interval improvement on either device (Pixel blocked CI +-1.9% before and after) and
+it shifted the blocked level (compile-blocked 0.62 vs 0.65), which would have invalidated the committed baselines.

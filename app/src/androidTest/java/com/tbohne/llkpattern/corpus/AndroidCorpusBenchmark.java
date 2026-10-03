@@ -96,6 +96,9 @@ public class AndroidCorpusBenchmark {
   private static final int PAIRED_ROUNDS = intArg("pairedRounds", 150);
   private static final int PAIRED_CHAIN_PAIRS = intArg("pairedChainPairs", 4);
   private static final int PAIRED_BLOCKS = intArg("pairedBlocks", 15);
+  /** Re-runs this percent of each bucket's rows in the llk passes only: a known, source-free slowdown for
+   *  validating that the method detects a small regression (pairedInjectPercent=2). */
+  private static final int PAIRED_INJECT_PERCENT = intArg("pairedInjectPercent", 0);
 
   private static int intArg(String name, int defaultValue) {
     String v = InstrumentationRegistry.getArguments().getString(name);
@@ -262,8 +265,13 @@ public class AndroidCorpusBenchmark {
           sink ^= Pattern.compile(row.pattern, row.flagBits()).hashCode();
         }
       };
+      final int extra = (int) Math.ceil(rows.size() * PAIRED_INJECT_PERCENT / 100.0);
       PairedBench.Pass llkCompile = () -> {
         for (AndroidGoldenRow row : rows) {
+          sink ^= Ll1Pattern.compile(row.pattern, row.flagBits()).hashCode();
+        }
+        for (int k = 0; k < extra; k++) {
+          AndroidGoldenRow row = rows.get(k);
           sink ^= Ll1Pattern.compile(row.pattern, row.flagBits()).hashCode();
         }
       };
@@ -275,6 +283,9 @@ public class AndroidCorpusBenchmark {
       PairedBench.Pass llkMatch = () -> {
         for (int i = 0; i < rows.size(); i++) {
           sink ^= runMatchLlk(llk.get(i), rows.get(i)) ? 1 : 0;
+        }
+        for (int k = 0; k < extra; k++) {
+          sink ^= runMatchLlk(llk.get(k), rows.get(k)) ? 1 : 0;
         }
       };
       buckets.add(new PairedBench.Bucket(e.getKey(), rows.size(),
@@ -351,6 +362,7 @@ public class AndroidCorpusBenchmark {
     meta.put("captured", Instant.now().toString());
     meta.put("sourceHash", BuildConfig.SOURCE_HASH);
     meta.put("blocks", Integer.toString(PAIRED_BLOCKS));
+    meta.put("injectPercent", Integer.toString(PAIRED_INJECT_PERCENT));
     meta.put("roundsTotal", Integer.toString(PAIRED_ROUNDS));
     meta.put("chainPairs", Integer.toString(PAIRED_CHAIN_PAIRS));
     meta.put("batteryTempTenthsC", Integer.toString(batteryTemperatureTenthsC()));

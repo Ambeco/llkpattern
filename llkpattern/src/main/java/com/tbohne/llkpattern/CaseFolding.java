@@ -28,7 +28,7 @@ import java.util.Arrays;
  * reproduced only when the running platform's own {@code java.util.regex} does it (see {@link
  * #HOST_CLOSES_RANGES}), so this class always mirrors the host.
  */
-final class CaseFolding {
+public final class CaseFolding {
   private CaseFolding() {}
 
   // Cased characters all lie below this (the highest is Adlam, U+1E943).
@@ -103,7 +103,7 @@ final class CaseFolding {
   }
 
   /** True if {@code flags} asks for Unicode (rather than ASCII-only) case folding. */
-  static boolean isUnicodeCase(int flags) {
+  public static boolean isUnicodeCase(int flags) {
     return (flags & (Ll1Pattern.UNICODE_CASE | Ll1Pattern.UNICODE_CHARACTER_CLASS)) != 0;
   }
 
@@ -169,7 +169,7 @@ final class CaseFolding {
    * PatternConstruct#checkDisjoint}) but being too narrow would skip a matching candidate.
    * Returns {@code exact} itself when nothing is added.
    */
-  static CodePointSet expand(CodePointSet exact, boolean unicode) {
+  public static CodePointSet expand(CodePointSet exact, boolean unicode) {
     CodePointSetBuilder additions = CodePointSetBuilder.create();
     boolean[] any = {false};
     if (!unicode) {

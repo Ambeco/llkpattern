@@ -24,7 +24,7 @@ import java.util.Set;
  * <p>Runs on the raw text, before escapes are decoded, so a character written as a
  * unicode escape in the pattern is not affected -- same as {@code java.util.regex}.
  */
-final class CanonicalEquivalence {
+public final class CanonicalEquivalence {
   private CanonicalEquivalence() {}
 
   // More marks than this makes the permutation count (k!) impractical.

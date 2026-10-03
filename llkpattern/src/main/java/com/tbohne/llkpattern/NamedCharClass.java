@@ -6,7 +6,7 @@ import com.google.common.collect.ImmutableSet;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
-enum NamedCharClass {
+public enum NamedCharClass {
   // Java Character methods
   javaValidCodePoint(
       Source.Java, UnicodePredicates.isValidCodePoint),
@@ -531,7 +531,7 @@ enum NamedCharClass {
     this.unicode = unicode;
   }
 
-  CodePointSet get(CharacterClassPrefix prefix, int flags) {
+  public CodePointSet get(CharacterClassPrefix prefix, int flags) {
     Preconditions.checkArgument(allowedPrefixes.contains(prefix));
     // Any Unicode-property-style prefix (\p{IsXxx}, \p{script=Xxx}, \p{block=Xxx},
     // \p{general_category=Xxx}) always means "exactly this Unicode-defined set" -- the
@@ -594,7 +594,7 @@ enum NamedCharClass {
     block,
   }
 
-  enum RegexCharacterClass {
+  public enum RegexCharacterClass {
     // "." without DOTALL: everything but the line terminators (all of them by default, only '\n'
     // under UNIX_LINES -- PatternParser picks). Not reachable as an escape: valueOf() there is
     // only ever given a single character.
@@ -679,7 +679,7 @@ enum NamedCharClass {
       this.unicode = delegate.unicode;
     }
 
-    CodePointSet get(int flags) {
+    public CodePointSet get(int flags) {
       return ((flags & Pattern.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
     }
   }

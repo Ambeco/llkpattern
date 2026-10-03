@@ -10,7 +10,7 @@ package com.tbohne.llkpattern;
  * through the generator, since they're already given as literal hardcoded code point ranges in
  * the JDK source, not derived from a runtime {@code Character} query.
  */
-final class GraphemeCluster {
+public final class GraphemeCluster {
 	private GraphemeCluster() {}
 
 	// Types -- mirrors jdk.internal.util.regex.Grapheme's own private int constants.
@@ -98,7 +98,7 @@ final class GraphemeCluster {
 	 * this engine's single-pass model with no architectural change: see {@code
 	 * GraphemeClusterMatcherConstruct}.
 	 */
-	static int nextBoundary(String src, int off, int limit) {
+	public static int nextBoundary(String src, int off, int limit) {
 		int ch0 = src.codePointAt(off);
 		int ret = off + Character.charCount(ch0);
 		int t0 = getType(ch0);
@@ -184,7 +184,7 @@ final class GraphemeCluster {
 	 * overlap (a regional indicator, a ZWJ, and a Consonant are disjoint GCB/InCB classes), so the
 	 * order only matters for matching JDK's own structure, not for correctness.
 	 */
-	static boolean isBoundary(CharSequence src, int pos, int floor) {
+	public static boolean isBoundary(CharSequence src, int pos, int floor) {
 		// A position splitting a surrogate pair is never a boundary -- checked before any type
 		// classification, exactly mirroring JDK 27's Pattern.GraphemeBound#match (a lone surrogate
 		// would otherwise classify as GCB_CONTROL on both sides, which the plain pairwise table

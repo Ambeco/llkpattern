@@ -184,14 +184,14 @@ run against the mutated patterns if the suspect syntax isn't valid `java.util.re
 
 ## `MatcherConstruct` fields must be `final`
 
-Every field on a `MatcherConstruct` (`MatcherConstruct.java`) and its subclasses must be `final` --
+Every field on a `MatcherConstruct` (`constructs/MatcherConstruct.java`) and its subclasses must be `final` --
 including dispatch/successor fields, not just data fields. If a node's successor genuinely can't be
 known until after it self-registers to break a construction-time cycle (a loop's own back edge),
 don't add a mutable (or wrapped-mutable) field to sidestep that -- indirect through a
 `PatternConstruct`'s own already-mutable-once `matcher` field instead (a second, purpose-built
 marker `PatternConstruct`, resolved by ordinary assignment once the real target is known), the same
 mechanism every other forward reference in this codebase already relies on. See
-`MatcherConstruct.LoopMatcherConstruct`'s own class doc for a worked example.
+`LoopMatcherConstruct`'s own class doc for a worked example.
 
 ## `entrySet` is load-bearing; hand-check dispatch/capture changes
 
@@ -291,10 +291,10 @@ its own `buildEntryMap`/`buildMatcher`:
    section).
 3. `MatcherConstruct#collectExitAssertionChain` -- add an `instanceof` branch so a reluctant loop's
    early exit can check it.
-4. Implement `MatcherConstruct.ZeroWidthAssertionGuard` (`holdsHere`) for #3 to call.
+4. Implement `ZeroWidthAssertionGuard` (`holdsHere`) for #3 to call.
 
 Grep existing `WordBoundaryConstruct`/`WordBoundaryMatcherConstruct` references across
-`PatternConstruct.java`/`MatcherConstruct.java` for the full pattern to mirror -- none of these four
+`constructs/PatternConstruct.java`/`constructs/MatcherConstruct.java` for the full pattern to mirror -- none of these four
 are cross-referenced from a single doc comment, so it's easy to add the construct pair and miss one.
 
 ## Scraped-corpus `-Punescape` must match the scraper's own escaping

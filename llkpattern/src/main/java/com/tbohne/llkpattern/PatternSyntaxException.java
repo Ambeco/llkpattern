@@ -1,16 +1,16 @@
 package com.tbohne.llkpattern;
 
-class PatternSyntaxException extends java.util.regex.PatternSyntaxException {
+public class PatternSyntaxException extends java.util.regex.PatternSyntaxException {
 
-	static class CodePoint {
+	public static class CodePoint {
 		final int codePoint;
 
-		CodePoint(int codePoint) {
+		public CodePoint(int codePoint) {
 			this.codePoint = codePoint;
 		}
 	}
 
-	static class CodePointReference {
+	public static class CodePointReference {
 		final int index;
 
 		CodePointReference(int index) {
@@ -53,7 +53,7 @@ class PatternSyntaxException extends java.util.regex.PatternSyntaxException {
 																	.append("\"]\n");
 	}
 
-	static PatternSyntaxException throwWithReferences(String pattern, int index, Object... expectations) {
+	public static PatternSyntaxException throwWithReferences(String pattern, int index, Object... expectations) {
 		StringBuilder msg = new StringBuilder();
 		StringBuilder context = new StringBuilder();
 		for (int i = 0; i < expectations.length; i++) {

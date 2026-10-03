@@ -55,21 +55,21 @@ public class Matcher implements MatchResult {
 	// operation, so that copy's cost is paid on close to every match rather than amortized.
 	// Confirmed via the Pixel 3a on-device benchmark: matchLlk 0.688 -> 1.117 ms/pass (+62%),
 	// matchLlk allocation 37,744 -> 52,752 B/op (+40%) -- reverted, not kept.
-	String input;
-	int regionEnd;
+	public String input;
+	public int regionEnd;
 	int regionStart = 0;
 	// Where ^ $ \A \z \Z see the start/end of input: the region's own edges when anchoring bounds are
 	// on (the default), else the true edges of the input. Always kept in sync with regionStart/
 	// regionEnd/input/anchoringBounds by syncAnchors(); anchorStart <= regionStart, anchorEnd >= regionEnd.
-	int anchorStart = 0;
-	int anchorEnd;
+	public int anchorStart = 0;
+	public int anchorEnd;
 	private boolean anchoringBounds = true;
 	// How far \b/\B may look before regionStart / at-and-after regionEnd: the region's own edges when
 	// bounds are opaque (the default), else the true edges of the input. Kept in sync by syncAnchors().
 	private boolean transparentBounds = false;
-	int lookFloor = 0;
-	int lookCeil;
-	int pos = 0;
+	public int lookFloor = 0;
+	public int lookCeil;
+	public int pos = 0;
 	// The code point at `pos` (or -1 at/past regionEnd) -- kept in sync by every method that moves
 	// `pos` (attemptMatch/consume1CodePoint/consumeCodeUnits/region/reset*, all via syncPeeked()),
 	// so peek() below is a plain field read instead of a fresh input.codePointAt(pos) call, and
@@ -77,7 +77,7 @@ public class Matcher implements MatchResult {
 	// consumed char's width before calling it again at the new position -- both real CPU cost per
 	// this project's own Android CPU sampling (String.codePointAt was 11.8% of matchLlk time,
 	// Matcher.consume1CodePoint's two internal calls to it 4.1%/1.9% of that on their own).
-	int peeked;
+	public int peeked;
 	// Cached answer for peekPrevious() (the code point immediately before `pos`), computed lazily:
 	// only \b/\B, lookbehind and \b{g} ever read it, so most match attempts never pay for it at all.
 	// UNKNOWN_PREVIOUS means "not yet computed for the current pos" -- distinct from -1
@@ -88,7 +88,7 @@ public class Matcher implements MatchResult {
 	// would cost exactly as much as peekPrevious() computing it on demand.
 	private static final int UNKNOWN_PREVIOUS = Integer.MIN_VALUE;
 	private int previousPeeked = UNKNOWN_PREVIOUS;
-	int[] quantifiableCounts;
+	public int[] quantifiableCounts;
 	// Two slots (start, end -- input code-unit indices) per capture-group construct in the
 	// pattern, indexed by captureConstructIndex*2. BeginCaptureMatcherConstruct overwrites the
 	// start slot (and resets the end slot to -1) on entry; since there's no recursion or
@@ -102,7 +102,7 @@ public class Matcher implements MatchResult {
 	// lazily, only when a caller actually asks for that group's text, and
 	// BackReferenceMatcherConstruct compares directly against these indices without ever
 	// materializing one at all.
-	int[] captureGroups;
+	public int[] captureGroups;
 
 	// True exactly when quantifiableCounts/captureGroups are already known zero/null -- right after
 	// construction (both arrays are `new`-allocated, so already zero-filled by the JVM without an
@@ -118,15 +118,15 @@ public class Matcher implements MatchResult {
 	// true for matches() (the whole region must be consumed), false for lookingAt()/find() (a
 	// prefix match starting at `pos` is enough). This is the one place the "same compiled graph"
 	// design needs a runtime switch -- see design.md.
-	boolean requireFullMatch;
+	public boolean requireFullMatch;
 
 	// hitEnd()/requireEnd() state. Sticky across every start position one find() tries, cleared at
 	// the start of each matches()/lookingAt()/find(int) (same as java.util.regex, which clears them
 	// at the start of every match/search operation). Only ever set from MatcherConstruct's cold
 	// paths -- a dispatch/character miss at end of input, a literal that runs off the end, a
 	// $/\z/\Z/\b that matched at end of input -- so the match hot path never touches them.
-	boolean hitEnd;
-	boolean requireEnd;
+	public boolean hitEnd;
+	public boolean requireEnd;
 
 	// The most recent successful match's span, and whether one exists yet at all (start()/end()/
 	// group() throw IllegalStateException before the first successful match(), same as
@@ -790,7 +790,7 @@ public class Matcher implements MatchResult {
 	// lookFloor (regionStart unless transparent bounds are on), so with opaque bounds a region's
 	// start is treated the same as true start-of-input, same as -1 is peek()'s "no more input"
 	// sentinel. codePointBefore (not charAt(pos-1)) to not split a surrogate pair.
-	int peekPrevious() {
+	public int peekPrevious() {
 		if (pos <= lookFloor) {
 			return -1;
 		}
@@ -802,11 +802,11 @@ public class Matcher implements MatchResult {
 
 	/** The code point at {@code pos} as {@code \b}/{@code \B} see it: like {@link #peek()}, except that
 	 *  with transparent bounds it looks past regionEnd (-1 only at the true end of input). */
-	int peekForBoundary() {
+	public int peekForBoundary() {
 		return peeked != -1 || pos >= lookCeil ? peeked : input.codePointAt(pos);
 	}
 
-	int consume1CodePoint() {
+	public int consume1CodePoint() {
 		// The previous width computation (`codeunit <= 0xDFF || codeunit >= 0xE000 ? 1 : 2`) used
 		// the wrong bounds entirely -- 0xDFF isn't near the surrogate range (0xD800-0xDFFF) -- and
 		// neither version guarded against `pos` reaching the end of input, which crashed on the
@@ -821,7 +821,7 @@ public class Matcher implements MatchResult {
 		return peeked;
 	}
 
-	int consumeCodeUnits(int width) {
+	public int consumeCodeUnits(int width) {
 		pos += width;
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
 		// Unlike consume1CodePoint(), `width` may span more than one code point (a literal, a

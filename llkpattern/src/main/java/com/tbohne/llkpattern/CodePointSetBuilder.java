@@ -28,7 +28,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * {@link CodePointSet} -- not even {@link CodePointSet.MutableCodePointSet} -- so `append` isn't
  * reachable post-build through ordinary typed use either.
  */
-interface CodePointSetBuilder {
+public interface CodePointSetBuilder {
   static CodePointSetBuilder create() {
     return new ArrayCodePointSet.CodePointSetBuilderImpl();
   }

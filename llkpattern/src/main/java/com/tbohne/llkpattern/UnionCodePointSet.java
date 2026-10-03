@@ -19,7 +19,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * ArrayCodePointSet} first (via {@link #forEachRange}) and delegates to that -- this class's whole
  * point is avoiding the copy on construction/lookup, not on every possible operation.
  */
-final class UnionCodePointSet implements CodePointSet {
+public final class UnionCodePointSet implements CodePointSet {
   private final CodePointSet a;
   private final CodePointSet b;
 

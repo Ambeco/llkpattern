@@ -1,7 +1,9 @@
 package com.tbohne.llkpattern;
 
+import com.tbohne.llkpattern.constructs.*;
+
 import com.tbohne.llkpattern.NamedCharClass.*;
-import com.tbohne.llkpattern.BoundaryConstruct.BoundaryEnum;
+import com.tbohne.llkpattern.constructs.BoundaryConstruct.BoundaryEnum;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 
@@ -1896,12 +1898,12 @@ final class PatternParser {
     int savedQuantifiableIndex = quantifiableIndex;
     QuantifiableConstruct quantifier = parseQuantifiable(new QuantifiableConstruct(pattern, index) {
       @Override
-      void buildEntryMap(PatternConstruct next) {
+      protected void buildEntryMap(PatternConstruct next) {
         throw new UnsupportedOperationException("scratch quantifier holder for a zero-width construct");
       }
 
       @Override
-      void buildMatcher() {
+      protected void buildMatcher() {
         throw new UnsupportedOperationException("scratch quantifier holder for a zero-width construct");
       }
     });

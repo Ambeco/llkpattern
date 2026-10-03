@@ -49,7 +49,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   // the logical entry count; `keys.length` is capacity, which can run ahead of `size` -- see
   // ensureCapacity.
   int[] keys;
-  int size;
+  public int size;
 
   // Whether `keys`' recorded runs ARE this set (false, the common/default case) or are EXCLUDED
   // from it (true, i.e. this set is everything else) -- see the class doc.
@@ -67,7 +67,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
    * it's worth avoiding the first one or two {@code Arrays.copyOf} regrows rather than inheriting
    * a capacity tuned for a different usage pattern.
    */
-  ArrayCodePointSet(int initialCapacity) {
+  public ArrayCodePointSet(int initialCapacity) {
     keys = initialCapacity == 0 ? EMPTY_KEYS : new int[initialCapacity];
     size = 0;
   }
@@ -693,7 +693,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
    * big enough that neither step regrows it. Each removed range adds at most one entry, and an
    * inverted operand emits at most {@code size + 1} ranges.
    */
-  static int capacityHint(@Nullable CodePointSet accept, CodePointSet[] removes, int skip) {
+  public static int capacityHint(@Nullable CodePointSet accept, CodePointSet[] removes, int skip) {
     int capacity = accept instanceof ArrayCodePointSet ? ((ArrayCodePointSet) accept).memberChunkBound() : 0;
     for (int j = 0; j < removes.length; j++) {
       if (j != skip && removes[j] instanceof ArrayCodePointSet) {

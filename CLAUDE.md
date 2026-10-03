@@ -33,15 +33,39 @@ Pixel files are stale because the phone wasn't available. Content hash, so no co
 whether the benchmark ran before or after the commit. `printSourceHash -Pscope=...` prints the value if you must
 hand-embed one into a file you know matches the current sources.
 
+## Measurement hygiene (read before trusting or reporting a number)
+
+- **Quiet machine first.** Pause Dropbox and any backup/cleanup tool (disk activity measurably disturbs the desktop),
+  `ListAgents` for other sessions, no builds or tests running. Do not touch the phone during a Pixel run.
+- **A/A before believing a small delta.** Run the same code twice; `pairedCompare` should not flag the `ALL` rows. With ~20
+  per-bucket rows an occasional lone bucket flag is expected; act on `ALL`, use buckets for attribution only.
+- **Which ratio answers what.** Interleaved (`compile`/`match`) = lowest noise, for "did this regress". Blocked
+  (`*-blocked`) = closer to real use and charges GC to the engine that allocates: judge ALLOCATION-reducing changes by the
+  blocked ratio, because interleaving hides ~4% of llk's GC cost on desktop (and penalizes llk's cache footprint on the
+  Pixel). A change that only shows up in blocked, or only in interleaved, needs a second look, not a verdict.
+- **Resolution.** Desktop: about 1-2% from one 80 s run; compare against the committed baseline only for effects >= ~2%
+  (it drifted 1-2% between sessions on identical code), otherwise same-session A/B. Android: one run resolves only ~4-5%
+  (run-to-run noise is ~2x the printed CI; a 2% injected slowdown was not detected): treat a single Pixel run as a sanity
+  check, and do not claim smaller Pixel effects until the multi-run harness (remaining_work.md) exists.
+- **Android specifics.** A standalone `testPaired` starts cold (llk needs ~100 warmup rounds, the default); in a full run the
+  sampling tests go first. Never run it while a `git stash`/checkout is in flight (APK is built from the working tree).
+- **Orchestration pitfalls.** The Bash tool's background runs are killed after 10 minutes: launch longer jobs (Pixel runs
+  with raw+blocked, several-run scripts) detached with PowerShell `Start-Process`, write a `.done` sentinel file, and watch
+  that exact file (a Monitor that greps a shared pattern also matches older logs and fires immediately). In PowerShell
+  quote every `-P...=...` argument (unquoted, `-Pa.b=c` is split at the dot) and write `${name}_x`, not `$name_x`. If you
+  kill a run, also kill its gradle client (`Get-CimInstance Win32_Process`) and `adb shell am force-stop` the app.
+- **Record what you measured.** Result files embed their source hash; `benchmarkStatus` must show every file CURRENT
+  before you finish. `-PrawOut=` (desktop) / `rawSamples=true` (Android) keep every chain if you need to re-slice.
+
 ## After a performance-affecting change
 
 When a change is intended to affect (or plausibly could affect) compile-time or match-time
 performance, once the test suite is green:
 
-1. Re-run the relevant JMH benchmark(s) on this desktop (`./gradlew :llkpattern:jmh`, JDK 17/21 for
-   the Gradle daemon -- see documents/notes.md's toolchain note). The task writes
-   `benchmarks/Intel-i7-9750H_corpus_benchmark_results.json` itself; update README.md's benchmark
-   tables by hand with the new numbers.
+1. Measure time with `:llkpattern:jmhPaired` (same-session A/B; see "Low-noise ratios" above and "Measurement
+   hygiene" below) and allocation with `./gradlew :llkpattern:jmh` (JDK 17 for the Gradle daemon; the paired runner
+   does not measure B/op). Both write their `benchmarks/` files themselves. README.md's benchmark tables still quote
+   pre-paired numbers: when updating them, quote both paired ratios per device (interleaved and blocked).
 2. If the change plausibly shifts *where* time is spent (not just how much), re-capture CPU
    sampling too (temporary `profilers = ['gc', 'stack:lines=4;detailLine=true']` in
    `llkpattern/build.gradle`, reverted after -- 4-frame depth, not 8: 8 was tried and came out too
@@ -111,13 +135,10 @@ before relaunching (find it with `Get-CimInstance Win32_Process -Filter "Name='j
 `gradlew` client, then `./gradlew --stop`), and have A/B scripts print each build's `BUILD` line.
 
 **The primary metric is the llk/regex ratio, not either absolute number.** Absolute ms/pass varies
-run to run with background load on either device (README.md's benchmark section), but the ratio is
-comparatively stable. After the A/B above, compare each table's llk/regex ratio (not
-`primaryMetric.score` alone) between baseline and the change. If the ratio hasn't regressed by a
-statistically significant amount (i.e. the two ratios' own run-to-run noise bands overlap -- two
-runs each way, per the A/B step above, is enough to judge this), commit and push without asking
-first. Only pause to ask when the ratio shift looks real (bands don't overlap) or you're otherwise
-unsure.
+run to run with background load on either device, but the paired ratio is stable (desktop +-1%). Use
+`pairedCompare`'s `<--` flags on the `ALL` rows to decide: if neither the interleaved nor the blocked ratio shows a flagged
+regression, commit and push without asking first. Only pause to ask when an `ALL` row is flagged as a regression or you
+are otherwise unsure. (The JMH `primaryMetric.score` bands are only for absolute numbers and B/op.)
 
 **While iterating on a narrow hypothesis** (e.g. "does data structure X beat Y for an N-element
 accumulation?", not yet the final design), don't run the full corpus benchmark cycle above per

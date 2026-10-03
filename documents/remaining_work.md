@@ -136,6 +136,30 @@ splitting can't change JIT compile/inline decisions; the goal is navigability on
 - Verification per move commit: `:llkpattern:jmh` `gc.alloc.rate.norm` must be byte-identical (pure move), then one
   same-session interleaved `jmhPaired` A/B at the end (expected effect under 2%); Pixel run is a sanity check only.
 
+## Public API package vs `impl` subpackages (own session; a design question first)
+
+Idea: the files directly in `com.tbohne.llkpattern` become the public API, and everything else moves under `impl`.
+Not yet decided; settle the layout with the project owner before moving anything.
+
+Dependency order (what may depend on what): code point sets/Unicode data <- `constructs` <- `parser` <- `Ll1Pattern`/`Matcher`.
+Checked 2026-10-03 against actual usage; no layer needs to depend upward.
+
+- Public (stay at the root): `Ll1Pattern`, `Matcher`, `PatternSyntaxException` (what `compile` throws; ~40 tests import it).
+  Open: is `CodePointSet` public? Only tests and the Android benchmark import its `MutableCodePointSet`/`Range`.
+- `impl.parser`: `PatternParser`, `PatternLexer`, `CharClassParser`, `PatternText`, `InlineFlags`, `CharacterNames`,
+  `CanonicalEquivalence` (already there, as `parser`).
+- `impl.constructs`: the `*PatternConstruct`/`*MatcherConstruct` classes (already there, as `constructs`).
+- `impl.codepoint` (or similar): `CodePointSet`, `ArrayCodePointSet`, `UnionCodePointSet`, `CodePointSetBuilder`,
+  `NamedCharClass`, `UnicodePredicates`, `CaseFolding`, `GraphemeCluster`. Keeping them together is what stops
+  `NamedCharClass` and friends from being used across a package boundary; they are shared by constructs and parser, so
+  they can't live in either. `GraphemeCluster` is only used by constructs, but it reads package-private
+  `UnicodePredicates` fields, so it must stay beside them rather than move to `constructs` (or make the generated class public).
+- Costs: `Ll1Pattern`/`Matcher` call into internals, so those members must be public inside `impl` (as already happened for
+  `constructs`/`parser`); document `impl` as "not API". Update: `UnicodeAnalyzer`'s output path and package line,
+  `llkpattern/build.gradle`, `gradle/benchmark-provenance.gradle` paths, ~59 test files' imports, the app/shared-bench imports.
+- Do it as a pure move (compile + JUnit + `jmhClasses` + `compileDebugAndroidTestJavaWithJavac` per step, commit per
+  package), and refresh benchmarks once at the end (the source hash changes with every move).
+
 ## Open questions
 
 ## Optional experiments (nothing here is required work)

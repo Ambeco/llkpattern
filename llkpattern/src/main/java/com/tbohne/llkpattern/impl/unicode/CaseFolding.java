@@ -104,7 +104,7 @@ public final class CaseFolding {
 
   /** True if {@code flags} asks for Unicode (rather than ASCII-only) case folding. */
   public static boolean isUnicodeCase(int flags) {
-    return (flags & (java.util.regex.Pattern.UNICODE_CASE | java.util.regex.Pattern.UNICODE_CHARACTER_CLASS)) != 0;
+    return (flags & (UnicodeFlags.UNICODE_CASE | UnicodeFlags.UNICODE_CHARACTER_CLASS)) != 0;
   }
 
   /** Adds to {@code b} everything a lone {@code codePoint} matches under {@code CASE_INSENSITIVE}. */

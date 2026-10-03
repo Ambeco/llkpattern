@@ -1,5 +1,6 @@
 package com.tbohne.llkpattern.impl.parser;
 
+import com.tbohne.llkpattern.impl.unicode.UnicodeFlags;
 import static com.tbohne.llkpattern.impl.parser.PatternText.concatObjectArrays;
 import static com.tbohne.llkpattern.impl.parser.PatternText.hexDigitValue;
 
@@ -44,17 +45,17 @@ class PatternLexer {
     // LITERAL wins over CANON_EQ, as in java.util.regex.
     if ((flags & Pattern.LITERAL) != 0) {
       this.pattern = pattern;
-    } else if ((flags & Pattern.CANON_EQ) != 0) {
+    } else if ((flags & UnicodeFlags.CANON_EQ) != 0) {
       this.pattern = CanonicalEquivalence.rewrite(
           PatternText.removeQuoting(pattern),
-          (flags & Pattern.CASE_INSENSITIVE) != 0 && (flags & Pattern.UNICODE_CASE) != 0);
+          (flags & UnicodeFlags.CASE_INSENSITIVE) != 0 && (flags & UnicodeFlags.UNICODE_CASE) != 0);
     } else {
       this.pattern = PatternText.removeQuoting(pattern);
     }
     this.patternChars = this.pattern.toCharArray();
     index = 0;
     peek = codePointAt(patternChars, 0);
-    this.flags = (flags & Pattern.UNICODE_CHARACTER_CLASS) != 0 ? flags | Pattern.UNICODE_CASE : flags;
+    this.flags = (flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0 ? flags | UnicodeFlags.UNICODE_CASE : flags;
   }
 
   // `EOF` (-1, never a valid code point, so a literal U+0000 in the pattern text stays an ordinary

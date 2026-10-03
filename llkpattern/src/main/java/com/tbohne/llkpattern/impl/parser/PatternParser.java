@@ -1,5 +1,6 @@
 package com.tbohne.llkpattern.impl.parser;
 
+import com.tbohne.llkpattern.impl.unicode.UnicodeFlags;
 import static com.tbohne.llkpattern.impl.parser.PatternText.appendCodePoint;
 import static com.tbohne.llkpattern.impl.parser.PatternText.isAsciiAlphanumeric;
 import static com.tbohne.llkpattern.impl.parser.PatternText.isQuantifierChar;
@@ -759,11 +760,11 @@ public final class PatternParser extends CharClassParser {
             }
           }
           // UNICODE_CHARACTER_CLASS implies UNICODE_CASE, on and off, as in java.util.regex.
-          if ((enableFlags & Pattern.UNICODE_CHARACTER_CLASS) != 0) {
-            enableFlags |= Pattern.UNICODE_CASE;
+          if ((enableFlags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) {
+            enableFlags |= UnicodeFlags.UNICODE_CASE;
           }
-          if ((disableFlags & Pattern.UNICODE_CHARACTER_CLASS) != 0) {
-            disableFlags |= Pattern.UNICODE_CASE;
+          if ((disableFlags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) {
+            disableFlags |= UnicodeFlags.UNICODE_CASE;
           }
           if (peek == ')') {
             // A flags-only construct ("(?i)") isn't itself quantifiable and has no body to parse --

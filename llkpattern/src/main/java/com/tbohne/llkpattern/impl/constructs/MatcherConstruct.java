@@ -1,5 +1,6 @@
 package com.tbohne.llkpattern.impl.constructs;
 
+import com.tbohne.llkpattern.impl.unicode.UnicodeFlags;
 import com.tbohne.llkpattern.impl.unicode.CaseFolding;
 import com.tbohne.llkpattern.impl.unicode.CodePointSet;
 import com.tbohne.llkpattern.Ll1Pattern;
@@ -207,10 +208,10 @@ public abstract class MatcherConstruct {
 		if (a == b) {
 			return true;
 		}
-		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+		if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
 			return false;
 		}
-		if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
+		if ((flags & UnicodeFlags.UNICODE_CASE) != 0) {
 			return Character.toUpperCase(a) == Character.toUpperCase(b)
 					|| Character.toLowerCase(a) == Character.toLowerCase(b);
 		}
@@ -228,7 +229,7 @@ public abstract class MatcherConstruct {
 	 * CASE_INSENSITIVE} -- the common case.
 	 */
 	static CodePointSet foldedEntrySet(CodePointSet exact, int flags) {
-		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+		if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
 			return exact;
 		}
 		return CaseFolding.expand(exact, CaseFolding.isUnicodeCase(flags));

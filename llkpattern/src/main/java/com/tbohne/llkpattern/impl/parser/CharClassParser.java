@@ -1,5 +1,6 @@
 package com.tbohne.llkpattern.impl.parser;
 
+import com.tbohne.llkpattern.impl.unicode.UnicodeFlags;
 import static com.tbohne.llkpattern.impl.parser.PatternText.*;
 
 import com.tbohne.llkpattern.impl.unicode.CaseFolding;
@@ -84,7 +85,7 @@ class CharClassParser extends PatternLexer {
    * ...) or a nested class -- only literal members.
    */
   private void addLiteral(CodePointSetBuilder ranges, int codePoint) {
-    if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
+    if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
       ranges.append(codePoint, codePoint + 1);
     } else {
       CaseFolding.addSingle(ranges, codePoint, CaseFolding.isUnicodeCase(flags));
@@ -93,7 +94,7 @@ class CharClassParser extends PatternLexer {
 
   /** {@link #addLiteral} for an explicit {@code lo-hi} range ({@code max} exclusive). */
   private void addLiteralRange(CodePointSetBuilder ranges, int min, int max) {
-    if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
+    if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
       ranges.append(min, max);
     } else {
       CaseFolding.appendRange(ranges, min, max, CaseFolding.isUnicodeCase(flags));
@@ -102,7 +103,7 @@ class CharClassParser extends PatternLexer {
 
   /** A one-code-point {@code ComplexCharacterPatternConstruct} (a literal that had to become a class, e.g. to be quantified). */
   final ComplexCharacterPatternConstruct singleCharacter(int startIndex, int codePoint) {
-    if ((flags & Pattern.CASE_INSENSITIVE) == 0) {
+    if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
       return new ComplexCharacterPatternConstruct(startIndex, codePoint);
     }
     CodePointSetBuilder members = CodePointSetBuilder.create();
@@ -324,7 +325,7 @@ class CharClassParser extends PatternLexer {
           ? NamedCharClass.valueOfIs(charClassName)
           : NamedCharClass.valueOf(charClassName);
       CodePointSet namedRanges = namedClass.get(prefix, flags);
-      if ((flags & Pattern.CASE_INSENSITIVE) != 0) {
+      if ((flags & UnicodeFlags.CASE_INSENSITIVE) != 0) {
         namedRanges = namedClass.caseInsensitive(prefix, flags, namedRanges);
       }
       // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but

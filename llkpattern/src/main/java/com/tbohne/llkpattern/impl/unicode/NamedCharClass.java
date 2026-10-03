@@ -3,7 +3,6 @@ package com.tbohne.llkpattern.impl.unicode;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 
-import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 public enum NamedCharClass {
@@ -542,7 +541,7 @@ public enum NamedCharClass {
     if (prefix != CharacterClassPrefix.none && prefix != CharacterClassPrefix.java) {
       return unicode;
     }
-    return ((flags & Pattern.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
+    return ((flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
   }
 
   /**
@@ -567,7 +566,7 @@ public enum NamedCharClass {
         return CaseSets.CASED;
       case Lower:
       case Upper:
-        return prefix == CharacterClassPrefix.is || (flags & Pattern.UNICODE_CHARACTER_CLASS) != 0
+        return prefix == CharacterClassPrefix.is || (flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0
             ? CaseSets.CASED
             : CaseSets.ASCII_LETTERS;
       default:
@@ -680,7 +679,7 @@ public enum NamedCharClass {
     }
 
     public CodePointSet get(int flags) {
-      return ((flags & Pattern.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
+      return ((flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
     }
   }
 }

@@ -1,6 +1,6 @@
 package com.tbohne.llkpattern.impl.constructs;
 
-import com.tbohne.llkpattern.Ll1Pattern;
+import com.tbohne.llkpattern.impl.unicode.UnicodeFlags;
 import com.tbohne.llkpattern.Matcher;
 
 
@@ -34,9 +34,9 @@ public final class LiteralMatcherConstruct extends MatcherConstruct {
 			return false;
 		}
 		boolean matches;
-		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+		if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
 			matches = matcher.input.regionMatches(matcher.pos, value, 0, value.length());
-		} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
+		} else if ((flags & UnicodeFlags.UNICODE_CASE) != 0) {
 			matches = matcher.input.regionMatches(true, matcher.pos, value, 0, value.length());
 		} else {
 			matches = asciiFoldRegionMatches(matcher.input, matcher.pos, value, value.length());
@@ -61,9 +61,9 @@ public final class LiteralMatcherConstruct extends MatcherConstruct {
 
 	private boolean remainingInputIsPrefixOfValue(Matcher matcher) {
 		int available = matcher.regionEnd - matcher.pos;
-		if ((flags & Ll1Pattern.CASE_INSENSITIVE) == 0) {
+		if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
 			return matcher.input.regionMatches(matcher.pos, value, 0, available);
-		} else if ((flags & Ll1Pattern.UNICODE_CASE) != 0) {
+		} else if ((flags & UnicodeFlags.UNICODE_CASE) != 0) {
 			return matcher.input.regionMatches(true, matcher.pos, value, 0, available);
 		}
 		return asciiFoldRegionMatches(matcher.input, matcher.pos, value, available);

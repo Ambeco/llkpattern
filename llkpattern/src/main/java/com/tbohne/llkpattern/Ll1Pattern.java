@@ -1,5 +1,6 @@
 package com.tbohne.llkpattern;
 
+import com.tbohne.llkpattern.impl.unicode.UnicodeFlags;
 import com.tbohne.llkpattern.impl.parser.PatternParser;
 import com.tbohne.llkpattern.impl.constructs.*;
 
@@ -30,14 +31,14 @@ import java.util.stream.Stream;
  * simply makes it match everything that would otherwise be valid.
  */
 public final class Ll1Pattern {
-	public static final int CANON_EQ = Pattern.CANON_EQ;
-	public static final int CASE_INSENSITIVE = Pattern.CASE_INSENSITIVE;
+	public static final int CANON_EQ = UnicodeFlags.CANON_EQ;
+	public static final int CASE_INSENSITIVE = UnicodeFlags.CASE_INSENSITIVE;
 	public static final int COMMENTS = Pattern.COMMENTS;
 	public static final int DOTALL = Pattern.DOTALL;
 	public static final int LITERAL = Pattern.LITERAL;
 	public static final int MULTILINE = Pattern.MULTILINE;
-	public static final int UNICODE_CASE = Pattern.UNICODE_CASE;
-	public static final int UNICODE_CHARACTER_CLASS = Pattern.UNICODE_CHARACTER_CLASS;
+	public static final int UNICODE_CASE = UnicodeFlags.UNICODE_CASE;
+	public static final int UNICODE_CHARACTER_CLASS = UnicodeFlags.UNICODE_CHARACTER_CLASS;
 	public static final int UNIX_LINES = Pattern.UNIX_LINES;
 
 	public static Ll1Pattern compile(String pattern) {

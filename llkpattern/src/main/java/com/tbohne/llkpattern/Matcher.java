@@ -21,12 +21,13 @@ import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNul
  *   set-union) must have a strictly distinct pattern.</li>
  *   <li>The first character after any quantifier ("?" or "*" or "+" or "{n,m}")
  *   must have a strictly distinct pattern than the start of the qualifier.</li>
- *   <li>(?idmsuxU) and (?idmsux:...) cannot be used to turn flags on and off</li>
  * </ul>
+ * Ambiguous patterns are rejected at compile time with a {@code PatternSyntaxException}.
  * These restrictions make writing a regex more annoying, but the pattern can
  * be both compiled and matched in linear time. FAR faster than a full regex.
- * Note that since this restriction would effectively make "*" useless, this code
- * simply makes it match everything that would otherwise be valid.
+ * Inline flags ({@code (?i)}, {@code (?i:...)}) are supported and scoped as in
+ * {@code java.util.regex}. A {@code .} claims whatever its siblings don't, so
+ * {@code .*z} means {@code [^z]*z}.
  */
 public class Matcher implements MatchResult {
 	public static String quoteReplacement(String s) {

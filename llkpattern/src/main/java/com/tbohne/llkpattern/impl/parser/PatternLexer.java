@@ -108,7 +108,6 @@ class PatternLexer {
       advance(2);
       return peek2;
     }
-    int codePoint;
     switch (peek2) {
       case 't':
         advance(2);
@@ -129,95 +128,12 @@ class PatternLexer {
         advance(2);
         return '\u001B';
       case '0':
-        advance(2);
-        if (peek < '0' || peek > '7') {
-          throw throwUnexpectedChar(
-              "Octal escapes \\0 must be followed by at least one octal character. Alternatively, if you didn't intend "
-                  + " to have an octal escape, you may have wanted \\x for hexidecimal escapes.");
-        }
-        int octal = peek - '0';
-        advance(1);
-        if (peek >= '0' && peek <= '7') {
-          // A second digit is always safe (077 = 63 < 0377), so it is consumed unconditionally.
-          octal = octal * 8 + peek - '0';
-          advance(1);
-          if (peek >= '0' && peek <= '7') {
-            // A third digit is consumed only if the value stays <= 0377 (255); otherwise it is a separate
-            // literal, as in java.util.regex: "\0600" is "\060" then '0'.
-            int withThirdDigit = octal * 8 + peek - '0';
-            if (withThirdDigit <= 255) {
-              octal = withThirdDigit;
-              advance(1);
-            }
-          }
-        }
-        return octal;
+        return parseOctalEscape();
       case 'c': // control characters
-        advance(2);
-        codePoint = CONTROL_CODES.indexOf(peek);
-        if (codePoint >= 0) {
-          advance(1);
-          return codePoint;
-        } else if (peek == '?') {
-          advance(1);
-          return '\u007F'; // delete
-        }
-        throw throwUnexpectedChar("Control escapes \\c must be in [?A-Z[\\]^_?].");
+        return parseControlEscape();
       case 'x':
       case 'u':
-        boolean unicodeMode = peek2 == 'u';
-        advance(2);
-        codePoint = 0;
-        boolean braces = !unicodeMode && peek == '{';
-        if (braces) {
-          advance(1);
-        }
-        int codePointStart = index;
-        // The braced form has no digit-count limit, only a VALUE bound (MAX_CODE_POINT): "\x{00000061}" is valid.
-        // Integer.MAX_VALUE stands in for unbounded, and accumulation freezes once out of range so a long digit
-        // run can't overflow.
-        int maxDigits = unicodeMode ? 4 : (braces ? Integer.MAX_VALUE : 2);
-        int digitCount;
-        for (digitCount = 0; digitCount < maxDigits; ++digitCount) {
-          int digit = hexDigitValue(peek);
-          if (digit < 0) {
-            break;
-          }
-          if (codePoint <= Character.MAX_CODE_POINT) {
-            codePoint = codePoint * 16 + digit;
-          }
-          advance(1);
-        }
-        if (braces) {
-          if (peek == '}') {
-            advance(1);
-          } else {
-            throw throwUnexpectedChar(
-                "braced hexadecimal escapes \"\\x{h...h}\" must end in }");
-          }
-          if (digitCount == 0) {
-            throw throwUnexpectedChar(
-                "braced hexadecimal escapes \"\\x{h...h}\" must have at least 1 hexidecimal "
-                    + "digit");
-          }
-          if (codePoint > Character.MAX_CODE_POINT) {
-            throw throwUnexpectedChar(
-                "codepoint",
-                String.format("%x", codePoint),
-                " is outside the bounds of valid Unicode characters. The maximum is U+10FFFF.");
-          }
-        } else if (unicodeMode) {
-          if (digitCount != 4) {
-            throw throwUnexpectedChar(
-                "unicode escapes \"\\uhhhh\" must have at exactly 4 hexadecimal digits");
-          }
-        } else {
-          if (digitCount != 2) {
-            throw throwUnexpectedChar(
-                "hexadecimal escapes \"\\xhh\" must have at exactly 2 hexadecimal digits");
-          }
-        }
-        return codePoint;
+        return parseHexEscape(peek2 == 'u');
       case 'N':
         advance(2);
         return parseCharacterName();
@@ -234,6 +150,103 @@ class PatternLexer {
         }
         return -1; // not a single character escape
     }
+  }
+
+  /** Parses {@code \0}, {@code \0n}, {@code \0nn} or {@code \0mnn}, with peek at the backslash. */
+  private int parseOctalEscape() {
+    advance(2);
+    if (peek < '0' || peek > '7') {
+      throw throwUnexpectedChar(
+          "Octal escapes \\0 must be followed by at least one octal character. Alternatively, if you didn't intend "
+              + " to have an octal escape, you may have wanted \\x for hexidecimal escapes.");
+    }
+    int octal = peek - '0';
+    advance(1);
+    if (peek >= '0' && peek <= '7') {
+      // A second digit is always safe (077 = 63 < 0377), so it is consumed unconditionally.
+      octal = octal * 8 + peek - '0';
+      advance(1);
+      if (peek >= '0' && peek <= '7') {
+        // A third digit is consumed only if the value stays <= 0377 (255); otherwise it is a separate
+        // literal, as in java.util.regex: "\0600" is "\060" then '0'.
+        int withThirdDigit = octal * 8 + peek - '0';
+        if (withThirdDigit <= 255) {
+          octal = withThirdDigit;
+          advance(1);
+        }
+      }
+    }
+    return octal;
+  }
+
+  /** Parses {@code \cX}, with peek at the backslash. */
+  private int parseControlEscape() {
+    advance(2);
+    int codePoint = CONTROL_CODES.indexOf(peek);
+    if (codePoint >= 0) {
+      advance(1);
+      return codePoint;
+    } else if (peek == '?') {
+      advance(1);
+      return '\u007F'; // delete
+    }
+    throw throwUnexpectedChar("Control escapes \\c must be in [?A-Z[\\]^_?].");
+  }
+
+  /** Parses {@code \xhh}, {@code \x{h...h}} or a four-digit unicode escape, with peek at the backslash. */
+  private int parseHexEscape(boolean unicodeMode) {
+    advance(2);
+    int codePoint = 0;
+    boolean braces = !unicodeMode && peek == '{';
+    if (braces) {
+      advance(1);
+    }
+    int codePointStart = index;
+    // The braced form has no digit-count limit, only a VALUE bound (MAX_CODE_POINT): "\x{00000061}" is valid.
+    // Integer.MAX_VALUE stands in for unbounded, and accumulation freezes once out of range so a long digit
+    // run can't overflow.
+    int maxDigits = unicodeMode ? 4 : (braces ? Integer.MAX_VALUE : 2);
+    int digitCount;
+    for (digitCount = 0; digitCount < maxDigits; ++digitCount) {
+      int digit = hexDigitValue(peek);
+      if (digit < 0) {
+        break;
+      }
+      if (codePoint <= Character.MAX_CODE_POINT) {
+        codePoint = codePoint * 16 + digit;
+      }
+      advance(1);
+    }
+    if (braces) {
+      if (peek == '}') {
+        advance(1);
+      } else {
+        throw throwUnexpectedChar(
+            "braced hexadecimal escapes \"\\x{h...h}\" must end in }");
+      }
+      if (digitCount == 0) {
+        throw throwUnexpectedChar(
+            "braced hexadecimal escapes \"\\x{h...h}\" must have at least 1 hexidecimal "
+                + "digit");
+      }
+      if (codePoint > Character.MAX_CODE_POINT) {
+        throw throwUnexpectedChar(
+            "codepoint",
+            String.format("%x", codePoint),
+            " is outside the bounds of valid Unicode characters. The maximum is U+10FFFF.");
+      }
+    } else if (unicodeMode) {
+      if (digitCount != 4) {
+        throw throwUnexpectedChar(
+            "unicode escapes \"\\uhhhh\" must have at exactly 4 hexadecimal digits");
+      }
+    } else {
+      if (digitCount != 2) {
+        throw throwUnexpectedChar(
+            "hexadecimal escapes \"\\xhh\" must have at exactly 2 hexadecimal digits");
+      }
+    }
+    return codePoint;
   }
 
   /** Parses the {@code {name}} of a {@code \N{name}} escape (peek is at the opening brace). */

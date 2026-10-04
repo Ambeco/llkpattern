@@ -139,7 +139,7 @@ public final class PatternParser extends CharClassParser {
     // Not a capturing group, so capture index -1. A single-alternative root comes back as a bare
     // SequencePatternConstruct (no union).
     PatternConstruct root = parseUnion(0, flags, /* captureConstructIndex= */ -1, /* captureName= */ "");
-    if (index < pattern.length()) {
+    if (index < patternChars.length) {
       // This can trigger if the user has one too many ')'
       throw throwUnexpectedChar("Too many \")\". Check that the () parenthesis match");
     }
@@ -152,11 +152,11 @@ public final class PatternParser extends CharClassParser {
       throw throwEmptySequence(0, 0);
     }
     SequencePatternConstruct sequence = new SequencePatternConstruct(0);
-    LiteralPatternConstruct literal = new LiteralPatternConstruct(0, pattern.length(), pattern);
+    LiteralPatternConstruct literal = new LiteralPatternConstruct(0, patternChars.length, pattern);
     literal.flags = flags;
     sequence.patterns.add(literal);
-    sequence.endIndex = pattern.length();
-    index = pattern.length();
+    sequence.endIndex = patternChars.length;
+    index = patternChars.length;
     return sequence;
   }
 
@@ -314,7 +314,7 @@ public final class PatternParser extends CharClassParser {
     } else if (runIsPure) {
       // A decoded escape never equals its source text, so the run stops being pure here.
       runText = ensureRawText(runText, runPureEnd - runStartIndex, startIndex);
-      runText.append(pattern, runStartIndex, runPureEnd);
+      runText.append(patternChars, runStartIndex, runPureEnd - runStartIndex);
     }
     runIsPure = false;
     runText = ensureRawText(runText, 0, startIndex);
@@ -338,7 +338,7 @@ public final class PatternParser extends CharClassParser {
     } else if (runIsPure && startIndex != runPureEnd) {
       // A COMMENTS-mode gap was skipped: it must not join the literal, so the run leaves pure mode.
       runText = ensureRawText(runText, runPureEnd - runStartIndex, startIndex);
-      runText.append(pattern, runStartIndex, runPureEnd);
+      runText.append(patternChars, runStartIndex, runPureEnd - runStartIndex);
       runIsPure = false;
     }
     int fullChar = Character.codePointAt(patternChars, index);
@@ -430,7 +430,7 @@ public final class PatternParser extends CharClassParser {
 
   /** Parses a backslash construct that is not a single literal character; returns the new accumulator. */
   private @Nullable Object parseNonLiteralEscape(@Nullable Object accumulator, int altStartIndex) {
-    if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'G') {
+    if (peek == '\\' && index + 1 < patternChars.length && patternChars[index + 1] == 'G') {
       // Rejected anywhere but the very start: java.util.regex silently ignores it there, but
       // this engine rejects unsatisfiable constructs.
       if (index != 0) {
@@ -448,7 +448,7 @@ public final class PatternParser extends CharClassParser {
       accumulator = addToAlternative(accumulator, quantifyBackReference(backReference), altStartIndex);
     return accumulator;
     }
-    if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'X') {
+    if (peek == '\\' && index + 1 < patternChars.length && patternChars[index + 1] == 'X') {
       int graphemeStartIndex = index;
       advance(2);
       GraphemeClusterPatternConstruct graphemeCluster =
@@ -507,9 +507,9 @@ public final class PatternParser extends CharClassParser {
 
   // Upper bound on how much more rawText needs for a run resuming at fromIndex.
   private int literalRunCapacityHint(int fromIndex) {
-    int len = pattern.length();
+    int len = patternChars.length;
     int i = fromIndex;
-    while (i < len && LITERAL_RUN_DELIMITERS.indexOf(pattern.charAt(i)) < 0) {
+    while (i < len && LITERAL_RUN_DELIMITERS.indexOf(patternChars[i]) < 0) {
       i++;
     }
     return i - fromIndex;
@@ -586,7 +586,7 @@ public final class PatternParser extends CharClassParser {
       }
     }
     PatternConstruct body = parseUnion(groupStartIndex, entryFlags, groupCaptureIndex, captureName);
-    if (index == pattern.length()) {
+    if (index == patternChars.length) {
       throw throwUnexpectedChar(
           "expected \")\" to match ", new CodePointReference(groupStartIndex));
     }
@@ -680,7 +680,7 @@ public final class PatternParser extends CharClassParser {
           "Character not allowed in capture name. Expected '>' to match ",
           new CodePointReference(startName));
     }
-    if (pattern.charAt(startName) >= '0' && pattern.charAt(startName) <= '9') {
+    if (patternChars[startName] >= '0' && patternChars[startName] <= '9') {
       throw throwUnexpectedChar("First character of capture name must be an ASCII letter.");
     }
     String captureName = pattern.substring(startName, index);
@@ -721,7 +721,7 @@ public final class PatternParser extends CharClassParser {
   private @Nullable PatternConstruct parseLookbehind(int startIndex, boolean isPositive) {
     advance(1); // consume '=' or '!'
     PatternConstruct body = parseUnion(index, flags, /* captureConstructIndex= */ -1, /* captureName= */ "");
-    if (index == pattern.length()) {
+    if (index == patternChars.length) {
       throw throwUnexpectedChar(
           "expected \")\" to match ", new CodePointReference(startIndex));
     }
@@ -748,7 +748,7 @@ public final class PatternParser extends CharClassParser {
 
   // Without this, "\b{...}" (other than \b{g}) would read the "{" as literal text.
   private void rejectBoundaryType() {
-    if (peek == '{' && !(index + 1 < pattern.length() && startsBracedQuantifier(pattern.charAt(index + 1)))) {
+    if (peek == '{' && !(index + 1 < patternChars.length && startsBracedQuantifier(patternChars[index + 1]))) {
       throw throwUnexpectedChar(
           " boundary type. Only \\b, \\B, and \\b{g} (grapheme boundary) are supported -- "
               + "\\X (extended grapheme cluster) is also supported, just not as a boundary type");
@@ -764,8 +764,8 @@ public final class PatternParser extends CharClassParser {
       case 'b': {
         int startIndex = index;
         advance(2);
-        if (peek == '{' && index + 2 < pattern.length()
-            && pattern.charAt(index + 1) == 'g' && pattern.charAt(index + 2) == '}') {
+        if (peek == '{' && index + 2 < patternChars.length
+            && patternChars[index + 1] == 'g' && patternChars[index + 2] == '}') {
           advance(3);
           GraphemeBoundaryPatternConstruct g = new GraphemeBoundaryPatternConstruct(startIndex, index);
           g.flags = flags;
@@ -842,8 +842,8 @@ public final class PatternParser extends CharClassParser {
       int startIndex = index;
       int groupNumber = peek2 - '0';
       int digitsEnd = index + 2;
-      while (digitsEnd < pattern.length()) {
-        char digit = pattern.charAt(digitsEnd);
+      while (digitsEnd < patternChars.length) {
+        char digit = patternChars[digitsEnd];
         int extended = groupNumber * 10 + (digit - '0');
         if (digit < '0' || digit > '9' || extended > captureConstructIndex) {
           break;
@@ -998,7 +998,7 @@ public final class PatternParser extends CharClassParser {
 
   private int parseQuantifierBound(String missingDigitsMessage, String overflowMessage) {
     int end = index;
-    while (end < pattern.length() && isAsciiDigit(pattern.charAt(end))) {
+    while (end < patternChars.length && isAsciiDigit(patternChars[end])) {
       ++end;
     }
     if (end == index) {

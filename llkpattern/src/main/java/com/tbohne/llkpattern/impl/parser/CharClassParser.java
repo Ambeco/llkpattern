@@ -164,7 +164,7 @@ class CharClassParser extends PatternLexer {
           runUnion = runUnion == null ? nested : new UnionCodePointSet(runUnion, nested);
           break;
         case '&':
-          if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
+          if (index + 1 < patternChars.length && patternChars[index + 1] == '&') {
             // "&&" is always the intersection operator (a lone "&" is a literal), and its right side needn't be
             // bracketed: [a-z&&aeiou] is valid.
             advance(2);
@@ -285,11 +285,11 @@ class CharClassParser extends PatternLexer {
     // Check-then-advance, so `end` is the true name length and the first character is validated too.
     int end = index;
     for (; ; ) {
-      if (end == pattern.length()) {
+      if (end == patternChars.length) {
         throw throwUnexpectedChar(
             "character class ", new CodePointReference(index), " is missing the closing }");
       }
-      char c = pattern.charAt(end);
+      char c = patternChars[end];
       if (c == '}') {
         break;
       }

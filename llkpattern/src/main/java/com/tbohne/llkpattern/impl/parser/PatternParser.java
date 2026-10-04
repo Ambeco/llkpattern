@@ -160,6 +160,18 @@ public final class PatternParser extends CharClassParser {
     return sequence;
   }
 
+  // The literal run being accumulated by parseUnion. A nested group is only parsed while the run is
+  // empty (it is flushed at "("), so the state is shared across recursion.
+  private int runStartIndex = -1;
+  // While true, the run is a verbatim copy of `pattern` over runStartIndex..runPureEnd (no decoded
+  // escape, no COMMENTS-mode gap), so it is read via a zero-copy CharBuffer.wrap instead of being
+  // copied into `runText`. Once an escape or a gap breaks purity, the pure prefix is copied into
+  // `runText` once and accumulation continues there.
+  private boolean runIsPure = true;
+  private int runPureEnd = -1; // meaningful only while runIsPure && runStartIndex >= 0
+  // Lazy (StringBuilder.<init> was ~4.5% of compile CPU); reused across impure runs via setLength(0).
+  private @Nullable StringBuilder runText;
+
   /**
    * Parses {@code '|'}-separated alternatives up to (not consuming) the matching {@code ')'} or
    * end of pattern.
@@ -180,36 +192,13 @@ public final class PatternParser extends CharClassParser {
     // Null until a second alternative is seen, so the union is allocated once.
     PatternConstruct firstAlternative = null;
     QuantifiedUnionPatternConstruct union = null;
-    int rawTextStartIndex = -1;
-    // While true, the literal run is a verbatim copy of `pattern` over
-    // rawTextStartIndex..rawTextPureEnd (no decoded escape, no COMMENTS-mode gap), so it is read
-    // via a zero-copy CharBuffer.wrap instead of being copied into `rawText`. Once an escape or a
-    // gap breaks purity, the pure prefix is copied into `rawText` once and accumulation continues there.
-    boolean rawTextIsPure = true;
-    int rawTextPureEnd = -1; // meaningful only while rawTextIsPure && rawTextStartIndex >= 0
-    // Lazy (StringBuilder.<init> was ~4.5% of compile CPU); reused across impure runs via setLength(0).
-    @Nullable StringBuilder rawText = null;
     for (; ; ) {
       skipComments();
       // ']' is deliberately absent: outside a bracket expression it is an ordinary literal, as in
       // java.util.regex.
       if (peek == '(' || peek == ')' || peek == '[' || peek == '|' || peek == '.'
           || peek == '^' || peek == '$' || peek == EOF) {
-        if (rawTextStartIndex >= 0) {
-          // rawTextPureEnd, not `index`: skipComments() above may have skipped a trailing
-          // comment/whitespace gap that must not become part of the literal.
-          CharSequence literalValue = rawTextIsPure
-              ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-              : castNonNull(rawText).toString();
-          LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, index, literalValue);
-          literal.flags = flags;
-          accumulator = addToAlternative(accumulator, literal, altStartIndex);
-          if (rawText != null) {
-            rawText.setLength(0);
-          }
-          rawTextStartIndex = -1;
-          rawTextIsPure = true;
-        }
+        accumulator = flushLiteralRun(accumulator, altStartIndex, index);
         switch (peek) {
           case '(':
             // Null only for a lookbehind quantified to "{0}" (see keepZeroWidthAfterQuantifier).
@@ -223,16 +212,7 @@ public final class PatternParser extends CharClassParser {
                 accumulator, parseQuantifiable(parseComplexCharacter()), altStartIndex);
             break;
           case '|':
-            if (accumulator == null) {
-              throw throwEmptySequence(altStartIndex, unionStartIndex);
-            }
-            PatternConstruct altConstruct;
-            if (accumulator instanceof SequencePatternConstruct) {
-              ((SequencePatternConstruct) accumulator).endIndex = index;
-              altConstruct = (SequencePatternConstruct) accumulator;
-            } else {
-              altConstruct = (PatternConstruct) accumulator;
-            }
+            PatternConstruct altConstruct = finishAlternative(accumulator, altStartIndex, unionStartIndex);
             if (union != null) {
               union.constructs.add(altConstruct);
             } else if (firstAlternative == null) {
@@ -273,191 +253,233 @@ public final class PatternParser extends CharClassParser {
             break;
           case ')':
           case EOF:
-            if (accumulator == null) {
-              throw throwEmptySequence(altStartIndex, unionStartIndex);
-            }
-            // The final alternative is always a real SequencePatternConstruct, even with one
-            // element: other code relies on that shape (CLAUDE.md "Parser root shape").
-            SequencePatternConstruct finalSequence;
-            if (accumulator instanceof SequencePatternConstruct) {
-              finalSequence = (SequencePatternConstruct) accumulator;
-            } else {
-              finalSequence = new SequencePatternConstruct(altStartIndex);
-              finalSequence.patterns.add((PatternConstruct) accumulator);
-            }
-            finalSequence.endIndex = index;
-            if (union != null) {
-              union.constructs.add(finalSequence);
-              union.endIndex = index;
-              return union;
-            }
-            if (firstAlternative != null) {
-              QuantifiedUnionPatternConstruct twoBranch = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
-              twoBranch.flags = unionFlags;
-              twoBranch.captureConstructIndex = captureConstructIndex;
-              twoBranch.captureName = captureName;
-              twoBranch.constructs.add(firstAlternative);
-              twoBranch.constructs.add(finalSequence);
-              twoBranch.endIndex = index;
-              return twoBranch;
-            }
-            if (captureConstructIndex != -1) {
-              QuantifiedUnionPatternConstruct singleBranch = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
-              singleBranch.captureConstructIndex = captureConstructIndex;
-              singleBranch.captureName = captureName;
-              singleBranch.constructs.add(finalSequence);
-              singleBranch.endIndex = index;
-              return singleBranch;
-            }
-            return finalSequence;
+            return finishUnion(accumulator, altStartIndex, unionStartIndex, unionFlags,
+                captureConstructIndex, captureName, firstAlternative, union);
         }
       } else if (peek == '\\') {
         int startIndex = index;
         int codePoint = tryParseSingleCharEscape();
         if (codePoint != -1) {
-          skipComments();
-          if (isQuantifierChar(peek)) {
-            // The quantifier belongs to this escaped character alone, not the literal run before it.
-            boolean hasPendingLiteral = rawTextStartIndex >= 0
-                && (rawTextIsPure ? rawTextPureEnd > rawTextStartIndex : castNonNull(rawText).length() > 0);
-            if (hasPendingLiteral) {
-              CharSequence literalValue = rawTextIsPure
-                  ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-                  : castNonNull(rawText).toString();
-              LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, startIndex, literalValue);
-              literal.flags = flags;
-              accumulator = addToAlternative(accumulator, literal, altStartIndex);
-              if (rawText != null) {
-                rawText.setLength(0);
-              }
-            }
-            ComplexCharacterPatternConstruct complex = singleCharacter(startIndex, codePoint);
-            complex.flags = flags;
-            complex.endIndex = index;
-            accumulator = addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
-            rawTextStartIndex = -1;
-            rawTextIsPure = true;
-            continue;
-          }
-          if (rawTextStartIndex < 0) {
-            rawTextStartIndex = startIndex;
-          } else if (rawTextIsPure) {
-            // A decoded escape never equals its source text, so the run stops being pure here.
-            rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, startIndex);
-            rawText.append(pattern, rawTextStartIndex, rawTextPureEnd);
-          }
-          rawTextIsPure = false;
-          rawText = ensureRawText(rawText, 0, startIndex);
-          appendCodePoint(rawText, codePoint);
+          accumulator = parseEscapedCharacter(accumulator, altStartIndex, startIndex, codePoint);
         } else {
-          if (rawTextStartIndex >= 0) {
-            CharSequence literalValue = rawTextIsPure
-                ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-                : castNonNull(rawText).toString();
-            LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, index, literalValue);
-            literal.flags = flags;
-            accumulator = addToAlternative(accumulator, literal, altStartIndex);
-            if (rawText != null) {
-              rawText.setLength(0);
-            }
-            rawTextStartIndex = -1;
-            rawTextIsPure = true;
-          }
-          if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'G') {
-            // Rejected anywhere but the very start: java.util.regex silently ignores it there, but
-            // this engine rejects unsatisfiable constructs.
-            if (index != 0) {
-              throw throwUnexpectedChar(
-                  "\\G is only allowed as the very first thing in the pattern -- it doesn't "
-                      + "match a position in the input, it just anchors find() to exactly where "
-                      + "the previous match ended (rather than scanning forward for one)");
-            }
-            advance(2);
-            anchorsToPreviousMatchEnd = true;
-            continue;
-          }
-          PatternConstruct backReference = tryParseBackReference();
-          if (backReference != null) {
-            accumulator = addToAlternative(accumulator, quantifyBackReference(backReference), altStartIndex);
-            continue;
-          }
-          if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'X') {
-            int graphemeStartIndex = index;
-            advance(2);
-            GraphemeClusterPatternConstruct graphemeCluster =
-                new GraphemeClusterPatternConstruct(graphemeStartIndex, index);
-            graphemeCluster.flags = flags;
-            accumulator = addToAlternative(accumulator, quantifySingleConstruct(graphemeCluster), altStartIndex);
-            continue;
-          }
-          PatternConstruct boundaryConstruct = tryParseBoundary();
-          if (boundaryConstruct != null) {
-            if (keepZeroWidthAfterQuantifier()) {
-              accumulator = addToAlternative(accumulator, boundaryConstruct, altStartIndex);
-            }
-          } else {
-            int escapeStartIndex = index;
-            CodePointSet escapeRanges = parseComplexEscape(); // advances past the escape
-            ComplexCharacterPatternConstruct escapeChar = new ComplexCharacterPatternConstruct(escapeStartIndex, index, escapeRanges);
-            escapeChar.flags = flags;
-            accumulator = addToAlternative(accumulator, parseQuantifiable(escapeChar), altStartIndex);
-          }
+          accumulator = flushLiteralRun(accumulator, altStartIndex, index);
+          accumulator = parseNonLiteralEscape(accumulator, altStartIndex);
         }
       } else {
-        int startIndex = index;
-        if (isQuantifierChar(peek)) {
-          // Quantifiers after an atom are consumed by parseQuantifiable, so one seen here has
-          // nothing to repeat ("*a", "a|+b", "a**"), which java.util.regex also rejects.
-          throw throwUnexpectedChar(
-              " quantifier with nothing to repeat. Did you mean to escape it with a backslash, or to put "
-                  + "it after the character, group or class it should repeat?");
-        }
-        if (rawTextStartIndex < 0) {
-          rawTextStartIndex = startIndex;
-          rawTextPureEnd = startIndex;
-        } else if (rawTextIsPure && startIndex != rawTextPureEnd) {
-          // A COMMENTS-mode gap was skipped: it must not join the literal, so the run leaves pure mode.
-          rawText = ensureRawText(rawText, rawTextPureEnd - rawTextStartIndex, startIndex);
-          rawText.append(pattern, rawTextStartIndex, rawTextPureEnd);
-          rawTextIsPure = false;
-        }
-        int fullChar = Character.codePointAt(patternChars, index);
-        advanceCodePoint();
-        // Captured before skipComments() below moves `index` past a following gap; rawTextPureEnd
-        // must stay here or the next char's gap check above would never fire.
-        int afterFullChar = index;
-        // Under COMMENTS a quantifier may follow whitespace/a comment ("a * b" is "a*b").
-        skipComments();
-        if (isQuantifierChar(peek)) {
-          // This char may have just opened the run with nothing accumulated yet, so check
-          // whichever of the pure span or rawText actually holds the run.
-          boolean hasPendingLiteral = rawTextIsPure
-              ? rawTextPureEnd > rawTextStartIndex
-              : castNonNull(rawText).length() > 0;
-          if (hasPendingLiteral) {
-            CharSequence literalValue = rawTextIsPure
-                ? CharBuffer.wrap(pattern, rawTextStartIndex, rawTextPureEnd)
-                : castNonNull(rawText).toString();
-            LiteralPatternConstruct literal = new LiteralPatternConstruct(rawTextStartIndex, index, literalValue);
-            literal.flags = flags;
-            accumulator = addToAlternative(accumulator, literal, altStartIndex);
-            if (rawText != null) {
-              rawText.setLength(0);
-            }
-          }
-          ComplexCharacterPatternConstruct complex = singleCharacter(startIndex, fullChar);
-          complex.flags = flags;
-          complex.endIndex = index;
-          accumulator = addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
-          rawTextStartIndex = -1;
-          rawTextIsPure = true;
-        } else if (rawTextIsPure) {
-          rawTextPureEnd = afterFullChar;
-        } else {
-          appendCodePoint(castNonNull(rawText), fullChar);
-        }
+        accumulator = parsePlainCharacter(accumulator, altStartIndex);
       }
     }
+  }
+
+  /**
+   * Emits the pending literal run (if any) ending at {@code endIndex} into the alternative and
+   * resets the run. Returns the new accumulator.
+   */
+  private @Nullable Object flushLiteralRun(
+      @Nullable Object accumulator, int altStartIndex, int endIndex) {
+    if (runStartIndex < 0) {
+      return accumulator;
+    }
+    // This char may have just opened the run with nothing accumulated yet, so check whichever of
+    // the pure span or runText actually holds the run.
+    boolean hasPendingLiteral = runIsPure ? runPureEnd > runStartIndex : castNonNull(runText).length() > 0;
+    if (hasPendingLiteral) {
+      accumulator = addToAlternative(
+          accumulator,
+          newLiteral(runStartIndex, endIndex, runIsPure, runPureEnd, runText),
+          altStartIndex);
+    }
+    if (runText != null) {
+      runText.setLength(0);
+    }
+    runStartIndex = -1;
+    runIsPure = true;
+    return accumulator;
+  }
+
+  /** Handles a single-character escape ({@code \n}, {@code \x41}, ...): literal, or an atom if quantified. */
+  private @Nullable Object parseEscapedCharacter(
+      @Nullable Object accumulator, int altStartIndex, int startIndex, int codePoint) {
+    skipComments();
+    if (isQuantifierChar(peek)) {
+      // The quantifier belongs to this escaped character alone, not the literal run before it.
+      accumulator = flushLiteralRun(accumulator, altStartIndex, startIndex);
+      ComplexCharacterPatternConstruct complex = singleCharacter(startIndex, codePoint);
+      complex.flags = flags;
+      complex.endIndex = index;
+      return addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
+    }
+    if (runStartIndex < 0) {
+      runStartIndex = startIndex;
+    } else if (runIsPure) {
+      // A decoded escape never equals its source text, so the run stops being pure here.
+      runText = ensureRawText(runText, runPureEnd - runStartIndex, startIndex);
+      runText.append(pattern, runStartIndex, runPureEnd);
+    }
+    runIsPure = false;
+    runText = ensureRawText(runText, 0, startIndex);
+    appendCodePoint(runText, codePoint);
+    return accumulator;
+  }
+
+  /** Handles an ordinary literal character: extends the run, or becomes an atom if quantified. */
+  private @Nullable Object parsePlainCharacter(@Nullable Object accumulator, int altStartIndex) {
+    int startIndex = index;
+    if (isQuantifierChar(peek)) {
+      // Quantifiers after an atom are consumed by parseQuantifiable, so one seen here has
+      // nothing to repeat ("*a", "a|+b", "a**"), which java.util.regex also rejects.
+      throw throwUnexpectedChar(
+          " quantifier with nothing to repeat. Did you mean to escape it with a backslash, or to put "
+              + "it after the character, group or class it should repeat?");
+    }
+    if (runStartIndex < 0) {
+      runStartIndex = startIndex;
+      runPureEnd = startIndex;
+    } else if (runIsPure && startIndex != runPureEnd) {
+      // A COMMENTS-mode gap was skipped: it must not join the literal, so the run leaves pure mode.
+      runText = ensureRawText(runText, runPureEnd - runStartIndex, startIndex);
+      runText.append(pattern, runStartIndex, runPureEnd);
+      runIsPure = false;
+    }
+    int fullChar = Character.codePointAt(patternChars, index);
+    advanceCodePoint();
+    // Captured before skipComments() below moves `index` past a following gap; runPureEnd
+    // must stay here or the next char's gap check above would never fire.
+    int afterFullChar = index;
+    // Under COMMENTS a quantifier may follow whitespace/a comment ("a * b" is "a*b").
+    skipComments();
+    if (isQuantifierChar(peek)) {
+      accumulator = flushLiteralRun(accumulator, altStartIndex, index);
+      ComplexCharacterPatternConstruct complex = singleCharacter(startIndex, fullChar);
+      complex.flags = flags;
+      complex.endIndex = index;
+      return addToAlternative(accumulator, parseQuantifiable(complex), altStartIndex);
+    }
+    if (runIsPure) {
+      runPureEnd = afterFullChar;
+    } else {
+      appendCodePoint(castNonNull(runText), fullChar);
+    }
+    return accumulator;
+  }
+
+  /** Ends the current alternative at the {@code |} (or end), returning it as a bare construct or sequence. */
+  private PatternConstruct finishAlternative(
+      @Nullable Object accumulator, int altStartIndex, int unionStartIndex) {
+    if (accumulator == null) {
+      throw throwEmptySequence(altStartIndex, unionStartIndex);
+    }
+    PatternConstruct altConstruct;
+    if (accumulator instanceof SequencePatternConstruct) {
+      ((SequencePatternConstruct) accumulator).endIndex = index;
+      altConstruct = (SequencePatternConstruct) accumulator;
+    } else {
+      altConstruct = (PatternConstruct) accumulator;
+    }
+    return altConstruct;
+  }
+
+  /** Builds parseUnion's result once its final alternative ({@code accumulator}) is complete. */
+  private PatternConstruct finishUnion(
+      @Nullable Object accumulator,
+      int altStartIndex,
+      int unionStartIndex,
+      int unionFlags,
+      int captureConstructIndex,
+      String captureName,
+      @Nullable PatternConstruct firstAlternative,
+      @Nullable QuantifiedUnionPatternConstruct union) {
+    if (accumulator == null) {
+      throw throwEmptySequence(altStartIndex, unionStartIndex);
+    }
+    // The final alternative is always a real SequencePatternConstruct, even with one
+    // element: other code relies on that shape (CLAUDE.md "Parser root shape").
+    SequencePatternConstruct finalSequence;
+    if (accumulator instanceof SequencePatternConstruct) {
+      finalSequence = (SequencePatternConstruct) accumulator;
+    } else {
+      finalSequence = new SequencePatternConstruct(altStartIndex);
+      finalSequence.patterns.add((PatternConstruct) accumulator);
+    }
+    finalSequence.endIndex = index;
+    if (union != null) {
+      union.constructs.add(finalSequence);
+      union.endIndex = index;
+      return union;
+    }
+    if (firstAlternative != null) {
+      QuantifiedUnionPatternConstruct twoBranch = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
+      twoBranch.flags = unionFlags;
+      twoBranch.captureConstructIndex = captureConstructIndex;
+      twoBranch.captureName = captureName;
+      twoBranch.constructs.add(firstAlternative);
+      twoBranch.constructs.add(finalSequence);
+      twoBranch.endIndex = index;
+      return twoBranch;
+    }
+    if (captureConstructIndex != -1) {
+      QuantifiedUnionPatternConstruct singleBranch = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
+      singleBranch.captureConstructIndex = captureConstructIndex;
+      singleBranch.captureName = captureName;
+      singleBranch.constructs.add(finalSequence);
+      singleBranch.endIndex = index;
+      return singleBranch;
+    }
+    return finalSequence;
+  }
+
+  /** Parses a backslash construct that is not a single literal character; returns the new accumulator. */
+  private @Nullable Object parseNonLiteralEscape(@Nullable Object accumulator, int altStartIndex) {
+    if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'G') {
+      // Rejected anywhere but the very start: java.util.regex silently ignores it there, but
+      // this engine rejects unsatisfiable constructs.
+      if (index != 0) {
+        throw throwUnexpectedChar(
+            "\\G is only allowed as the very first thing in the pattern -- it doesn't "
+                + "match a position in the input, it just anchors find() to exactly where "
+                + "the previous match ended (rather than scanning forward for one)");
+      }
+      advance(2);
+      anchorsToPreviousMatchEnd = true;
+    return accumulator;
+    }
+    PatternConstruct backReference = tryParseBackReference();
+    if (backReference != null) {
+      accumulator = addToAlternative(accumulator, quantifyBackReference(backReference), altStartIndex);
+    return accumulator;
+    }
+    if (peek == '\\' && index + 1 < pattern.length() && pattern.charAt(index + 1) == 'X') {
+      int graphemeStartIndex = index;
+      advance(2);
+      GraphemeClusterPatternConstruct graphemeCluster =
+          new GraphemeClusterPatternConstruct(graphemeStartIndex, index);
+      graphemeCluster.flags = flags;
+      accumulator = addToAlternative(accumulator, quantifySingleConstruct(graphemeCluster), altStartIndex);
+    return accumulator;
+    }
+    PatternConstruct boundaryConstruct = tryParseBoundary();
+    if (boundaryConstruct != null) {
+      if (keepZeroWidthAfterQuantifier()) {
+        accumulator = addToAlternative(accumulator, boundaryConstruct, altStartIndex);
+      }
+    } else {
+      int escapeStartIndex = index;
+      CodePointSet escapeRanges = parseComplexEscape(); // advances past the escape
+      ComplexCharacterPatternConstruct escapeChar = new ComplexCharacterPatternConstruct(escapeStartIndex, index, escapeRanges);
+      escapeChar.flags = flags;
+      accumulator = addToAlternative(accumulator, parseQuantifiable(escapeChar), altStartIndex);
+    }
+    return accumulator;
+  }
+
+  private LiteralPatternConstruct newLiteral(
+      int runStartIndex, int endIndex, boolean isPure, int pureEnd, @Nullable StringBuilder rawText) {
+    CharSequence value = isPure
+        ? CharBuffer.wrap(pattern, runStartIndex, pureEnd)
+        : castNonNull(rawText).toString();
+    LiteralPatternConstruct literal = new LiteralPatternConstruct(runStartIndex, endIndex, value);
+    literal.flags = flags;
+    return literal;
   }
 
   /**

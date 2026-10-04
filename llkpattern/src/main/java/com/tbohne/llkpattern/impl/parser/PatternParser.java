@@ -918,58 +918,67 @@ public final class PatternParser extends CharClassParser {
       advance(1);
       construct.endIndex = index;
     } else if (peek == '{') {
+      parseExplicitQuantifier(construct);
+    }
+    parseQuantifierModifier(construct);
+    return construct;
+  }
+
+  /** Parses {@code {n}}, {@code {n,}} or {@code {n,m}}, with {@code peek} on the opening brace. */
+  private void parseExplicitQuantifier(QuantifiablePatternConstruct construct) {
+    advance(1);
+    int startQuantifierIndex = index;
+    construct.min = parseQuantifierBound(
+        "first parameter of explicit quantifier '{' must be a number written with ASCII characters",
+        "first parameter of explicit quantifier '{' must be less than ");
+    construct.max = construct.min;
+    construct.quantifiableIndex = quantifiableIndex++;
+    if (peek == ',') {
       advance(1);
-      int end = index;
-      int startQuantifierIndex = index;
-      while (end < pattern.length() && pattern.charAt(end) >= '0' && pattern.charAt(end) <= '9') {
-        ++end;
-      }
-      if (end == index) {
-        throw throwUnexpectedChar(
-            "first parameter of explicit quantifier '{' must be a number written with ASCII characters");
-      }
-      try {
-        construct.min = Integer.parseInt(pattern, index, end, 10);
-      } catch (NumberFormatException e) {
-        throw throwUnexpectedChar(
-            "first parameter of explicit quantifier '{' must be less than ", Integer.MAX_VALUE);
-      }
-      construct.max = construct.min;
-      construct.quantifiableIndex = quantifiableIndex++;
-      advance(end - index);
-      if (peek == ',') {
-        advance(1);
-        end = index;
-        while (end < pattern.length() && pattern.charAt(end) >= '0' && pattern.charAt(end) <= '9') {
-          ++end;
-        }
-        if (end == index) {
-          construct.max = Integer.MAX_VALUE;
-        } else {
-          try {
-            construct.max = Integer.parseInt(pattern, index, end, 10);
-          } catch (NumberFormatException e) {
-            throw throwUnexpectedChar(
-                "second parameter of explicit quantifier '{' must be less than ",
-                Integer.MAX_VALUE);
-          }
-          advance(end - index);
-        }
-        if (peek != '}') {
-          throw throwUnexpectedChar(
-              "Expected '}' to end quantifier started at ",
-              new CodePointReference(startQuantifierIndex));
-        }
-        advance(1);
-      } else if (peek == '}') {
-        advance(1);
+      if (isAsciiDigit(peek)) {
+        construct.max = parseQuantifierBound(
+            "second parameter of explicit quantifier '{' must be a number",
+            "second parameter of explicit quantifier '{' must be less than ");
       } else {
+        construct.max = Integer.MAX_VALUE;
+      }
+      if (peek != '}') {
         throw throwUnexpectedChar(
-            "Expected ',' or '}' to end quantifier started at ",
+            "Expected '}' to end quantifier started at ",
             new CodePointReference(startQuantifierIndex));
       }
-      construct.endIndex = index;
+    } else if (peek != '}') {
+      throw throwUnexpectedChar(
+          "Expected ',' or '}' to end quantifier started at ",
+          new CodePointReference(startQuantifierIndex));
     }
+    advance(1);
+    construct.endIndex = index;
+  }
+
+  private int parseQuantifierBound(String missingDigitsMessage, String overflowMessage) {
+    int end = index;
+    while (end < pattern.length() && isAsciiDigit(pattern.charAt(end))) {
+      ++end;
+    }
+    if (end == index) {
+      throw throwUnexpectedChar(missingDigitsMessage);
+    }
+    int value;
+    try {
+      value = Integer.parseInt(pattern, index, end, 10);
+    } catch (NumberFormatException e) {
+      throw throwUnexpectedChar(overflowMessage, Integer.MAX_VALUE);
+    }
+    advance(end - index);
+    return value;
+  }
+
+  private static boolean isAsciiDigit(int c) {
+    return c >= '0' && c <= '9';
+  }
+
+  private void parseQuantifierModifier(QuantifiablePatternConstruct construct) {
     if (peek == '?' || peek == '+') {
       // Possessive compiles like greedy (no backtracking) but is recorded: it is exempt from the
       // loop/zero-width ambiguity rejection that greedy needs (see
@@ -979,7 +988,6 @@ public final class PatternParser extends CharClassParser {
       advance(1);
       construct.endIndex = index;
     }
-    return construct;
   }
 
   private PatternSyntaxException throwEmptySequence(int sequenceStartIndex, int unionStartIndex) {

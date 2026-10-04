@@ -520,24 +520,7 @@ public final class PatternParser extends CharClassParser {
           if (peek == '=' || peek == '!') {
             return parseLookbehind(groupStartIndex, /* isPositive= */ peek == '=');
           }
-          int startName = index;
-          while (isAsciiAlphanumeric(peek)) {
-            advance(1);
-          }
-          if (peek != '>') {
-            throw throwUnexpectedChar(
-                "Character not allowed in capture name. Expected '>' to match ",
-                new CodePointReference(startName));
-          }
-          if (pattern.charAt(startName) >= '0' && pattern.charAt(startName) <= '9') {
-            throw throwUnexpectedChar("First character of capture name must be an ASCII letter.");
-          }
-          captureName = pattern.substring(startName, index);
-          if (namedGroups != null && namedGroups.containsKey(captureName)) {
-            throw PatternSyntaxException.throwWithReferences(
-                pattern, startName, "Named capturing group <", captureName, "> is already defined");
-          }
-          advance(1);
+          captureName = parseCaptureName();
           break;
         case ':':
         case '>':
@@ -559,60 +542,11 @@ public final class PatternParser extends CharClassParser {
         case '-': // negative-only flags, e.g. "(?-i)"
           // Flag constructs are non-capturing; leaving the default 0 here once corrupted capture bookkeeping.
           groupCaptureIndex = -1;
-          int flagValue;
-          int enableFlags = 0;
-          int disableFlags = 0;
-          while ((flagValue = InlineFlags.valueOf(peek)) != 0) {
-            if ((enableFlags & flagValue) != 0) {
-              throw throwUnexpectedChar(
-                  "It doesn't make sense for a group to enable the same flag \"",
-                  new CodePoint(peek),
-                  "\" multiple times.");
-            }
-            enableFlags |= flagValue;
-            advance(1);
+          QuantifiedUnionPatternConstruct flagsOnly = parseInlineFlags(groupStartIndex);
+          if (flagsOnly != null) {
+            return flagsOnly;
           }
-          if (peek == '-') {
-            advance(1);
-            while ((flagValue = InlineFlags.valueOf(peek)) != 0) {
-              if ((enableFlags & flagValue) != 0) {
-                throw throwUnexpectedChar(
-                    "It doesn't make sense for a group and disable the same flag \"",
-                    new CodePoint(peek),
-                    "\" at the same time.");
-              }
-              if ((disableFlags & flagValue) != 0) {
-                throw throwUnexpectedChar(
-                    "It doesn't make sense for a group to disable the same flag \"",
-                    new CodePoint(peek),
-                    "\" multiple times.");
-              }
-              disableFlags |= flagValue;
-              advance(1);
-            }
-          }
-          // UNICODE_CHARACTER_CLASS implies UNICODE_CASE, on and off, as in java.util.regex.
-          if ((enableFlags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) {
-            enableFlags |= UnicodeFlags.UNICODE_CASE;
-          }
-          if ((disableFlags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) {
-            disableFlags |= UnicodeFlags.UNICODE_CASE;
-          }
-          if (peek == ')') {
-            // "(?i)" is not quantifiable and has no body, but callers expect an (empty) union.
-            QuantifiedUnionPatternConstruct emptyUnion = new QuantifiedUnionPatternConstruct(pattern, groupStartIndex);
-            emptyUnion.captureConstructIndex = -1;
-            emptyUnion.endIndex = index;
-            advance(1);
-            flags = (flags | enableFlags) & ~disableFlags;
-            return emptyUnion;
-          } else if (peek == ':') {
-            advance(1);
-            flags = (flags | enableFlags) & ~disableFlags;
-            restoreFlagsOnExit = true;
-          } else {
-            throw throwUnexpectedChar("That character is illegal in group special construct.");
-          }
+          restoreFlagsOnExit = true;
           break;
         default:
           throw throwUnexpectedChar("Not a valid group special construct for a capture group.");
@@ -650,6 +584,90 @@ public final class PatternParser extends CharClassParser {
       flags = entryFlags;
     }
     return group;
+  }
+
+  /**
+   * Parses the flag letters of {@code (?i)} or {@code (?i:...)}, applying them to {@code flags}.
+   * Returns the empty union for the bare {@code (?i)} form, or null once {@code (?i:} is consumed.
+   */
+  private @Nullable QuantifiedUnionPatternConstruct parseInlineFlags(int groupStartIndex) {
+    int flagValue;
+    int enableFlags = 0;
+    int disableFlags = 0;
+    while ((flagValue = InlineFlags.valueOf(peek)) != 0) {
+      if ((enableFlags & flagValue) != 0) {
+        throw throwUnexpectedChar(
+            "It doesn't make sense for a group to enable the same flag \"",
+            new CodePoint(peek),
+            "\" multiple times.");
+      }
+      enableFlags |= flagValue;
+      advance(1);
+    }
+    if (peek == '-') {
+      advance(1);
+      while ((flagValue = InlineFlags.valueOf(peek)) != 0) {
+        if ((enableFlags & flagValue) != 0) {
+          throw throwUnexpectedChar(
+              "It doesn't make sense for a group and disable the same flag \"",
+              new CodePoint(peek),
+              "\" at the same time.");
+        }
+        if ((disableFlags & flagValue) != 0) {
+          throw throwUnexpectedChar(
+              "It doesn't make sense for a group to disable the same flag \"",
+              new CodePoint(peek),
+              "\" multiple times.");
+        }
+        disableFlags |= flagValue;
+        advance(1);
+      }
+    }
+    // UNICODE_CHARACTER_CLASS implies UNICODE_CASE, on and off, as in java.util.regex.
+    if ((enableFlags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) {
+      enableFlags |= UnicodeFlags.UNICODE_CASE;
+    }
+    if ((disableFlags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) {
+      disableFlags |= UnicodeFlags.UNICODE_CASE;
+    }
+    if (peek == ')') {
+      // "(?i)" is not quantifiable and has no body, but callers expect an (empty) union.
+      QuantifiedUnionPatternConstruct emptyUnion = new QuantifiedUnionPatternConstruct(pattern, groupStartIndex);
+      emptyUnion.captureConstructIndex = -1;
+      emptyUnion.endIndex = index;
+      advance(1);
+      flags = (flags | enableFlags) & ~disableFlags;
+      return emptyUnion;
+    } else if (peek == ':') {
+      advance(1);
+      flags = (flags | enableFlags) & ~disableFlags;
+      return null;
+    } else {
+      throw throwUnexpectedChar("That character is illegal in group special construct.");
+    }
+  }
+
+  // Consumes "name>" after "(?<" and returns the name.
+  private String parseCaptureName() {
+    int startName = index;
+    while (isAsciiAlphanumeric(peek)) {
+      advance(1);
+    }
+    if (peek != '>') {
+      throw throwUnexpectedChar(
+          "Character not allowed in capture name. Expected '>' to match ",
+          new CodePointReference(startName));
+    }
+    if (pattern.charAt(startName) >= '0' && pattern.charAt(startName) <= '9') {
+      throw throwUnexpectedChar("First character of capture name must be an ASCII letter.");
+    }
+    String captureName = pattern.substring(startName, index);
+    if (namedGroups != null && namedGroups.containsKey(captureName)) {
+      throw PatternSyntaxException.throwWithReferences(
+          pattern, startName, "Named capturing group <", captureName, "> is already defined");
+    }
+    advance(1);
+    return captureName;
   }
 
   // A non-capturing single-alternative body is a bare sequence; it is wrapped in a union only if a quantifier follows.

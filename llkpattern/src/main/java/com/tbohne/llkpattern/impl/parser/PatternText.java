@@ -35,6 +35,15 @@ final class PatternText {
    * end of the pattern. Error positions in a pattern containing quotation refer to the rewritten
    * text. Returns {@code pattern} itself when it contains no {@code \Q}.
    */
+  static boolean hasQuoteStart(char[] chars) {
+    for (int i = 0, last = chars.length - 1; i < last; i++) {
+      if (chars[i] == '\\' && chars[i + 1] == 'Q') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static String removeQuoting(String pattern) {
     if (pattern.indexOf("\\Q") < 0) {
       return pattern;

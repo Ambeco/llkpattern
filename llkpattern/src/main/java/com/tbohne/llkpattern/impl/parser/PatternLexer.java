@@ -31,6 +31,7 @@ class PatternLexer {
   int peek;
 
   PatternLexer(String pattern, int flags) {
+    char[] chars = null;
     // LITERAL wins over CANON_EQ, as in java.util.regex.
     if ((flags & Pattern.LITERAL) != 0) {
       this.pattern = pattern;
@@ -39,9 +40,16 @@ class PatternLexer {
           PatternText.removeQuoting(pattern),
           (flags & UnicodeFlags.CASE_INSENSITIVE) != 0 && (flags & UnicodeFlags.UNICODE_CASE) != 0);
     } else {
-      this.pattern = PatternText.removeQuoting(pattern);
+      // Scans the char[] (no per-char isLatin1() check) and reuses it when there is no quoting.
+      chars = pattern.toCharArray();
+      if (PatternText.hasQuoteStart(chars)) {
+        this.pattern = PatternText.removeQuoting(pattern);
+        chars = null;
+      } else {
+        this.pattern = pattern;
+      }
     }
-    this.patternChars = this.pattern.toCharArray();
+    this.patternChars = chars != null ? chars : this.pattern.toCharArray();
     index = 0;
     peek = codePointAt(patternChars, 0);
     this.flags = (flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0 ? flags | UnicodeFlags.UNICODE_CASE : flags;
@@ -55,8 +63,7 @@ class PatternLexer {
   }
 
   final void advanceCodePoint() {
-    // offsetByCodePoints returns the new absolute index, not a delta (adding it double-advanced).
-    index = pattern.offsetByCodePoints(index, 1);
+    index += Character.charCount(peek);
     peek = codePointAt(patternChars, index);
   }
 
@@ -97,14 +104,20 @@ class PatternLexer {
     }
   }
 
-  static private final String META_CHARACTERS = "^.[]$()*{}?+|\\";
+  // Indexed by ASCII code: a table lookup instead of String#indexOf's per-char loop on every escape.
+  static private final boolean[] IS_META_CHARACTER = new boolean[128];
+  static {
+    for (char c : "^.[]$()*{}?+|\\".toCharArray()) {
+      IS_META_CHARACTER[c] = true;
+    }
+  }
   static private final String CONTROL_CODES = "@ABCDEFGHIJKLMNOPQRTSTUVWXYZ[\\]^_";
   final int tryParseSingleCharEscape() {
     if (peek != '\\') {
       throw new IllegalStateException("entered tryParseSingleCharEscape at illegal start point");
     }
     int peek2 = peekAfter();
-    if (META_CHARACTERS.indexOf(peek2) >= 0) {
+    if (peek2 >= 0 && peek2 < 128 && IS_META_CHARACTER[peek2]) {
       advance(2);
       return peek2;
     }

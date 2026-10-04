@@ -168,3 +168,6 @@ splitting can't change JIT compile/inline decisions; the goal is navigability on
 - [ ] Rename `singletonCodePointMap` (used by `firstCharSet`/`lastCharSet`) to `singletonCodePointSet` -- it is a
       `CodePointSet` now. It and the `QuantifiedUnion`-branch-union temporary sets inside those two methods are
       still small un-eliminated allocations.
+- [ ] **`pattern.substring` via `patternChars`**: check whether `new String(patternChars, offset, length)` instead of
+      `pattern.substring(...)` (capture names, error text, `\N{name}`, class names) has any compile-time effect.
+      Probably little to none; measure before keeping.

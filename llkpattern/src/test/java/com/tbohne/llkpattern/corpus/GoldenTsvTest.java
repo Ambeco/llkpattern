@@ -13,7 +13,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 /** Round-trip tests for {@link GoldenTsv}'s field escaping and {@link MatchOutcome}'s encoding --
- *  written before any real corpus data, per the plan in remaining_work.md, precisely because a
+ *  written before any real corpus data, precisely because a
  *  codec bug would otherwise be indistinguishable from a real engine divergence. */
 @RunWith(JUnit4.class)
 public class GoldenTsvTest {

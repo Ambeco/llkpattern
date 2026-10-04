@@ -14,29 +14,17 @@ import java.util.List;
 public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternConstruct {
 	public int captureConstructIndex = 0;
 	public String captureName = "";
-	// Pre-sized to 4, not the JDK default of 10 -- corpus measurement (2026-09-27) found 99.63%
-	// of QuantifiedUnions end up with <=4 elements (mean 1.38), so the default's first-`add`
-	// grow to 10 wastes far more capacity than it saves growth copies for the rare larger case.
+	// Pre-sized to 4: 99.63% of unions have <= 4 elements, mean 1.38 (corpus measurement, 2026-09-27).
 	public final List<PatternConstruct> constructs = new ArrayList<>(4);
 
-	// The real (non-identity-rewritten) catch-all candidate this union's OWN fork chain falls
-	// back to in buildMatcher() -- see that method below. Needed because the inherited
-	// entryElse field is deliberately re-keyed onto `this` (like SequencePatternConstruct's own fix, see its
-	// doc), for ancestors' identity checks -- but buildMatcher() reads the real candidate
-	// identity, not `this`, to resolve the actual MatcherConstruct target the fallback should
-	// dispatch to. (buildMatcher() otherwise builds its fork chain by walking `constructs`
-	// directly -- see mergeEntryPoints' own doc for why nothing here needs a
-	// PatternConstruct-valued entry map of its own any more.)
+	// The real catch-all candidate, which buildMatcher() needs: the inherited entryElse is re-keyed onto
+	// `this` (like SequencePatternConstruct's) for ancestors' identity checks.
 	private @Nullable PatternConstruct rawEntryElse;
 
-	// The unquantified-and-non-empty case's actual compile target (`next` itself, or a
-	// CaptureEndPatternConstruct for a capturing group) -- computed once in buildEntryMap() (cheaply, no
-	// compile() calls) and reused by buildMatcher() to actually compile the branches against it.
-	// Kept as a field rather than recomputed, since buildMatcher() needs the SAME CaptureEndPatternConstruct
-	// instance buildEntryMap() already used to compute rawEntryElse's identity.
-	// @Nullable only because it has no meaningful value before buildEntryMap() runs -- by the
-	// time buildMatcher() reads it (unguarded), compile()'s ensureEntryPointBuilt() guarantees
-	// buildEntryMap() already has, in this (unquantified, non-empty-constructs) branch.
+	// Compile target for the unquantified, non-empty case (next, or a CaptureEndPatternConstruct for a
+	// capturing group): computed in buildEntryMap() without compile() calls and reused by buildMatcher(),
+	// which needs the SAME CaptureEndPatternConstruct instance. @Nullable only because it has no value
+	// before buildEntryMap().
 	@MonotonicNonNull PatternConstruct compileTarget;
 
 	/** {@link #compileTarget}, set by {@link #buildEntryMap} before any {@link #buildMatcher} reads it. */
@@ -61,12 +49,9 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 	@Override
 	boolean claimsEntryElse() {
 		if (isUnquantified() && constructs.isEmpty()) {
-			// Bare flags-only group ("(?i)", no body) -- same aliasing as buildEntryMap: passes
-			// straight through to `next` (this union contributes nothing of its own). Safe even
-			// though `next` could resolve back to an ancestor loop still under construction (see
-			// buildLoopEntryMap's `part.next = this`) -- whatever `next` turns out to be, if it's
-			// itself a QuantifiablePatternConstruct it keeps the state-checked default below, so the
-			// cycle is still caught there, just one level further down.
+			// Bare flags-only group ("(?i)"): passes through to next, as in buildEntryMap. Safe even if next
+			// resolves back to an ancestor loop under construction: a QuantifiablePatternConstruct there keeps the
+			// cycle-guarded default, so the cycle is still caught one level down.
 			return next().claimsEntryElse();
 		}
 		return super.claimsEntryElse();
@@ -101,38 +86,21 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 			return;
 		}
 		if (constructs.isEmpty()) {
-			// Bug fix (2026-09-06): a bare flags-only group ("(?s)", no ":", no body) is the
-			// only way to reach this constructor with an empty `constructs` list -- every other
-			// path (a real "()"/"(?:)"/"(?<name>)") goes through parseUnion(), which rejects an
-			// empty body via throwEmptySequence before a QuantifiedUnionPatternConstruct with zero constructs can
-			// ever exist. Previously this fell through to compileAndMergeCandidates() with an
-			// empty candidate list, producing an empty entryMap/entryElse -- i.e. a
-			// fork chain that matches nothing at all, silently breaking the
-			// surrounding sequence ("(?s)abx" stopped matching "abx"). A bare flags group is
-			// zero-width and always succeeds -- its only job was toggling `flags` for
-			// PatternParser, already done by the caller -- so just pass through to `next` exactly
-			// as an empty SequencePatternConstruct element would, instead of compiling as its own dispatch node.
-			// Aliased directly -- entryMap's values are always Boolean `true` regardless of which
-			// construct built it (see entryMap's own doc), so there's no PatternConstruct identity
-			// to lose by sharing next's own map instead of copying its entries.
+			// Bare flags-only group ("(?s)", no body): the only way to get empty constructs (parseUnion rejects
+			// empty bodies). It is zero-width and always succeeds (the parser already toggled flags), so pass
+			// through to next rather than compile as a dispatch node; an empty entry map once broke "(?s)abx".
 			entryMap = next.getEntryPointMap();
 			if (next.getEntryElse() != null) {
 				entryElse = this;
 			}
-			// matcher isn't assigned here (unlike the pre-split design) -- next.matcher may not be
-			// built yet at this point (see design.md's "Entry-point computation vs. matcher
-			// compilation" section); buildMatcher() assigns it once next really is compiled.
+			// matcher isn't assigned here: next.matcher may not be built yet; buildMatcher() assigns it.
 			return;
 		}
 
-		// Determine every branch's compile target (tail-to-front relative to this union: each
-		// branch's "next" is this union's own "next" -- or, for a capturing group, a marker that
-		// ends the capture before reaching the real next -- since choosing a branch doesn't itself
-		// consume anything) and merge their entry points, rejecting any two branches that could
-		// both match the same next code point -- the core LL(1) restriction this library is built
-		// on. Deliberately doesn't compile() anything here (branches, or compileTarget itself) --
-		// see design.md's "Entry-point computation vs. matcher compilation" section; buildMatcher()
-		// does the real compiling, once `next` is guaranteed to already be compiled.
+		// Each branch's compile target is this union's next (or, for a capturing group, a marker that ends the
+		// capture first), since choosing a branch consumes nothing. Merging entry points rejects any two
+		// branches that could match the same next code point: the core LL(1) restriction. Doesn't compile()
+		// anything (design.md "Entry-point computation vs. matcher compilation"); buildMatcher() does.
 		PatternConstruct target = next;
 		if (isCapturing()) {
 			target = new CaptureEndPatternConstruct(startIndex, captureConstructIndex, next);
@@ -144,16 +112,12 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 		}
 		MergedEntries result = mergeEntryPoints(pattern, constructs, "union subpattern");
 		rawEntryElse = result.entryElse();
-		// Re-keyed onto `this` rather than kept as whatever nested candidate built each range --
-		// see SequencePatternConstruct.buildEntryMap's doc for why (same fix, same reason: a containing loop's
-		// "e.getValue() != next" exit-vs-continue identity check must see THIS union, not one of
-		// its branches' own leaves, whenever this union is passed as some ancestor's `next`).
+		// Re-keyed onto `this` so an ancestor's identity checks see this union, not one of its branches' leaves
+		// (as in SequencePatternConstruct.buildEntryMap).
 		if (rawEntryElse != null) {
 			entryElse = this;
 		}
-		// Safe to alias directly (unlike entryElse just above): result.ranges is already
-		// Boolean-valued -- see mergeEntryPoints' own doc -- so there's no PatternConstruct
-		// identity to lose by sharing it as-is instead of re-keying/copying.
+		// Aliased directly: entryMap is a plain set.
 		entryMap = result.ranges;
 	}
 
@@ -164,42 +128,26 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 			return;
 		}
 		if (constructs.isEmpty()) {
-			// Bare flags-only group -- see buildEntryMap()'s matching case. `next` is guaranteed
-			// compiled by now (tail-to-front compile order), unlike when buildEntryMap() ran.
+			// Bare flags-only group: see buildEntryMap(). `next` is compiled by now (tail-to-front).
 			MatcherConstruct.aliasOrPassThrough(this, next().matcher());
 			return;
 		}
 		if (isCapturing()) {
-			// compileTarget (a CaptureEndPatternConstruct) must itself be compiled before the branches below,
-			// since building its own EndCaptureMatcherConstruct needs `next.matcher` -- guaranteed
-			// available now (unlike when buildEntryMap() computed compileTarget's entry point).
+			// Must compile before the branches: its EndCaptureMatcherConstruct needs next.matcher, available now.
 			compileTarget().compile(next());
 		}
-		// Uses rawEntryElse (the real, non-identity-rewritten candidate), not the
-		// (rekeyed-to-`this`) entryMap/entryElse fields -- see rawEntryElse's doc: for the capturing
-		// case, `this.matcher` isn't set yet at this point; for the non-capturing case, the flattened
-		// chain's head node itself becomes `this.matcher`, so resolving branches through the
-		// rekeyed-to-`this` entryMap would resolve every entry back to this very node (an infinite
-		// self-dispatch loop) instead of to the actual branch matchers. Compiled here, deliberately
-		// with no dispatch gating of its own (dispatchEntrySet/dispatchFailedEntry left null), and
-		// EXCLUDED from the ordinary candidate list handed to buildFlattenedChain below -- unlike the
-		// old fork-chain design (which could cheaply wrap the SAME already-compiled, ungated
-		// candidate.matcher in two different fork nodes -- one at its own list position, one as the
-		// tail fallback -- since gating lived in the separate fork objects, not the node itself), this
-		// flattened design bakes gating into the candidate's own single compiled node, so the same
-		// node can't simultaneously be "gated at its natural position" and "the ungated final
-		// fallback". Dropping it from the ordinary list is only a behavior change when rawEntryElse
-		// ALSO claims real (non-empty) explicit ranges of its own (e.g. a nullable branch reaching the end of
-		// the pattern) -- those ranges are still checked for disjointness against every sibling's, by
-		// buildFlattenedChain's `elseCandidate` argument (mergeEntryPoints does NOT check overlap), so
-		// nothing goes unvalidated. The tail is only reached once every sibling's gate has missed, so a
-		// sibling can't claim those code points either, and their order relative to siblings is moot.
+		// Uses rawEntryElse (the real candidate), not the entryMap/entryElse fields re-keyed to `this`:
+		// resolving through those would send every entry back to this node (infinite self-dispatch), since
+		// the chain head becomes this.matcher. It is compiled here ungated and EXCLUDED from chainCandidates:
+		// gating lives in the candidate's own single node, so it can't be both "gated at its list position"
+		// and "the ungated tail fallback". That only changes behavior when rawEntryElse also claims explicit
+		// ranges (e.g. a nullable branch reaching the pattern end); buildFlattenedChain's `elseCandidate`
+		// still checks those against every sibling (mergeEntryPoints doesn't).
 		//
-		// EXCEPT an end-of-find catch-all (a branch that can complete the whole pattern without
-		// consuming anything, e.g. `a*` at the end of the pattern): that one is NOT lowest-priority --
-		// `java.util.regex` takes the first alternative that succeeds, and under find()/lookingAt() a
-		// branch that can end here succeeds whatever follows. So it keeps its own list position (in
-		// chainCandidates, behind a mode-aware gate) and there is no tail fallback for it.
+		// EXCEPT an end-of-find catch-all (a branch that can complete the pattern without consuming anything,
+		// e.g. `a*` at the end): java.util.regex takes the first alternative that succeeds, and under
+		// find()/lookingAt() that branch succeeds whatever follows. So it keeps its list position behind a
+		// mode-aware gate and gets no tail fallback.
 		PatternConstruct endOfFindCandidate =
 				rawEntryElse != null && rawEntryElse.elseIsEndOfFind() ? rawEntryElse : null;
 		PatternConstruct tailElse = endOfFindCandidate != null ? null : rawEntryElse;
@@ -273,15 +221,13 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 			if (!isCapturing) {
 				return inner;
 			}
-			// A capturing group can't itself wrap another capturing group here -- there's only
-			// one code point behind this position for at most one group to claim.
+			// At most one group can claim the single code point behind this position.
 			return inner.captureConstructIndex == -1
 					? new LookbehindPatternConstruct.SingleCodePointBody(inner.codePoints, captureConstructIndex)
 					: null;
 		}
-		// A real alternation: every branch must resolve with no capturing group of its own --
-		// only the whole alternation (via an enclosing capturing group on this union) may
-		// capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
+		// A real alternation: every branch must resolve with no capturing group of its own; only the whole
+		// alternation may capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
 		MutableCodePointSet result = new ArrayCodePointSet();
 		for (PatternConstruct branch : constructs) {
 			LookbehindPatternConstruct.SingleCodePointBody inner = branch.resolveSingleCodePointBody();

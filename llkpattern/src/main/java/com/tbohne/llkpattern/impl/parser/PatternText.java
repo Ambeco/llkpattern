@@ -65,12 +65,8 @@ final class PatternText {
     return out.toString();
   }
 
-  // StringBuilder.appendCodePoint's own JDK implementation calls Character.toChars(codePoint) for
-  // any supplementary (non-BMP) code point, allocating a throwaway char[2] just to copy its two
-  // chars into sb right after -- a real cost here, since rawText.appendCodePoint() runs once per
-  // ordinary literal character while parsing (see allocation sampling in
-  // benchmarks/Intel-i7-9750H_llkCompile_alloc_sampling.txt). Character.highSurrogate/lowSurrogate
-  // compute the same two chars with no allocation, so use those directly instead.
+  // Not sb.appendCodePoint: it allocates a throwaway char[2] (Character.toChars) for supplementary code points,
+  // and this runs once per literal character while parsing (alloc sampling).
   static void appendCodePoint(StringBuilder sb, int codePoint) {
     if (Character.isBmpCodePoint(codePoint)) {
       sb.append((char) codePoint);

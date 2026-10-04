@@ -2,7 +2,7 @@ package com.tbohne.llkpattern;
 
 /**
  * Shared supplementary (astral) code point constants for the per-file test-pattern migration
- * sweep -- see remaining_work.md's "In progress" entry and SupplementaryPatternTextTest for why:
+ * sweep -- see SupplementaryPatternTextTest for why:
  * each replaces a plain ASCII letter a test used to use, so a test still reads the same shape it
  * always did while actually exercising a multi-code-unit character.
  *

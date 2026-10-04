@@ -17,8 +17,7 @@ import org.junit.runners.JUnit4;
  * directly against {@code java.util.regex} so a divergence from the JDK 27 baseline this project
  * pins to (see README's "Unicode data is currently pinned to JDK 27's tables") shows up as a test
  * failure rather than silently drifting, though the *installed* JDK running this suite may have
- * older/newer Unicode data -- see notes.md/remaining_work.md for the general caveat every other
- * Unicode-table-dependent test already carries.
+ * older/newer Unicode data (see notes.md, the caveat every Unicode-table-dependent test carries).
  */
 @RunWith(JUnit4.class)
 public class GraphemeClusterTest {

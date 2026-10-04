@@ -58,7 +58,7 @@ public class EscapeTest {
     // "\0600": a third octal digit is only consumed if the resulting value stays <= 0377 (255).
     // 0600 octal would be 384, so only "\060" (48, ASCII '0') is read, leaving the final '0' as
     // its own literal character -- matching java.util.regex, not an "octal escapes must be less
-    // than 0400" compile error (see remaining_work.md's former entry on this).
+    // than 0400" compile error.
     assertThat(Ll1Pattern.compile("\\0600").matcher("00").matches(), is(true));
     assertThat(Ll1Pattern.compile("\\0600").matcher("000").matches(), is(false));
   }
@@ -89,7 +89,7 @@ public class EscapeTest {
   public void hex_braced_leadingZerosBeyondSixDigits_accepted() {
     // Unlike the fixed-width, unbraced hex/unicode forms, the braced form has no real digit-COUNT limit in
     // java.util.regex -- only the resulting value is bounded -- so extra leading zeros (here, 10
-    // digits total) are fine (see remaining_work.md's former entry on this).
+    // digits total) are fine.
     assertThat(Ll1Pattern.compile("\\x{00000061}").matcher("a").matches(), is(true));
     // A pathologically long digit run must not overflow the accumulator either.
     assertThat(Ll1Pattern.compile("\\x{0000000000000061}").matcher("a").matches(), is(true));

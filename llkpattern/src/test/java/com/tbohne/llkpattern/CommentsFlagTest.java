@@ -19,8 +19,7 @@ import org.junit.runners.JUnit4;
  * wherever the parser is about to inspect {@code peek} to decide what comes next: the top of
  * {@code parseUnion}'s main loop, right after a plain character checks for an immediately-following
  * quantifier, and {@code parseQuantifiable}'s own entry (covering every other atom type -- bracket
- * classes, groups, "."). Found while triaging the scraped-corpus harness's UNEXPECTED rows -- see
- * remaining_work.md/notes.md.
+ * classes, groups, ".").
  *
  * <p>Uses SupplementaryChars' A/B/C/D/F (supplementary/astral code points) in place of the plain
  * ASCII letters this file originally used -- {@code skipComments()} specifically is one of the

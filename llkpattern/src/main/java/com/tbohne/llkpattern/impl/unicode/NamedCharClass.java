@@ -139,18 +139,9 @@ public enum NamedCharClass {
               UnicodePredicates.INITIAL_QUOTE_PUNCTUATION, UnicodePredicates.FINAL_QUOTE_PUNCTUATION,
               UnicodePredicates.OTHER_PUNCTUATION)),
   Control(Source.UProperty, javaISOControl),
-  // Bug fix (2026-09-07): this used to delegate to javaWhitespace (Character.isWhitespace), but
-  // the real Unicode White_Space binary property and Character.isWhitespace() are NOT the same
-  // set -- Character.isWhitespace()'s own javadoc deliberately excludes NO-BREAK SPACE (U+00A0),
-  // NARROW NO-BREAK SPACE (U+202F), and MEDIUM MATHEMATICAL SPACE (U+205F) as "non-breaking",
-  // while the Unicode property includes them. Found via adding systematic ASCII-vs-Unicode test
-  // coverage for \p{Space}/\p{Blank} (both widen off this set under UNICODE_CHARACTER_CLASS) --
-  // verified against real java.util.regex (including that U+180E, sometimes assumed to be
-  // whitespace, is correctly excluded -- it was removed from the Unicode White_Space property in
-  // Unicode 6.3) before fixing. Hand-built rather than reused from RegexCharacterClass's `h`/`v`
-  // (whose union is the same set, modulo `h`'s own inclusion of U+180E) to avoid the
-  // NamedCharClass<->RegexCharacterClass circular static-init dependency documented on Space
-  // below -- this is the same literal-duplication tradeoff Space's own ASCII set already makes.
+  // The Unicode White_Space property is NOT Character.isWhitespace(), which excludes U+00A0, U+202F and U+205F as
+  // non-breaking (and U+180E left White_Space in Unicode 6.3). Hand-built rather than reused from
+  // RegexCharacterClass's h/v, to avoid the NamedCharClass<->RegexCharacterClass static-init cycle (see Space).
   White_Space(
       Source.UProperty,
       build(
@@ -167,25 +158,16 @@ public enum NamedCharClass {
             m.add(0x205F);
             m.add(0x3000);
           })),
-  // There are TWO distinct predicates in java.util.regex that are both named "Digit", and this one
-  // constant stands in for both (via its `ascii` and `unicode` sets):
-  //   1. The POSIX class, `\p{Digit}` (no prefix): ASCII [0-9] only, unless
-  //      UNICODE_CHARACTER_CLASS is set, in which case it widens to all Unicode decimal digits.
-  //      Served by `ascii`/`unicode` depending on the flag -- see get().
-  //   2. The Unicode binary property, `\p{IsDigit}` (`is` prefix): ALWAYS all Unicode decimal
-  //      digits; the flag never applies. Served by `unicode`.
-  // Because the two share a name, the bare `\p{Digit}` always selects the POSIX one, so the `Is`
-  // prefix is the only way to reach the Unicode one. (`\p{javaDigit}` is a third spelling of the
-  // always-Unicode set, via Character.isDigit.) The explicit prefix set below is now the same as
-  // Source.POSIX's (which also allows `is`), kept because Digit's Source is UProperty.
-  // get()'s prefix check (see below) makes the `is` half always-full-Unicode regardless of flags.
+  // Two distinct java.util.regex predicates are named "Digit", and this constant serves both via its
+  // ascii/unicode sets: the POSIX \p{Digit} (ASCII [0-9] unless UNICODE_CHARACTER_CLASS widens it) and the Unicode
+  // binary property \p{IsDigit} (ALWAYS all Unicode decimal digits; the flag never applies). A bare \p{Digit}
+  // selects the POSIX one, so the Is prefix is the only way to the other (\p{javaDigit} is a third spelling of
+  // the always-Unicode set). get()'s prefix check makes the `is` half full-Unicode regardless of flags; the
+  // prefix set below equals Source.POSIX's (which also allows `is`), kept because Digit's Source is UProperty.
   Digit(
       ImmutableSet.of(CharacterClassPrefix.none, CharacterClassPrefix.is),
       Source.UProperty, javaDigit.unicode, /* slicedAscii=*/true),
-  // Bug fix (2026-09-06): this used to range over the FULL a-z/A-Z alphabet (and the fullwidth
-  // equivalent of the full alphabet), matching every letter as a "hex digit" instead of just
-  // a-f/A-F. Found via PosixAndJavaClassTest's \p{XDigit} coverage ("g" wrongly matched). See
-  // remaining_work.md.
+  // Hex_Digit is a-f/A-F only (a past bug ranged over the full alphabet; PosixAndJavaClassTest).
   Hex_Digit(
       Source.UProperty,
       build(
@@ -251,12 +233,8 @@ public enum NamedCharClass {
   Alpha(
       Source.POSIX,
       Alphabetic.unicode, /* slicedAscii=*/true),
-  // Bug fix (2026-09-07): this used to be a single-RangeSet constructor call (ascii == unicode),
-  // so \p{Alnum} always matched the full-Unicode alphanumeric set, ignoring
-  // UNICODE_CHARACTER_CLASS entirely -- found via adding systematic ASCII-vs-Unicode coverage for
-  // every POSIX/java class (see PosixAndJavaClassTest), verified against real java.util.regex.
-  // slicedAscii's intersection with UnicodePredicates.ascii correctly reduces this union down to
-  // plain ASCII [0-9A-Za-z], matching POSIX Alnum's real default behavior.
+  // slicedAscii intersects with UnicodePredicates.ascii, reducing this union to ASCII [0-9A-Za-z] by default; a
+  // single set once made \p{Alnum} ignore UNICODE_CHARACTER_CLASS (PosixAndJavaClassTest).
   Alnum(
       Source.POSIX,
       unionOf(Alphabetic.unicode, Digit.unicode), /* slicedAscii=*/true),
@@ -316,29 +294,15 @@ public enum NamedCharClass {
       difference(
           unionOf(Graph.unicode, Blank.unicode),
           Cntrl.unicode)),
-  // Bug fix (2026-09-07): this used to be a single-RangeSet constructor call using only
-  // Hex_Digit.unicode (ASCII a-f/A-F/0-9 plus their fullwidth forms) -- both flag-insensitive
-  // (ascii == unicode, so UNICODE_CHARACTER_CLASS was ignored) AND, independently, missing real
-  // java.util.regex's actual widened definition. Verified against real java.util.regex: under
-  // UNICODE_CHARACTER_CLASS, \p{XDigit} also matches any Unicode decimal digit from *any* script
-  // (e.g. DEVANAGARI DIGIT ZERO, U+0966) -- because java.util.regex's widened XDigit is really
-  // `Character.digit(cp, 16) != -1`, and Character.digit() accepts any digit whose numeric value
-  // (0-9 for a decimal digit) is below the requested radix, not just the literal Unicode Hex_Digit
-  // property. So the full-Unicode set is `union(Hex_Digit.unicode, Digit.unicode)`, not just
-  // Hex_Digit.unicode; found via adding systematic ASCII-vs-Unicode coverage for every POSIX/java
-  // class (see PosixAndJavaClassTest).
+  // Under UNICODE_CHARACTER_CLASS, java.util.regex's XDigit is Character.digit(cp, 16) != -1, which accepts any
+  // script's decimal digit (e.g. U+0966), so the full-Unicode set is Hex_Digit.unicode union Digit.unicode.
+  // ascii and unicode differ (PosixAndJavaClassTest).
   XDigit(
       Source.POSIX,
       unionOf(Hex_Digit.unicode, Digit.unicode), /* slicedAscii=*/true),
-  // Bug fix (2026-09-06): this used to read RegexCharacterClass.s.ascii, but RegexCharacterClass.s
-  // itself (below) reads White_Space (right above) -- a genuine two-way dependency between this
-  // enum and RegexCharacterClass, whichever's static initializer runs second sees the other's
-  // not-yet-assigned enum constant as null (NullPointerException/ExceptionInInitializerError; see
-  // remaining_work.md's "NamedCharClass/RegexCharacterClass circular static initialization" entry
-  // for the repro that found this). This is the same literal ASCII whitespace set
-  // RegexCharacterClass.s hardcodes -- inlined here instead of shared, so the dependency only ever
-  // flows one way (RegexCharacterClass depends on NamedCharClass, never the reverse):
-  // RegexCharacterClass.s now reads Space.ascii/Space.unicode instead of duplicating this literal.
+  // A literal ASCII whitespace set, shared into RegexCharacterClass.s: reading RegexCharacterClass.s.ascii here
+  // made a two-way static-init dependency, each initializer seeing the other's constants as null. So the
+  // dependency flows one way (RegexCharacterClass -> NamedCharClass).
   Space(
       Source.POSIX,
       build(
@@ -371,25 +335,17 @@ public enum NamedCharClass {
     }
   }
 
-  /**
-   * Builds an immutable {@link CodePointSet} via a {@link CodePointSetBuilder}, for a
-   * hand-written literal set too irregular to express as a single {@code append} call. {@code append}
-   * (unlike {@code appendSorted}, which the generated {@code UnicodePredicates} uses) tolerates
-   * entries added out of order, which several of the literals below are (e.g. {@code Hex_Digit}'s
-   * a-f/A-F/0-9/fullwidth-digits ordering).
-   */
+  // Builds an immutable set via a CodePointSetBuilder, for a hand-written literal too irregular for one append.
+  // append (unlike appendSorted, used by the generated UnicodePredicates) tolerates out-of-order entries, which
+  // several literals below are (e.g. Hex_Digit).
   private static CodePointSet build(java.util.function.Consumer<CodePointSetBuilder> filler) {
     CodePointSetBuilder result = CodePointSetBuilder.create();
     filler.accept(result);
     return result.build();
   }
 
-  /**
-   * Unions any number of code-point sets that may legitimately overlap each other (e.g. two
-   * different Unicode category predicates both claiming the same code point). {@link
-   * CodePointSet#union} already tolerates overlap (there's only one state, "member", to agree on),
-   * so this is just a repeated {@code union}.
-   */
+  // Unions sets that may overlap (e.g. two category predicates claiming a code point); CodePointSet#union
+  // already tolerates overlap.
   private static CodePointSet unionOf(CodePointSet... sets) {
     CodePointSet merged = sets[0];
     for (int i = 1; i < sets.length; i++) {
@@ -398,23 +354,16 @@ public enum NamedCharClass {
     return merged;
   }
 
-  /**
-   * {@code a} minus {@code b}: every code point {@code a} has and {@code b} doesn't. Thin wrapper
-   * over {@link CodePointSet#difference} kept for symmetry with {@link #unionOf} above.
-   */
+  // a minus b: a thin wrapper over difference(), for symmetry with unionOf.
   private static CodePointSet difference(CodePointSet a, CodePointSet b) {
     return a.difference(b);
   }
 
   /**
-   * The Unicode script named {@code name} (a full name like {@code Latin} or ISO 15924 alias like
-   * {@code Latn}, case-insensitive -- whatever {@link Character.UnicodeScript#forName} accepts), or
-   * {@code null} if it names no script. Scripts aren't enum constants here (there are ~160 of them):
-   * {@code UnicodePredicates} generates one set per {@code Character.UnicodeScript} constant plus a
-   * {@code scriptByEnumName} string switch over them (not reflection, so it's shrinker-safe). A
-   * script the running JDK knows but the checked-in {@code UnicodePredicates} was generated before
-   * (a newer JDK than the one that ran {@code UnicodeAnalyzer}) is also {@code null} here, i.e.
-   * reported as unknown.
+   * The Unicode script named {@code name} (a full name or ISO 15924 alias, case-insensitive, per {@link
+   * Character.UnicodeScript#forName}), or null. Scripts aren't enum constants (~160): {@code UnicodePredicates}
+   * generates a set per constant plus a string switch (shrinker-safe, unlike reflection). A script newer than
+   * the checked-in {@code UnicodePredicates} is also null.
    */
   public static @Nullable CodePointSet scriptByName(String name) {
     Character.UnicodeScript script;
@@ -427,11 +376,8 @@ public enum NamedCharClass {
   }
 
   /**
-   * The Unicode block named {@code name} (whatever {@link Character.UnicodeBlock#forName} accepts:
-   * e.g. {@code BasicLatin}, {@code Basic_Latin}, case-insensitive), or {@code null} if it names no
-   * block. Same shape as {@link #scriptByName}: a generated string switch, not reflection or enum
-   * constants. A block the running JDK knows but the checked-in {@code UnicodePredicates} predates
-   * is reported unknown.
+   * The Unicode block named {@code name} (per {@link Character.UnicodeBlock#forName}), or null. Same shape as
+   * {@link #scriptByName}; a block newer than the checked-in {@code UnicodePredicates} is reported unknown.
    */
   public static @Nullable CodePointSet blockByName(String name) {
     Character.UnicodeBlock block;
@@ -456,11 +402,8 @@ public enum NamedCharClass {
   private static final ImmutableSet<String> UNDERSCORE_OPTIONAL =
       ImmutableSet.of("HEX_DIGIT", "JOIN_CONTROL", "NONCHARACTER_CODE_POINT", "WHITE_SPACE");
 
-  /**
-   * {@link #valueOf} for a name written after {@code \p{Is}}: like java.util.regex, binary property
-   * and POSIX names match case-insensitively there ({@code \p{IsALPHABETIC}}), while categories
-   * ({@code \p{IsLu}}) stay case-sensitive.
-   */
+  // valueOf for a name after \p{Is}: as in java.util.regex, binary-property and POSIX names are case-insensitive
+  // there (\p{IsALPHABETIC}), categories (\p{IsLu}) stay case-sensitive.
   public static NamedCharClass valueOfIs(String name) {
     try {
       return valueOf(name);
@@ -482,9 +425,8 @@ public enum NamedCharClass {
   }
 
   final Source source;
-  // Which prefixes this constant may legally be looked up under -- defaults to source's own set,
-  // but see the Digit constant above for the one case (two predicates sharing the name "Digit": the
-  // POSIX class and the Unicode binary property) that needs to override this to allow both families.
+  // Prefixes this constant may be looked up under: its source's set, except Digit (see above), which needs both
+  // families.
   final ImmutableSet<CharacterClassPrefix> allowedPrefixes;
   final CodePointSet ascii;
   final CodePointSet unicode;
@@ -509,8 +451,7 @@ public enum NamedCharClass {
     this(source.allowedPrefixes, source, unicode, slicedAscii);
   }
 
-  // Only used by Digit -- see its own comment for why it needs prefixes from both Source.POSIX
-  // and Source.UProperty rather than just inheriting one Source's set.
+  // Only for Digit (see above): prefixes from both Source.POSIX and Source.UProperty.
   NamedCharClass(
       ImmutableSet<CharacterClassPrefix> allowedPrefixes,
       Source source, CodePointSet unicode, boolean slicedAscii) {
@@ -532,25 +473,18 @@ public enum NamedCharClass {
 
   public CodePointSet get(CharacterClassPrefix prefix, int flags) {
     Preconditions.checkArgument(allowedPrefixes.contains(prefix));
-    // Any Unicode-property-style prefix (\p{IsXxx}, \p{script=Xxx}, \p{block=Xxx},
-    // \p{general_category=Xxx}) always means "exactly this Unicode-defined set" -- the
-    // ASCII/full-Unicode split (governed by UNICODE_CHARACTER_CLASS) only applies to a bare POSIX
-    // class name or a "java"-prefixed java.lang.Character-method class. This is what lets Digit
-    // (see above) serve both the POSIX \p{Digit} (flag-sensitive) and the Unicode \p{IsDigit}
-    // (always full-Unicode) from one constant instead of needing a separate duplicate.
+    // Any Unicode-property prefix (\p{IsXxx}, script=, block=, general_category=) means exactly the Unicode set; the
+    // ASCII/Unicode split (UNICODE_CHARACTER_CLASS) applies only to a bare POSIX name or a "java" one. That lets
+    // Digit serve both \p{Digit} and \p{IsDigit}.
     if (prefix != CharacterClassPrefix.none && prefix != CharacterClassPrefix.java) {
       return unicode;
     }
     return ((flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
   }
 
-  /**
-   * What {@code java.util.regex} matches for this class under {@code CASE_INSENSITIVE}: not a fold
-   * of the class, but a substituted set -- the cased-letter families match every cased letter, and
-   * POSIX {@code Upper}/{@code Lower} match any ASCII letter (or, in Unicode mode, every cased
-   * letter). Every other class is unaffected, including scripts and blocks. {@code plain} is what
-   * {@link #get} returned.
-   */
+  // What java.util.regex matches under CASE_INSENSITIVE: a substituted set, not a fold. The cased-letter families
+  // match every cased letter, POSIX Upper/Lower any ASCII letter (every cased letter in Unicode mode); other
+  // classes, including scripts and blocks, are unaffected. `plain` is what get() returned.
   public CodePointSet caseInsensitive(CharacterClassPrefix prefix, int flags, CodePointSet plain) {
     switch (this) {
       case Lu:
@@ -594,9 +528,8 @@ public enum NamedCharClass {
   }
 
   public enum RegexCharacterClass {
-    // "." without DOTALL: everything but the line terminators (all of them by default, only '\n'
-    // under UNIX_LINES -- PatternParser picks). Not reachable as an escape: valueOf() there is
-    // only ever given a single character.
+    // "." without DOTALL: everything but the line terminators (all by default, only '\n' under UNIX_LINES;
+    // PatternParser picks). Not reachable as an escape.
     DOT(build(
           m -> {
             m.add(+'\n');
@@ -621,10 +554,8 @@ public enum NamedCharClass {
             m.append(0x2000, 0x200b);
           })),
     H(h.unicode.complement()),
-    // Bug fix (2026-09-06): now delegates to NamedCharClass.Space instead of duplicating its own
-    // hardcoded ASCII whitespace literal + a separate White_Space.unicode reference -- see Space's
-    // own comment for why that duplication exists (breaking a circular static-init dependency) and
-    // why this direction (RegexCharacterClass -> NamedCharClass, not the reverse) is safe.
+    // Delegates to NamedCharClass.Space rather than duplicating its literal; this direction
+    // (RegexCharacterClass -> NamedCharClass) is the safe one, see Space.
     s(Space.ascii, Space.unicode),
     S(s.ascii.complement(), s.unicode.complement()),
     v(build(

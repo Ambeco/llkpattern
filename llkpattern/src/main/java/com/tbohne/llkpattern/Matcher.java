@@ -44,17 +44,11 @@ public class Matcher implements MatchResult {
 		return sb.toString();
 	}
 
-	// Package-private (not private) so MatcherConstruct can read pattern.flags() for
-	// case-insensitive matching (CASE_INSENSITIVE/UNICODE_CASE) -- see MatcherConstruct#getNext and
-	// LiteralMatcherConstruct#match.
+	// Package-private so MatcherConstruct can read pattern.flags() for case-insensitive matching.
 	Ll1Pattern pattern;
-	// NOT also cached as a char[] the way PatternParser.patternChars caches `pattern` (see that
-	// field's own doc for the codePointAt win a char[] gives): tried it, measured a clear
-	// regression instead -- toCharArray() is an O(input.length()) copy, and unlike a Pattern
-	// (compiled once, matched many times), a Matcher is typically constructed fresh per match
-	// operation, so that copy's cost is paid on close to every match rather than amortized.
-	// Confirmed via the Pixel 3a on-device benchmark: matchLlk 0.688 -> 1.117 ms/pass (+62%),
-	// matchLlk allocation 37,744 -> 52,752 B/op (+40%) -- reverted, not kept.
+	// NOT cached as a char[] like PatternParser.patternChars: measured a clear regression, since a Matcher is
+	// typically built fresh per match and toCharArray() is O(input) (Pixel 3a matchLlk 0.688 -> 1.117 ms/pass,
+	// allocation +40%).
 	public String input;
 	public int regionEnd;
 	int regionStart = 0;
@@ -70,61 +64,34 @@ public class Matcher implements MatchResult {
 	public int lookFloor = 0;
 	public int lookCeil;
 	public int pos = 0;
-	// The code point at `pos` (or -1 at/past regionEnd) -- kept in sync by every method that moves
-	// `pos` (attemptMatch/consume1CodePoint/consumeCodeUnits/region/reset*, all via syncPeeked()),
-	// so peek() below is a plain field read instead of a fresh input.codePointAt(pos) call, and
-	// consume1CodePoint() no longer needs to call codePointAt(pos) once just to compute the
-	// consumed char's width before calling it again at the new position -- both real CPU cost per
-	// this project's own Android CPU sampling (String.codePointAt was 11.8% of matchLlk time,
-	// Matcher.consume1CodePoint's two internal calls to it 4.1%/1.9% of that on their own).
+	// The code point at `pos` (-1 at/past regionEnd), kept in sync by every method that moves `pos`, so peek()
+	// is a field read: String.codePointAt was 11.8% of matchLlk time on Android.
 	public int peeked;
-	// Cached answer for peekPrevious() (the code point immediately before `pos`), computed lazily:
-	// only \b/\B, lookbehind and \b{g} ever read it, so most match attempts never pay for it at all.
-	// UNKNOWN_PREVIOUS means "not yet computed for the current pos" -- distinct from -1
-	// (peekPrevious()'s own "no previous input" sentinel at/before lookFloor). consume1CodePoint()
-	// updates this for free (the code point it just consumed IS the new previous); every other
-	// method that moves `pos` directly (syncPeeked(), consumeCodeUnits()) instead invalidates it
-	// back to UNKNOWN_PREVIOUS, since eagerly recomputing codePointBefore for a multi-code-unit jump
-	// would cost exactly as much as peekPrevious() computing it on demand.
+	// Cached peekPrevious(), computed lazily (only \b/\B, lookbehind and \b{g} read it). UNKNOWN_PREVIOUS means
+	// "not yet computed", distinct from -1 ("no previous input"). consume1CodePoint() updates it for free; other
+	// pos-moving methods invalidate it, since recomputing codePointBefore eagerly costs as much as on demand.
 	private static final int UNKNOWN_PREVIOUS = Integer.MIN_VALUE;
 	private int previousPeeked = UNKNOWN_PREVIOUS;
 	public int[] quantifiableCounts;
-	// Two slots (start, end -- input code-unit indices) per capture-group construct in the
-	// pattern, indexed by captureConstructIndex*2. BeginCaptureMatcherConstruct overwrites the
-	// start slot (and resets the end slot to -1) on entry; since there's no recursion or
-	// backtracking in this engine, the same construct can never be "open" twice at once, so a flat
-	// array (not an actual stack) suffices -- re-entering a capture inside a loop naturally
-	// implements regex's "last iteration wins" semantics by simply overwriting the previous
-	// entry, and a slot a loop never entered stays -1 (unset), also matching regex semantics.
-	// -1 rather than a boxed/nullable Group also means EndCaptureMatcherConstruct no longer has to
-	// eagerly allocate a substring every time a capture completes (see allocation sampling in
-	// benchmarks/Intel-i7-9750H_llkMatch_alloc_sampling.txt) -- group(int) below builds the String
-	// lazily, only when a caller actually asks for that group's text, and
-	// BackReferenceMatcherConstruct compares directly against these indices without ever
-	// materializing one at all.
+	// Two slots (start, end code-unit indices) per capture construct, indexed by captureConstructIndex*2. A flat
+	// array suffices (no recursion or backtracking, so a construct is never open twice): re-entering a capture in
+	// a loop overwrites the previous entry ("last iteration wins"), and a slot never entered stays -1.
+	// group(int) builds the String lazily and BackReferenceMatcherConstruct compares indices directly, so no
+	// substring is allocated per capture (alloc sampling).
 	public int[] captureGroups;
 
-	// True exactly when quantifiableCounts/captureGroups are already known zero/null -- right after
-	// construction (both arrays are `new`-allocated, so already zero-filled by the JVM without an
-	// explicit resetPerAttemptState() call) or an explicit reset()/reset(CharSequence)/usePattern() (which
-	// still calls resetPerAttemptState() itself, then sets this true). attemptMatch() consults this
-	// to skip a redundant resetPerAttemptState() on the very first attempt after any of those --
-	// state can only have been dirtied by a PRIOR attempt, and there isn't one yet. Set false again
-	// by attemptMatch() itself before running, since that attempt (success or failure) may leave
-	// either array non-fresh for whatever attempt comes next.
+	// True when quantifiableCounts/captureGroups are known zero/null (fresh after construction or reset: new arrays
+	// are zeroed), so attemptMatch() skips a redundant resetPerAttemptState() on the first attempt. Cleared by
+	// attemptMatch() before running, since an attempt may dirty them.
 	private boolean perAttemptStateIsFresh = true;
 
-	// Set by attemptMatch() before each match attempt, read by EndMatcherConstruct:
-	// true for matches() (the whole region must be consumed), false for lookingAt()/find() (a
-	// prefix match starting at `pos` is enough). This is the one place the "same compiled graph"
-	// design needs a runtime switch -- see design.md.
+	// Set by attemptMatch() before each attempt, read by EndMatcherConstruct: true for matches() (consume the
+	// whole region), false for lookingAt()/find(). The one runtime switch the shared compiled graph needs.
 	public boolean requireFullMatch;
 
-	// hitEnd()/requireEnd() state. Sticky across every start position one find() tries, cleared at
-	// the start of each matches()/lookingAt()/find(int) (same as java.util.regex, which clears them
-	// at the start of every match/search operation). Only ever set from MatcherConstruct's cold
-	// paths -- a dispatch/character miss at end of input, a literal that runs off the end, a
-	// $/\z/\Z/\b that matched at end of input -- so the match hot path never touches them.
+	// Sticky across every start position one find() tries; cleared at the start of each
+	// matches()/lookingAt()/find(int), as in java.util.regex. Set only from cold paths (a miss at end of input, a
+	// literal running off the end, $/\z/\Z/\b matching at the end), so the match hot path never touches them.
 	public boolean hitEnd;
 	public boolean requireEnd;
 
@@ -218,8 +185,7 @@ public class Matcher implements MatchResult {
 						throw new IllegalArgumentException(
 								"capturing group name {" + name + "} starts with digit character");
 					}
-					// -1 sentinel: see PatternParser#namedGroups's own doc for why this beats a boxed
-					// Integer/null (a real captureConstructIndex is always >= 0).
+					// -1 sentinel avoids boxing; real indices are >= 0.
 					int index = pattern.namedGroups.getOrDefault(name, -1);
 					if (index == -1) {
 						throw new IllegalArgumentException("No group with name {" + name + "}");
@@ -282,11 +248,9 @@ public class Matcher implements MatchResult {
 	}
 
 	public boolean find() {
-		// Same start-of-search-window semantics as java.util.regex: resume right after the previous
-		// match, advancing by one extra position if that match was empty so find() always makes
-		// forward progress instead of matching the same empty span forever.
-		// Like java.util.regex, resumes from the previous match's end even after a failed find() (which
-		// keeps matchEnd but clears matchStart), so a failed find() stays failed.
+		// As java.util.regex: resume right after the previous match (one extra position if it was empty, so
+		// find() progresses), and even after a failed find() (which keeps matchEnd but clears matchStart), so a
+		// failed find() stays failed.
 		int nextStart = matchEnd == matchStart ? matchEnd + 1 : matchEnd;
 		if (nextStart < regionStart) {
 			nextStart = regionStart;
@@ -316,9 +280,7 @@ public class Matcher implements MatchResult {
 		hitEnd = false;
 		requireEnd = false;
 		if (pattern.anchorsToPreviousMatchEnd) {
-			// \G: no PatternConstruct/MatcherConstruct involved at all -- it's purely this flag,
-			// meaning "only try exactly here, don't scan forward looking for a later match." See
-			// PatternParser#anchorsToPreviousMatchEnd's doc.
+			// \G has no construct: it only means "try exactly here, don't scan forward".
 			boolean success = attemptMatch(start, false);
 			if (!success) {
 				hasMatch = false;
@@ -328,21 +290,13 @@ public class Matcher implements MatchResult {
 			}
 			return success;
 		}
-		// Unicode code points, not UTF-16 code units, are the atomic matching unit (see
-		// java.util.regex's own behavior, and JDK-8149446): a valid high+low surrogate pair must
-		// never be split, so a candidate start position landing on the low half of one is illegal,
-		// even though it's a legal char index. Only `start` itself needs an explicit check for this:
-		// every later candidate position below is derived by stepping forward from a just-decoded
-		// code point's own width, which can never land back on that code point's own low half.
+		// Code points, not UTF-16 units, are the matching unit (JDK-8149446): a start on the low half of a surrogate
+		// pair is illegal. Only `start` needs the check; later candidates step by a decoded code point's width.
 		int i = start;
 		int cp = i < regionEnd ? input.codePointAt(i) : -1;
-		// Derived from `cp` (already decoded above) plus one look at the PRECEDING code unit, not two
-		// separate input.charAt(i)/input.charAt(i - 1) calls: codePointAt only ever combines FORWARD
-		// with i+1, so a genuine pair starting at `i` would already show up as one supplementary `cp`
-		// value (well outside the low-surrogate range) rather than needing its own check here -- a
-		// plain int comparison against `cp` itself tells us whether char `i` is a lone low surrogate,
-		// with no unsafe narrowing cast (a real supplementary `cp`'s low 16 bits can coincidentally
-		// fall in the low-surrogate range, so this must stay an int comparison, not `(char) cp`).
+		// Derived from `cp` plus the PRECEDING code unit: codePointAt only combines forward, so a genuine pair at i
+		// already shows up as one supplementary cp. Must stay an int comparison, not (char) cp: a supplementary
+		// cp's low 16 bits can fall in the low-surrogate range.
 		if (i > 0
 				&& i < input.length()
 				&& cp >= Character.MIN_LOW_SURROGATE
@@ -351,11 +305,8 @@ public class Matcher implements MatchResult {
 			i++;
 			cp = i < regionEnd ? input.codePointAt(i) : -1;
 		}
-		// One input.codePointAt() call per candidate position visited -- `cp` above already covers
-		// the first one (previously recomputed a second time here, redundantly), so the loop only
-		// (re)computes it for every position after that. The decoded code point is threaded straight
-		// into attemptMatch() instead of a fresh syncPeeked() re-decode, and reused again to step `i`
-		// forward by its own width.
+		// One codePointAt per candidate position: `cp` covers the first, the loop recomputes it for later ones, and
+		// the decoded value is threaded into attemptMatch() and reused to step `i`.
 		while (i <= regionEnd) {
 			if (attemptMatch(i, false, cp)) {
 				return true;
@@ -385,10 +336,8 @@ public class Matcher implements MatchResult {
 		int base = captureGroupBaseIndex(group);
 		int start = captureGroups[base];
 		int end = captureGroups[base + 1];
-		// Built lazily, only for a group a caller actually asks the text of -- EndCaptureMatcherConstruct
-		// itself only ever records the (start, end) indices, not a materialized substring. -1 means
-		// this group never participated in the match (e.g. it's in a sibling alternation branch that
-		// wasn't taken), same as a null Group used to mean before this array-based representation.
+		// Built lazily, only for a group a caller asks for. -1 means the group never participated (e.g. an untaken
+		// alternation branch).
 		return start < 0 ? null : input.substring(start, end);
 	}
 
@@ -695,30 +644,13 @@ public class Matcher implements MatchResult {
 
 	private boolean finishAttemptMatch(int from, boolean requireFullMatch) {
 		this.requireFullMatch = requireFullMatch;
-		// Bug fix (2026-09-07): quantifiableCounts/captureGroups used to only get reset by
-		// reset()/reset(CharSequence) -- never per attempt -- so a loop's iteration counter (incremented by
-		// LoopMatcherConstruct as it consumes each repetition) leaked from one match attempt into the
-		// next whenever an attempt failed WITHOUT reaching its own EndLoopMatcherConstruct exit (the
-		// only place a counter gets reset to 0), which happens routinely: e.g. a bounded {n,m} loop
-		// whose body character overlaps with what comes after it (unavoidable when nothing follows
-		// the loop at all, since EndPatternConstruct's catch-all entryElse always looks like "keep going")
-		// hits its own max bound and hard-fails via LoopMatcherConstruct's own "loopCount > max"
-		// check, leaving the counter non-zero. find()'s internal scan over successive start positions
-		// (and any other back-to-back matches() /lookingAt()/find() calls on a reused Matcher without
-		// an intervening reset()) would then read that stale, nonzero counter on the NEXT attempt,
-		// letting a since-satisfied `min` check spuriously pass on an attempt that should have started
-		// counting from zero -- e.g. "a{2,3}" against "aaaa" hard-failed at every real start position,
-		// then spuriously "matched" an empty string at the end of input once a leftover count of 3
-		// (from an earlier failed attempt) made EndLoopMatcherConstruct's "loopCount(0-that-should've-
-		// been) < min" check pass. Confirmed via the scraped-corpus harness's un-triaged UNEXPECTED
-		// rows -- this single bug explains most of them: bounded quantifiers, optional ("?")
-		// constructs, and quantified capturing groups all showed wrong matches/no-matches whenever a
-		// find() scan or repeated match attempt was involved, not just a single matches() call.
+		// Reset per attempt, not just on reset(): a loop counter left non-zero by an attempt that failed without
+		// reaching its exit (e.g. a bounded {n,m} loop hitting its max with nothing after it) leaked into the next
+		// attempt of a find() scan or reused matcher, letting a stale count satisfy `min`: "a{2,3}" on "aaaa"
+		// spuriously matched "" at the end.
 		//
-		// Skipped on the very first attempt after construction/reset()/reset(CharSequence)/usePattern()
-		// (see perAttemptStateIsFresh's own doc): quantifiableCounts/captureGroups are already known
-		// zero/null then, so there's nothing to reset yet -- only a PRIOR attempt (this one, about to
-		// run) can dirty them, which is exactly what clearing the flag right after guards against.
+		// Skipped on the first attempt after construction/reset/usePattern (see perAttemptStateIsFresh): only a
+		// PRIOR attempt can dirty the state.
 		if (!perAttemptStateIsFresh) {
 			resetPerAttemptState();
 		}
@@ -751,45 +683,32 @@ public class Matcher implements MatchResult {
 	}
 
 	private int groupIndexByName(String name) {
-		// -1 sentinel: see PatternParser#namedGroups's own doc for why this beats a boxed
-		// Integer/null (a real captureConstructIndex is always >= 0).
+		// -1 sentinel avoids boxing; real indices are >= 0.
 		int index = pattern.namedGroups.getOrDefault(name, -1);
 		if (index == -1) {
 			throw new IllegalArgumentException("No group with name <" + name + ">");
 		}
-		// Bug fix (2026-09-06): pattern.namedGroups stores the 0-based captureConstructIndex (see
-		// PatternParser), but group(int)/start(int)/end(int) all expect the 1-based *public*
-		// numbering, where group 0 means "the whole match" -- returning the raw 0-based index
-		// unconverted meant the FIRST named group in any pattern (captureConstructIndex 0) silently
-		// resolved to group(0), i.e. always returned the whole match instead of that group's own
-		// text. Masked in existing tests where the whole match happened to equal the group's own
-		// text (e.g. a pattern that is just "(?<name>x)"). See remaining_work.md.
+		// namedGroups stores the 0-based captureConstructIndex but group(int) expects 1-based public numbering
+		// (0 = whole match); unconverted, the first named group resolved to group(0). Tests masked it when the
+		// group's text equalled the whole match.
 		return index + 1;
 	}
 
-	// -1 is used throughout as the "no more input" sentinel passed to MatcherConstruct#match /
-	// #getNext: it can never equal a real code point, so it simply fails to match any dispatchMap
-	// range, which is exactly what should happen once the input is exhausted. Just returns the
-	// already-computed `peeked` -- see that field's own doc.
+	// -1 is the "no more input" sentinel passed to MatcherConstruct#match: never a real code point, so it matches
+	// no dispatch range once input is exhausted. Returns the already-computed `peeked`.
 	int peek() {
 		return peeked;
 	}
 
-	/** Recomputes {@link #peeked} from the current {@link #pos}/{@link #regionEnd}/{@link #input}
-	 *  -- called by every method that sets any of those three directly (as opposed to
-	 *  consume1CodePoint()/consumeCodeUnits(), which advance {@code pos} by a width they already
-	 *  know and can update {@code peeked} more cheaply themselves). */
+	// Recomputes peeked from pos/regionEnd/input, for methods that set those directly
+	// (consume1CodePoint()/consumeCodeUnits() update it more cheaply themselves).
 	private void syncPeeked(@UnknownInitialization(Matcher.class) Matcher this) {
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
 		previousPeeked = UNKNOWN_PREVIOUS;
 	}
 
-	// Used by WordBoundaryMatcherConstruct (\b/\B) and LookbehindMatcherConstruct ((?<=X)/(?<!X)),
-	// the constructs that need to look backward instead of forward -- see design.md's "Boundary
-	// matching" section. Bounded at
-	// lookFloor (regionStart unless transparent bounds are on), so with opaque bounds a region's
-	// start is treated the same as true start-of-input, same as -1 is peek()'s "no more input"
-	// sentinel. codePointBefore (not charAt(pos-1)) to not split a surrogate pair.
+	// For \b/\B and lookbehind. Bounded at lookFloor (regionStart unless transparent bounds are on), so an opaque
+	// region start looks like true start-of-input. codePointBefore, not charAt(pos-1), to not split a surrogate pair.
 	public int peekPrevious() {
 		if (pos <= lookFloor) {
 			return -1;
@@ -807,14 +726,8 @@ public class Matcher implements MatchResult {
 	}
 
 	public int consume1CodePoint() {
-		// The previous width computation (`codeunit <= 0xDFF || codeunit >= 0xE000 ? 1 : 2`) used
-		// the wrong bounds entirely -- 0xDFF isn't near the surrogate range (0xD800-0xDFFF) -- and
-		// neither version guarded against `pos` reaching the end of input, which crashed on the
-		// very common case of consuming the last character of a match. Character.charCount(peeked)
-		// here, not a second input.codePointAt(pos) call, since `peeked` (about to be overwritten
-		// below) is already exactly the code point at the current `pos`.
-		// previousPeeked is updated for free too: the code point about to be overwritten IS the new
-		// previous, exactly one code point back from the new pos -- see previousPeeked's own doc.
+		// Character.charCount(peeked), not a second codePointAt: peeked is the code point at the current pos.
+		// previousPeeked is updated free too: the code point about to be overwritten IS the new previous.
 		previousPeeked = peeked;
 		pos += Character.charCount(peeked);
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
@@ -824,10 +737,9 @@ public class Matcher implements MatchResult {
 	public int consumeCodeUnits(int width) {
 		pos += width;
 		peeked = pos < regionEnd ? input.codePointAt(pos) : -1;
-		// Unlike consume1CodePoint(), `width` may span more than one code point (a literal, a
-		// grapheme cluster), so the code point immediately before the new pos isn't necessarily
-		// anything already in hand -- invalidate rather than pay for a codePointBefore() call that
-		// peekPrevious() would only need to make anyway if something actually reads it.
+		// Unlike consume1CodePoint(), width may span several code points (a literal, a grapheme cluster), so the
+		// preceding code point isn't in hand: invalidate rather than pay for a codePointBefore() peekPrevious() may
+		// never need.
 		previousPeeked = UNKNOWN_PREVIOUS;
 		return peeked;
 	}

@@ -12,7 +12,7 @@ import org.junit.runners.JUnit4;
  * ('?' suffix)/possessive ('+' suffix) quantifier modifiers on every quantifier kind. design.md
  * says these are accepted and parsed but are no-ops at match time (this engine has no backtracking
  * to make reluctant/possessive meaningfully different from greedy) -- these tests confirm that's
- * actually true end-to-end, per remaining_work.md's instruction not to just assume it.
+ * actually true end-to-end.
  *
  * <p>Uses a supplementary (astral) code point, U+10000, as the quantified atom throughout -- see
  * SupplementaryPatternTextTest: a quantifier suffix must apply to the whole code point, and the

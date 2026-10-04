@@ -40,25 +40,14 @@ class CharClassParser extends PatternLexer {
 
   /** {@code .} outside a bracket expression, with {@code peek} still on it; the caller advances. */
   final ComplexCharacterPatternConstruct parseDot() {
-    // Bug fix (2026-09-06): this unconditionally built "everything" (complement of the
-    // empty set), i.e. always behaved as if DOTALL were on -- the DOTALL flag constant
-    // existed (Ll1Pattern.DOTALL) but nothing anywhere ever actually consulted it. Without
-    // DOTALL, "." must exclude the line terminators (only '\n' under UNIX_LINES) -- see
-    // NamedCharClass.RegexCharacterClass.DOT/DOT_UNIX_LINES,
-    // reused directly below, always as "any character" regardless of
-    // UNICODE_CHARACTER_CLASS -- "." matching only ASCII by default would be wrong, unlike
-    // a POSIX/Unicode-property class like \s or \w where that split is exactly the point.
+    // Without DOTALL, "." excludes line terminators (DOT/DOT_UNIX_LINES). Always "any character" regardless of
+    // UNICODE_CHARACTER_CLASS, unlike \s or \w, where that split is the point.
     ComplexCharacterPatternConstruct dot;
     if ((flags & Pattern.DOTALL) != 0) {
-      // "Everything" is exactly an inverted set with no explicit (excluded) entries -- see
-      // CodePointSet#invert's doc for why that's always a finite, valid set here rather
-      // than the mathematically-unbounded RangeSet Guava's complement() used to produce.
+      // "Everything" is an inverted set with no excluded entries.
       dot = new ComplexCharacterPatternConstruct(index, EVERY_CODE_POINT);
     } else {
-      // Aliased directly, not copied: ComplexCharacterPatternConstruct.ranges is effectively immutable
-      // once constructed (see its own doc) -- nothing past this point ever mutates it, so
-      // there's no risk of corrupting the shared RegexCharacterClass.DOT.unicode instance,
-      // and no allocation is needed at all (unlike rebuilding "\n"'s complement fresh).
+      // Aliased, not copied: ComplexCharacterPatternConstruct.ranges is never mutated, so the shared DOT set is safe.
       dot = new ComplexCharacterPatternConstruct(index, ((flags & Pattern.UNIX_LINES) != 0
           ? RegexCharacterClass.DOT_UNIX_LINES : RegexCharacterClass.DOT).unicode);
     }
@@ -78,12 +67,8 @@ class CharClassParser extends PatternLexer {
     return complex;
   }
 
-  /**
-   * Adds {@code codePoint} to a bracket expression's members, with everything it matches under {@code
-   * CASE_INSENSITIVE} (see {@link CaseFolding}). Folding happens here, per member, rather than on
-   * the finished class, because java.util.regex never folds a named class ({@code \w}, a script,
-   * ...) or a nested class -- only literal members.
-   */
+  // Adds codePoint with everything it matches under CASE_INSENSITIVE (CaseFolding). Folded per member, not on
+  // the finished class: java.util.regex never folds a named or nested class.
   private void addLiteral(CodePointSetBuilder ranges, int codePoint) {
     if ((flags & UnicodeFlags.CASE_INSENSITIVE) == 0) {
       ranges.append(codePoint, codePoint + 1);
@@ -111,15 +96,9 @@ class CharClassParser extends PatternLexer {
     return new ComplexCharacterPatternConstruct(startIndex, members.build());
   }
 
-  /**
-   * The core of {@link #parseComplexCharacter}: parses one {@code "[" IntersectionCharacter "]"}
-   * (already-negated if {@code ^} was present) and returns its finished ranges, advancing {@code
-   * index} past the closing {@code "]"}. Split out from {@link #parseComplexCharacter} so a nested
-   * class (the {@code '['} case below, e.g. {@code "[a-c[p-z]]"}) can recurse straight into this
-   * -- merging the result directly into the enclosing accumulator via {@link #mergeInto} -- rather
-   * than building a whole separate {@code ComplexCharacterPatternConstruct} object just to immediately discard
-   * everything but its {@code ranges}.
-   */
+  // Parses one "[" IntersectionCharacter "]" (already negated if ^ was present), advancing past the "]". Split
+  // out so a nested class ("[a-c[p-z]]") recurses here and merges via mergeInto, without building a throwaway
+  // ComplexCharacterPatternConstruct.
   private CodePointSet parseComplexCharacterRanges(int startIndex) {
     boolean negate = false;
     advance(1);
@@ -127,28 +106,18 @@ class CharClassParser extends PatternLexer {
       negate = true;
       advance(1);
     }
-    // The position of this class's first real content character -- i.e. right after "[" and, if
-    // present, "^". A ']' seen exactly here is a literal member (java.util.regex's standard
-    // "]-as-first-character" bracket convention, e.g. "[]b]"/"[^]b]" both include ']' itself as a
-    // member), not the closing bracket; anywhere else it closes the class as usual.
+    // Where this class's first content character sits (after "[" and an optional "^"): a ']' exactly here is a
+    // literal member ("[]b]", "[^]b]"); anywhere else it closes the class.
     int firstContentIndex = index;
     CodePointSetBuilder ranges = CodePointSetBuilder.create();
-    // Large sets unioned into the current operand run (a NamedCharClass-backed escape, or a nested
-    // "[...]" class) are kept HERE by reference, not copied into `ranges` -- see UnionCodePointSet's
-    // own doc for why (avoids copying e.g. \p{L}'s hundreds of ranges just to combine it with a
-    // couple of individual bracket members). null until the first such contribution is seen.
+    // Large sets unioned into the current run (a named-class escape, a nested class) are held here by reference,
+    // not copied into `ranges` (see UnionCodePointSet). Null until the first.
     @Nullable CodePointSet runUnion = null;
-    // IntersectionCharacter -> UnionCharacter (&& IntersectionCharacter)?  -- "&&" is a real
-    // operator token, not tied to a bracket: [a-z&&aeiou] intersects the *whole run* of members
-    // up to the next "&&" or the closing "]" against everything accumulated so far, whether or
-    // not that run happens to be wrapped in its own "[...]". So `ranges`/`runUnion` below always
-    // accumulate only the *current* union-operand run; `intersectionSoFar` (null until the first
-    // "&&" is seen) holds the running intersection of every completed operand run before it. A
-    // CodePointSetBuilder, not a MutableCodePointSet, since members of a single operand run arrive
-    // in whatever order the bracket expression wrote them (e.g. "[cba]" adds 'c', 'b', 'a') --
-    // CodePointSetBuilder#append is a plain O(1)-amortized append regardless of order, deferring the
-    // sort/coalesce ArrayCodePointSet#insert would otherwise do on every single-character member to
-    // one #build() call when this operand run is actually finished (at "&&" or the closing "]").
+    // "&&" is a real operator token, not tied to a bracket: [a-z&&aeiou] intersects the whole run of members up
+    // to the next "&&" or the closing "]" against everything so far. So `ranges`/`runUnion` hold only the current
+    // operand run, and `intersectionSoFar` (null until the first "&&") the intersection of completed runs. A
+    // CodePointSetBuilder because members arrive in any order ("[cba]"): its append is O(1) amortized, deferring
+    // the sort/coalesce to one build() when the run finishes.
     @Nullable CodePointSet intersectionSoFar = null;
     for (; ; ) {
       switch (peek) {
@@ -158,8 +127,7 @@ class CharClassParser extends PatternLexer {
           if (index > firstContentIndex) {
             advance(1); // consume the ']' -- callers expect peek to be past this construct
             if (intersectionSoFar == null) {
-              // negate applies to this run alone, so it can be pushed into mergeRun -- see that
-              // method's own doc for why that avoids an extra complement() copy in the common case.
+              // negate applies to this run alone, so mergeRun can absorb it (avoids a complement() copy).
               return CodePointSetBuilder.mergeRun(ranges, runUnion, negate);
             }
             CodePointSet completedRun = CodePointSetBuilder.mergeRun(ranges, runUnion, false);
@@ -183,29 +151,22 @@ class CharClassParser extends PatternLexer {
               addLiteral(ranges, eCodePoint);
             }
           } else {
-            // A standalone escape (\D, \p{...}, etc.) is a NamedCharClass-backed constant, often
-            // with far more ranges than this bracket expression's own individual members -- union
-            // it in lazily instead of copying its entries into `ranges` (see UnionCodePointSet).
+            // A standalone escape is usually a large NamedCharClass constant: union it in lazily rather than
+            // copying its entries (UnionCodePointSet).
             CodePointSet escapeSet = parseComplexEscape();
             runUnion = runUnion == null ? escapeSet : new UnionCodePointSet(runUnion, escapeSet);
           }
           break;
         case '[':
-          // RangeCharacter -> "[" IntersectionCharacter "]" -- a nested class is itself a member
-          // of the enclosing union, e.g. "[a-c[p-z]]" or an operand of "&&" in "[[a-b]&&[c-d]]".
-          // Union its ranges into the current operand run (lazily, same reasoning as the escape
-          // case above) -- "&&" (below) intersects whole runs, not individual members, so this is
-          // exactly like unioning in any other member.
+          // A nested class is a member of the enclosing union ("[a-c[p-z]]") or an "&&" operand
+          // ("[[a-b]&&[c-d]]"); unioned lazily like an escape, since "&&" intersects whole runs.
           CodePointSet nested = parseComplexCharacterRanges(index);
           runUnion = runUnion == null ? nested : new UnionCodePointSet(runUnion, nested);
           break;
         case '&':
           if (index + 1 < pattern.length() && pattern.charAt(index + 1) == '&') {
-            // "&&" is always the intersection operator here -- unlike a lone "&", which is just a
-            // literal character (handled by falling through to default below) -- regardless of
-            // what comes right after it. The RHS is NOT required to be bracketed: [a-z&&aeiou] is
-            // valid Java regex syntax, intersecting against the literal run "aeiou", not just
-            // [a-z&&[aeiou]].
+            // "&&" is always the intersection operator (a lone "&" is a literal), and its right side needn't be
+            // bracketed: [a-z&&aeiou] is valid.
             advance(2);
             CodePointSet completedRun = CodePointSetBuilder.mergeRun(ranges, runUnion, false);
             intersectionSoFar =
@@ -229,20 +190,10 @@ class CharClassParser extends PatternLexer {
     }
   }
 
-  /**
-   * Parses the escape at {@code peek} ({@code \d}, {@code \p{...}}, etc. -- not a single-char
-   * escape like {@code \n}, which {@link #tryParseSingleCharEscape} already handles before a
-   * caller ever reaches here), advancing past it, and returns the {@link CodePointSet} it denotes.
-   *
-   * <p>A pure function rather than one that mutates a {@code ComplexCharacterPatternConstruct}/{@code ranges}
-   * parameter in place: every result here is either a {@code NamedCharClass}/{@code
-   * RegexCharacterClass} static constant or a freshly built complement of one, both safe to hand
-   * back directly. A caller building a standalone {@code ComplexCharacterPatternConstruct} for just this escape
-   * (the common case -- a bare {@code \d} in running pattern text) can then assign the result
-   * straight into that construct's (effectively immutable) {@code ranges} with no defensive copy;
-   * a caller merging this into an already-accumulating bracket-expression {@code ranges} (e.g.
-   * {@code [a\d]}) still goes through {@code putAll} itself, same as merging any other member.
-   */
+  // Parses the escape at peek (\d, \p{...}, ...; single-char escapes like \n are handled earlier by
+  // tryParseSingleCharEscape), advancing past it. Pure: every result is a NamedCharClass/RegexCharacterClass
+  // constant or a fresh complement of one, so a caller can assign it into a ComplexCharacterPatternConstruct's
+  // immutable ranges with no copy.
   final CodePointSet parseComplexEscape() {
     if (peek != '\\') {
       throw new IllegalStateException("entered parseComplexEscape at illegal start point");
@@ -259,10 +210,7 @@ class CharClassParser extends PatternLexer {
         advance(1);
         return result;
       } catch (IllegalArgumentException e) {
-        // Bug fix (2026-09-14): was string-concatenated directly ("escape \"" + peek + "\" ..."),
-        // which rendered as `peek`'s raw int value (e.g. "escape "68" not in...") now that `peek`
-        // is int-typed rather than char-typed -- wrap in CodePoint instead, same as every other
-        // character embedded in an exception message in this file.
+        // CodePoint, not raw concatenation: peek is an int, which would render as e.g. "68".
         throw throwUnexpectedChar(
             "escape \"", new CodePoint(peek), "\" not in [dDhHsSvVwWR]. Is it a non-standard "
                 + "regex escape?");
@@ -283,14 +231,10 @@ class CharClassParser extends PatternLexer {
     } else {
       charClassName = parseBracedClassName();
     }
-    // Kept for error messages below -- charClassName itself gets its prefix stripped ("Is"/"In"/
-    // "script="/etc.) before we're done, and a thrown message should always echo what the user
-    // actually typed, not the stripped-down name used for the NamedCharClass.valueOf() lookup.
+    // The original name, for error messages: charClassName gets its prefix stripped.
     String originalCharClassName = charClassName;
-    // The prefixes are checked on `charClassName`, not `peek`: by now the parser's lookahead is
-    // already past the whole "\p{...}" escape, so `peek` is the character AFTER it.
-    // The two predicates named "Digit" (POSIX vs Unicode) need no special-casing here: get()
-    // picks the ASCII/flag-sensitive or always-full-Unicode set from the prefix.
+    // Prefixes are checked on charClassName, not peek, which is already past the whole escape. The two "Digit"
+    // predicates (POSIX vs Unicode) need no special case: get() picks the set from the prefix.
     CharacterClassPrefix prefix = prefixOf(charClassName);
     if (prefix == null) {
       throw throwUnexpectedChar(
@@ -328,11 +272,7 @@ class CharClassParser extends PatternLexer {
       if ((flags & UnicodeFlags.CASE_INSENSITIVE) != 0) {
         namedRanges = namedClass.caseInsensitive(prefix, flags, namedRanges);
       }
-      // Bug fix (2026-09-06): `positive` (true for "\p", false for "\P") was computed above but
-      // never actually used -- "\P{...}" silently behaved exactly like "\p{...}" (always positive).
-      // complement(), not a materialized walk: see NamedCharClass's own complement-based constants
-      // for why this is O(namedRanges' entry count), not O(the domain) -- an else-value fill, not
-      // an eager enumeration.
+      // \P must complement (it once silently behaved like \p); complement() is O(entry count), not O(domain).
       return positive ? namedRanges : namedRanges.complement();
     } catch (IllegalArgumentException e) {
       throw throwUnexpectedChar("unknown named character class \"", originalCharClassName, "\"");
@@ -342,8 +282,7 @@ class CharClassParser extends PatternLexer {
   /** Scans a {@code {name}} property name (peek is at the opening brace) and advances past the closing brace. */
   private String parseBracedClassName() {
     advance(1);
-    // Check-then-advance, so `end` always reflects the true (0-or-more) length of the name scanned
-    // and the name's very first character is validated too.
+    // Check-then-advance, so `end` is the true name length and the first character is validated too.
     int end = index;
     for (; ; ) {
       if (end == pattern.length()) {
@@ -354,11 +293,8 @@ class CharClassParser extends PatternLexer {
       if (c == '}') {
         break;
       }
-      // '_' is required for real Unicode property/prefix names like "White_Space", "Hex_Digit",
-      // "Join_Control", "Noncharacter_Code_Point", and the "general_category=" prefix itself --
-      // without it, \p{IsWhite_Space} (and friends) couldn't even reach the name-lookup logic
-      // below, always failing here first. Found via UnicodeClassTest. See remaining_work.md.
-      // Digits and '-' are needed for block names like "Latin-1Supplement"/"Latin_1_Supplement".
+      // '_' is needed for names like "White_Space" and "Hex_Digit" and the "general_category=" prefix; digits and
+      // '-' for block names like "Latin-1Supplement".
       if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9')
           && c != '=' && c != '_' && c != '-') {
         throw throwUnexpectedChar(

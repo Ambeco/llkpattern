@@ -5,6 +5,11 @@ import com.tbohne.llkpattern.Matcher;
 
 import com.tbohne.llkpattern.impl.constructs.ComplexCharacterPatternConstruct;
 
+/**
+ * Matches one code point against {@code validRanges} (a character class: {@code .}, a literal
+ * single character, or {@code [...]}), then advances. A pure membership test: every member leads
+ * to the same successor.
+ */
 public final class SingleCharMatcherConstruct extends MatcherConstruct {
 	final CodePointSet validRanges;
 
@@ -15,8 +20,7 @@ public final class SingleCharMatcherConstruct extends MatcherConstruct {
 
 	@Override
 	boolean matchBody(Matcher matcher, int peeked) {
-		// -1 (Matcher's "no more input" sentinel -- see Matcher#peek) is never a real member, even
-		// of a negated class whose fill would otherwise report it "in".
+		// -1 (the "no more input" sentinel) is never a member, even of a negated class.
 		if (peeked == -1 || !validRanges.contains(peeked)) {
 			if (peeked == -1) {
 				matcher.hitEnd = true;

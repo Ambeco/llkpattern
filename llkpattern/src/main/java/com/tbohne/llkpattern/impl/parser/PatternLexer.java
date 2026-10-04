@@ -19,26 +19,15 @@ import java.util.regex.Pattern;
  */
 class PatternLexer {
   final String pattern;
-  // A char[] copy of `pattern`, used only for codePointAt(int) below: String#codePointAt checks
-  // isLatin1() (compact strings, JDK 9+) on every call to pick which internal byte layout to
-  // read, on top of the real surrogate-pair check; Character#codePointAt(char[], int) skips that
-  // first check entirely, since a char[] has no such dual representation to dispatch on -- see
-  // documents/notes.md for the decompiled bytecode confirming this difference (found investigating
-  // a suggestion that this project's own Android CPU sampling bore out for Matcher#peek's sibling
-  // optimization). One extra O(pattern.length()) copy per compile, worth it since codePointAt is
-  // called once per character while parsing.
+  // char[] copy of `pattern` just for codePointAt: String#codePointAt re-checks isLatin1() (compact strings) on
+  // every call, Character#codePointAt(char[], int) doesn't (decompiled bytecode in notes.md). One O(n) copy per
+  // compile, since it is called per parsed character.
   final char[] patternChars;
   int flags;
   int index;
-  // Bug fix (2026-09-14): was `char`, which can't hold a supplementary code point at all -- every
-  // assignment below used to read `pattern.charAt(index)`, a lone surrogate half whenever `index`
-  // sits on a supplementary character, not the real code point. Every dispatch site in this file
-  // compares `peek` only against fixed ASCII tokens, which happens to make a stale surrogate half
-  // compare as "no match" the same way a real supplementary code point would -- but
-  // parseComplexEscape's `RegexCharacterClass.valueOf(Character.toString(peek))` invalid-escape-name
-  // lookup (and its error message) genuinely used `peek`'s numeric value, and got the wrong one for
-  // "\" followed directly by a supplementary character. See codePointAt()/advanceCodePoint()/
-  // advance() below -- every `peek` assignment now goes through pattern.codePointAt, never charAt.
+  // An int, not a char: a char can't hold a supplementary code point (charAt gave a lone surrogate half, and
+  // parseComplexEscape's invalid-escape lookup and message used peek's numeric value). Every assignment goes
+  // through codePointAt, never charAt.
   int peek;
 
   PatternLexer(String pattern, int flags) {
@@ -58,10 +47,7 @@ class PatternLexer {
     this.flags = (flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0 ? flags | UnicodeFlags.UNICODE_CASE : flags;
   }
 
-  // `EOF` (-1, never a valid code point, so a literal U+0000 in the pattern text stays an ordinary
-  // character) is the sentinel for "past the end of the pattern" throughout this class. Every
-  // `peek` assignment goes through pattern.codePointAt, never charAt (see `peek`'s own field doc
-  // for why that distinction matters for a supplementary code point).
+  // Past the end of the pattern. -1 is never a valid code point, so a literal U+0000 stays an ordinary character.
   static final int EOF = -1;
 
   private static int codePointAt(char[] chars, int i) {
@@ -69,9 +55,7 @@ class PatternLexer {
   }
 
   final void advanceCodePoint() {
-    // offsetByCodePoints(index, 1) already returns the new absolute index one code point past
-    // `index` -- it's not a delta to add to `index` (that was the bug: it double-advanced every
-    // call after the first, since index==0 made `index += offset` and `index = offset` coincide).
+    // offsetByCodePoints returns the new absolute index, not a delta (adding it double-advanced).
     index = pattern.offsetByCodePoints(index, 1);
     peek = codePointAt(patternChars, index);
   }
@@ -81,25 +65,17 @@ class PatternLexer {
     peek = codePointAt(patternChars, index);
   }
 
-  // The code point right after `peek` -- unlike `index + 1`, correctly skips a supplementary
-  // `peek` (2 code units) rather than landing on its low surrogate half. Every call site computes
-  // this immediately after confirming peek == '\\' (always 1 code unit), so this is equivalent to
-  // codePointAt(index + 1) in practice today -- but computed the fully-general way via
-  // Character.charCount(peek) rather than assuming that, consistent with `peek`'s own fix above.
+  // The code point right after `peek`; unlike index + 1, skips a supplementary peek's two code units. Computed
+  // via Character.charCount(peek) in general, though every caller has just confirmed peek == '\\'.
   final int peekAfter() {
     return codePointAt(patternChars, index + Character.charCount(peek));
   }
 
   /**
-   * Under {@code COMMENTS} ({@code (?x)}), strips any run of whitespace and {@code #}-to-end-of-
-   * line comments starting at the current position -- a no-op otherwise. Called wherever the
-   * parser is about to inspect {@code peek} to decide what comes next (the top of {@code
-   * parseUnion}'s main loop, {@code parseQuantifiable}'s entry, and right after a group's opening
-   * "(") so that insignificant whitespace/comments are transparently skipped between any two
-   * meaningful tokens, matching {@code java.util.regex}'s documented {@code COMMENTS} behavior.
-   * Deliberately never called from inside a {@code [...]} character class (it's not in scope
-   * there, same as real regex -- whitespace inside a class is always significant) or while
-   * scanning a name/flag list mid-token (those have their own tighter grammars).
+   * Under {@code COMMENTS}, skips whitespace and {@code #}-to-end-of-line comments at the current position; a
+   * no-op otherwise. Called wherever the parser is about to inspect {@code peek} to decide what comes next, so
+   * insignificant text is skipped between any two tokens. Deliberately never called inside {@code [...]}
+   * (whitespace is significant there, as in java.util.regex) or mid-token in a name/flag list.
    */
   final void skipComments() {
     if ((flags & Pattern.COMMENTS) == 0) {
@@ -107,14 +83,11 @@ class PatternLexer {
     }
     for (; ; ) {
       if (Character.isWhitespace(peek)) {
-        // advanceCodePoint(), not advance(1) -- this skips arbitrary pattern text (not a fixed
-        // ASCII token), which could in principle be a supplementary character (no such code point
-        // is actually flagged Unicode whitespace today, but there's no reason to assume that
-        // forever, and advanceCodePoint() costs nothing extra when it doesn't matter).
+        // advanceCodePoint(), not advance(1): this skips arbitrary pattern text, which could be a supplementary
+        // character.
         advanceCodePoint();
       } else if (peek == '#') {
-        // Same reasoning: a comment body is arbitrary pattern text up to the next '\n', which can
-        // genuinely contain a supplementary character.
+        // Same: a comment body is arbitrary text.
         while (peek != '\n' && peek != EOF) {
           advanceCodePoint();
         }
@@ -165,17 +138,12 @@ class PatternLexer {
         int octal = peek - '0';
         advance(1);
         if (peek >= '0' && peek <= '7') {
-          // A second digit is always safe -- the largest 2-digit octal value (077) is 63, well
-          // under the 255 (0377) ceiling -- so it's consumed unconditionally.
+          // A second digit is always safe (077 = 63 < 0377), so it is consumed unconditionally.
           octal = octal * 8 + peek - '0';
           advance(1);
           if (peek >= '0' && peek <= '7') {
-            // A third digit is only consumed if it wouldn't push the value past 0377 (255) --
-            // otherwise it's left as a separate literal character, exactly like
-            // java.util.regex's own \0nnn: "\0600" is "\060" (48, ASCII '0') followed by a
-            // literal '0', not an error. Peeking the would-be value before advancing (rather
-            // than advancing then checking, as this used to) is what makes the "leave it
-            // unconsumed" branch possible at all.
+            // A third digit is consumed only if the value stays <= 0377 (255); otherwise it is a separate
+            // literal, as in java.util.regex: "\0600" is "\060" then '0'.
             int withThirdDigit = octal * 8 + peek - '0';
             if (withThirdDigit <= 255) {
               octal = withThirdDigit;
@@ -205,12 +173,9 @@ class PatternLexer {
           advance(1);
         }
         int codePointStart = index;
-        // Braced form has no real digit-count limit in java.util.regex -- only the resulting VALUE
-        // is bounded (checked below via MAX_CODE_POINT), so e.g. "\x{00000061}" (10 digits, all but
-        // the last two of them leading zeros) is valid. Integer.MAX_VALUE stands in for "unbounded"
-        // for the loop bound below; codePoint accumulation itself is frozen (see the `<=
-        // MAX_CODE_POINT` guard inside the loop) once it's already out of range, so an arbitrarily
-        // long digit run can never overflow it.
+        // The braced form has no digit-count limit, only a VALUE bound (MAX_CODE_POINT): "\x{00000061}" is valid.
+        // Integer.MAX_VALUE stands in for unbounded, and accumulation freezes once out of range so a long digit
+        // run can't overflow.
         int maxDigits = unicodeMode ? 4 : (braces ? Integer.MAX_VALUE : 2);
         int digitCount;
         for (digitCount = 0; digitCount < maxDigits; ++digitCount) {

@@ -5,6 +5,12 @@ import com.tbohne.llkpattern.Matcher;
 
 
 
+/**
+ * {@code ^}/{@code $}: without {@code MULTILINE}, exactly {@code \A}/{@code \Z}; under {@code
+ * MULTILINE}, {@code ^} also matches right after a line terminator (a backward scan, {@link
+ * #lineTerminatorLengthBefore}) and {@code $} right before one ({@link #lineTerminatorLengthAt}).
+ * See design.md's "Boundary matching".
+ */
 final class LineBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 	final boolean isLineBegin; // true: ^, false: $
 
@@ -45,12 +51,7 @@ final class LineBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstr
 		return matchesHere && next.match(matcher, peeked);
 	}
 
-	/**
-	 * As {@link #matchBody}, but only the "does ^/$ hold here" question -- no {@code hitEnd}/
-	 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
-	 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
-	 * logic.
-	 */
+	// Side-effect-free "does it hold here" predicate; see ZeroWidthAssertionGuard.
 	@Override
 	public boolean holdsHere(Matcher matcher, int peeked) {
 		if (isLineBegin) {

@@ -145,10 +145,8 @@ public class ReluctantQuantifierDifferentialTest {
         divergences, is(java.util.Collections.emptyList()));
   }
 
-  /** Every region {@code (s,e)} of {@code in} -- see CLAUDE.md's differential-test workflow ("Diff
-   *  the full matrix ... every region (s,e) of short inputs"). This is what actually caught the
-   *  \B-near-regionEnd bug (remaining_work.md): a whole-string-plus-a-few-samples approximation
-   *  missed it entirely. */
+  /** Every region {@code (s,e)} of {@code in} (CLAUDE.md's differential-test workflow). This is what caught the
+   *  \B-near-regionEnd bug: a whole-string-plus-a-few-samples approximation missed it. */
   private static List<int[]> regionsOf(String in) {
     List<int[]> regions = new ArrayList<>();
     int len = in.length();

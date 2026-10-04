@@ -180,12 +180,8 @@ public class QuantifierAndCaptureTest {
     assertThat(matches("(" + A + ")*" + B, B), is(true));
   }
 
-  // --- A quantified/loop construct immediately followed by a COMPOSITE (non-leaf) construct --
-  // a capturing group, a non-capturing group, or a multi-literal sequence, rather than a bare
-  // literal/character class -- see remaining_work.md's dated bug entry: the loop's own "keep
-  // looping vs. exit" dispatch used to misroute the exit path back into the loop body whenever
-  // `next` was one of these, since only leaf constructs re-keyed their entryMap's values onto
-  // themselves for the loop's exit-identity check to see.
+  // --- A loop immediately followed by a COMPOSITE (non-leaf) construct (a capturing or non-capturing group, a
+  // multi-literal sequence): the loop's "keep looping vs. exit" dispatch once misrouted the exit back into the body.
 
   @Test
   public void quantifiedGroup_followedByCapturingGroup_zeroIterations_choosesCorrectExit() {
@@ -217,16 +213,10 @@ public class QuantifierAndCaptureTest {
     assertThat(matches("(" + B + ")*" + C + D, B + B + C + D), is(true));
   }
 
-  // --- Dot (.) quantified -- see remaining_work.md's dated bug entry: PatternParser used to check
-  // for a quantifier suffix on "." before advancing past the "." itself, so `peek` was still '.'
-  // at that point and the check always failed -- "." was silently never actually quantifiable;
-  // ".*z" parsed as an unquantified "." followed by the literal text "*z". Since "." matches
-  // essentially everything (see NamedCharClass.RegexCharacterClass.DOT: all but '\n'), a
-  // quantified "." followed by an ordinary literal is itself always ambiguous under this engine's
-  // LL(1) restriction (exactly like "[a-z]+z" -- see the last test below) -- these tests instead
-  // use "." as the pattern's own tail (matches() over the whole string, nothing after the loop to
-  // conflict with) to isolate "does the quantifier actually apply to the dot" from that unrelated
-  // ambiguity.
+  // --- Dot (.) quantified: PatternParser once checked for a quantifier before advancing past the ".", so ".*z"
+  // parsed as "." then the literal "*z". These tests use "." as the pattern's own tail (nothing after the loop to
+  // conflict with) to isolate "does the quantifier apply" from the separate LL(1) ambiguity of ".+" before a
+  // literal.
 
   @Test
   public void dotStar_matchesZeroOrMoreOfAnyCharacter() {
@@ -272,11 +262,10 @@ public class QuantifierAndCaptureTest {
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(".*+" + Z));
   }
 
-  // --- Three specific ambiguity shapes the project owner asked to confirm are covered: a plain
-  // prefix union, an optional single-character literal against what follows it, and an optional
-  // character class against what follows it -- each exercises entry-point overlap detection at a
-  // different level (a union's own branch merge; a quantifier's min==0 "skip me, fall through to
-  // next" merge over a single code point; the same merge but over a real multi-entry CodePointMap).
+  // --- Three ambiguity shapes, each exercising entry-point overlap detection at a different level: a plain prefix
+  // union, an optional single-character literal against what follows it, and an optional character class against
+  // what follows it (a union's branch merge; a min==0 "skip me" merge over a single code point; the same over a
+  // multi-entry set).
 
   @Test
   public void union_branchIsPrefixOfAnotherBranch_rejectedAtCompileTime() {
@@ -288,32 +277,25 @@ public class QuantifierAndCaptureTest {
 
   @Test
   public void optionalLiteral_ambiguousWithFollowingSameLiteral_rejectedAtCompileTime() {
-    // "a?" can match zero characters, in which case what follows must determine the next branch on
-    // its own -- but "a?"'s own entry set (just 'a', a single-codepoint LiteralPatternConstruct) and the
-    // following "a"'s entry set both claim 'a', so skipping "a?" is indistinguishable from matching
-    // it. This is QuantifiablePatternConstruct.buildLoopEntryMap's min==0 body-vs-next merge, not a union's
-    // branch-vs-branch merge (see the two tests above/below for those).
+    // "a?" can match zero characters, so what follows must pick the next branch alone, but "a?"'s entry set ('a')
+    // and the following "a"'s both claim 'a': skipping is indistinguishable from matching. This is
+    // buildLoopEntryMap's min==0 body-vs-next merge, not a union's branch merge.
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile(A + "?" + A));
   }
 
   @Test
   public void optionalCharacterClass_ambiguousWithFollowingMemberLiteral_rejectedAtCompileTime() {
-    // Same min==0 body-vs-next merge as "a?a" above, but "[ab]" is a real multi-entry CodePointMap
-    // (not a single code point or an else-value "everything" map like "."/".*z" above) -- this is
-    // the one that actually needs a genuine CodePointMap range intersection, not just a single
-    // code point or else-value comparison, to detect that 'a' is claimed by both sides.
+    // Same min==0 merge as "a?a", but "[ab]" is a real multi-entry set (not a single code point or an else-value
+    // like "."), so detecting that 'a' is claimed by both sides needs a genuine range intersection.
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("[" + A + B + "]?" + A));
   }
 
-  // --- Nested quantified/loop constructs -- see remaining_work.md's former "Core implementation"
-  // entry and design.md's "Entry-point computation vs. matcher compilation" section for the bug
-  // this used to hit: a loop whose body itself contains another loop, where the inner loop's
-  // "exit toward the outer loop" branch had no characters mapped to it at all. ---
+  // --- Nested loops: a loop whose body contains another loop, where the inner loop's "exit toward the outer loop"
+  // branch once had no characters mapped to it (design.md "Entry-point computation vs. matcher compilation"). ---
 
   @Test
   public void loopContainingAnotherLoop_matchesSingleIteration() {
-    // The minimal repro from remaining_work.md: a single iteration of the outer "+" ("a" with the
-    // optional "b" absent) should trivially succeed.
+    // A single iteration of the outer "+" ("a" with the optional "b" absent) should trivially succeed.
     assertThat(matches("(" + A + "(" + B + ")?)+", A), is(true));
   }
 
@@ -339,14 +321,10 @@ public class QuantifierAndCaptureTest {
     assertThrows(PatternSyntaxException.class, () -> Ll1Pattern.compile("(?:" + A + "?)+"));
   }
 
-  // --- A quantified/optional construct whose sole body is itself a capturing group -- see
-  // remaining_work.md's former "Crash: a quantified group whose sole body is a capturing group"
-  // entry: the nested group's own CaptureEndPatternConstruct used to be built (during entry-point
-  // computation) against the outer loop construct itself, whose `.matcher` isn't set until the
-  // whole loop finishes compiling -- throwing a NullPointerException at match time the first time
-  // that nested marker's `buildMatcher()` ran. Fixed by giving the loop body a stable
-  // (QuantifiablePatternConstruct.loopBodyTarget) marker shared between entry-point computation and
-  // matcher compilation. ---
+  // --- A quantified/optional construct whose sole body is itself a capturing group: the nested group's
+  // CaptureEndPatternConstruct was built against the outer loop itself, whose .matcher isn't set until the loop
+  // finishes compiling, so match time threw an NPE. Fixed by the shared QuantifiablePatternConstruct.loopBodyTarget
+  // marker. ---
 
   @Test
   public void quantifiedGroup_soleBodyIsCapturingGroup_matches() {

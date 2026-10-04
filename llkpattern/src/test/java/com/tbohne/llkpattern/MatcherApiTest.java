@@ -216,12 +216,10 @@ public class MatcherApiTest {
   }
 
   // --- Per-attempt state (quantifiableCounts/captureGroups) must not leak between separate match
-  // attempts -- see remaining_work.md's dated bug entry. A loop's iteration counter is normally
-  // only reset to 0 when its own EndLoopMatcherConstruct exit fires; an attempt that instead fails
-  // by exceeding `max` (LoopMatcherConstruct's own check) never reaches that reset, so without an
-  // explicit per-attempt reset in Matcher#attemptMatch, a later attempt (a different find() scan
-  // position, or a second matches()/lookingAt()/find() call on a reused Matcher) would read a
-  // stale, nonzero counter and could spuriously satisfy a `min` check it should have failed.
+  // attempts. A loop's counter is only reset when its exit fires; an attempt that fails by exceeding
+  // `max` never reaches that, so without the per-attempt reset in Matcher#attemptMatch a later attempt
+  // (another find() position, or a second call on a reused Matcher) read a stale nonzero counter and
+  // could spuriously satisfy a `min` check it should have failed.
 
   @Test
   public void find_boundedQuantifier_doesNotLeakLoopCountAcrossScanPositions() {
@@ -250,10 +248,8 @@ public class MatcherApiTest {
     assertThat(m.find(), is(false));
   }
 
-  // --- Capturing group numbering must follow opening-paren order, not closing-paren order -- see
-  // remaining_work.md's dated bug entry: a recursive-descent parser's nested groups always finish
-  // parsing (and, before the fix, always finished claiming their index) before the enclosing
-  // group's own call returns, which backwards-numbered every pattern with nested capturing groups.
+  // --- Capturing group numbering must follow opening-paren order, not closing-paren order: a
+  // recursive-descent parser finishes nested groups first, which once numbered nested groups backwards.
 
   @Test
   public void nestedCapturingGroups_numberedInOpeningOrder() {

@@ -27,11 +27,7 @@ public class PatternSyntaxException extends java.util.regex.PatternSyntaxExcepti
 			return sb.append("end of pattern");
 		}
 		sb.append("'");
-		// Not sb.appendCodePoint(codePoint) -- the JDK's own implementation allocates a throwaway
-		// char[2] (via Character.toChars) for any supplementary code point just to copy it into sb
-		// right after. This method only runs while building an exception message (cold path, never
-		// once per parsed character the way PatternParser's own copy of this fix is), so the
-		// allocation wouldn't matter here on its own, but there's no reason to pay for it either.
+		// Not sb.appendCodePoint: it allocates a throwaway char[2] for supplementary code points.
 		if (Character.isBmpCodePoint(codePoint)) {
 			sb.append((char) codePoint);
 		} else {

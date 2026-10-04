@@ -52,9 +52,8 @@ public final class Ll1Pattern {
 		try {
 			compiled = parsed.compile(EndPatternConstruct.INSTANCE);
 		} catch (EntryPointCycleException e) {
-			// See design.md's "Entry-point computation vs. matcher compilation" section: this fires
-			// only for a quantified construct whose entire body can match zero characters (e.g.
-			// "(a?)+"), which also makes it an infinite-loop hazard in its own right.
+			// Only for a quantified construct whose whole body can match zero characters (e.g. "(a?)+"); see
+			// design.md "Entry-point computation vs. matcher compilation".
 			throw PatternSyntaxException.throwWithReferences(
 					pattern,
 					e.startIndex,
@@ -120,16 +119,12 @@ public final class Ll1Pattern {
 	private final String pattern;
 	private final int flags;
 	final MatcherConstruct compiled;
-	// Sizes for the per-match scratch arrays a Matcher needs -- see Matcher#quantifiableCounts /
-	// Matcher#captureGroups. captureGroupCount doesn't include implicit group 0 (the whole match),
-	// which Matcher tracks separately (matchStart/matchEnd).
+	// Sizes for a Matcher's per-match scratch arrays; captureGroupCount excludes implicit group 0 (the Matcher
+	// tracks it separately).
 	final int quantifiableCount;
 	final int captureGroupCount;
 	final ObjectIntMap<String> namedGroups;
-	// \G doesn't match any specific position, so it has no MatcherConstruct representation at all
-	// -- it's purely a flag telling Matcher#find() to anchor to exactly where the previous match
-	// ended (Matcher#matchEnd), rather than scanning forward for a later match. See
-	// PatternParser#anchorsToPreviousMatchEnd's doc for the full rationale.
+	// \G has no construct: it only tells Matcher#find() to anchor at the previous match end.
 	final boolean anchorsToPreviousMatchEnd;
 	final boolean startsWithBeginAnchor;
 
@@ -147,11 +142,7 @@ public final class Ll1Pattern {
 		this.compiled = compiled;
 		this.quantifiableCount = quantifiableCount;
 		this.captureGroupCount = captureGroupCount;
-		// No copy/wrapper: `namedGroups` is package-private, and the only caller
-		// (PatternParser.getNamedGroups(), in Ll1Pattern.compile() above) hands over its own live
-		// MutableObjectIntMap right as the throwaway parser instance that built it is discarded --
-		// nothing ever holds a mutable reference to it afterward, so a defensive copy would buy no
-		// real safety, just an allocation on every compile().
+		// No defensive copy: the throwaway parser that built the map is discarded, so nothing else holds it.
 		this.namedGroups = namedGroups;
 		this.anchorsToPreviousMatchEnd = anchorsToPreviousMatchEnd;
 		this.startsWithBeginAnchor = startsWithBeginAnchor;
@@ -170,10 +161,7 @@ public final class Ll1Pattern {
 	/** Named group to its 1-based group number, unmodifiable (java.util.regex.Pattern#namedGroups). */
 	public Map<String, Integer> namedGroups() {
 		Map<String, Integer> result = new java.util.LinkedHashMap<>();
-		// androidx.collection's Kotlin-defined forEach takes a Function2 (single abstract method,
-		// so a Java lambda can implement it), whose return type is Kotlin's Unit -- Java has no
-		// implicit-Unit sugar for that (unlike calling it from Kotlin), so the lambda body returns
-		// Unit.INSTANCE explicitly.
+		// androidx's Kotlin forEach takes a Function2 returning Unit, so the lambda returns Unit.INSTANCE.
 		namedGroups.forEach((name, index) -> {
 			// namedGroups stores the 0-based capture index; the public numbering is 1-based.
 			result.put(name, index + 1);

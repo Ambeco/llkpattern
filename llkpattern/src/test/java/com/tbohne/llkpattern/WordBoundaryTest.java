@@ -175,8 +175,7 @@ public class WordBoundaryTest {
 
   @Test
   public void peekPrevious_respectsRegionStart_notJustIndexZero() {
-    // useTransparentBounds() is still a stub (see remaining_work.md), so region() is opaque:
-    // peekPrevious() must treat regionStart as its own start-of-input, not fall through to real
+    // region() is opaque by default: peekPrevious() must treat regionStart as its own start-of-input, not fall through to real
     // index 0 and read a character outside the region.
     Matcher m = Ll1Pattern.compile(".*").matcher("ab");
     m.region(1, 2);

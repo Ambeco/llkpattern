@@ -25,34 +25,21 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 public class ArrayCodePointSet implements MutableCodePointSet {
   // count occupies the low 11 bits (max 2047, i.e. entries span at most 2048 code points).
   private static final int COUNT_BITS = 11;
-  // Package-private (not private): CodePointSetBuilder's own Impl needs it for the same
-  // chunk-count math when packing its own keys array.
+  // Package-private: CodePointSetBuilder.Impl needs it for chunk-count math.
   static final int MAX_COUNT = (1 << COUNT_BITS) - 1;
 
-  // Shared by every set that starts (or ends up) with no entries, so the common empty case pays
-  // no array allocation at all -- a zero-length array, not null, so every existing reader (bounded
-  // by `size`, or reading `keys.length` for capacity math) keeps working with no null check added:
-  // System.arraycopy and Arrays.copyOf both accept a zero-length array freely, and a zero-length
-  // array can never be written into by mistake (any real write path grows it first).
+  // Shared by every empty set: a zero-length array, not null, so readers need no null check, and it can never be
+  // written into (any real write grows it first).
   private static final int[] EMPTY_KEYS = new int[0];
 
-  // Package-private, not private: CodePointSetBuilder's own Impl subclasses this class directly
-  // (rather than composing a separate builder object that hands a finished array off to a fresh
-  // ArrayCodePointSet -- see that class's own doc for why) and needs to read/write these fields
-  // itself, both while accumulating (unsorted, via its own overridden #append) and in its own #build
-  // (sorting/coalescing this same array in place before handing `this` back as the finished set).
-  //
-  // Kept sorted by min (equivalently, by key, since min occupies the packed key's high bits --
-  // every comparison here extracts min via floorIndex/keyMin rather than comparing packed keys as
-  // raw ints, purely for readability, not correctness) ONCE an instance is a real, finished
-  // CodePointSet -- every method below this point assumes that invariant already holds. `size` is
-  // the logical entry count; `keys.length` is capacity, which can run ahead of `size` -- see
-  // ensureCapacity.
+  // Package-private: CodePointSetBuilder.Impl subclasses this class (see its doc) and reads/writes these fields
+  // while accumulating (unsorted, via its overridden append) and in build() (sorting/coalescing in place). Kept
+  // sorted by min (the key's high bits) ONCE an instance is a finished CodePointSet; every method below assumes
+  // that. `size` is the entry count, `keys.length` the capacity (see ensureCapacity).
   int[] keys;
   public int size;
 
-  // Whether `keys`' recorded runs ARE this set (false, the common/default case) or are EXCLUDED
-  // from it (true, i.e. this set is everything else) -- see the class doc.
+  // Whether `keys` ARE this set (false) or are EXCLUDED from it (true); see the class doc.
   boolean invert;
 
   public ArrayCodePointSet() {
@@ -60,13 +47,8 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     size = 0;
   }
 
-  /**
-   * Same as the no-arg constructor, but starting {@code keys} at {@code initialCapacity} instead
-   * of empty -- for a subclass (namely {@link CodePointSetBuilderImpl}) whose typical real
-   * accumulation is known to be bigger than this class's own single-character common case, so
-   * it's worth avoiding the first one or two {@code Arrays.copyOf} regrows rather than inheriting
-   * a capacity tuned for a different usage pattern.
-   */
+  // Starts `keys` at initialCapacity for subclasses (CodePointSetBuilderImpl) whose typical accumulation is
+  // bigger than the single-character common case, avoiding the first regrows.
   public ArrayCodePointSet(int initialCapacity) {
     keys = initialCapacity == 0 ? EMPTY_KEYS : new int[initialCapacity];
     size = 0;
@@ -78,15 +60,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     insertAllImpl(other);
   }
 
-  /**
-   * The complement of {@code source}: a plain array copy plus a flipped {@link #invert} bit. A
-   * static factory, not another constructor overload -- {@code ArrayCodePointSet(ArrayCodePointSet)}
-   * would be MORE specific than the public copy constructor {@link #ArrayCodePointSet(CodePointSet)}
-   * for any same-class argument, so every {@code new ArrayCodePointSet(this)} call made from
-   * *within* this class (e.g. {@link #union}) would silently resolve to the complement constructor
-   * instead of the plain copy -- exactly the bug this factory avoids by not being a constructor
-   * overload at all.
-   */
+  // The complement of source: an array copy plus a flipped invert bit. A static factory, not a constructor:
+  // ArrayCodePointSet(ArrayCodePointSet) would out-specify the public copy constructor and make every
+  // `new ArrayCodePointSet(this)` inside this class silently build a complement.
   private static ArrayCodePointSet complementOf(ArrayCodePointSet source) {
     ArrayCodePointSet result = new ArrayCodePointSet();
     result.keys = source.size == 0 ? EMPTY_KEYS : Arrays.copyOf(source.keys, source.size);
@@ -95,16 +71,12 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return result;
   }
 
-  // Package-private (not private): CodePointSetBuilder's own Impl (a direct subclass) packs its
-  // own accumulated entries with this, both while appending and while re-chunking merged runs in
-  // its own #build.
+  // Package-private: CodePointSetBuilder.Impl packs its own entries with it.
   static int packKey(int min, int count) {
     return (min << COUNT_BITS) | count;
   }
 
-  // Package-private (not private): CodePointSetBuilder's own Impl sorts/merges its own packed
-  // entries by their real (min, max) extent in its own #build, without duplicating this
-  // bit-unpacking logic.
+  // Package-private: CodePointSetBuilder.Impl unpacks its own entries with it in build().
   static int keyMin(int key) {
     return key >>> COUNT_BITS;
   }
@@ -117,17 +89,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return keyMin(key) + keyCount(key) + 1;
   }
 
-  /** Index of the last entry whose min is {@code <= codePoint}, or {@code -1} if none. */
   private static final int LINEAR_SEARCH_THRESHOLD = 65;
 
-  // Static, with `keys`/`size` passed as parameters, rather than an instance method reading
-  // `this.keys`/`this.size` directly -- an experiment (per the project owner) checking whether a
-  // pure helper on this class's own hot path (this is the `contains`/`containsAll` leaf profiling
-  // has repeatedly shown as the hottest single method during matching) benefits from losing the
-  // implicit receiver. JMH showed no measurable difference either way (see notes.md's dated
-  // entry) -- kept in this shape anyway since it's no worse and makes the "pure function of its
-  // arguments" nature explicit, but this is NOT expected to matter for any other private helper
-  // in this codebase and shouldn't be treated as a new default style to chase elsewhere.
+  // Index of the last entry whose min is <= codePoint, or -1 if none. Static, with keys/size as parameters: an
+  // experiment on this hot leaf (contains/containsAll) that showed no measurable difference (notes.md); not a
+  // style to chase elsewhere.
   private static int floorIndex(int[] keys, int size, int codePoint) {
     int lo = 0;
     int hi = size - 1;
@@ -219,19 +185,13 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return false;
   }
 
-  /**
-   * Whether this set contains at least one code point in {@code [min, max)} -- the allocation-free
-   * half of {@link #intersects}: no new {@code CodePointSet} materialized, unlike {@code
-   * !intersection(min, max).isEmpty()}.
-   */
+  // Whether this set contains a code point in [min, max): the allocation-free half of intersects.
   private boolean overlapsRange(int min, int max) {
     if (!invert) {
       int idx = windowStart(min);
       return idx < size && keyMin(keys[idx]) < max;
     }
-    // Inverted: members are the GAPS between entries (see the class doc) -- walk the window
-    // looking for either a gap before an entry or a trailing gap after the last one, same
-    // cursor-walk shape as forEachRange/intersection's own invert branches.
+    // Inverted: members are the GAPS between entries; walk the window for a gap before an entry or after the last.
     int start = windowStart(min);
     int end = windowEnd(start, max);
     int cursor = min;
@@ -245,11 +205,8 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return cursor < max;
   }
 
-  /**
-   * Like {@link #windowStart}, but for {@link #insert}/{@link #appendSorted}'s merge semantics: a
-   * merely-touching entry (its {@code max} exactly equal to {@code min}) counts too, since it's
-   * about to be fused into one run with the new range rather than left as a separate one.
-   */
+  // Like windowStart for insert/appendSorted's merge semantics: an entry merely touching min counts too, since it
+  // is about to fuse with the new range.
   private int insertWindowStart(int min) {
     int idx = floorIndex(keys, size, min);
     if (idx < 0 || keyMax(keys[idx]) < min) {
@@ -272,8 +229,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     if (!invert) {
       return size == 0;
     }
-    // Inverted: this set is empty only if its excluded entries cover the ENTIRE domain with no
-    // gaps -- an empty exclusion list means "everything is a member", i.e. NOT empty.
+    // Inverted: empty only if the excluded entries cover the ENTIRE domain; no entries means everything.
     int cursor = 0;
     for (int i = 0; i < size; i++) {
       if (keyMin(keys[i]) != cursor) {
@@ -294,8 +250,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   @Override
   public boolean containsAll(int min, int max) {
     if (invert) {
-      // Every code point in [min, max) is "in" this set iff none of them is one of the explicitly
-      // recorded (excluded) code points -- i.e. no entry overlaps the window at all.
+      // Every code point in the window is "in" iff no excluded entry overlaps it.
       int start = windowStart(min);
       return start >= windowEnd(start, max);
     }
@@ -392,20 +347,14 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   /**
-   * Overrides the interface default with an allocation-light two-pointer sweep over both sets'
-   * raw {@code keys} arrays -- one temporary {@link ArrayCodePointSet} total (the result), versus
-   * the default's one-per-range-of-{@code this} plus a binary-search {@link #insert} per emitted
-   * sub-range. Falls back to the default for a non-{@link ArrayCodePointSet} {@code other} (e.g. a
-   * lazy {@code UnionCodePointSet}) -- every real caller on the parse-time hot path
-   * ({@code PatternParser}'s {@code &&} handling) already has both operands as concrete {@code
-   * ArrayCodePointSet}s by the time they reach here (see {@code CodePointSetBuilder#mergeRun}'s own
-   * doc), so this is the path that actually matters.
+   * An allocation-light two-pointer sweep over both sets' raw {@code keys}: one temporary set (the result),
+   * versus the default's one per range plus a binary-search {@link #insert} per sub-range. Falls back to the
+   * default for a non-{@link ArrayCodePointSet} (a lazy {@code UnionCodePointSet}); the parse-time hot path
+   * ({@code &&}) always has concrete operands (see {@code CodePointSetBuilder#mergeRun}).
    *
-   * <p>Handles {@link #invert} by De Morgan's laws, since {@code keys} always holds the same raw
-   * ranges regardless of the flag: two normal sets sweep-intersect directly; two inverted sets'
-   * intersection is the (raw) union of their keys, inverted (<code>&#x2201;A &cap; &#x2201;B =
-   * &#x2201;(A &cup; B)</code>); one of each is the normal side's raw ranges minus the inverted
-   * side's raw ranges (<code>A &cap; &#x2201;B = A - B</code>).
+   * <p>Handles {@link #invert} by De Morgan's laws, since {@code keys} holds the same raw ranges either way: two
+   * normal sets sweep-intersect; two inverted sets give the inverted raw union; one of each is the normal
+   * side's raw ranges minus the inverted side's.
    */
   @Override
   public CodePointSet intersection(CodePointSet other) {
@@ -472,19 +421,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return result;
   }
 
-  /**
-   * {@code a}'s and {@code b}'s raw ranges, unioned via a linear merge (not {@link #insertAll}).
-   * Coalesces into a running {@code (curMin, curMax)} accumulator before ever calling {@link
-   * #appendSorted} -- NOT simply "append whichever source's next range has the smaller min":
-   * once a run merged from both sources spans more than 2048 code points, it's split across
-   * multiple physical {@code keys} chunks, and a later source range can have a min that's
-   * ascending relative to every range appended so far yet still falls behind the true covered
-   * frontier (inside an earlier physical chunk of that same logical run, not just the last one) --
-   * which would violate {@code appendSorted}'s "only touches/overlaps the LAST entry" precondition.
-   * Coalescing first guarantees every {@code appendSorted} call gets a truly maximal run, so this
-   * can never happen. (Found by this method's own differential fuzz test against the interface
-   * default -- see {@code ArrayCodePointSetTest}.)
-   */
+  // a's and b's raw ranges, unioned via a linear merge. Coalesces into a running (curMin, curMax) before calling
+  // appendSorted, NOT "append whichever next range has the smaller min": a run spanning more than 2048 code
+  // points is split across physical chunks, so a later range can ascend yet fall behind the covered frontier,
+  // violating appendSorted's "only touches the LAST entry" precondition (found by the differential fuzz test in
+  // ArrayCodePointSetTest).
   private static ArrayCodePointSet sweepUnion(ArrayCodePointSet a, ArrayCodePointSet b) {
     ArrayCodePointSet result = new ArrayCodePointSet();
     result.ensureCapacity(a.size + b.size);
@@ -574,23 +515,16 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     insertRange(start, size, min, max);
   }
 
-  /**
-   * Replaces the entries at {@code [start, end)} -- which, on entry, touch or overlap {@code [min,
-   * max)} and nothing else does -- with however many packed chunks are needed to cover their union,
-   * shifting the tail as needed. No value to disagree on (unlike a generic map's {@code put}) -- any
-   * existing entry in the window just merges into one wider run with the new range, so this never
-   * needs a separate coalesce pass, and writes the chunks directly into {@code keys} with no
-   * intermediate array.
-   */
+  // Replaces the entries at [start, end) (which touch or overlap [min, max), and nothing else does) with the
+  // packed chunks covering their union, shifting the tail. Anything in the window merges into one wider run, so
+  // there is no separate coalesce pass or intermediate array.
   private void insertRange(int start, int end, int min, int max) {
     int lo = (start < end) ? Math.min(min, keyMin(keys[start])) : min;
     int hi = (start < end) ? Math.max(max, keyMax(keys[end - 1])) : max;
     int chunkCount = (hi - lo + MAX_COUNT) / (MAX_COUNT + 1); // ceil((hi - lo) / 2048)
     int delta = chunkCount - (end - start);
     if (delta != 0) {
-      // Growing needs room for the tail's new position BEFORE it's shifted; shrinking never needs
-      // more room than it already has, so ensureCapacity would be a guaranteed (harmless, but
-      // pointless) no-op -- skipped rather than called unconditionally.
+      // Growing needs room before the tail shifts; shrinking never does.
       if (delta > 0) {
         ensureCapacity(size + delta);
       }
@@ -622,15 +556,10 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       }
       if (!invert && !o.invert) {
         if (size == 0) {
-          // Fast path: this set has nothing of its own yet, so insertAll degenerates to a plain array
-          // copy -- but preserve `keys`' own capacity if a caller (e.g. PatternConstruct#
-          // mergeEntryPoints/#unionLastCharSet, pre-sized via the (int initialCapacity) constructor
-          // for a merge this is only the FIRST step of) already sized it bigger than `o.size`:
-          // Arrays.copyOf here would otherwise silently throw that pre-sizing away, shrinking back
-          // down to fit just this one source before any later insertAll ever runs (measured as real,
-          // not just theoretical -- see notes.md's 2026-09-25 entry). Safe even when `this` is a
-          // still-accumulating CodePointSetBuilderImpl (see the sweepUnion note just below) since a
-          // plain copy doesn't care about sort order.
+          // Fast path: a plain array copy, but keep `keys`' capacity if a caller pre-sized it
+          // (mergeEntryPoints/unionLastCharSet): Arrays.copyOf would discard that sizing before later insertAlls
+          // (notes.md 2026-09-25). Safe for a still-accumulating CodePointSetBuilderImpl, since a copy ignores
+          // sort order.
           if (keys.length >= o.size) {
             System.arraycopy(o.keys, 0, keys, 0, o.size);
           } else {
@@ -639,46 +568,30 @@ public class ArrayCodePointSet implements MutableCodePointSet {
           size = o.size;
           return;
         }
-        // General non-empty case, but ONLY when `this` already has room for both operands combined
-        // -- merge into `keys` itself: shift `this`'s own entries to the tail, then sweep-merge
-        // forward from that shifted copy and `o.keys` into `keys[0..]`, coalescing runs and
-        // re-chunking them exactly like `CodePointSetBuilderImpl#build`'s own in-place compaction
-        // does (same write-cursor-never-passes-read-cursor argument: a run built from k source
-        // chunks can never need more than k output chunks). This is the shape `mergeEntryPoints`/
-        // `unionLastCharSet`'s own capacity hint and `mergeRun`'s two-step combine already produce.
+        // General case, only when `keys` has room for both operands: shift this set's entries to the tail, then
+        // sweep-merge forward into keys[0..], coalescing and re-chunking like CodePointSetBuilderImpl#build's
+        // in-place compaction (the write cursor never passes the read cursor: k source chunks never need more
+        // than k output chunks). This is the shape mergeEntryPoints/unionLastCharSet's capacity hints and
+        // mergeRun's two-step combine produce.
         //
-        // Deliberately NOT a fallback to `sweepUnion` when `keys` doesn't have room: `sweepUnion`
-        // always allocates a throwaway wrapper `ArrayCodePointSet` plus a fresh array, sized to the
-        // pessimistic `size + o.size` bound -- worse, not better, than the old per-range `insert()`
-        // fallback below for an unsized target, which allocates nothing at all whenever an
-        // incoming range merely touches/overlaps an existing entry (`insertRange`'s `delta <= 0` case)
-        // or 1.5x growth already left slack. Measured as a real, if small (~0.9%), desktop
-        // compile-time allocation REGRESSION when tried (see notes.md) -- reverted in favor of just
-        // falling through to the old fallback for this case.
+        // Deliberately NOT a sweepUnion fallback when `keys` lacks room: it always allocates a wrapper plus a
+        // pessimistically sized array, worse than the per-range insert() fallback below (~0.9% desktop
+        // compile-allocation regression; notes.md).
         //
-        // This in-place merge assumes `keys` is sorted, which holds for every ordinary
-        // ArrayCodePointSet but NOT for a CodePointSetBuilderImpl still accumulating -- its own
-        // `append()` override deliberately appends unsorted until `build()` sorts in place (see that
-        // class's doc), so builders are excluded here (falling through to the per-range `insert()`
-        // fallback below, which dispatches to the builder's own unsorted-append `append()` via its own
-        // `insert()` override -- see that override's doc). `o` can never be a live builder --
-        // CodePointSetBuilder doesn't expose itself as a CodePointSet until built, so no caller can
-        // pass one in as `other` -- only `this` can be, if something reaches a builder through a
-        // MutableCodePointSet-typed reference.
+        // Requires `keys` sorted, which a still-accumulating CodePointSetBuilderImpl is NOT (its append() is
+        // unsorted until build()), so builders take the per-range insert() fallback. `o` can't be a live builder
+        // (it isn't a CodePointSet until built); only `this` can.
         if (!(this instanceof CodePointSetBuilder) && keys.length >= size + o.size) {
           mergeInPlace(o);
           return;
         }
       }
     }
-    // Fallback: not two concrete non-inverted ArrayCodePointSets (a lazy UnionCodePointSet on
-    // either side, or either side inverted) -- a plain range-at-a-time insert() per source range, not
-    // a sorted-sweep merge (no "other wins on overlap" semantics to preserve here -- a union just
-    // needs every source range folded in, and insert() already merges anything it touches/overlaps).
+    // Fallback (a lazy UnionCodePointSet, or an inverted side): insert() per source range, which already merges
+    // whatever it touches.
     if (!invert && other instanceof ArrayCodePointSet) {
-      // Each insert() adds at most chunkBound new entries in total, so size once up front instead of
-      // letting ensureCapacity regrow it range by range (an inverted source's few huge gap ranges
-      // re-chunk into hundreds of 2048-wide entries each).
+      // Each insert() adds at most chunkBound entries: size once up front (an inverted source's few huge gap
+      // ranges re-chunk into hundreds of entries).
       int needed = size + ((ArrayCodePointSet) other).memberChunkBound();
       if (keys.length < needed) {
         keys = Arrays.copyOf(keys, needed);
@@ -687,12 +600,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     other.forEachRange(this::insert);
   }
 
-  /**
-   * Capacity for an empty set that will {@code insertAll(accept)} and then {@code removeAll} every
-   * {@code removes} entry but index {@code skip} (a sibling's claim carved out of {@code accept}):
-   * big enough that neither step regrows it. Each removed range adds at most one entry, and an
-   * inverted operand emits at most {@code size + 1} ranges.
-   */
+  // Capacity for an empty set that will insertAll(accept) then removeAll every `removes` entry but index `skip`,
+  // so neither step regrows it. Each removed range adds at most one entry; an inverted operand emits at most
+  // size + 1 ranges.
   public static int capacityHint(@Nullable CodePointSet accept, CodePointSet[] removes, int skip) {
     int capacity = accept instanceof ArrayCodePointSet ? ((ArrayCodePointSet) accept).memberChunkBound() : 0;
     for (int j = 0; j < removes.length; j++) {
@@ -723,20 +633,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     return total;
   }
 
-  /**
-   * {@link #insertAll}'s in-place fast path: merges {@code o}'s raw ranges into this set's own {@code
-   * keys}, given the caller already confirmed {@code keys.length >= size + o.size} (room for both
-   * operands with no growth) and that neither side is inverted or a still-accumulating {@link
-   * CodePointSetBuilder}. Shifts this set's own {@code size} entries to the tail of {@code keys}
-   * (indices {@code [o.size, o.size + size)}), then sweep-merges forward from that shifted copy and
-   * {@code o.keys} into {@code keys[0..]} from the front -- coalescing touching/overlapping runs
-   * before ever writing, then re-chunking each run into however many packed entries it actually
-   * needs, the same two-step shape {@link CodePointSetBuilderImpl#build} uses to compact a single
-   * array in place (see its own doc for the "write cursor never passes read cursor" argument this
-   * relies on: two runs built from a combined k source chunks can never need more than k output
-   * chunks, and the shifted copy is never overwritten before it's read since the write cursor starts
-   * at 0 and the shifted copy starts at {@code o.size}).
-   */
+  // insertAll's in-place fast path: the caller confirmed keys.length >= size + o.size and that neither side is
+  // inverted or a builder. Shifts this set's entries to the tail ([o.size, o.size + size)), then sweep-merges
+  // that copy and o.keys forward into keys[0..], coalescing before writing and re-chunking each run, as
+  // CodePointSetBuilderImpl#build does (the shifted copy is never overwritten before it is read, since writing
+  // starts at 0 and the copy at o.size).
   private void mergeInPlace(ArrayCodePointSet o) {
     int aStart = o.size;
     System.arraycopy(keys, 0, keys, aStart, size);
@@ -849,15 +750,11 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     deleteRange(start, end);
   }
 
-  /**
-   * Bulk difference. The default per-range loop splits entries one hole at a time, each split a
-   * potential {@code keys} regrowth (the dominant cost of this in the compile-time allocation
-   * profile). Each removed range adds at most one entry (it can split only one), so growing {@code
-   * keys} once to exactly {@code size + other.size} -- if it isn't already that big -- makes every
-   * {@link #remove} below non-allocating. Kept per-range (binary search plus a small memmove each)
-   * rather than a linear sweep, which measured slower when {@code other} is small next to {@code
-   * this}. Inverted operands, lazy unions and self use the default loop.
-   */
+  // Bulk difference. The default per-range loop splits entries one hole at a time, each split a potential
+  // regrowth (the dominant cost in the compile-time allocation profile). Each removed range adds at most one
+  // entry, so growing `keys` once to size + other.size makes every remove() below non-allocating. Kept per-range
+  // (binary search plus a small memmove) rather than a linear sweep, which measured slower when `other` is small
+  // next to `this`. Inverted operands, lazy unions and self use the default loop.
   @Override
   public void removeAll(CodePointSet other) {
     if (other instanceof ArrayCodePointSet && other != this && !invert
@@ -877,12 +774,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     MutableCodePointSet.super.removeAll(other);
   }
 
-  /**
-   * {@link #removeAll}'s single-pass path for two non-inverted sets, given {@code keys.length >=
-   * size + o.size}: shifts this set's entries to the tail, then sweeps forward from there into
-   * {@code keys[0..]}. Each of {@code o}'s ranges splits at most one entry, so output never outruns
-   * the shifted read cursor.
-   */
+  // removeAll's single-pass path for two non-inverted sets, given keys.length >= size + o.size: shifts this set's
+  // entries to the tail, then sweeps forward into keys[0..]. Each of o's ranges splits at most one entry, so
+  // output never outruns the shifted read cursor.
   private void subtractInPlace(ArrayCodePointSet o) {
     int aStart = o.size;
     System.arraycopy(keys, 0, keys, aStart, size);
@@ -982,30 +876,21 @@ public class ArrayCodePointSet implements MutableCodePointSet {
   }
 
   /**
-   * A {@link CodePointSetBuilder} that IS an {@link ArrayCodePointSet} -- see that interface's own
-   * doc for why. Overrides {@link #append}, the one method whose semantics genuinely differ while
-   * accumulating (unsorted append here, vs. {@link ArrayCodePointSet#insert}'s own
-   * sorted-insert-with-shift) -- and also overrides {@link #insert} itself, purely as a guard: {@link
-   * ArrayCodePointSet}'s own {@code insert} assumes sorted {@code keys}, which doesn't hold for this
-   * class mid-accumulation, so {@code insert} is redirected straight to {@link #append} rather than left
-   * to silently corrupt an in-progress build if something ever reaches this object through a {@link
-   * MutableCodePointSet}-typed reference. {@link #appendAll} is this class's own explicit loop appending
-   * each source range (plus a packed-key copy when still empty) -- it never touches {@link
-   * ArrayCodePointSet#insertAll}'s sorted-merge paths, so those can't corrupt a still-accumulating
-   * build; {@link #invert} is overridden only to add the build-once guard. Lives here (nested in {@link
-   * ArrayCodePointSet}, package-private, not in {@code CodePointSetBuilder.java}) since the two are
-   * tightly intertwined implementation details of each other -- this class reaches into {@code
-   * ArrayCodePointSet}'s own package-private {@code keys}/{@code size}/{@code packKey}/{@code
-   * keyMin}/{@code keyMax}/{@code MAX_COUNT} directly, and {@link ArrayCodePointSet}'s own {@code
-   * (int initialCapacity)} constructor exists purely for this class's benefit.
+   * A {@link CodePointSetBuilder} that IS an {@link ArrayCodePointSet} (see that interface's doc). Nested here
+   * because the two are tightly intertwined: it reaches into the package-private {@code keys}/{@code
+   * size}/{@code packKey}/{@code keyMin}/{@code keyMax}/{@code MAX_COUNT}, and the {@code (int
+   * initialCapacity)} constructor exists for it.
+   *
+   * <p>{@link #append} is unsorted while accumulating (vs. {@link ArrayCodePointSet#insert}'s sorted insert).
+   * {@link #insert} is redirected to it as a guard: the inherited one assumes sorted {@code keys}, which
+   * doesn't hold mid-accumulation. {@link #appendAll} appends each source range (plus a packed-key copy when
+   * still empty), never touching {@code insertAll}'s sorted-merge paths. {@link #invert} is overridden only to
+   * add the build-once guard.
    */
   static final class CodePointSetBuilderImpl extends ArrayCodePointSet implements CodePointSetBuilder {
-    // Bigger than ArrayCodePointSet's own INITIAL_CAPACITY (1, tuned for that class's typical
-    // single-character common case): this builder's real caller (a bracket expression's literal
-    // members) typically accumulates a small handful of ranges, not one, so starting bigger avoids
-    // the first one or two Arrays.copyOf regrows -- see notes.md for the measurement history behind
-    // this number (4 was the value the original, non-inheriting design used; this restores it after
-    // an inheritance-based rewrite temporarily lost it).
+    // Bigger than ArrayCodePointSet's single-character default: a bracket expression's literal members are
+    // typically a small handful of ranges, so starting bigger avoids the first regrows (notes.md has the
+    // measurement history; an inheritance-based rewrite once lost this value).
     private static final int BUILDER_INITIAL_CAPACITY = 4;
 
     // Insertion sort shifts at most (first run length) x (second run length) entries; below this it beats the merge's temp-array copy.
@@ -1025,18 +910,16 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     @Override
     public void append(int min, int max) {
       checkNotBuilt();
-      // Packed immediately in ArrayCodePointSet's own compact key format -- not deferred to
-      // #build -- chunking any range wider than MAX_COUNT into multiple entries here, the same way
-      // ArrayCodePointSet#insertRange does for an incremental insert.
+      // Packed immediately, not deferred to build(); a range wider than MAX_COUNT becomes several entries, as in
+      // insertRange.
       for (int chunkMin = min; chunkMin < max; chunkMin += MAX_COUNT + 1) {
         int chunkMax = Math.min(max, chunkMin + MAX_COUNT + 1);
         appendKey(packKey(chunkMin, chunkMax - chunkMin - 1));
       }
     }
 
-    // See this class's own doc: redirects to #append rather than inheriting ArrayCodePointSet#insert's
-    // sorted-insert-with-shift, which assumes sorted `keys` this class doesn't maintain until
-    // #build. checkNotBuilt() happens inside #append already, no need to repeat it here.
+    // Redirects to append(): the inherited insert() assumes sorted `keys`, which this class doesn't maintain
+    // until build(). append() already checks checkNotBuilt().
     @Override
     public void insert(int min, int max) {
       append(min, max);
@@ -1085,13 +968,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       checkNotBuilt();
       built = true;
       sortInPlaceByMin();
-      // Single forward pass: for each maximal run of touching/overlapping entries (by real
-      // extent, not by their individual pre-chunked boundaries), re-chunk the run's own full span
-      // into however many packed entries it actually needs, writing them back into the SAME
-      // array. The write cursor can never run ahead of the read cursor: a run built from N input
-      // entries can never need MORE than N output chunks (each input entry already covers up to
-      // MAX_COUNT+1 code points, so covering the same combined span can't take more chunks than
-      // that), so this is safe to compact in place.
+      // One forward pass: each maximal run of touching/overlapping entries (by real extent, not their
+      // pre-chunked boundaries) is re-chunked into as many packed entries as it needs, in the SAME array. The
+      // write cursor never runs ahead of the read cursor: a run of N entries never needs more than N chunks.
       int outSize = 0;
       int i = 0;
       while (i < size) {
@@ -1112,12 +991,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       return this;
     }
 
-    /**
-     * If {@code keys[0..size)} is exactly two ascending runs (the shape appending one sorted set
-     * after another produces) and both are long enough that insertion sort's shifts would add
-     * up, merges them linearly via a copy of the shorter run and returns true; otherwise leaves
-     * {@code keys} untouched and returns false.
-     */
+    // If keys[0..size) is exactly two ascending runs (what appending one sorted set after another produces) and
+    // both are long enough that insertion sort's shifts would add up, merges them linearly via a copy of the
+    // shorter run and returns true; otherwise leaves keys untouched and returns false.
     private boolean mergeTwoRuns() {
       int split = 1;
       while (keyMin(keys[split]) >= keyMin(keys[split - 1])) {
@@ -1168,15 +1044,9 @@ public class ArrayCodePointSet implements MutableCodePointSet {
       }
     }
 
-    /**
-     * Insertion sort of {@code keys[0..size)} by each entry's real (unpacked) min -- worth it over
-     * {@code Arrays.sort} despite its worse worst-case complexity, since every real call site's
-     * input is small and near-sorted already, where insertion sort's low constant factor wins.
-     * Compares extracted min, not the raw packed {@code int}s directly -- {@code min << 11} can
-     * overflow the sign bit as low as code point 0x100000, so raw numeric order isn't reliable
-     * (same reasoning as {@code ArrayCodePointSet#floorIndex}'s own comparisons, which never
-     * compare raw packed keys either).
-     */
+    // Insertion sort by each entry's real (unpacked) min: input is small and near-sorted at every call site,
+    // where its low constant factor beats Arrays.sort. Compares the extracted min, not raw packed ints:
+    // min << 11 can overflow the sign bit from code point 0x100000.
     private void sortInPlaceByMin() {
       int prevMin = Integer.MIN_VALUE;
       int firstOutOfOrder = 0;
@@ -1187,8 +1057,7 @@ public class ArrayCodePointSet implements MutableCodePointSet {
         }
         prevMin = min;
       }
-      // Already sorted (the common case) falls straight through; otherwise the sorted prefix is
-      // skipped.
+      // Already sorted (the common case) falls straight through; otherwise the sorted prefix is skipped.
       if (firstOutOfOrder < size && mergeTwoRuns()) {
         return;
       }

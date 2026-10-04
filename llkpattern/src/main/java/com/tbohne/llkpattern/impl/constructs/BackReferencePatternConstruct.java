@@ -5,6 +5,11 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 
+/**
+ * {@code \1}/{@code \k<name>}. {@code referencedGroup} is resolved at parse time to the
+ * already-parsed group; forward references and undefined groups are rejected there. See
+ * design.md's "Backreferences".
+ */
 public final class BackReferencePatternConstruct extends PatternConstruct {
 	final int captureConstructIndex;
 	private final QuantifiedUnionPatternConstruct referencedGroup;
@@ -19,23 +24,14 @@ public final class BackReferencePatternConstruct extends PatternConstruct {
 	void buildEntryMap(PatternConstruct next) {
 		CodePointSet firstChars = referencedGroup.firstCharSet();
 		if (firstChars == null) {
-			// Possibly-empty (e.g. "(a*)\1") or otherwise not-statically-known referenced group --
-			// fall back to the catch-all entry set rather than risk silently wrong zero-width
-			// handling. See design.md's "Backreferences" section.
+			// Possibly empty (e.g. "(a*)\1") or not statically known: fall back to the catch-all
+			// rather than risk wrong zero-width handling.
 			entryElse = this;
 			return;
 		}
-		// Aliased directly -- firstCharSet() already returns a plain CodePointSet (often itself an
-		// alias, e.g. straight through to a ComplexCharacterPatternConstruct's own validRanges()), so there's no
-		// identity to lose by sharing it instead of copying its entries.
-		// Two layers of folding, not one: `firstChars` is already folded by the referenced group's
-		// OWN flags (e.g. under "(?i)(a)", the group could have literally captured 'A', not just
-		// 'a' -- see LiteralPatternConstruct#firstCharSet's own doc), since that's what the group's content
-		// could actually have consumed at match time, independent of what follows it. This
-		// method's own `foldedEntrySet` call then folds THAT by the backreference's own flags,
-		// since the backreference itself compares case-insensitively (codePointsMatch) according
-		// to ITS OWN flags, whatever the referenced group's own flags were -- e.g. "(?-i)(a)(?i)\1"
-		// must accept 'A' too, even though the group itself never could have captured it.
+		// Folded twice: firstChars already carries the referenced group's own flags (under
+		// "(?i)(a)" it may have captured 'A'), and the backreference compares by ITS flags, so
+		// "(?-i)(a)(?i)\1" must accept 'A' too.
 		entryMap = MatcherConstruct.foldedEntrySet(firstChars, flags);
 	}
 

@@ -6,6 +6,11 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/**
+ * {@code \b{g}} (grapheme boundary). Only the positive form exists: JDK 27 doesn't treat {@code
+ * \B{g}} as special syntax either (design.md). Always a real match-time check, like a lookbehind:
+ * neither neighbor's grapheme-boundary-ness is statically known.
+ */
 public final class GraphemeBoundaryPatternConstruct extends ZeroWidthAssertionPatternConstruct {
 	public GraphemeBoundaryPatternConstruct(int startIndex, int endIndex) {
 		super(startIndex, endIndex);
@@ -16,19 +21,11 @@ public final class GraphemeBoundaryPatternConstruct extends ZeroWidthAssertionPa
 		new GraphemeBoundaryMatcherConstruct(this);
 	}
 
-	/**
-	 * Deliberately conservative rather than precise: unlike \b/\B (whose truth depends on a
-	 * simple word/non-word classification of exactly one neighbor at a time) or a 1-code-point
-	 * lookbehind, \b{g}'s truth can depend on a whole chain of prior code points (GB9c/GB11/
-	 * GB12-13 -- see {@code GraphemeCluster#isBoundary}), which this loop-ambiguity check has no
-	 * way to reason about precisely. So whenever the loop body could plausibly have just
-	 * consumed ANY character at all ({@code bodyLastCharSet != null}), this treats \b{g} as
-	 * potentially holding for every peek code point -- i.e. always ambiguous with continuing the
-	 * loop. This over-rejects some loops that would actually be fine at match time (e.g. {@code
-	 * \X+\b{g}}, since a loop of whole clusters can never stop mid-cluster) in exchange for never
-	 * under-rejecting a genuinely ambiguous one -- the same tradeoff this project already accepts
-	 * for {@code \X} itself (see README's "Intentional differences").
-	 */
+	// Deliberately conservative: \b{g} can depend on a whole chain of prior code points
+	// (GB9c/GB11/GB12-13, GraphemeCluster#isBoundary), which this check can't reason about, so
+	// whenever the body could have consumed anything every peek is treated as ambiguous. This
+	// over-rejects some fine loops (e.g. \X+\b{g}) but never under-rejects, the same tradeoff as \X
+	// (README "Intentional differences").
 	@Override
 	final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
 		return bodyLastCharSet == null ? null : universalCodePointSet();

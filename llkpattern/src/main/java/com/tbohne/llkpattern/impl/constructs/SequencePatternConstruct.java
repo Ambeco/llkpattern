@@ -9,23 +9,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class SequencePatternConstruct extends PatternConstruct {
-	// Pre-sized to 4, not the JDK default of 10 -- corpus measurement (2026-09-27) found 100% of
-	// Sequences end up with <=4 elements (mean 1.15), so the default's first-`add` grow to 10 is
-	// pure waste here.
+	// Pre-sized to 4: 100% of sequences have <= 4 elements, mean 1.15 (corpus measurement, 2026-09-27).
 	public final List<PatternConstruct> patterns = new ArrayList<>(4);
 
 	public SequencePatternConstruct(int startIndex) {
 		super(startIndex);
 	}
 
-	/**
-	 * Wires every element's {@code next} pointer tail-to-front (a plain field assignment, not a
-	 * {@code compile()} call) so a nullable element can still fold in what follows it when asked
-	 * for its own entry point -- shared by {@link #buildEntryMap} and {@link #claimsEntryElse},
-	 * since either one might run first (or, harmlessly, both -- this is idempotent). See
-	 * design.md's "Entry-point computation vs. matcher compilation" section for why the split
-	 * from compiling matters.
-	 */
+	// Wires every element's next tail-to-front (a plain assignment, not compile()), so a nullable element can
+	// fold in what follows it when asked for its entry point. Idempotent: buildEntryMap or claimsEntryElse
+	// may run first.
 	private void wireElementNextPointers() {
 		PatternConstruct tail = next();
 		for (int i = patterns.size() - 1; i >= 0; i--) {
@@ -36,10 +29,8 @@ public final class SequencePatternConstruct extends PatternConstruct {
 
 	@Override
 	boolean claimsEntryElse() {
-		// Same aliasing as buildEntryMap below: a sequence's own entry point is exactly its
-		// first element's. patterns.get(0) is a fixed field (never reassigned the way `next`
-		// is), so delegating straight through can't itself introduce a cycle -- but its OWN
-		// entry-point computation still depends on the tail-to-front wiring below having run.
+		// A sequence's entry point is its first element's. patterns.get(0) is fixed, so delegating can't add a
+		// cycle, but its own entry-point computation needs the wiring below to have run.
 		wireElementNextPointers();
 		return patterns.get(0).claimsEntryElse();
 	}
@@ -56,35 +47,21 @@ public final class SequencePatternConstruct extends PatternConstruct {
 
 	@Override
 	boolean needsEntryPointBeforeMatcher() {
-		// buildMatcher() below does its own tail-to-front `next` wiring independently (via each
-		// part.compile(tail) call), and never reads entryMap/entryElse -- so, unlike buildEntryMap
-		// above (whose wiring/entryMap-caching exists purely to answer an ANCESTOR's pull), this
-		// SequencePatternConstruct's own matcher build needs nothing buildEntryMap() would have computed. This is
-		// what lets a leaf branch reached only through a SequencePatternConstruct (e.g. a plain "a" union branch,
-		// always parsed as a one-element SequencePatternConstruct) skip its own entryMap allocation too --
-		// otherwise this SequencePatternConstruct's own compile() would force the pull right back regardless of
-		// what the leaf itself does.
+		// buildMatcher() wires `next` itself (via part.compile(tail)) and never reads entryMap, so this sequence
+		// needs nothing buildEntryMap computes. That lets a leaf reached only through a sequence (e.g. a plain
+		// "a" union branch) skip its own entryMap allocation; otherwise this compile() would force the pull.
 		return false;
 	}
 
 	@Override
 	void buildEntryMap(PatternConstruct next) {
-		// A sequence's own entry point is exactly its first element's -- entering the sequence
-		// means entering its first element, regardless of what the rest of the sequence looks
-		// like. Wire every element's `next` pointer tail-to-front FIRST -- but deliberately don't
-		// compile() (build matchers for) anything here: that's buildMatcher()'s job, below. This
-		// split is what lets a loop nested at the tail of this sequence ask an enclosing loop
-		// (this sequence's own `next`, if it's a loop) for ITS entry point mid-construction,
-		// without forcing that enclosing loop's own (still in-progress) matcher build to finish
-		// first -- see design.md's "Entry-point computation vs. matcher compilation" section.
+		// Entering the sequence means entering its first element. Wire every `next` FIRST but deliberately don't
+		// compile() here: that split lets a loop at this sequence's tail ask an enclosing loop for ITS entry
+		// point mid-construction without forcing that loop's in-progress matcher build (design.md
+		// "Entry-point computation vs. matcher compilation").
 		wireElementNextPointers();
-		// Aliased directly, not re-keyed -- unlike `entryElse` (a genuinely PatternConstruct-valued
-		// field, where re-keying onto `this` is load-bearing -- see QuantifiedUnionPatternConstruct's own doc for
-		// the 2026-09-06 bug that motivated it), entryMap's values are always Boolean
-		// `true` regardless of which construct built it (see entryMap's own doc), so this
-		// SequencePatternConstruct's own entry point and its first element's are the exact same map, both in
-		// content AND in every consumer's eyes -- there's no identity to lose by sharing the
-		// object instead of copying its entries.
+		// Aliased, not copied: entryMap is a plain set. (entryElse is re-keyed onto `this`; see
+		// QuantifiedUnionPatternConstruct.)
 		entryMap = patterns.get(0).getEntryPointMap();
 		if (patterns.get(0).getEntryElse() != null) {
 			entryElse = this;
@@ -93,16 +70,11 @@ public final class SequencePatternConstruct extends PatternConstruct {
 
 	@Override
 	void buildMatcher() {
-		// A SequencePatternConstruct has no matching behavior of its own -- it's exactly whatever its first
-		// element compiled to, so any dispatch gating of our own (if this sequence is itself a
-		// chain candidate) belongs on that first element's own node instead; safe to propagate
-		// directly (no aliasOrPassThrough wrapper needed) since `patterns.get(0)` is exclusively
-		// owned by this SequencePatternConstruct and hasn't been compiled by anyone else yet.
+		// No matching behavior of its own: it is whatever its first element compiled to, so our dispatch gating
+		// goes on that element (safe to propagate directly: it is exclusively ours and not yet compiled).
 		patterns.get(0).dispatchEntrySet = dispatchEntrySet;
 		patterns.get(0).dispatchFailedEntry = dispatchFailedEntry;
-		// Compile tail-to-front: the last element's next is this sequence's own next, and each
-		// earlier element's next is the element right after it (already compiled by the time we
-		// get to it).
+		// Compile tail-to-front: the last element's next is ours, each earlier one's is the element after it.
 		PatternConstruct tail = next();
 		for (int i = patterns.size() - 1; i >= 0; i--) {
 			PatternConstruct part = patterns.get(i);

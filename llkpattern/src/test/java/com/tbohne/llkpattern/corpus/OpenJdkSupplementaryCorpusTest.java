@@ -9,8 +9,8 @@ import org.junit.runners.Parameterized.Parameters;
  * (non-BMP code points and, deliberately, some unpaired-surrogate inputs; see {@link
  * OpenJdkBmpCorpusTest} for the BMP-only cousin). Golden file generated via {@code
  * ./tools/scrape_openjdk_regex.py supplementary} + {@code ./gradlew
- * :llkpattern:generateCorpus -Punescape=openjdk} -- see CorpusGenerator's javadoc and
- * documents/remaining_work.md for the full pipeline and how to regenerate.
+ * :llkpattern:generateCorpus -Punescape=openjdk} -- see CorpusGenerator's javadoc
+ * for how to regenerate.
  */
 public class OpenJdkSupplementaryCorpusTest extends ScrapedCorpusTestBase {
   public OpenJdkSupplementaryCorpusTest(GoldenRow row) {

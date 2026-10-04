@@ -5,6 +5,17 @@ import com.tbohne.llkpattern.Matcher;
 
 
 
+/**
+ * {@code \b}/{@code \B}. Unlike other constructs, this depends on the character just BEFORE the
+ * current position as well as the one at/after it (design.md "Boundary matching"). The general
+ * case compares the word-ness of {@code peekPrevious()} and {@code peeked}, but \b/\B often sits
+ * next to a statically always-word or always-non-word literal or class, so only ONE side needs
+ * checking at match time.
+ *
+ * <p>{@code WordBoundaryPatternConstruct.buildMatcher()} does that classification, folding the
+ * fully known case into a compile error or a no-op (never constructing one of these); this class
+ * interprets whichever of the two enums below isn't {@code Unchecked}.
+ */
 final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 	/** Whether {@code matchBody()} needs to independently check {@code matcher.peekPrevious()}. */
 	enum PriorWordBoundaryMatchType {
@@ -13,12 +24,8 @@ final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstr
 		PriorMustBeNonWord
 	}
 
-	/**
-	 * Whether/how {@code matchBody()} needs to check {@code peeked} -- either against a fixed
-	 * word-ness (when the OTHER side, the preceding character, is statically known instead), or
-	 * against {@code matcher.peekPrevious()}'s actual word-ness (when neither side is statically
-	 * known).
-	 */
+	/** How {@code matchBody()} checks {@code peeked}: against a fixed word-ness (the preceding char is
+	 *  statically known) or against {@code peekPrevious()}'s (neither is). */
 	enum PeekWordBoundaryMatchType {
 		Unchecked,
 		PeekMustBeWord,
@@ -41,9 +48,8 @@ final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstr
 		super(owner, owner.next().matcher());
 		if (priorMustBeWord == PriorWordBoundaryMatchType.Unchecked
 				&& peekMustBeWord == PeekWordBoundaryMatchType.Unchecked) {
-			// WordBoundaryPatternConstruct.buildMatcher() never builds one of these with both sides
-			// Unchecked -- that's the fully-statically-known case, resolved at compile time into
-			// a compile error or a no-op pass-through instead of a WordBoundaryMatcherConstruct.
+			// buildMatcher() never builds one with both sides Unchecked (the fully known case is a
+			// compile error or no-op).
 			throw new IllegalStateException(
 					"WordBoundaryMatcherConstruct built with neither side checked");
 		}
@@ -53,19 +59,15 @@ final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstr
 		this.isWordBoundary = isWordBoundary;
 	}
 
-	// Static, with `wordSet` passed as a parameter, rather than an instance method reading
-	// `this.wordSet` -- part of the same experiment as ArrayCodePointSet#floorIndex (see its own
-	// doc); no measurable difference found here either (see notes.md's dated entry).
+	// Static with wordSet as a parameter (the ArrayCodePointSet#floorIndex experiment): no
+	// measurable difference, see notes.md.
 	static boolean isWordChar(CodePointSet wordSet, int codePoint) {
 		return codePoint >= 0 && wordSet.contains(codePoint);
 	}
 
 	@Override
 	boolean matchBody(Matcher matcher, int peeked) {
-		// peekPrevious() is only actually called when some check below needs it -- checkPrior
-		// is exactly that: either the prior side has a fixed target of its own, or the peek
-		// side needs to compare against it. checkPeek is the mirror image, for symmetry/clarity
-		// (peeked itself is already available for free, but isWordChar(peeked) is not free).
+		// peekPrevious() is only called when a check below needs it.
 		int ahead = matcher.peekForBoundary();
 		if (ahead == -1) {
 			// java.util.regex's Bound looks at the character after the position even when this
@@ -108,12 +110,7 @@ final class WordBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstr
 		return next.match(matcher, peeked);
 	}
 
-	/**
-	 * As {@link #matchBody}, but only the "does \b/\B hold here" question -- no {@code hitEnd}/
-	 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
-	 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
-	 * logic.
-	 */
+	// Side-effect-free "does it hold here" predicate; see ZeroWidthAssertionGuard.
 	@Override
 	public boolean holdsHere(Matcher matcher, int peeked) {
 		int ahead = matcher.peekForBoundary();

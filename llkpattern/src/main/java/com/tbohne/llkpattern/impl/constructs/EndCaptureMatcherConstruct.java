@@ -14,11 +14,8 @@ final class EndCaptureMatcherConstruct extends MatcherConstruct {
 
 	@Override
 	boolean matchBody(Matcher matcher, int peeked) {
-		// Just records the end index -- no substring materialized here anymore. The captured
-		// text is built lazily by Matcher#group(int), only if a caller actually asks for it (see
-		// allocation sampling in benchmarks/Intel-i7-9750H_llkMatch_alloc_sampling.txt), and
-		// BackReferenceMatcherConstruct above compares directly against these indices without
-		// ever needing a String/CharSequence view at all.
+		// Records only the end index: Matcher#group(int) builds the text lazily, and
+		// BackReferenceMatcherConstruct compares against these indices directly (alloc sampling).
 		matcher.captureGroups[captureConstructIndex * 2 + 1] = matcher.pos;
 		return next.match(matcher, peeked);
 	}

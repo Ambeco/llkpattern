@@ -4,15 +4,18 @@ import com.tbohne.llkpattern.Matcher;
 
 import java.util.List;
 
+/**
+ * A loop's "stop iterating" node, reached when the body chain didn't match or {@link
+ * LoopMatcherConstruct} forced a stop after {@code max}. Enforces {@code min} (failing if too few
+ * iterations happened) and on success resets the shared counter before dispatching on. Never gated:
+ * every code-point decision lives in the body chain's own entry checks. See design.md's
+ * "Quantifier/loop compilation".
+ */
 final class LoopExitMatcherConstruct extends MatcherConstruct {
 	final int quantifiableIndex;
 	final int min;
-	// True iff the loop's TRUE min (before ReluctantLoopMatcherConstruct's own "+1" counting
-	// shift, if this exit belongs to a reluctant-safe loop) is 0 -- kept as its own field, rather
-	// than inferred from `min == 0` directly, because `min` itself may already be shifted (see
-	// QuantifiablePatternConstruct.buildLoopMatcher), and exitIsPureEnd needs to ask about the real,
-	// unshifted quantifier semantics regardless of which counting convention this exit's owning
-	// loop happens to use for its own runtime check below.
+	// Whether the loop's TRUE min is 0; `min` itself may be shifted by ReluctantLoopMatcherConstruct's
+	// +1 counting, and collectExitAssertionChain needs the unshifted semantics.
 	private final boolean minIsZero;
 
 	LoopExitMatcherConstruct(int flags, int quantifiableIndex, int min, boolean minIsZero, MatcherConstruct next) {
@@ -27,9 +30,8 @@ final class LoopExitMatcherConstruct extends MatcherConstruct {
 		if (matcher.quantifiableCounts[quantifiableIndex] < min) {
 			return false;
 		}
-		// Never backtracks, so a failed attempt aborts the whole match rather than retrying
-		// with stale counter state -- this reset (only on the successful exit path) is enough
-		// to guarantee the slot is already 0 whenever this loop is next freshly (re-)entered.
+		// Never backtracks, so a failed attempt aborts the whole match; resetting only on this
+		// successful exit guarantees the slot is 0 whenever the loop is next entered.
 		matcher.quantifiableCounts[quantifiableIndex] = 0;
 		return next.match(matcher, peeked);
 	}

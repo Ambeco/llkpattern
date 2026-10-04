@@ -43,7 +43,7 @@ import java.util.Optional;
  * really means "llk didn't run cleanly" -- it can just as easily be a *correct* LL(1)-ambiguity
  * rejection (which should be retagged {@code EXPECTED_DIVERGENCE} by hand) as an actually-missing
  * feature. A human pass over every non-{@code AGREES} row is required before trusting the status
- * column; see documents/remaining_work.md.
+ * column.
  *
  * <p>Usage: {@code ./gradlew :llkpattern:generateCorpus -Pinput=<intermediate.tsv>
  * -Poutput=<golden.tsv> -Pmode=MATCHES|LOOKING_AT|FIND}

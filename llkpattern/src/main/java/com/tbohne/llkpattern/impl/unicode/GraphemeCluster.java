@@ -91,13 +91,9 @@ public final class GraphemeCluster {
 		return OTHER;
 	}
 
-	/**
-	 * The next extended grapheme cluster boundary in {@code src}, starting from {@code off} (which
-	 * is assumed to already be a boundary) and never scanning past {@code limit} -- a direct port
-	 * of {@code jdk.internal.util.regex.Grapheme#nextBoundary}. A forward-only scan, so it fits
-	 * this engine's single-pass model with no architectural change: see {@code
-	 * GraphemeClusterMatcherConstruct}.
-	 */
+	// The next extended grapheme cluster boundary in src from off (assumed to be a boundary), never scanning past
+	// limit: a direct port of jdk.internal.util.regex.Grapheme#nextBoundary. Forward-only, so it fits the
+	// single-pass model (see GraphemeClusterMatcherConstruct).
 	public static int nextBoundary(String src, int off, int limit) {
 		int ch0 = src.codePointAt(off);
 		int ret = off + Character.charCount(ch0);
@@ -162,34 +158,18 @@ public final class GraphemeCluster {
 		return -1;
 	}
 
-	/**
-	 * Whether there's an extended grapheme cluster boundary immediately before {@code pos} in
-	 * {@code src} -- i.e. between {@code Character.codePointBefore(src, pos)} and {@code
-	 * Character.codePointAt(src, pos)} -- given that {@code floor} is as far back as this may read
-	 * (mirrors {@code Matcher#peekPrevious}'s own {@code lookFloor} bound). Callers must ensure
-	 * there IS a code point immediately before {@code pos} (i.e. {@code pos > floor}) and one AT
-	 * {@code pos}; the true-start/true-end edge cases (always a boundary) are the caller's job, the
-	 * same split {@code WordBoundaryMatcherConstruct} already uses for {@code \b}/{@code \B}.
-	 *
-	 * <p>Unlike {@link #nextBoundary}, this is a genuinely LOCAL, self-contained check -- it never
-	 * needs an assumed "last known boundary" anchor the way JDK 27's own {@code
-	 * Pattern.GraphemeBound} does (rescanning forward from {@code matcher.last} on every check):
-	 * every rule below either depends only on the immediately adjacent pair (the common case, GB3-
-	 * GB9b, via {@link #RULES}) or is answered by a BOUNDED backward walk through one specific kind
-	 * of run (GB9c's Indic-conjunct Extend/Linker chain, GB11's emoji-ZWJ Extend chain, GB12/13's
-	 * regional-indicator run) -- see design.md's "Extended grapheme clusters" section for why only
-	 * these three rules need more than the adjacent pair, and the worked regional-indicator example
-	 * there. Checked in the same precedence JDK's own {@code nextBoundary} loop uses (GB9c, then
-	 * GB11, then GB12/13, then the plain pairwise table) -- the three special cases can't actually
-	 * overlap (a regional indicator, a ZWJ, and a Consonant are disjoint GCB/InCB classes), so the
-	 * order only matters for matching JDK's own structure, not for correctness.
-	 */
+	// Whether there is a boundary immediately before pos in src (between codePointBefore and codePointAt), with
+	// floor as far back as this may read (like Matcher#peekPrevious's lookFloor). Callers ensure pos > floor and a
+	// code point AT pos; the always-boundary true start/end are the caller's job, as with \b.
+	//
+	// Unlike nextBoundary, this is a LOCAL check needing no assumed "last boundary" anchor (JDK 27's
+	// Pattern.GraphemeBound rescans from matcher.last): rules depend on the adjacent pair (GB3-GB9b, via RULES) or
+	// a BOUNDED backward walk through one kind of run (GB9c Indic-conjunct chain, GB11 emoji-ZWJ chain, GB12/13
+	// regional-indicator run); see design.md "Extended grapheme clusters". Checked in JDK's precedence (GB9c,
+	// GB11, GB12/13, then the pair table); the special cases are disjoint, so order only mirrors JDK's structure.
 	public static boolean isBoundary(CharSequence src, int pos, int floor) {
-		// A position splitting a surrogate pair is never a boundary -- checked before any type
-		// classification, exactly mirroring JDK 27's Pattern.GraphemeBound#match (a lone surrogate
-		// would otherwise classify as GCB_CONTROL on both sides, which the plain pairwise table
-		// treats as an unconditional break -- see GB4/GB5 in RULES -- so this guard is load-bearing,
-		// not just an optimization).
+		// A position splitting a surrogate pair is never a boundary, checked first: a lone surrogate would classify as
+		// GCB_CONTROL on both sides, which RULES treats as a break (GB4/GB5), so this guard is load-bearing.
 		if (Character.isHighSurrogate(src.charAt(pos - 1)) && Character.isLowSurrogate(src.charAt(pos))) {
 			return false;
 		}
@@ -200,10 +180,8 @@ public final class GraphemeCluster {
 		int t0 = getType(prevCp);
 		int t1 = getType(nextCp);
 
-		// GB9c: Indic conjunct break -- "Consonant [Extend|Linker]* Linker [Extend|Linker]* x
-		// Consonant". `pos` is the "x" position iff `nextCp` is a Consonant and the run of
-		// Extend/Linker code points immediately before `pos` (which must include at least one
-		// Linker) is itself immediately preceded by a Consonant.
+		// GB9c: "Consonant [Extend|Linker]* Linker [Extend|Linker]* x Consonant": pos is the x iff nextCp is a
+		// Consonant and the Extend/Linker run before pos (with at least one Linker) is preceded by a Consonant.
 		if (isConsonant(nextCp) && (isLinker(prevCp) || isExtend(prevCp))
 				&& indicConjunctChainStartsAtConsonant(src, pos, floor)) {
 			return false;
@@ -215,10 +193,8 @@ public final class GraphemeCluster {
 			return false;
 		}
 
-		// GB12/13: regional indicator (flag emoji) pairs -- don't break between two RIs iff an odd
-		// number of RIs immediately precede this position (see design.md's worked example: the
-		// SAME adjacent (RI, RI) pair is a boundary between two flags but not within one, so this
-		// can never be answered by the pair alone).
+		// GB12/13: no break between two RIs iff an odd number of RIs precede pos. The same adjacent (RI, RI) pair is
+		// a boundary between two flags but not within one, so the pair alone can't answer it (design.md).
 		if (t0 == RI && t1 == RI) {
 			return countConsecutiveRIBefore(src, pos, floor) % 2 == 0;
 		}
@@ -226,13 +202,9 @@ public final class GraphemeCluster {
 		return RULES[t0][t1];
 	}
 
-	/**
-	 * Walks backward from {@code pos} through the {@code [Extend|Linker]*} run GB9c allows, and
-	 * reports whether the code point immediately before that run is a Consonant AND at least one
-	 * Linker appeared in the run -- i.e. whether {@code pos} is the "x" position in "Consonant
-	 * [Extend|Linker]* Linker [Extend|Linker]* x". Bounded by the run's own actual length, same
-	 * complexity class as {@link #countConsecutiveRIBefore}/{@link #zwjChainStartsWithPictographic}.
-	 */
+	// Walks back from pos through the [Extend|Linker]* run GB9c allows; true iff the code point before the run is a
+	// Consonant AND the run held a Linker. Bounded by the run's length, like
+	// countConsecutiveRIBefore/zwjChainStartsWithPictographic.
 	private static boolean indicConjunctChainStartsAtConsonant(CharSequence src, int pos, int floor) {
 		int i = pos;
 		boolean linkerSeen = false;
@@ -248,12 +220,8 @@ public final class GraphemeCluster {
 		return false; // Ran off the scannable region without finding the chain's leading Consonant.
 	}
 
-	/**
-	 * Walks backward from {@code pos} (the start of a ZWJ already confirmed by the caller) through
-	 * the {@code Extend*} run GB11 allows, and reports whether the code point immediately before
-	 * that run is {@code Extended_Pictographic} -- i.e. whether the ZWJ genuinely continues an
-	 * emoji sequence rather than merely preceding an unrelated pictograph.
-	 */
+	// Walks back from pos (the start of a ZWJ the caller confirmed) through the Extend* run GB11 allows; true iff the
+	// code point before it is Extended_Pictographic, i.e. the ZWJ continues an emoji sequence.
 	private static boolean zwjChainStartsWithPictographic(CharSequence src, int pos, int floor) {
 		int i = pos;
 		while (i > floor) {
@@ -270,11 +238,8 @@ public final class GraphemeCluster {
 		return false;
 	}
 
-	/**
-	 * The count of consecutive regional-indicator code points ending immediately before {@code
-	 * pos} -- exactly UAX #29's "number of RI characters before the break point" that GB12/13's
-	 * parity rule keys on.
-	 */
+	// Count of consecutive regional indicators ending immediately before pos: UAX #29's "number of RI characters
+	// before the break point" for GB12/13's parity rule.
 	private static int countConsecutiveRIBefore(CharSequence src, int pos, int floor) {
 		int i = pos;
 		int count = 0;

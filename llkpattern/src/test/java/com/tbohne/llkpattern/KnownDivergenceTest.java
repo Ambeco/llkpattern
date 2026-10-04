@@ -10,7 +10,7 @@ import org.junit.runners.JUnit4;
 
 /**
  * Pins the documented differences from java.util.regex (README's "Intentional differences") and
- * the syntax gaps still open (remaining_work.md), so a change in either direction is noticed.
+ * the syntax gaps still open, so a change in either direction is noticed.
  */
 @RunWith(JUnit4.class)
 public class KnownDivergenceTest {
@@ -121,7 +121,7 @@ public class KnownDivergenceTest {
   }
 
   // --- Syntax java.util.regex accepts and this engine doesn't. When one gets implemented, this test
-  // fails: move the pattern into AGREE_ON_COMPILING and drop it from remaining_work.md.
+  // fails: move the pattern into AGREE_ON_COMPILING.
 
   private static final String[] OPEN_GAPS = {
   };

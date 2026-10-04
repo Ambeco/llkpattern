@@ -8,11 +8,8 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 /**
- * CASE_INSENSITIVE/UNICODE_CASE and inline flag toggle coverage. All were entirely broken until
- * 2026-09-06 -- see remaining_work.md's "CASE_INSENSITIVE/UNICODE_CASE, inline flag toggles, and
- * DOTALL" entry for the history, and the two follow-up entries it left behind (a bare "(?s)"
- * breaking the surrounding sequence, and inline flag toggles not actually locally scoping
- * anything) -- both now also fixed, see the tests below.
+ * CASE_INSENSITIVE/UNICODE_CASE and inline flag toggle coverage, including a bare "(?s)" not breaking
+ * the surrounding sequence and "(?i:...)" scoping to just its group.
  */
 @RunWith(JUnit4.class)
 public class CaseInsensitiveTest {
@@ -132,10 +129,8 @@ public class CaseInsensitiveTest {
         PatternSyntaxException.class, () -> Ll1Pattern.compile("(?ii)abc"));
   }
 
-  // --- FIXED (2026-09-06): a bare flags-only group ("(?s)", no ":", no body) used to compile to
-  // an empty, un-parsed QuantifiedUnionPatternConstruct that broke the surrounding sequence -- find() on a pattern
-  // with nothing but literal text after it incorrectly returned false. See
-  // remaining_work.md/README.md; regression test added while fixing (found via corpus testing).
+  // --- A bare flags-only group ("(?s)", no ":", no body) once compiled to an empty construct that broke
+  // the surrounding sequence: find() on a pattern with only literal text after it returned false. ---
 
   @Test
   public void bareFlagsGroup_isZeroWidthNoOp() {
@@ -171,10 +166,8 @@ public class CaseInsensitiveTest {
     assertThat(Ll1Pattern.compile("(?s)(?s)abx").matcher("abx").matches(), is(true));
   }
 
-  // --- FIXED (2026-09-06): inline "(?i:...)" only ever mutated PatternParser's own `flags` field
-  // at parse time (affecting every construct parsed after it in the current scope), never actually
-  // scoping case-insensitivity to just the group at match time -- so "(?i:abc)def" wrongly made
-  // "def" case-insensitive too. See remaining_work.md/README.md.
+  // --- Inline "(?i:...)" must scope case-insensitivity to just the group at match time: it once only
+  // changed the parser's flags, so "(?i:abc)def" wrongly made "def" case-insensitive too. ---
 
   @Test
   public void inlineFlagGroup_scopesCaseInsensitivityToJustTheGroup() {

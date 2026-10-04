@@ -14,8 +14,7 @@ import org.junit.runners.JUnit4;
  * regardless of what immediately precedes it -- as opposed to {@link SurrogateMatchingTest}, which
  * covers supplementary code points in the INPUT being matched.
  *
- * <p>This targets the bug fixed 2026-09-14 (see remaining_work.md's former "HIGHEST PRIORITY"
- * entry, and {@code PatternParser#peek}'s own field doc): {@code PatternParser}'s {@code
+ * <p>This targets the bug fixed 2026-09-14 (see {@code PatternLexer#peek}'s field doc): {@code PatternParser}'s {@code
  * advance}/{@code advanceCodePoint} used to set {@code peek} via {@code pattern.charAt(index)},
  * reading only a lone surrogate half whenever a supplementary character sat at {@code index} --
  * {@code peek}'s very field type ({@code char}) couldn't hold a real supplementary code point at

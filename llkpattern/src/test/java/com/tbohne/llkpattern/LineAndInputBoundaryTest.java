@@ -165,10 +165,8 @@ public class LineAndInputBoundaryTest {
   }
 
   // --- A loop followed by a zero-width assertion, then a character the loop also accepts, is a
-  // genuine ambiguity (this engine never backtracks, so once the loop has consumed a character
-  // it can't un-consume it to let the assertion hold instead) and must be rejected at compile
-  // time, exactly like the boundary-free "a*a" case -- see remaining_work.md's former "A loop
-  // followed by a zero-width assertion..." entry. ---
+  // genuine ambiguity (no backtracking: a consumed character can't be un-consumed to let the assertion
+  // hold instead) and must be rejected at compile time, like the boundary-free "a*a". ---
 
   @Test
   public void loopFollowedByZeroWidthAssertionThenAcceptedChar_rejectedAtCompileTime() {
@@ -188,16 +186,14 @@ public class LineAndInputBoundaryTest {
     assertThat(Ll1Pattern.compile("a*\\bb").matcher("ab").matches(), is(false));
   }
 
-  // --- A greedy loop followed only by \B, or a MULTILINE ^/$, whose truth value can genuinely
-  // depend on how many iterations the loop just consumed, is ALSO a genuine LL(1) ambiguity, same
-  // family as the boundary-free "a*a" case above -- see remaining_work.md's former "\B-near-
-  // regionEnd match-result divergence"/"residual reluctant-loop-before-\B" entries (root-caused to
-  // this gap, not a regionEnd-specific bug). \b and a non-MULTILINE $ never admit a real interior
-  // exit character this way (see WordBoundaryPatternConstruct/LineBoundaryPatternConstruct's own
-  // admittedInteriorExitPeekSet docs), so they must keep compiling; possessive and reluctant loops
-  // are exempt too (see QuantifiablePatternConstruct#possessive/#buildLoopMatcher) since a possessive loop
-  // never backtracks in java.util.regex either, and a reluctant loop is instead fixed at match time
-  // -- see ReluctantQuantifierDifferentialTest/KnownDivergenceTest.
+  // --- A greedy loop followed only by \B, or a MULTILINE ^/$, whose truth can depend on how many
+  // iterations the loop just consumed, is ALSO an LL(1) ambiguity, like the boundary-free "a*a" (it
+  // explained the old \B-near-regionEnd divergences, which were not regionEnd-specific). \b and a
+  // non-MULTILINE $ never admit a real interior exit character this way (see each admittedInteriorExitPeekSet),
+  // so they must keep compiling; possessive and reluctant loops are exempt too (see
+  // QuantifiablePatternConstruct#possessive/#buildLoopMatcher): a possessive loop never backtracks in
+  // java.util.regex either, and a reluctant one is handled at match time (ReluctantQuantifierDifferentialTest,
+  // KnownDivergenceTest).
 
   @Test
   public void greedyLoopFollowedByPositionDependentAssertionThenPureEnd_rejectedAtCompileTime() {

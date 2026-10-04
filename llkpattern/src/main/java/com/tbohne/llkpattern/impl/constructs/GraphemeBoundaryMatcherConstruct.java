@@ -5,6 +5,14 @@ import com.tbohne.llkpattern.Matcher;
 
 
 
+/**
+ * {@code \b{g}} (see {@code GraphemeBoundaryPatternConstruct}, design.md "Extended grapheme
+ * clusters"). No statically-known-neighbor optimization: the general check always runs. Three
+ * positions skip {@code GraphemeCluster#isBoundary}, mirroring JDK 27's {@code
+ * Pattern.GraphemeBound}: the region start is always a boundary; past the region end is too, but
+ * also sets {@code hitEnd}/{@code requireEnd} (a longer suffix could always change the answer,
+ * unlike a one-code-point lookbehind); strictly between them the real check runs.
+ */
 final class GraphemeBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherConstruct {
 	GraphemeBoundaryMatcherConstruct(PatternConstruct owner) {
 		super(owner, owner.next().matcher());
@@ -29,12 +37,7 @@ final class GraphemeBoundaryMatcherConstruct extends ZeroWidthAssertionMatcherCo
 		return holds(matcher) && next.match(matcher, peeked);
 	}
 
-	/**
-	 * As {@link #matchBody}, but only the "does \b{g} hold here" question -- no {@code hitEnd}/
-	 * {@code requireEnd} side effects, no dispatch to {@code next}. See {@link
-	 * ZeroWidthAssertionGuard}'s own doc for why this duplicates rather than shares matchBody's
-	 * logic.
-	 */
+	// Side-effect-free "does it hold here" predicate; see ZeroWidthAssertionGuard.
 	@Override
 	public boolean holdsHere(Matcher matcher, int peeked) {
 		return holds(matcher);

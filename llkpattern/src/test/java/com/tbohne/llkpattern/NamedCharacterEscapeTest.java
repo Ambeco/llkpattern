@@ -49,7 +49,7 @@ public class NamedCharacterEscapeTest {
     for (String p : PATTERNS) {
       for (int flags : FLAGS) {
         if (p.startsWith("[^") && flags != 0) {
-          continue; // a negated class ignores CASE_INSENSITIVE for any member, not just \N{...}: see remaining_work.md
+          continue; // a negated class ignores CASE_INSENSITIVE for any member, not just \N{...}
         }
         for (String input : INPUTS) {
           String jdk = jdkFind(p, flags, input);

@@ -21,7 +21,7 @@ import java.util.Objects;
  * "EXPECTED_DIVERGENCE: ..."}, {@code "UNIMPLEMENTED: ..."}, {@code "UNEXPECTED: ..."}) — it is
  * NOT used as a test parameter or compared by the test; it exists purely so a human (or a future
  * pass) can see at a glance why a row's regex/llk columns differ, since TSV/JSON have no comment
- * syntax. See documents/remaining_work.md for the full scheme.
+ * syntax.
  *
  * <p>{@code originalPathologicalInput} is {@code ""} (the common case) unless {@link #input} is a
  * *simplified* stand-in for an input the scraped source actually used, because the original
@@ -30,8 +30,7 @@ import java.util.Objects;
  * want to pay for on every generator/test run, since the point of this corpus is comparing match
  * *behavior*, not re-benchmarking java.util.regex's backtracking worst case). When non-empty, it
  * holds the real original input the source used, so the substitution is traceable rather than a
- * silent edit. See {@link CorpusGenerator}'s timeout/simplification logic and
- * documents/remaining_work.md.
+ * silent edit. See {@link CorpusGenerator}'s timeout/simplification logic.
  *
  * <p>{@code unicodeSensitive} is {@code ""} (the common case) or {@code "true"}. A true row's
  * outcome depends on Unicode data (case folding, emoji/grapheme boundaries, canonical equivalence,

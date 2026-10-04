@@ -7,15 +7,18 @@ import com.tbohne.llkpattern.PatternSyntaxException;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/**
+ * {@code \b} (word boundary) / {@code \B}. Separate from {@link BoundaryPatternConstruct} because
+ * it is a real implementation with a compile-time optimization the other boundary types don't
+ * need. See design.md's "Boundary matching".
+ */
 public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatternConstruct {
 	final String pattern;
 	final boolean isWordBoundary; // true: \b, false: \B
 
-	// The set of code points that could be the last one consumed by whatever immediately
-	// precedes this boundary in its enclosing SequencePatternConstruct, if statically known -- set by
-	// SequencePatternConstruct.buildEntryMap (via lastCharSet(), below) before compile() runs; null (the
-	// default, e.g. when this boundary opens its SequencePatternConstruct, or isn't in one at all) means "not
-	// statically known", which is always a safe fallback, just a missed optimization.
+	// Code points that could be the last one consumed just before this boundary, if statically
+	// known; set by SequencePatternConstruct.buildEntryMap before compile(). Null means unknown
+	// (always safe, just a missed optimization).
 	@Nullable CodePointSet priorCharSet;
 
 	public WordBoundaryPatternConstruct(String pattern, int startIndex, int endIndex, boolean isWordBoundary) {
@@ -32,8 +35,7 @@ public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 
 	/** True if every code point in {@code a} is also in {@code b}. */
 	private static boolean isSubsetOf(CodePointSet a, CodePointSet b) {
-		// first(), not entrySet(), so a violation short-circuits instead of scanning the rest of
-		// `a` regardless -- see CodePointSet#first's own doc.
+		// first(), not entrySet(), so a violation short-circuits.
 		return !a.first((min, max) -> !b.containsAll(min, max));
 	}
 
@@ -46,10 +48,6 @@ public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 		if (set == null) {
 			return Wordness.UNKNOWN;
 		}
-		// Computed directly as subset/disjoint checks against wordSet, rather than via
-		// wordSet.complement() the way the old RangeSet#enclosesAll version did -- no need to
-		// materialize a complement just to test disjointness; it would still be correct here,
-		// just wasted work for a query this cheap already.
 		if (isSubsetOf(set, wordSet)) {
 			return Wordness.WORD;
 		}
@@ -59,18 +57,10 @@ public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 		return Wordness.UNKNOWN;
 	}
 
-	/**
-	 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s
-	 * {@code checkAssertions} doc. The set of peek code points for which a \b/\B sitting right
-	 * after a loop body could hold, given that the body's own last-consumed character is
-	 * somewhere in {@code bodyLastCharSet} -- i.e. the code points an interior exit through this
-	 * assertion could be ambiguous with the loop simply continuing on. Returns {@code null}
-	 * ("not statically known", same safe fallback as {@code lastCharSet}/{@code classify}) only
-	 * when {@code bodyLastCharSet} itself is {@code null}; a non-null but WORD-ness-mixed
-	 * {@code bodyLastCharSet} still resolves, to {@link PatternConstruct#universalCodePointSet}
-	 * (since some prior character in it always matches whatever word-ness the peek character
-	 * has, \b/\B can then hold for ANY peek).
-	 */
+	// Loop-ambiguity helper (see PatternConstruct#skipZeroWidthEntrySet): peek code points for
+	// which a \b/\B right after a loop body could hold, given the body's last char is in
+	// bodyLastCharSet. Null only if bodyLastCharSet is null; a word-ness-mixed set resolves to the
+	// universal set, since some prior char always matches whatever word-ness peek has.
 	@Override
 	final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
 		if (bodyLastCharSet == null) {
@@ -89,15 +79,10 @@ public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 
 	@Override
 	void buildMatcher() {
-		// See design.md's "Boundary matching" section and the class doc for
-		// WordBoundaryMatcherConstruct for the full optimization rationale. In brief: both sides
-		// of the boundary (the character just consumed, and the one about to be) are classified
-		// as always-word/always-non-word/unknown at compile time; whichever side is statically
-		// known doesn't need to be checked at match time at all.
+		// Both sides are classified always-word/always-non-word/unknown at compile time, and a
+		// statically known side needs no match-time check (design.md "Boundary matching").
 		CodePointSet wordSet = RegexCharacterClass.w.get(flags);
 		Wordness prior = classify(priorCharSet, wordSet);
-		// next's own entry-point map is already exactly a plain CodePointSet -- no separate
-		// RangeSet needs building here any more.
 		CodePointSet peekRanges = next().getEntryElse() == null ? next().getEntryPointMap() : null;
 		Wordness peek = classify(peekRanges, wordSet);
 
@@ -130,8 +115,7 @@ public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 					? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeOppositePrior
 					: WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeSameAsPrior;
 		} else if (peek == Wordness.UNKNOWN) {
-			// prior is statically known -- fold it into a fixed direction for the (already
-			// available, no extra call needed) peeked character; never need matcher.peekPrevious().
+			// prior is known: fold it into a fixed direction for the peeked char, so no peekPrevious().
 			boolean priorIsWord = (prior == Wordness.WORD);
 			boolean wantsWordPeek = isWordBoundary != priorIsWord;
 			priorMatchType = WordBoundaryMatcherConstruct.PriorWordBoundaryMatchType.Unchecked;
@@ -139,8 +123,7 @@ public final class WordBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 					? WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustBeWord
 					: WordBoundaryMatcherConstruct.PeekWordBoundaryMatchType.PeekMustNotBeWord;
 		} else {
-			// peek is statically known -- fold it into a fixed direction for matcher.peekPrevious(),
-			// which is the only case that still needs the extra backward-looking call.
+			// peek is known: fold it into a fixed direction for peekPrevious(), the only case still needing it.
 			boolean peekIsWord = (peek == Wordness.WORD);
 			boolean wantsWordPrior = isWordBoundary != peekIsWord;
 			priorMatchType = wantsWordPrior

@@ -15,7 +15,7 @@ import org.junit.runners.JUnit4;
 
 /**
  * {@code (?<=X)}/{@code (?<!X)}, restricted to a body {@code X} that always matches exactly one
- * code point -- see design.md's "Boundary matching" section and remaining_work.md. A direct
+ * code point -- see design.md's "Boundary matching" section. A direct
  * generalization of {@code \b}/{@code \B}'s own single-code-point {@code peekPrevious()} check
  * (see WordBoundaryTest for that construct's own coverage); general lookbehind and all lookahead
  * remain permanently rejected (see KnownDivergenceTest).

@@ -15,7 +15,7 @@ import org.junit.runners.JUnit4;
 public class CanonEqTest {
   @Rule public final UnicodeDriftRule unicodeDrift = new UnicodeDriftRule();
 
-  // Deliberately absent, each a known difference (see CanonEq* tests below and remaining_work.md):
+  // Deliberately absent, each a known difference (see the CanonEq* tests below):
   //  - "\u00e9+", "e\u0301*": a multi-code-point loop body that starts to match and then fails is not
   //    retried as fewer iterations here (same as "(ab)+" on "abac" without CANON_EQ).
   //  - "(?:\u00e9|\u00e8)": both branches start with 'e' -- an LL(1) ambiguity, rejected.

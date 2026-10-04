@@ -8,6 +8,11 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/**
+ * {@code ^} (line begin) / {@code $} (line end). Separate from {@link BoundaryPatternConstruct}
+ * because it has its own logic (MULTILINE-aware line-terminator scanning). See design.md's
+ * "Boundary matching".
+ */
 public final class LineBoundaryPatternConstruct extends ZeroWidthAssertionPatternConstruct {
 	public final boolean isLineBegin; // true: ^, false: $
 
@@ -21,18 +26,10 @@ public final class LineBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 		new LineBoundaryMatcherConstruct(this, isLineBegin);
 	}
 
-	/**
-	 * Only ever contributes anything under {@code MULTILINE} (a non-MULTILINE ^/$ only ever
-	 * holds at the true input edges, never at an interior loop-exit position). {@code $} holds
-	 * whenever the PEEK character itself is a line terminator, regardless of what the loop
-	 * body's last-consumed character was, so its admitted set is exactly the terminator-starting
-	 * code points, unconditionally. {@code ^} holds whenever the PRIOR character was a line
-	 * terminator, regardless of peek, so its admitted set is "any code point" whenever the body
-	 * could plausibly have just consumed one, and empty (no interior exit possible via ^)
-	 * otherwise; returns {@code null} ("not statically known") when {@code bodyLastCharSet}
-	 * itself is {@code null}, same safe fallback {@code WordBoundaryPatternConstruct}'s own version
-	 * uses.
-	 */
+	// Contributes only under MULTILINE (otherwise ^/$ hold only at the true input edges). $ holds
+	// whenever PEEK is a line terminator, so its set is the terminator starts. ^ holds whenever the
+	// PRIOR char was a terminator, so its set is "any" if the body could have just consumed one,
+	// else empty. Null if bodyLastCharSet is null.
 	@Override
 	final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
 		if ((flags & Ll1Pattern.MULTILINE) == 0) {
@@ -48,14 +45,8 @@ public final class LineBoundaryPatternConstruct extends ZeroWidthAssertionPatter
 		return bodyLastCharSet.intersects(terminatorStarts) ? universalCodePointSet() : null;
 	}
 
-	/**
-	 * The code points that can BEGIN a line terminator (matching {@code MatcherConstruct}'s own
-	 * runtime {@code lineTerminatorLengthAt}/{@code lineTerminatorLengthBefore} scans, honoring
-	 * {@code UNIX_LINES}) -- sufficient for a single-code-point admitted-peek-set check, since
-	 * every terminator this engine recognizes ({@code \n}, {@code \r}, {@code "\r\n"} as one
-	 * unit, {@code \u0085}, {@code  }, {@code  }) is uniquely identified by its own
-	 * first code point.
-	 */
+	// Code points that can BEGIN a line terminator (honoring UNIX_LINES): enough here, since every
+	// recognized terminator, including "\r\n", is identified by its first code point.
 	private static CodePointSet lineTerminatorStartCodePoints(int flags) {
 		CodePointSetBuilder result = CodePointSetBuilder.create();
 		result.add('\n');

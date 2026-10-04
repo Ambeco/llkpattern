@@ -10,7 +10,7 @@ import org.junit.runners.JUnit4;
 /**
  * All 13 POSIX classes (NamedCharClass.java's Source.POSIX entries) and every
  * java.lang.Character-method-backed class (Source.Java entries), enumerated directly from
- * NamedCharClass.java rather than from memory/docs per remaining_work.md's instruction. Each test
+ * NamedCharClass.java rather than from memory/docs. Each test
  * exercises real matches() against a member and a non-member.
  */
 @RunWith(JUnit4.class)

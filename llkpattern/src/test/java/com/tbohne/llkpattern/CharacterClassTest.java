@@ -105,17 +105,14 @@ public class CharacterClassTest {
   @Test
   public void unbracketed_intersectionRhs_stillIntersects() {
     // java.util.regex treats "&&" as the intersection operator even without brackets around the
-    // right-hand run of members -- verified against a real JDK, see remaining_work.md's "&&" FIXED
-    // entry. Confirms this project's fix for that behaves the same way.
+    // right-hand run of members (verified against a real JDK).
     Ll1Pattern p = Ll1Pattern.compile("[" + A + "-" + Z + "&&" + A + E + I + O + U + "]");
     assertThat(p.matcher(E).matches(), is(true));
     assertThat(p.matcher(B).matches(), is(false));
   }
 
-  // --- A ']' as the very first character of a class (right after "[" or "[^") is a literal
-  // member, not the closing bracket -- java.util.regex's standard bracket-expression convention
-  // (POSIX-derived), matching "[]b]"/"[^]b]" against a literal ']'/'b' -- see
-  // remaining_work.md's former entry on this. ---
+  // --- A ']' as the very first character of a class (right after "[" or "[^") is a literal member,
+  // not the closing bracket, as in java.util.regex: "[]b]"/"[^]b]". ---
 
   @Test
   public void leadingCloseBracket_isLiteralMember() {
@@ -143,8 +140,8 @@ public class CharacterClassTest {
     assertThat(p.matcher("]c").matches(), is(false));
   }
 
-  // --- An unmatched ']' OUTSIDE any bracket expression is a plain literal character in
-  // java.util.regex, not a syntax error -- see remaining_work.md's former entry on this. ---
+  // --- An unmatched ']' OUTSIDE any bracket expression is a plain literal in java.util.regex, not a
+  // syntax error. ---
 
   @Test
   public void unmatchedCloseBracket_outsideClass_isLiteral() {

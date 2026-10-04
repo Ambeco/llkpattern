@@ -61,10 +61,9 @@ public final class MatchRunner {
   }
 
   /**
-   * Sanity check demanded by the project owner (2026-09-06), before investigating the
-   * lone-surrogate-vs-{@code java.util.regex} divergence noted in remaining_work.md any further:
-   * confirm {@code row.input} still is what the golden file says it is, right before either
-   * engine ever sees it, rather than assuming it. Two checks:
+   * Confirms {@code row.input} still is what the golden file says it is, right before either
+   * engine sees it, rather than assuming it (added while investigating lone-surrogate divergences
+   * from {@code java.util.regex}). Two checks:
    *
    * <ol>
    *   <li>{@code row.input} contains no U+FFFD (the Unicode replacement character) -- if some step

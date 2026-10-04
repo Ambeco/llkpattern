@@ -6,6 +6,17 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/**
+ * Shared base for the zero-width assertion types (word boundary, line boundary, lookbehind,
+ * grapheme boundary) whose {@code skipZeroWidthEntrySet} is identical: see through to {@code
+ * next}'s entry set, folding in {@link #admittedInteriorExitPeekSet}. {@code
+ * BoundaryPatternConstruct} has no "admitted" concept, so it stays a direct {@code
+ * PatternConstruct} subclass.
+ *
+ * <p>EXPERIMENTAL (2026-09-27): merges four identical overrides into one {@code final} method to
+ * reduce that call site's megamorphism. Whether ART's inline caching benefits was to be measured;
+ * see notes.md.
+ */
 abstract class ZeroWidthAssertionPatternConstruct extends PatternConstruct {
 	ZeroWidthAssertionPatternConstruct(int startIndex, int endIndex) {
 		super(startIndex, endIndex);
@@ -42,13 +53,8 @@ abstract class ZeroWidthAssertionPatternConstruct extends PatternConstruct {
 		return admitted == null ? rest : union(rest, admitted);
 	}
 
-	/**
-	 * The set of peek code points for which a loop's interior exit through this assertion could
-	 * be ambiguous with the loop body simply continuing on, given that the body's own
-	 * last-consumed character is somewhere in {@code bodyLastCharSet} ({@code null} if that's
-	 * not statically known, in which case this must also return {@code null} -- "not statically
-	 * known" is always a safe fallback, just a missed optimization). See each override's own doc
-	 * for its own construct-specific reasoning.
-	 */
+	// Peek code points for which a loop's interior exit through this assertion could be ambiguous
+	// with the body continuing, given the body's last-consumed character is in bodyLastCharSet.
+	// Null (unknown) in, null out: always a safe fallback, just a missed optimization.
 	abstract @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet);
 }

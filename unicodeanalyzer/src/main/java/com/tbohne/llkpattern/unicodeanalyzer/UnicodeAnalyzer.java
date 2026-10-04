@@ -50,13 +50,10 @@ public class UnicodeAnalyzer {
 	}
 
 	// Extended grapheme cluster break (UAX #29) classification, ported from JDK 27's
-	// jdk.internal.util.regex.Grapheme#getType so \X/\b{g} see the same JDK-27-pinned Unicode data
-	// as every other named class here (see UnicodePredicates.java's own doc and README's "Unicode
-	// data is currently pinned to JDK 27's tables" entry). EXTENDED_PICTOGRAPHIC isn't emitted here
-	// -- it's already the generated isExtendedPictographic predicate above, and getType() itself
-	// checks Character.isExtendedPictographic first, before any of the classification below, so
-	// callers must do the same. OTHER isn't emitted either: it's the default for every code point
-	// this method doesn't otherwise classify, i.e. "member of none of the GCB_* sets".
+	// jdk.internal.util.regex.Grapheme#getType so \X/\b{g} see the same JDK-27-pinned data as every other class
+	// (README "Unicode data is currently pinned to JDK 27's tables"). EXTENDED_PICTOGRAPHIC and OTHER aren't
+	// emitted: the former is the generated isExtendedPictographic predicate (getType checks it first, so callers
+	// must too), the latter the default for everything else.
 	private static final int GCB_OTHER = 0;
 	private static final int GCB_CR = 1;
 	private static final int GCB_LF = 2;
@@ -236,10 +233,8 @@ public class UnicodeAnalyzer {
 	}
 
 	public static void intPredicate(String name, IntPredicate predicate) {
-		// Emitted as its own method (rather than inline in the field initializer) so that this
-		// field's builder chain doesn't count against the class's single shared <clinit> method,
-		// which has a 64KB bytecode limit that the combined initializers of ~1000 fields exceed.
-		// See UnicodePredicates.java, and remaining_work.md "code too large".
+		// Its own method, not inline in the field initializer: ~1000 fields' initializers would exceed the shared
+		// <clinit>'s 64KB bytecode limit (see UnicodePredicates.java).
 		List<Range<Integer>> ranges = new ArrayList<>();
 		int i=0;
 		while (i<=0x10FFFF) {
@@ -367,9 +362,7 @@ public class UnicodeAnalyzer {
 	}
 
 	public static void printRanges(String name, Set<Range<Integer>> rangeSet) {
-		// rangeSet comes out of a HashMap/HashSet, so it arrives in no particular order --
-		// CodePointMap.MutableCodePointMap#appendSorted requires ascending min (see
-		// printCodePointMap), unlike the old ImmutableRangeSet.Builder this replaced.
+		// rangeSet comes out of a HashSet in no particular order, and appendSorted needs ascending min.
 		List<Range<Integer>> ranges = new ArrayList<>(rangeSet);
 		ranges.sort(Comparator.comparing(Range::lowerEndpoint));
 		printCodePointMap(name, ranges);

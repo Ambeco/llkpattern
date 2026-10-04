@@ -70,24 +70,15 @@ import com.tbohne.llkpattern.Ll1Pattern;
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class AndroidCorpusBenchmark {
   /**
-   * Fraction (0, 1] of each golden file's usable ({@code AGREES}, both-compiled) rows to actually
-   * benchmark, selected by deterministic stride so the sample stays spread across the whole
-   * corpus rather than just its first rows. Phones are slower and have much smaller Java heaps
-   * than the desktop this corpus was sized for; lower this if a run times out or a device's
-   * `-Xmx` can't hold every precompiled {@link Pattern}/{@link Ll1Pattern} at once. 1.0f runs the
-   * full corpus, matching the desktop {@code CorpusBenchmark}.
+   * Fraction (0, 1] of each golden file's usable rows to benchmark, selected by deterministic stride so the
+   * sample spans the whole corpus. Phones are slower with smaller heaps: lower this if a run times out or a heap
+   * can't hold every precompiled pattern. 1.0f is the full corpus, as on desktop.
    */
   private static final float FRACTION_OF_TEST_ROWS = 1.0f;
 
-  // Sized (2026-09-08) from a real first run at FRACTION_OF_TEST_ROWS = 0.25f / warmup=3,
-  // measured=5 on a Pixel 3a: the whole run (all 4 benchmarks, both loops) took well under a
-  // second of actual corpus-pass time -- see documents/notes.md's on-device-benchmark entry --
-  // leaving a phone's compute budget wildly underused at those defaults. At the full corpus
-  // (1.0f above), one pass of all four benchmarks combined runs roughly 250ms on that device;
-  // these counts aim to spend close to (but comfortably under) 5 minutes total on a device of
-  // similar speed for better-averaged numbers, without risking an instrumentation timeout. A
-  // much slower or faster device will land elsewhere -- lower both if a run is inconveniently
-  // slow, since nothing else here depends on hitting any particular wall-clock target.
+  // Sized from a first Pixel 3a run (2026-09-08): a full-corpus pass of all four benchmarks takes ~250 ms, so
+  // these counts aim for just under 5 minutes total on a similar device. Lower both if a run is inconveniently
+  // slow; nothing depends on a particular wall-clock target.
   // Paired (interleaved) run: 1 round = every bucket's compile and match chain once. Sized for ~2-3
   // minutes on a Pixel 3a (one round ~0.5 s with 4-pair chains).
   // Overridable per run with instrumentation arguments, e.g. -Pandroid.testInstrumentationRunnerArguments.pairedRounds=1200
@@ -106,9 +97,8 @@ public class AndroidCorpusBenchmark {
   }
   private static final int MIN_BUCKET_ROWS = 40;
 
-  // Iterations for sampling's capture, below -- separate from the paired run's rounds since a 
-  // profile needs enough wall-clock time to collect a useful number of samples, not a small
-  // number of precisely-timed iterations. Uncomment alongside that block.
+  // Iterations for sampling's capture: a profile needs wall-clock time to collect samples, not a few
+  // precisely-timed iterations.
   private static final int COMPILE_PROFILE_ITERATIONS = 600;
   private static final int MATCH_PROFILE_ITERATIONS = 10000;
 
@@ -116,27 +106,19 @@ public class AndroidCorpusBenchmark {
   private static List<Pattern> regexPatterns;
   private static List<Ll1Pattern> llkPatterns;
 
-  /** Frames captured per stack sample in {@link #sampleMatchLlk}/{@link #sampleCompileLlk} --
-   *  deep enough to reach past {@code Matcher.match}/{@code MatcherConstruct} dispatch (or, for
-   *  compile, {@code PatternParser}/{@code PatternConstruct}) into whichever concrete construct is
-   *  hot. Unlike the old flat-chain format (see documents/notes.md's 2026-09-08/09 entries for why
-   *  that one was capped at 4 frames -- deeper made it too flat/diffuse to read), the reversed
-   *  call-tree format in {@link #writeSamplingProfile} collapses shared prefixes across samples, so
-   *  capturing deeper doesn't cost readability -- printed depth is governed separately by {@link
-   *  #printCallers}'s cutoff threshold. {@link Debug#startMethodTracingSampling} (the built-in
-   *  Android sampling tracer, tried first) has no way to cap this at all -- see
-   *  documents/notes.md's on-device-benchmark entry for why this hand-rolled sampler replaced it. */
+  /** Frames captured per stack sample: deep enough to reach past Matcher.match/MatcherConstruct dispatch (or,
+   *  for compile, PatternParser/PatternConstruct) into the hot construct. The reversed call tree in
+   *  {@link #writeSamplingProfile} collapses shared prefixes, so depth costs no readability (printed depth is set
+   *  by {@link #printCallers}' cutoff); the old flat-chain format was capped at 4 for that reason (notes.md
+   *  2026-09-08/09). {@link Debug#startMethodTracingSampling} can't cap depth at all, hence this hand-rolled
+   *  sampler. */
   private static final int STACK_SAMPLE_DEPTH = 10;
   private static final long SAMPLE_INTERVAL_MILLIS = 1;
   /** Leaf rank (1-based, so 10 means "the 10th most common leaf") whose most-common caller's
    *  percentage becomes the depth cutoff in {@link #printCallers} -- see that method's javadoc. */
   private static final int CUTOFF_LEAF_RANK = 10;
-  /**
-   * Accumulates one entry per {@code @Test} method; dumped to _corpus_benchmark_results in {@link
-   * #writeResults}. JUnit doesn't guarantee test method order across JVMs/runners in general, but
-   * {@link FixMethodOrder} pins it here purely for readability of the resulting file -- nothing
-   * depends on the order.
-   */
+  /** One entry per {@code @Test} method, dumped by {@link #writeResults}. {@link FixMethodOrder} pins the order
+   *  only for readability of the file. */
   private static final Map<String, Object> results = new LinkedHashMap<>();
 
   /**
@@ -157,9 +139,7 @@ public class AndroidCorpusBenchmark {
   public static void setUpCorpus() throws IOException {
     Context context = InstrumentationRegistry.getInstrumentation().getContext();
     agreesRows = new ArrayList<>();
-    // Every scraped-corpus golden file gets included automatically -- mirrors
-    // CorpusBenchmark.goldenFiles()'s own directory listing, so a new scraped-corpus source
-    // doesn't also require remembering to list its file name here.
+    // Every golden file is included automatically, mirroring CorpusBenchmark.goldenFiles().
     String[] goldenFileNames = context.getAssets().list("golden");
     if (goldenFileNames == null || goldenFileNames.length == 0) {
       throw new IllegalStateException("No golden/*.tsv assets found -- did app/build.gradle's "
@@ -174,8 +154,7 @@ public class AndroidCorpusBenchmark {
       }
       List<AndroidGoldenRow> usable = new ArrayList<>();
       for (AndroidGoldenRow row : allRows) {
-        // See CorpusBenchmark.setUp(): only rows where both engines actually compiled
-        // successfully are usable for a *speed* comparison.
+        // Only rows where both engines compiled are usable for a speed comparison (see CorpusBenchmark.setUp()).
         if (row.status.equals("AGREES")
             && row.regexCompileException.isEmpty()
             && row.llkCompileException.isEmpty()
@@ -231,13 +210,11 @@ public class AndroidCorpusBenchmark {
   }
 
   /**
-   * Interleaved llk-vs-regex timing, split by regex feature -- see {@link PairedBench}. Replaces
-   * the four separate timed blocks this class used to run (regex compile, llk compile, regex match,
-   * llk match, back to back), whose ratio was dominated by device noise hitting one block but not
-   * the other. Writes two files: the legacy {@code corpus_benchmark_results.json} keys (absolute
-   * ms per corpus pass, now means of the interleaved passes) and {@code paired_ratio_results.json}
-   * (per-bucket ratios with confidence intervals; blocks are contiguous slices of this one run,
-   * standing in for the desktop runner's forks).
+   * Interleaved llk-vs-regex timing split by regex feature (see {@link PairedBench}), replacing four separate
+   * timed blocks whose ratio was dominated by device noise hitting one block but not another. Writes the legacy
+   * {@code corpus_benchmark_results.json} keys (absolute ms per corpus pass, now means of the interleaved
+   * passes) and {@code paired_ratio_results.json} (per-bucket ratios with confidence intervals; blocks are
+   * contiguous slices of this run, standing in for the desktop runner's forks).
    */
   @Test
   public void testPaired() {
@@ -470,16 +447,11 @@ public class AndroidCorpusBenchmark {
   private static volatile int sink;
 
    /**
-    * Captures a <b>sampling</b> profile (periodic stack snapshots, not per-call tracing -- this
-    * runs the benchmarked work on the test thread while a separate sampler thread periodically
-    * snapshots it via {@link Thread#getAllStackTraces()}, rather than instrumenting every call
-    * the way {@link Debug#startMethodTracing} does, which would badly distort timing) of a
-    * repeated {@code MatchLlk} pass, aggregated into a plain-text table of the hottest top-
-    * {@link #STACK_SAMPLE_DEPTH}-frame call chains.
-    *
-    * <p>Runs unconditionally alongside the four timing benchmarks -- it doesn't produce a
-    * timing/GC result, just a profile, but the extra wall-clock cost is small next to the timing
-    * benchmarks' own iteration counts.
+    * Captures a sampling profile of a repeated {@code MatchLlk} pass: a sampler thread snapshots the test thread
+    * via {@link Thread#getAllStackTraces()} (rather than instrumenting every call like {@link
+    * Debug#startMethodTracing}, which would distort timing), aggregated into a table of the hottest
+    * {@link #STACK_SAMPLE_DEPTH}-frame call chains. Runs unconditionally alongside the timing benchmarks; the
+    * extra wall-clock cost is small.
     */
    @Test
    public void sampleMatchLlk() throws InterruptedException, IOException {
@@ -505,11 +477,9 @@ public class AndroidCorpusBenchmark {
      void runOnePass();
    }
 
-   /** One node of the reversed call tree built by {@link #captureSamplingProfile}: the root's
-    *  children are leaf (innermost) frames, each of *their* children is a caller of that leaf, and
-    *  so on outward -- i.e. a frame's depth in this tree is its distance from the leaf, not from
-    *  the harness. {@code count} is the number of samples whose call chain passed through this
-    *  exact node's path from the root, so a node's count is always &lt;= its parent's. */
+   /** One node of the reversed call tree: the root's children are leaf frames, their children are callers of that
+    *  leaf, and so on, so depth is distance from the leaf. {@code count} is the number of samples through this
+    *  node's path, so a node's count is always &lt;= its parent's. */
    private static final class ChainNode {
      final String frame; // null only for the synthetic root.
      int count;
@@ -577,12 +547,9 @@ public class AndroidCorpusBenchmark {
      writeSamplingProfile(name, root, profileIterations);
    }
 
-   /** The innermost-to-outermost frames of one stack sample, as trie-insertion keys (leaf first,
-    *  matching {@link StackTraceElement}s' own most-recent-call-first order), capped at {@link
-    *  #STACK_SAMPLE_DEPTH} and trimmed at the {@link #captureSamplingProfile} boundary so trees
-    *  bottom out in benchmarked code rather than continuing into the sampler-thread/harness/JUnit
-    *  frames below it (which are identical across every sample and would just be dead weight at
-    *  the bottom of every branch). */
+   /** One stack sample's innermost-to-outermost frames as trie keys (leaf first, like {@link StackTraceElement}s),
+    *  capped at {@link #STACK_SAMPLE_DEPTH} and trimmed at the {@link #captureSamplingProfile} boundary so trees
+    *  bottom out in benchmarked code, not in identical sampler/harness/JUnit frames. */
    private static List<String> extractFrames(StackTraceElement[] frames) {
      String harnessClass = AndroidCorpusBenchmark.class.getName();
      List<String> keys = new ArrayList<>(STACK_SAMPLE_DEPTH);
@@ -598,27 +565,16 @@ public class AndroidCorpusBenchmark {
      return keys;
    }
 
-   /** Never prints a caller node below this percentage of total samples, however the rank-based
-    *  cutoff in {@link #computeCallerCutoffPercent} computes out -- a floor against a corpus with
-    *  very few distinct leaves or callers making that computation degenerate (e.g. resolving to
-    *  ~0%, which would print every node down to single-sample noise). */
+   /** A floor under {@link #computeCallerCutoffPercent}'s rank-based cutoff, so a corpus with very few distinct
+    *  leaves can't resolve to ~0% and print single-sample noise. */
    private static final double MIN_CALLER_CUTOFF_PERCENT = 0.5;
 
    /**
-    * Writes {@code root}'s reversed call tree as a plain-text report: the top {@link
-    * #CUTOFF_LEAF_RANK} leaves (root's children, ranked most-common-first -- capped at exactly
-    * that many even if a tie straddles the boundary, so the report can't grow unbounded just
-    * because several leaves happen to share the 10th-place count), each followed by its own
-    * callers recursively ranked the same way. Each printed percentage is that exact node's sample
-    * count over the grand total -- i.e. "what fraction of all samples took this leaf via this
-    * specific caller chain", not how often the caller method appears anywhere else or how often
-    * it's a leaf in its own right.
-    *
-    * <p>Caller printing stops once a node's percentage drops <em>strictly below</em> {@link
-    * #computeCallerCutoffPercent}'s threshold (so a caller exactly at the threshold -- including
-    * the very node the threshold was computed from -- still prints) -- see that method's own
-    * javadoc for how the threshold is derived from the leaf ranking, so this stays a data-driven
-    * cutoff rather than a fixed depth.
+    * Writes the reversed call tree as plain text: the top {@link #CUTOFF_LEAF_RANK} leaves (capped at exactly
+    * that many even if a tie straddles the boundary), each followed by its callers recursively ranked the same
+    * way. Each percentage is that node's samples over the grand total. Caller printing stops once a node falls
+    * strictly below {@link #computeCallerCutoffPercent}'s data-driven threshold (a caller exactly at it still
+    * prints).
     */
    private static void writeSamplingProfile(String name, ChainNode root, int profileIterations)
        throws IOException {
@@ -655,13 +611,10 @@ public class AndroidCorpusBenchmark {
    }
 
    /**
-    * The depth cutoff for {@link #printCallers}: the {@link #CUTOFF_LEAF_RANK}-th most common
-    * leaf's most common caller's own percentage of total samples (or, if that leaf has no captured
-    * callers at all, the leaf's own percentage) -- per the project owner's rule of thumb, this
-    * tracks where the data itself stops distinguishing meaningfully hot chains from noise, rather
-    * than a fixed depth that would be too shallow for some benchmarks and too deep for others.
-    * Falls back to {@link #MIN_CALLER_CUTOFF_PERCENT} when fewer than {@link #CUTOFF_LEAF_RANK}
-    * distinct leaves exist, or whenever the computed value is smaller than that floor.
+    * The depth cutoff for {@link #printCallers}: the {@link #CUTOFF_LEAF_RANK}-th most common leaf's most common
+    * caller's percentage (or the leaf's own, if it has no callers), tracking where the data stops separating hot
+    * chains from noise instead of a fixed depth. Falls back to {@link #MIN_CALLER_CUTOFF_PERCENT} with fewer
+    * leaves or a smaller value.
     */
    private static double computeCallerCutoffPercent(List<ChainNode> leaves, int totalSamples) {
      int rankIndex = Math.min(CUTOFF_LEAF_RANK, leaves.size()) - 1;
@@ -676,15 +629,10 @@ public class AndroidCorpusBenchmark {
      return Math.max(pct, MIN_CALLER_CUTOFF_PERCENT);
    }
 
-   /** Recursively prints {@code node}'s callers (its children in the reversed tree), most common
-    *  first, stopping -- for this node and, since siblings are sorted desc, every remaining sibling
-    *  too -- as soon as a caller's percentage drops below {@code cutoffPercent}. {@code
-    *  llkSeenInPath} is whether the path from the leaf down to (and including) {@code node}
-    *  already contains a {@code com.tbohne.llkpattern.} frame; while it doesn't, the cutoff is
-    *  suspended for {@code node}'s own callers, guaranteeing every printed stack reaches into this
-    *  project's own code rather than bottoming out entirely in JDK/library/test-harness frames --
-    *  same reasoning as the llkpattern module's own {@code AllocationSamplingRunner.printCallers}
-    *  uses for its alloc-sampling cutoff. */
+   /** Recursively prints {@code node}'s callers most common first, stopping (for it and every remaining sibling)
+    *  once a percentage drops below {@code cutoffPercent}. While the path from the leaf has no {@code
+    *  com.tbohne.llkpattern.} frame yet ({@code llkSeenInPath} false) the cutoff is suspended, so every printed
+    *  stack reaches this project's code (as {@code AllocationSamplingRunner.printCallers} does). */
    private static void printCallers(
        StringBuilder body, ChainNode node, int totalSamples, double cutoffPercent, int depth,
        boolean llkSeenInPath) {

@@ -7,11 +7,8 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 public final class LiteralPatternConstruct extends PatternConstruct {
-	// A CharSequence, not a String: for a literal run PatternParser could decode verbatim from
-	// the pattern text (no escapes, no COMMENTS-mode gaps), it's a zero-copy
-	// java.nio.CharBuffer view of `pattern` rather than a materialized copy -- see
-	// PatternParser.parseUnion's own doc for why (java.lang.String.subSequence/substring both
-	// copy; CharBuffer.wrap doesn't).
+	// A CharSequence, not a String: for a verbatim literal run it is a zero-copy CharBuffer view of `pattern`
+	// (see PatternParser.parseUnion).
 	final CharSequence value;
 
 	public LiteralPatternConstruct(int startIndex, int endIndex, CharSequence value) {
@@ -39,16 +36,8 @@ public final class LiteralPatternConstruct extends PatternConstruct {
 
 	@Override
 	void buildMatcher() {
-		// value.toString() here, not value directly: LiteralMatcherConstruct wants a real String
-		// (String#regionMatches is a JIT intrinsic -- real vectorized comparison -- and
-		// String#charAt/length are direct field/array reads; a CharBuffer's own versions of
-		// those are neither, measurably so per this project's own Android CPU sampling once
-		// tried -- see LiteralMatcherConstruct.value's own doc). This runs once per compile
-		// (same as buildMatcher() itself), not once per match attempt, so it's the same
-		// allocation this construct's value would have cost pre-CharBuffer if `value` is a
-		// CharBuffer view here (the "pure" case -- see parseUnion's own doc); if `value` is
-		// already a String (the "impure" case, escapes/COMMENTS-gaps), toString() is a free
-		// no-op (String#toString() returns `this`).
+		// toString() once per compile: LiteralMatcherConstruct wants a real String for the regionMatches
+		// intrinsic (see its `value`). Free when value is already a String.
 		new LiteralMatcherConstruct(this, value.toString());
 	}
 
@@ -58,16 +47,9 @@ public final class LiteralPatternConstruct extends PatternConstruct {
 			return null;
 		}
 		int cp = Character.codePointBefore(value, value.length());
-		// Folded by this literal's OWN flags, same as buildEntryMap()'s entryMap -- a bare literal
-		// (unlike a bracket-class member) isn't folded at parse time, so the raw written code point
-		// alone would under-report what this literal could actually have matched under its own
-		// CASE_INSENSITIVE. Every other firstCharSet()/lastCharSet() override already returns an
-		// already-folded set (ComplexCharacterPatternConstruct's ranges are folded at parse time; a nested class's
-		// or named class's isn't foldable at all under java.util.regex's own rules) -- this brings
-		// LiteralPatternConstruct in line with that contract instead of being the one exception. See
-		// BackReferencePatternConstruct.buildEntryMap's own doc for why this matters beyond \b/\B classification:
-		// entrySet built from an under-reported firstCharSet() is a real match-time dispatch gate,
-		// not just a compile-time approximation.
+		// Folded by this literal's OWN flags, like buildEntryMap: a bare literal isn't folded at parse time, and
+		// an under-reported set becomes a real match-time dispatch gate (see
+		// BackReferencePatternConstruct.buildEntryMap).
 		return MatcherConstruct.foldedEntrySet(singletonCodePointMap(cp), flags);
 	}
 
@@ -84,9 +66,7 @@ public final class LiteralPatternConstruct extends PatternConstruct {
 		if (Character.codePointCount(value, 0, value.length()) != 1) {
 			return null;
 		}
-		// Folded, unlike lastCharSet's raw singleton: a literal's real match-time membership
-		// (what this assertion must actually check) is the folded set under CASE_INSENSITIVE/
-		// UNICODE_CASE, exactly like LiteralPatternConstruct.buildEntryMap's own entryMap.
+		// Folded: the real match-time membership under CASE_INSENSITIVE/UNICODE_CASE.
 		return new LookbehindPatternConstruct.SingleCodePointBody(MatcherConstruct.foldedEntrySet(singletonCodePointMap(Character.codePointAt(value, 0)), flags), -1);
 	}
 }

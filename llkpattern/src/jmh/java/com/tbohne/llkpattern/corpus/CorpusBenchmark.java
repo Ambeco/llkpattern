@@ -18,9 +18,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
- * Compares {@code java.util.regex} vs {@code Ll1Pattern} speed over the scraped-corpus golden
- * files (see {@code documents/remaining_work.md}'s "Scraped-corpus microbenchmark" entry for the
- * original design sketch this implements).
+ * Compares {@code java.util.regex} vs {@code Ll1Pattern} speed over the scraped-corpus golden files.
  *
  * <p>Only rows tagged {@code AGREES} (see {@link GoldenRow#status}) are used: comparing speed on a
  * row where the two engines disagree about *correctness* isn't a meaningful speed comparison.
@@ -56,10 +54,8 @@ public class CorpusBenchmark {
     List<GoldenRow> agreesRows = new ArrayList<>();
     for (Path goldenFile : goldenFiles()) {
       for (GoldenRow row : GoldenTsv.read(goldenFile)) {
-        // "AGREES" alone isn't enough: it also covers rows where both engines agree by both
-        // throwing the same compile exception (e.g. a pattern that's invalid even for
-        // java.util.regex) -- not something either engine's *speed* can be measured on. Only
-        // rows where both actually compiled successfully are usable here.
+        // AGREES also covers rows where both engines agree by throwing the same compile exception; only rows
+        // both compiled successfully can be timed.
         if (row.status.equals("AGREES")
             && row.regexCompileException.isEmpty()
             && row.llkCompileException.isEmpty()) {
@@ -89,12 +85,8 @@ public class CorpusBenchmark {
     }
   }
 
-  /** File names only -- every scraped-corpus golden file under {@code src/test/resources/golden/}
-   *  gets included automatically, so adding a new scraped-corpus source (a new {@code
-   *  Scrape*CorpusTest} + golden file, per remaining_work.md's "Scraped-corpus differential test
-   *  harness" section) doesn't also require remembering to list it here. {@link
-   *  AndroidCorpusBenchmark}'s own {@code setUpCorpus} mirrors this same directory listing for its
-   *  asset copy -- see that class if this project's golden-file layout ever changes shape. */
+  /** File names only: every golden file under {@code src/test/resources/golden/} is included automatically.
+   *  {@link AndroidCorpusBenchmark}'s {@code setUpCorpus} mirrors this listing for its asset copy. */
   private static List<Path> goldenFiles() {
     Path dir = Paths.get("src", "test", "resources", "golden");
     try (java.util.stream.Stream<Path> files = java.nio.file.Files.list(dir)) {

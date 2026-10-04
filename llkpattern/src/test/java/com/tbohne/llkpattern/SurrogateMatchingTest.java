@@ -21,9 +21,7 @@ import org.junit.runners.JUnit4;
  * behavior).
  * Neither was right: on the installed JDK, all four forms below behave identically. The rule is
  * simply "a valid surrogate pair is one code point and is never split; a lone surrogate is matched
- * on its own", with no escape-form-specific exception. See remaining_work.md's surrogate-matching
- * entry for the fuller writeup, including the exact repro commands used to verify this against a
- * real JDK.
+ * on its own", with no escape-form-specific exception.
  */
 @RunWith(JUnit4.class)
 public class SurrogateMatchingTest {

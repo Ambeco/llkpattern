@@ -17,8 +17,7 @@ public class QuantifiedBackReferenceTest {
   // loop's dispatch gate alone can't tell "some character this group could start with" from "the
   // specific character actually captured this time" -- BackReferenceMatcherConstruct.matchBody
   // handles that precisely now, falling through to the loop's own exit when the ACTUAL captured
-  // text doesn't match, as long as nothing has been consumed yet this attempt (see its own doc and
-  // remaining_work.md's former "loop over a backreference" entry). A MULTI-code-point group (e.g.
+  // text doesn't match, as long as nothing has been consumed yet this attempt (see its own doc). A MULTI-code-point group (e.g.
   // "(ab)") is deliberately NOT covered by this differential harness -- see
   // multiCharacterGroupPartialMatchFailsLikeAnyMultiCharLoopBody below for why that shape still
   // diverges from java.util.regex, same as any other multi-character loop body.

@@ -6,6 +6,7 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/** {@code \A}, {@code \Z} and {@code \z}. */
 public final class BoundaryPatternConstruct extends PatternConstruct {
 	public enum BoundaryEnum {
 		InputBegin,

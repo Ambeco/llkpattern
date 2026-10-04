@@ -18,9 +18,8 @@ public final class ComplexQuantifiedCharacterPatternConstruct extends Quantifiab
 	@Override
 	boolean claimsEntryElse() {
 		if (!isUnquantified()) {
-			// Real dispatch/ambiguity-checked case -- must go through the ordinary cycle-guarded
-			// path (this construct's own `next` might loop back here, e.g. a nullable body like
-			// `[ab]{0,2}` -- see buildLoopEntryMap).
+			// Real dispatch case: must use the cycle-guarded path, since next may loop back here (a nullable
+			// body like [ab]{0,2}).
 			return super.claimsEntryElse();
 		}
 		// Unquantified: buildEntryMap sets entryElse only for a residual (`.`) delegate.
@@ -43,10 +42,7 @@ public final class ComplexQuantifiedCharacterPatternConstruct extends Quantifiab
 			buildLoopEntryMap(List.of(delegate), next, -1);
 			return;
 		}
-		// Unquantified: entry set is exactly the delegate's own ranges, regardless of what
-		// follows -- no need for `delegate` to be compiled (matcher-built) yet to know this;
-		// that happens in buildMatcher(), below. Aliased directly, same reasoning as
-		// ComplexCharacterPatternConstruct.buildEntryMap.
+		// Unquantified: the entry set is the delegate's own ranges (aliased), whatever follows; no compile needed.
 		if (delegate.residualElse) {
 			entryMap = EMPTY_ENTRY_MAP;
 			entryElse = this;
@@ -61,11 +57,8 @@ public final class ComplexQuantifiedCharacterPatternConstruct extends Quantifiab
 			buildLoopMatcher(List.of(delegate), next(), -1);
 			return;
 		}
-		// Unquantified (i.e. exactly-once) case: this construct behaves exactly like its
-		// delegate ComplexCharacterPatternConstruct -- propagate our own dispatch fields (if we're ourselves a
-		// chain candidate) onto `delegate` BEFORE compiling it, so its own compiled node ends up
-		// with the right gating; safe because `delegate` is exclusively owned by this construct
-		// (created together, never independently compiled from anywhere else).
+		// Unquantified: behaves exactly like the delegate, so pass our dispatch fields to it BEFORE compiling;
+		// safe because it is exclusively ours.
 		delegate.dispatchEntrySet = dispatchEntrySet;
 		delegate.dispatchFailedEntry = dispatchFailedEntry;
 		delegate.compile(next());

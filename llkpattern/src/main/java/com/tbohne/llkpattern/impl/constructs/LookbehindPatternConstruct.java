@@ -7,6 +7,14 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+/**
+ * {@code (?<=X)}/{@code (?<!X)}, restricted to a body that always matches exactly one code point:
+ * a generalization of {@code \b}/{@code \B}'s single-code-point {@code peekPrevious()} check
+ * (design.md "Boundary matching"). Wider lookbehind and any lookahead are permanently out of scope
+ * (they can't be evaluated in O(1) per position). {@code lookSet} and {@code captureConstructIndex}
+ * are fully resolved at parse time by {@link #resolveSingleCodePointBody}, so no entry-map
+ * classification step is needed.
+ */
 public final class LookbehindPatternConstruct extends ZeroWidthAssertionPatternConstruct {
 	final String pattern;
 	final boolean isPositive; // true: (?<=X), false: (?<!X)
@@ -25,14 +33,11 @@ public final class LookbehindPatternConstruct extends ZeroWidthAssertionPatternC
 
 	@Override
 	void buildMatcher() {
-		// Always a real check -- unlike \b/\B, there's no "peek" side to statically classify
-		// away: the previous character is never known at compile time, so this never collapses
-		// to a no-op or a compile-time error the way WordBoundaryPatternConstruct sometimes does.
+		// Always a real check: the previous character is never known at compile time.
 		new LookbehindMatcherConstruct(this, isPositive, lookSet, captureConstructIndex);
 	}
 
-	/** The result of {@link #resolveSingleCodePointBody}: the body's statically-known
-	 *  code point set, plus which capturing group (if any) wraps the whole body. */
+	/** The body's statically-known code point set, plus the capturing group (if any) wrapping it. */
 	public static final class SingleCodePointBody {
 		public final CodePointSet codePoints;
 		public final int captureConstructIndex; // -1 if none
@@ -43,23 +48,15 @@ public final class LookbehindPatternConstruct extends ZeroWidthAssertionPatternC
 		}
 	}
 
-	/**
-	 * Loop-ambiguity helper only -- see {@code PatternConstruct#skipZeroWidthEntrySet}'s {@code
-	 * checkAssertions} doc, and {@code WordBoundaryPatternConstruct#admittedInteriorExitPeekSet}'s own
-	 * doc for why the coarse catch-all entry point ({@code entryElse = this}) isn't safe for a
-	 * loop's own continue-vs-exit ambiguity check. Simpler than that method's version: a
-	 * lookbehind's truth depends ONLY on the prior character, never on peek at all, so once {@code
-	 * bodyLastCharSet} shows this assertion COULD hold right after a body iteration, exiting
-	 * through it is ambiguous with continuing for literally every peek code point; otherwise it
-	 * contributes nothing.
-	 */
+	// Loop-ambiguity helper (see PatternConstruct#skipZeroWidthEntrySet). A lookbehind depends ONLY
+	// on the prior character: if it could hold right after a body iteration, exiting is ambiguous
+	// with continuing for every peek code point; otherwise it contributes nothing.
 	@Override
 	final @Nullable CodePointSet admittedInteriorExitPeekSet(@Nullable CodePointSet bodyLastCharSet) {
 		if (bodyLastCharSet == null) {
 			return null;
 		}
-		// first(), not entrySet(), so a violation short-circuits -- same technique as
-		// WordBoundaryPatternConstruct's own isSubsetOf/isDisjointFrom helpers.
+		// first() short-circuits on a violation, as in WordBoundaryPatternConstruct.isSubsetOf.
 		boolean subsetOfLookSet = !bodyLastCharSet.first((min, max) -> !lookSet.containsAll(min, max));
 		boolean couldHold = isPositive ? bodyLastCharSet.intersects(lookSet) : !subsetOfLookSet;
 		return couldHold ? universalCodePointSet() : new ArrayCodePointSet();

@@ -29,13 +29,8 @@ public interface CodePointSet {
   /** Returns true if every code point in {@code [min, max)} is in this set. */
   boolean containsAll(int min, int max);
 
-  /**
-   * In ascending order by {@link Range#min} -- every implementation maintains this already (it
-   * falls straight out of being a set of disjoint ranges over an ordered domain), so this is a
-   * formal guarantee, not an incidental detail. Default implementation eagerly builds a {@link
-   * LinkedHashSet} via {@link #forEachRange}; {@link ArrayCodePointSet} overrides {@link
-   * #forEachRange} directly instead of this.
-   */
+  // Ascending by Range#min (a formal guarantee). The default eagerly builds a LinkedHashSet; ArrayCodePointSet
+  // overrides forEachRange instead.
   default Set<Range> rangeSet() {
     Set<Range> result = new LinkedHashSet<>();
     forEachRange((min, max) -> result.add(new Range(min, max)));
@@ -48,13 +43,8 @@ public interface CodePointSet {
     void accept(int min, int max);
   }
 
-  /**
-   * Visits every range this set contains as a plain {@code (int min, int max)} callback -- no
-   * boxed {@link Range} allocated per range, and (for {@link ArrayCodePointSet}) reads the raw
-   * backing array directly. Worth using over {@link #rangeSet()} on any hot path that just wants to
-   * visit ranges and has no actual use for a {@code Range} object. Default falls back to {@link
-   * #rangeSet()}.
-   */
+  // Visits every range without boxing a Range (ArrayCodePointSet reads its backing array directly); prefer over
+  // rangeSet() on hot paths.
   default void forEachRange(RangeConsumer action) {
     for (Range r : rangeSet()) {
       action.accept(r.min, r.max);
@@ -67,11 +57,7 @@ public interface CodePointSet {
     boolean test(int min, int max);
   }
 
-  /**
-   * Like {@link #forEachRange}, but a short-circuiting search: stops at (and returns {@code true}
-   * from) the first range {@code predicate} accepts, instead of visiting every remaining range
-   * after the answer is already known.
-   */
+  /** Like {@link #forEachRange}, but stops at, and returns true from, the first range {@code predicate} accepts. */
   default boolean first(RangePredicate predicate) {
     for (Range r : rangeSet()) {
       if (predicate.test(r.min, r.max)) {
@@ -84,30 +70,17 @@ public interface CodePointSet {
   /** Returns the portion of this set restricted to {@code [min, max)}. */
   CodePointSet intersection(int min, int max);
 
-  /**
-   * Returns the intersection of this set and {@code other}: code points in both. Default
-   * implementation is a plain nested range scan -- allocates one temporary {@link CodePointSet}
-   * per range of this set (via {@link #intersection(int, int)}) plus one {@link
-   * CodePointSetBuilder#append} per resulting sub-range -- fine for a cold path, but see {@link
-   * ArrayCodePointSet}'s override for the allocation-light sweep merge real (parse-time-hot)
-   * callers should get instead.
-   */
+  // The default is a nested range scan (one temporary set per range of this one); ArrayCodePointSet overrides it
+  // with the allocation-light sweep that parse-time-hot callers should get.
   default CodePointSet intersection(CodePointSet other) {
     CodePointSetBuilder result = CodePointSetBuilder.create();
     forEachRange((min, max) -> other.intersection(min, max).forEachRange(result::append));
     return result.build();
   }
 
-  /**
-   * Whether this set and {@code other} share at least one code point -- a boolean-only,
-   * short-circuiting counterpart to {@link #intersection}, for callers (e.g. {@code
-   * PatternConstruct#checkDisjoint}'s ambiguity check) that only need "do these overlap at all"
-   * and shouldn't have to pay for materializing the overlap itself just to answer that. Default
-   * implementation is a nested short-circuiting {@link #first} scan -- correct for any
-   * implementation, since it only uses the public range-visiting contract, but quadratic in range
-   * count; {@link ArrayCodePointSet} overrides with an allocation-free, binary-search-per-range
-   * version.
-   */
+  // Boolean-only, short-circuiting counterpart to intersection(), for callers (PatternConstruct#checkDisjoint) that
+  // only need "do these overlap". The default is a quadratic nested first() scan, correct for any implementation;
+  // ArrayCodePointSet overrides it allocation-free.
   default boolean intersects(CodePointSet other) {
     return other.first((oMin, oMax) -> first((min, max) -> min < oMax && oMin < max));
   }
@@ -135,19 +108,11 @@ public interface CodePointSet {
     /** Adds every code point in {@code [min, max)} to this set. */
     void insert(int min, int max);
 
-    /**
-     * Optional capacity hint for implementations backed by a resizable array (see {@link
-     * ArrayCodePointSet}): preallocate room for {@code minEntries} upcoming entries, to avoid
-     * incremental array growth when the eventual size is known ahead of time. No-op by default.
-     */
+    // Capacity hint for array-backed implementations: preallocate for minEntries upcoming entries. No-op by default.
     default void ensureCapacity(int minEntries) {}
 
-    /**
-     * Flips which side of this set's own entries is "in": every currently-included code point
-     * becomes excluded and vice versa. Unlike {@link #complement()}, mutates in place with no copy
-     * -- see {@link ArrayCodePointSet}'s own doc for why this is safe (there's no third state, so
-     * nothing needs to be materialized to flip).
-     */
+    // Flips which side of this set's entries is "in", in place with no copy (unlike complement()); safe because
+    // there is no third state (see ArrayCodePointSet).
     void invert();
 
     /** Adds every one of {@code other}'s members to this set. */
@@ -169,11 +134,7 @@ public interface CodePointSet {
     }
   }
 
-  /**
-   * An inclusive-min, exclusive-max range of code points: {@code [min, max)}. Immutable. Formerly
-   * nested under the now-removed generic {@code CodePointMap<V>} (see this file's own class doc);
-   * lives here now since {@link CodePointSet} is this range convention's only remaining owner.
-   */
+  /** An inclusive-min, exclusive-max range of code points: {@code [min, max)}. Immutable. */
   final class Range {
     public final int min; // inclusive
     public final int max; // exclusive

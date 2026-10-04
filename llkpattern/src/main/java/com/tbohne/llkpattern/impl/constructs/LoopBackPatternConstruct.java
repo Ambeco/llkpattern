@@ -4,6 +4,15 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 
+/**
+ * A zero-width marker standing in for the {@code LoopMatcherConstruct} as a loop body's compile
+ * target, so that node can self-register onto it BEFORE the body compiles against it (see {@code
+ * QuantifiablePatternConstruct.buildLoopMatcher}).
+ *
+ * <p>Its entry point IS queried: a nullable construct inside the body (e.g. {@code (a)?} in {@code
+ * (a)?+}) looks past itself at "what comes after", which for a loop body is the loop itself, so
+ * this delegates to {@code owner}'s cached entry point.
+ */
 final class LoopBackPatternConstruct extends PatternConstruct {
 	final QuantifiablePatternConstruct owner;
 
@@ -12,7 +21,7 @@ final class LoopBackPatternConstruct extends PatternConstruct {
 		this.owner = owner;
 	}
 
-	/** Never wired by a parent: what follows a loop's back edge is the loop itself. */
+	// Never wired by a parent: what follows a loop's back edge is the loop itself.
 	@Override
 	PatternConstruct next() {
 		return owner;

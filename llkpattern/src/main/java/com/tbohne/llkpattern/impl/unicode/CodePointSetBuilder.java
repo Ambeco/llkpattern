@@ -40,47 +40,31 @@ public interface CodePointSetBuilder {
     append(codePoint, codePoint + 1);
   }
 
-  /**
-   * Adds every one of {@code source}'s ranges -- via {@link CodePointSet#forEachRange}, so no
-   * {@code Range} is allocated per source entry.
-   */
+  /** Adds each of {@code source}'s ranges, via {@code forEachRange} (no {@code Range} per entry). */
   void appendAll(CodePointSet source);
 
   /** Flips whether the built set means "these ranges" or "everything but these ranges". */
   void invert();
 
   /**
-   * Sorts and coalesces every range added so far into a single {@link CodePointSet}. Overlapping or
-   * touching ranges always merge (see class doc -- there's no value to disagree on), so this never
-   * throws. Build-once: calling {@link #append}/{@link #appendAll}/{@link #invert}/{@link #build} again
-   * afterward throws {@link IllegalStateException} instead of silently corrupting the set just
-   * returned -- create a new builder per {@link CodePointSet} instead of reusing one.
+   * Sorts and coalesces every range added so far into one {@link CodePointSet}; never throws (overlapping ranges
+   * always merge). Build-once: any further call throws {@link IllegalStateException}, so create a builder per set.
    */
   CodePointSet build();
 
   /**
-   * Combines a run's literal-member builder with its (possibly null) lazily-unioned large sets,
-   * optionally negating the result. The laziness in {@code runUnion} (see {@code
-   * PatternParser#parseComplexCharacterRanges}'s doc on that field) only exists to avoid copying a
-   * large set's entries into the builder *while the run is still being parsed* -- once the run is
-   * finished, the result must be a concrete {@link ArrayCodePointSet} before it can go anywhere
-   * near a compiled matcher (as {@code ComplexCharacterPatternConstruct.ranges}, a chain node's own {@code
-   * entrySet}, etc.), since a {@link UnionCodePointSet}'s {@code contains}/{@code containsAll}/
-   * {@code forEachRange} are all measurably more expensive than {@code ArrayCodePointSet}'s -- see
-   * its own class doc. So this materializes eagerly here, at the one point (a completed run) where
-   * the saved copy would otherwise turn into a permanent cost on the match-time hot path instead of
-   * a one-time parse-time saving.
+   * Combines a run's literal-member builder with its (possibly null) lazily-unioned large sets, optionally
+   * negating the result. {@code runUnion}'s laziness (see {@code PatternParser#parseComplexCharacterRanges}) only
+   * avoids copying a large set while the run is still being parsed; the result must be a concrete {@link
+   * ArrayCodePointSet} before reaching a compiled matcher, because {@link UnionCodePointSet}'s lookups are
+   * measurably slower. So this materializes here, where the saved copy would otherwise become a permanent
+   * match-time cost.
    *
-   * <p>{@code negate} is applied here, by flipping a fresh set's own {@code invert} bit in place,
-   * rather than by the caller calling {@link CodePointSet#complement()} on this method's return
-   * value -- {@code complement()} always allocates a copy (see {@link ArrayCodePointSet}'s own
-   * doc), which is redundant work whenever this method already built (or is about to build) a set
-   * nothing else holds a reference to yet. The one path where that doesn't hold is where this
-   * method returns {@code runUnion} itself unchanged (no literals to merge it with): that object
-   * may be a shared {@code NamedCharClass} constant (e.g. plain {@code \d} with no other bracket
-   * members), so it's copied via {@code complement()} there instead of mutated. Callers whose
-   * negation cannot be pushed this far down (e.g. it applies only after an enclosing {@code "&&"}
-   * intersection) must pass {@code negate = false} here and negate the eventual result themselves.
+   * <p>{@code negate} flips a fresh set's {@code invert} bit in place instead of making the caller call {@code
+   * complement()} (always a copy). The exception is when {@code runUnion} itself is returned unchanged: it may be
+   * a shared {@code NamedCharClass} constant (a plain {@code \d}), so it is copied via {@code complement()}. A
+   * caller whose negation can't be pushed down (e.g. it applies after an enclosing {@code &&}) must pass {@code
+   * false} and negate the result itself.
    */
   static CodePointSet mergeRun(
       CodePointSetBuilder literals, @Nullable CodePointSet runUnion, boolean negate) {
@@ -91,22 +75,15 @@ public interface CodePointSetBuilder {
       return literals.build();
     }
     CodePointSet literalSet = literals.build();
-    // runUnion is a bare escape/nested-class result (already concrete -- see this method's own
-    // recursive use) unless this run combined *multiple* large sets (e.g. "[\d\w]"), in which case
-    // it's a UnionCodePointSet that must be materialized here too, same as when literalSet is
-    // non-empty -- either way, nothing but a concrete ArrayCodePointSet may leave this method.
+    // runUnion is a bare concrete set unless the run combined several large sets ("[\d\w]"), in which case it is
+    // a UnionCodePointSet that must be materialized too: only a concrete ArrayCodePointSet may leave this method.
     if (literalSet.isEmpty() && !(runUnion instanceof UnionCodePointSet)) {
       return negate ? runUnion.complement() : runUnion;
     }
-    // Pre-size when both operands are ArrayCodePointSets so the first insertAll's fast-path copy
-    // (ArrayCodePointSet#insertAll's `size == 0` case) doesn't hand the second insertAll a keys array
-    // sized to fit only the first operand, forcing it to grow via ensureCapacity's Arrays.copyOf
-    // before every insert() -- same fix as mergeEntryPoints/unionLastCharSet (notes.md, 2026-09-25).
-    // `size` is a count of packed ints, not ranges (ArrayCodePointSet's own `keys` unit), so
-    // summing it directly is the right unit for `initialCapacity`. Not visible in the full-corpus
-    // JMH ratio (too small a share of llkCompile's ~2.7 MB/op total to clear run-to-run noise),
-    // but a deterministic per-call allocation probe confirms a real ~55-60% bytes/op cut at this
-    // operation (notes.md, 2026-09-27).
+    // Pre-size when both are ArrayCodePointSets, so the first insertAll's fast-path copy doesn't hand the second a
+    // keys array sized for only the first (as in mergeEntryPoints/unionLastCharSet, notes.md 2026-09-25). `size`
+    // counts packed ints, the right unit for initialCapacity. A deterministic allocation probe shows ~55-60% fewer
+    // bytes/op here (notes.md 2026-09-27), too small a share to show in the JMH ratio.
     int hint = literalSet instanceof ArrayCodePointSet && runUnion instanceof ArrayCodePointSet
         ? ((ArrayCodePointSet) runUnion).size + ((ArrayCodePointSet) literalSet).size
         : 0;

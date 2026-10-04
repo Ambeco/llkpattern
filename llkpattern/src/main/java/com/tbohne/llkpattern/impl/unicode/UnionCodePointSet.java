@@ -40,9 +40,7 @@ public final class UnionCodePointSet implements CodePointSet {
 
   @Override
   public boolean containsAll(int min, int max) {
-    // Bounding both delegates to [min, max) first keeps this cheap even when one side is a huge
-    // (or inverted, effectively-infinite-looking) set -- forEachRange below only ever walks the
-    // window, never either delegate's full domain.
+    // Bounding both delegates to [min, max) keeps this cheap even for a huge or inverted set.
     CodePointSet aWindow = a.intersection(min, max);
     CodePointSet bWindow = b.intersection(min, max);
     boolean[] fullyCovered = {true};
@@ -62,18 +60,10 @@ public final class UnionCodePointSet implements CodePointSet {
     return fullyCovered[0];
   }
 
-  /**
-   * A real sorted-merge of {@code a}'s and {@code b}'s own {@link #forEachRange} streams -- both
-   * are already ascending and internally disjoint (see {@link CodePointSet#rangeSet}'s own ordering
-   * doc). {@link #forEachRange} is push-based on both sides, so
-   * there's no way to directly compare "a's next range" against "b's next range" the way a pull-based
-   * iterator merge would -- each side is first drained into a small {@code RangeCursor} (two flat
-   * {@code int[]} arrays, sized to that delegate's own range count) so the merge below can freely
-   * look at, and advance, either side independently. This is still far cheaper than materializing a
-   * full {@link ArrayCodePointSet} (no packed-key encoding, capacity growth, or coalescing pass --
-   * just two small arrays and a linear scan), and neither delegate's own backing storage is ever
-   * touched or copied.
-   */
+  // A sorted merge of a's and b's forEachRange streams (ascending, internally disjoint). Those are push-based, so
+  // each side is first drained into a small RangeCursor (two flat int[]s), letting the merge look at and advance
+  // either side independently: far cheaper than materializing an ArrayCodePointSet (no packed-key encoding, growth
+  // or coalescing pass), and neither delegate's storage is touched.
   @Override
   public void forEachRange(RangeConsumer action) {
     RangeCursor aCursor = new RangeCursor(a);
@@ -106,13 +96,9 @@ public final class UnionCodePointSet implements CodePointSet {
     }
   }
 
-  /**
-   * A delegate's ranges, drained once via {@link #forEachRange} into two flat {@code int[]} arrays
-   * (grown by doubling -- the range count isn't known up front, but every real caller here has a
-   * small delegate: a {@code NamedCharClass} constant or a locally-built bracket accumulator), then
-   * walked with an index -- lets {@link #forEachRange} above compare and advance {@code a}'s and
-   * {@code b}'s next candidate range independently, which two push-based callbacks alone can't do.
-   */
+  // A delegate's ranges drained once into two flat int[]s (doubling growth; delegates are small: a NamedCharClass
+  // constant or a bracket accumulator) so forEachRange can compare and advance a's and b's next range
+  // independently.
   private static final class RangeCursor {
     private int[] mins = new int[4];
     private int[] maxs = new int[4];

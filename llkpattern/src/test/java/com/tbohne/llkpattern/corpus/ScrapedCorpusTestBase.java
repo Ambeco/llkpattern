@@ -16,8 +16,7 @@ import org.junit.runners.Parameterized.Parameters;
 /**
  * Base class for a scraped-corpus differential test: one JUnit4 {@link Parameterized} test class
  * per source (e.g. OpenJDK's regex test suite), each just naming a golden TSV file via {@link
- * #goldenFilePath()}. See documents/remaining_work.md's "Scraped-corpus differential test harness"
- * entry for the full design.
+ * #goldenFilePath()}.
  *
  * <p>Each row re-runs only {@code Ll1Pattern} and compares it against the golden file's recorded
  * {@code llk*} columns -- {@code java.util.regex} is deliberately NOT re-run here (per the
@@ -29,8 +28,7 @@ import org.junit.runners.Parameterized.Parameters;
  * only ever verified fast enough for both engines *once*, at generation time, not guaranteed fast
  * forever. llk itself isn't at the same risk in practice: a pattern pathological for backtracking
  * regex is exactly the kind of thing llk's LL(1) ambiguity check tends to reject at compile time
- * (an exception, not a hang) -- see documents/remaining_work.md for the (temporary, generation-
- * time-only) timeout mechanism this decision replaces for ongoing test runs.
+ * (an exception, not a hang).
  *
  * <p>A row failing here means either a real llk regression, or that the golden file's recorded
  * outcome needs regenerating (see {@link CorpusGenerator}) after a deliberate, intended engine

@@ -9,10 +9,13 @@ import java.util.List;
 
 public final class ComplexQuantifiedCharacterPatternConstruct extends QuantifiablePatternConstruct {
 	final ComplexCharacterPatternConstruct delegate;
+	// Built once: List.of is desugared on Android to ArrayList + unmodifiable wrapper (3 allocations per call).
+	private final List<PatternConstruct> delegateBody;
 
 	public ComplexQuantifiedCharacterPatternConstruct(String pattern, int startIndex, ComplexCharacterPatternConstruct delegate) {
 		super(pattern, startIndex, delegate.endIndex);
 		this.delegate = delegate;
+		this.delegateBody = java.util.Collections.singletonList(delegate);
 	}
 
 	@Override
@@ -28,18 +31,18 @@ public final class ComplexQuantifiedCharacterPatternConstruct extends Quantifiab
 
 	@Override
 	boolean elseIsEndOfFind() {
-		return !isUnquantified() && loopElseIsEndOfFind(List.of(delegate), next());
+		return !isUnquantified() && loopElseIsEndOfFind(delegateBody, next());
 	}
 
 	@Override
 	boolean elseIsResidual() {
-		return isUnquantified() ? delegate.residualElse : loopElseIsResidual(List.of(delegate), next());
+		return isUnquantified() ? delegate.residualElse : loopElseIsResidual(delegateBody, next());
 	}
 
 	@Override
 	void buildEntryMap(PatternConstruct next) {
 		if (!isUnquantified()) {
-			buildLoopEntryMap(List.of(delegate), next, -1);
+			buildLoopEntryMap(delegateBody, next, -1);
 			return;
 		}
 		// Unquantified: the entry set is the delegate's own ranges (aliased), whatever follows; no compile needed.
@@ -54,7 +57,7 @@ public final class ComplexQuantifiedCharacterPatternConstruct extends Quantifiab
 	@Override
 	void buildMatcher() {
 		if (!isUnquantified()) {
-			buildLoopMatcher(List.of(delegate), next(), -1);
+			buildLoopMatcher(delegateBody, next(), -1);
 			return;
 		}
 		// Unquantified: behaves exactly like the delegate, so pass our dispatch fields to it BEFORE compiling;

@@ -7,11 +7,9 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 public final class LiteralPatternConstruct extends PatternConstruct {
-	// A CharSequence, not a String: for a verbatim literal run it is a zero-copy CharBuffer view of `pattern`
-	// (see PatternParser.parseUnion).
-	final CharSequence value;
+	final String value;
 
-	public LiteralPatternConstruct(int startIndex, int endIndex, CharSequence value) {
+	public LiteralPatternConstruct(int startIndex, int endIndex, String value) {
 		super(startIndex, endIndex);
 		this.value = value;
 	}
@@ -36,9 +34,7 @@ public final class LiteralPatternConstruct extends PatternConstruct {
 
 	@Override
 	void buildMatcher() {
-		// toString() once per compile: LiteralMatcherConstruct wants a real String for the regionMatches
-		// intrinsic (see its `value`). Free when value is already a String.
-		new LiteralMatcherConstruct(this, value.toString());
+		new LiteralMatcherConstruct(this, value);
 	}
 
 	@Override

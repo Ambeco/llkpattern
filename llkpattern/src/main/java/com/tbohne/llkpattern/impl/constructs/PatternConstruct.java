@@ -72,10 +72,15 @@ public abstract class PatternConstruct {
 	PatternConstruct next() {
 		PatternConstruct n = next;
 		if (n == null) {
-			throw new IllegalStateException(getClass().getSimpleName() + " at pattern index " + startIndex
-					+ " read `next` before it was wired (did you mean to call compile(next) first?)");
+			throw nextNotWired();
 		}
 		return n;
+	}
+
+	// Out of line so next() stays small enough for ART to inline.
+	private IllegalStateException nextNotWired() {
+		return new IllegalStateException(getClass().getSimpleName() + " at pattern index " + startIndex
+				+ " read `next` before it was wired (did you mean to call compile(next) first?)");
 	}
 
 	// As next(): matchers self-register mid-construction to break cycles.

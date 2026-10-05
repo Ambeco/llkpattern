@@ -612,5 +612,25 @@ public enum NamedCharClass {
     public CodePointSet get(int flags) {
       return ((flags & UnicodeFlags.UNICODE_CHARACTER_CLASS) != 0) ? unicode : ascii;
     }
+
+    // A switch, not valueOf(String): Enum.valueOf plus a String allocation was ~2.5% of Pixel compile samples.
+    // Null for anything that isn't an escape letter (DOT/DOT_UNIX_LINES are not reachable as escapes; \R is
+    // handled by the caller).
+    public static @Nullable RegexCharacterClass forEscape(int c) {
+      switch (c) {
+        case 'd': return d;
+        case 'D': return D;
+        case 'h': return h;
+        case 'H': return H;
+        case 's': return s;
+        case 'S': return S;
+        case 'v': return v;
+        case 'V': return V;
+        case 'w': return w;
+        case 'W': return W;
+        case 'R': return R;
+        default: return null;
+      }
+    }
   }
 }

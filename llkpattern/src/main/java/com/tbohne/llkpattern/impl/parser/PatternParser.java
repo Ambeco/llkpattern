@@ -16,7 +16,6 @@ import com.tbohne.llkpattern.PatternSyntaxException.CodePoint;
 import com.tbohne.llkpattern.PatternSyntaxException.CodePointReference;
 import com.tbohne.llkpattern.impl.constructs.*;
 import com.tbohne.llkpattern.impl.constructs.BoundaryPatternConstruct.BoundaryEnum;
-import java.nio.CharBuffer;
 import java.util.regex.Pattern;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -164,7 +163,7 @@ public final class PatternParser extends CharClassParser {
   // empty (it is flushed at "("), so the state is shared across recursion.
   private int runStartIndex = -1;
   // While true, the run is a verbatim copy of `pattern` over runStartIndex..runPureEnd (no decoded
-  // escape, no COMMENTS-mode gap), so it is read via a zero-copy CharBuffer.wrap instead of being
+  // escape, no COMMENTS-mode gap), so it is taken as a plain substring instead of being
   // copied into `runText`. Once an escape or a gap breaks purity, the pure prefix is copied into
   // `runText` once and accumulation continues there.
   private boolean runIsPure = true;
@@ -474,9 +473,9 @@ public final class PatternParser extends CharClassParser {
 
   private LiteralPatternConstruct newLiteral(
       int runStartIndex, int endIndex, boolean isPure, int pureEnd, @Nullable StringBuilder rawText) {
-    CharSequence value = isPure
-        ? CharBuffer.wrap(pattern, runStartIndex, pureEnd)
-        : castNonNull(rawText).toString();
+    // A String, not a CharBuffer view: the matcher needs a String anyway, and the view's StringCharBuffer reads
+    // and toString() cost more on ART than the substring (Pixel 3a sampling, 2026-10-04).
+    String value = isPure ? pattern.substring(runStartIndex, pureEnd) : castNonNull(rawText).toString();
     LiteralPatternConstruct literal = new LiteralPatternConstruct(runStartIndex, endIndex, value);
     literal.flags = flags;
     return literal;

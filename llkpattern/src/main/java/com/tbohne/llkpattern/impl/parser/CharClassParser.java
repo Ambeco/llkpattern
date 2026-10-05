@@ -205,16 +205,16 @@ class CharClassParser extends PatternLexer {
       return result;
     }
     if (peek != 'p' && peek != 'P') {
-      try {
-        CodePointSet result = RegexCharacterClass.valueOf(Character.toString(peek)).get(flags);
-        advance(1);
-        return result;
-      } catch (IllegalArgumentException e) {
+      RegexCharacterClass escapeClass = RegexCharacterClass.forEscape(peek);
+      if (escapeClass == null) {
         // CodePoint, not raw concatenation: peek is an int, which would render as e.g. "68".
         throw throwUnexpectedChar(
             "escape \"", new CodePoint(peek), "\" not in [dDhHsSvVwWR]. Is it a non-standard "
                 + "regex escape?");
       }
+      CodePointSet result = escapeClass.get(flags);
+      advance(1);
+      return result;
     }
     // All the rest of this method is parsing named character classes
     boolean positive = peek == 'p';

@@ -179,8 +179,8 @@ splitting can't change JIT compile/inline decisions; the goal is navigability on
       i.e. first-touch/safepoint smear after `toCharArray`, not the call itself), `String.charAt` ~6%, `arraycopy` ~3.7%
       (`ArrayCodePointSet.insertRange`/`ensureCapacity` via `singletonCodePointMap`), `PatternConstruct.<init>` ~5% (field
       count/object size?), `ConstructList.get/add` ~4%, `PatternConstruct.next` 2%, `ArrayCodePointSet.keyMax` ~2%.
-      Ideas: shrink `PatternConstruct` (lazy `dispatch*`/`entry*` fields), read `ConstructList.items` directly in the
-      remaining `get(i)` loops, a shared 1-element `singletonCodePointMap` for ASCII literals.
+      Ideas: shrink `PatternConstruct` (lazy `dispatch*` fields: 8 B, read by MatcherConstruct ctors; do NOT fold `entryPointState` into an `entryMap` sentinel: several buildEntryMap overrides assign entryMap before calling next.getEntryElse(), which would silently lose cycle detection; expected gain <0.5%); the loop `get(i)` reads are done. Also:
+      a shared 1-element `singletonCodePointMap` for ASCII literals.
       Pixel match leaders (unchanged): `String.charAt`/`codePointAt` ~27% combined (try a `char[]` copy of the input
       for `find()` loops; measure first), `MatcherConstruct.containsEntry` ~9%, `Matcher.<init>` -> `syncPeeked` ~13%
       plus `Arrays.fill` ~2% (matcher construction), `ArrayCodePointSet.floorIndex` ~8%. The ~8% `ArrayList.get` under

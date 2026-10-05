@@ -260,8 +260,8 @@ public abstract class PatternConstruct {
 		}
 		MutableCodePointSet ranges = new ArrayCodePointSet(capacityHint);
 		PatternConstruct elseCandidate = null;
-		for (int i = 0; i < candidates.size(); i++) {
-			elseCandidate = mergeOneEntryPoint(pattern, candidates.get(i), elseCandidate, candidateNounPlural, ranges, false);
+		for (int i = 0, n = candidates.size; i < n; i++) {
+			elseCandidate = mergeOneEntryPoint(pattern, candidates.items[i], elseCandidate, candidateNounPlural, ranges, false);
 		}
 		if (extra != null) {
 			elseCandidate = mergeOneEntryPoint(pattern, extra, elseCandidate, candidateNounPlural, ranges, true);
@@ -406,10 +406,10 @@ public abstract class PatternConstruct {
 			@Nullable PatternConstruct endOfFindCandidate) {
 		// elseCandidate gets no gate of its own, so `gates` past `count` is unused.
 		CodePointSet[] gates = checkDisjoint(pattern, flags, candidates, elseCandidate, candidateNounPlural);
-		int count = candidates.size();
+		int count = candidates.size;
 		MatcherConstruct tail = elseTarget;
 		for (int i = count - 1; i >= 0; i--) {
-			PatternConstruct candidate = candidates.get(i);
+			PatternConstruct candidate = candidates.items[i];
 			boolean lastUngated = (i == count - 1 && elseTarget == null);
 			if (candidate == endOfFindCandidate && !lastUngated) {
 				// Keeps its list position (JDK alternation order): ungated, behind a gate that also admits end-of-find.
@@ -503,8 +503,8 @@ public abstract class PatternConstruct {
 		// lastCharSet() isn't cached, so compute each part once, up front (a null still means give up).
 		CodePointSet[] partLastSets = new CodePointSet[body.size()];
 		int capacityHint = 0;
-		for (int i = 0; i < body.size(); i++) {
-			CodePointSet partLast = body.get(i).lastCharSet();
+		for (int i = 0, n = body.size; i < n; i++) {
+			CodePointSet partLast = body.items[i].lastCharSet();
 			if (partLast == null) {
 				return null;
 			}

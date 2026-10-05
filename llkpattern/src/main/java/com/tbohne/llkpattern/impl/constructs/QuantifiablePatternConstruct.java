@@ -41,9 +41,9 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	// part, or next when the loop is skippable) claimed it; mergeEntryPoints rejects two.
 	final boolean loopElseIsEndOfFind(ConstructList body, PatternConstruct next) {
 		if (max != 0) {
-			for (int i = 0; i < body.size(); i++) {
-				if (body.get(i).claimsEntryElse()) {
-					return body.get(i).elseIsEndOfFind();
+			for (int i = 0, n = body.size; i < n; i++) {
+				if (body.items[i].claimsEntryElse()) {
+					return body.items[i].elseIsEndOfFind();
 				}
 			}
 		}
@@ -53,9 +53,9 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	/** {@link #elseIsResidual} for the quantified case, mirroring {@link #loopElseIsEndOfFind}. */
 	final boolean loopElseIsResidual(ConstructList body, PatternConstruct next) {
 		if (max != 0) {
-			for (int i = 0; i < body.size(); i++) {
-				if (body.get(i).claimsEntryElse()) {
-					return body.get(i).elseIsResidual();
+			for (int i = 0, n = body.size; i < n; i++) {
+				if (body.items[i].claimsEntryElse()) {
+					return body.items[i].elseIsResidual();
 				}
 			}
 		}
@@ -77,8 +77,8 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 			return;
 		}
 		PatternConstruct target = loopBodyTarget(captureConstructIndex);
-		for (int i = 0; i < body.size(); i++) {
-			body.get(i).next = target;
+		for (int i = 0, n = body.size; i < n; i++) {
+			body.items[i].next = target;
 		}
 		MergedEntries result = mergeEntryPoints(pattern, body, min == 0 ? next : null, "loop part");
 		entryMap = result.ranges;
@@ -196,8 +196,8 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 		// (reverted; notes.md). So each part gets a throwaway LoopBodyPartGatePatternConstruct carrying the
 		// gate, with the capture INSIDE it (compiled ungated).
 		MatcherConstruct bodyTail = exitNode;
-		for (int i = body.size() - 1; i >= 0; i--) {
-			PatternConstruct part = body.get(i);
+		for (int i = body.size - 1; i >= 0; i--) {
+			PatternConstruct part = body.items[i];
 			CodePointSet partEntrySet = gates[i];
 			if (capturing) {
 				MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
@@ -247,8 +247,8 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	 */
 	private boolean narrowResidualGates(ConstructList body, PatternConstruct next, CodePointSet[] gates) {
 		boolean any = false;
-		for (int i = 0; i < body.size(); i++) {
-			PatternConstruct part = body.get(i);
+		for (int i = 0, n = body.size; i < n; i++) {
+			PatternConstruct part = body.items[i];
 			if (!part.claimsEntryElse() || !part.elseIsResidual()) {
 				continue;
 			}

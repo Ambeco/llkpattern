@@ -179,7 +179,7 @@ class CharClassParser extends PatternLexer {
           }
           // fallthrough
         default:
-          int codePoint = Character.codePointAt(patternChars, index);
+          int codePoint = codePointAtChecked(patternChars, index);
           advanceCodePoint();
           if (peek == '-') {
             parseMaybeRangePredicate(ranges, codePoint);
@@ -336,7 +336,7 @@ class CharClassParser extends PatternLexer {
       }
       addLiteralRange(ranges, startCodePoint, endCodePoint + 1);
     } else {
-      int endCodePoint = Character.codePointAt(patternChars, index);
+      int endCodePoint = codePointAtChecked(patternChars, index);
       if (endCodePoint < startCodePoint) {
         throw throwUnexpectedChar(RANGE_MAX_BELOW_MIN);
       }

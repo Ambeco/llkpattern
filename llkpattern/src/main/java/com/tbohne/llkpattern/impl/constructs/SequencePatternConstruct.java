@@ -31,7 +31,7 @@ public final class SequencePatternConstruct extends PatternConstruct {
 		// A sequence's entry point is its first element's. patterns.get(0) is fixed, so delegating can't add a
 		// cycle, but its own entry-point computation needs the wiring below to have run.
 		wireElementNextPointers();
-		return patterns.get(0).claimsEntryElse();
+		return patterns.items[0].claimsEntryElse();
 	}
 
 	@Override
@@ -59,10 +59,11 @@ public final class SequencePatternConstruct extends PatternConstruct {
 		// point mid-construction without forcing that loop's in-progress matcher build (design.md
 		// "Entry-point computation vs. matcher compilation").
 		wireElementNextPointers();
+		PatternConstruct first = patterns.items[0];
 		// Aliased, not copied: entryMap is a plain set. (entryElse is re-keyed onto `this`; see
 		// QuantifiedUnionPatternConstruct.)
-		entryMap = patterns.get(0).getEntryPointMap();
-		if (patterns.get(0).getEntryElse() != null) {
+		entryMap = first.getEntryPointMap();
+		if (first.getEntryElse() != null) {
 			entryElse = this;
 		}
 	}
@@ -71,8 +72,9 @@ public final class SequencePatternConstruct extends PatternConstruct {
 	void buildMatcher() {
 		// No matching behavior of its own: it is whatever its first element compiled to, so our dispatch gating
 		// goes on that element (safe to propagate directly: it is exclusively ours and not yet compiled).
-		patterns.get(0).dispatchEntrySet = dispatchEntrySet;
-		patterns.get(0).dispatchFailedEntry = dispatchFailedEntry;
+		PatternConstruct first = patterns.items[0];
+		first.dispatchEntrySet = dispatchEntrySet;
+		first.dispatchFailedEntry = dispatchFailedEntry;
 		// Compile tail-to-front: the last element's next is ours, each earlier one's is the element after it.
 		PatternConstruct tail = next();
 		PatternConstruct[] parts = patterns.items;
@@ -84,7 +86,7 @@ public final class SequencePatternConstruct extends PatternConstruct {
 			part.compile(tail);
 			tail = part;
 		}
-		matcher = patterns.get(0).matcher();
+		matcher = first.matcher();
 	}
 
 	@Override

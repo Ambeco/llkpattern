@@ -340,7 +340,7 @@ public final class PatternParser extends CharClassParser {
       runText.append(patternChars, runStartIndex, runPureEnd - runStartIndex);
       runIsPure = false;
     }
-    int fullChar = Character.codePointAt(patternChars, index);
+    int fullChar = codePointAtChecked(patternChars, index);
     advanceCodePoint();
     // Captured before skipComments() below moves `index` past a following gap; runPureEnd
     // must stay here or the next char's gap check above would never fire.

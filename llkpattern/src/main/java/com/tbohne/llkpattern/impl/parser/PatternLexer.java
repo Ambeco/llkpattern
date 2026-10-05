@@ -58,7 +58,14 @@ class PatternLexer {
   static final int EOF = -1;
 
   private static int codePointAt(char[] chars, int i) {
-    return i < chars.length ? Character.codePointAt(chars, i) : EOF;
+    return i < chars.length ? codePointAtChecked(chars, i) : EOF;
+  }
+
+  // Character.codePointAt was the top Pixel 3a compile leaf (~8%); everything below the surrogate range (nearly
+  // all pattern text) needs only the array read. Throws like Character.codePointAt for an out-of-range index.
+  static int codePointAtChecked(char[] chars, int i) {
+    char c = chars[i];
+    return Character.isHighSurrogate(c) ? Character.codePointAt(chars, i) : c;
   }
 
   final void advanceCodePoint() {
@@ -84,9 +91,13 @@ class PatternLexer {
    * (whitespace is significant there, as in java.util.regex) or mid-token in a name/flag list.
    */
   final void skipComments() {
-    if ((flags & Pattern.COMMENTS) == 0) {
-      return;
+    if ((flags & Pattern.COMMENTS) != 0) {
+      skipCommentsSlow();
     }
+  }
+
+  // Split out so the flag test above stays small enough for ART to inline at its ~12 call sites.
+  private void skipCommentsSlow() {
     for (; ; ) {
       if (Character.isWhitespace(peek)) {
         // advanceCodePoint(), not advance(1): this skips arbitrary pattern text, which could be a supplementary

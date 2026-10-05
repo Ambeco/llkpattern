@@ -15,8 +15,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
-import java.util.ArrayList;
-import java.util.List;
 
 public abstract class PatternConstruct {
 	public final int startIndex;
@@ -219,11 +217,11 @@ public abstract class PatternConstruct {
 	// Reads "index i of candidates followed by extra" without copying (the arraycopy showed up in
 	// Pixel 3a CPU sampling).
 	private static PatternConstruct candidateAt(
-			List<PatternConstruct> candidates, @Nullable PatternConstruct extra, int index) {
+			ConstructList candidates, @Nullable PatternConstruct extra, int index) {
 		return index < candidates.size() ? candidates.get(index) : castNonNull(extra);
 	}
 
-	private static int candidateCount(List<PatternConstruct> candidates, @Nullable PatternConstruct extra) {
+	private static int candidateCount(ConstructList candidates, @Nullable PatternConstruct extra) {
 		return candidates.size() + (extra != null ? 1 : 0);
 	}
 
@@ -233,7 +231,7 @@ public abstract class PatternConstruct {
 	 * any-other-character catch-all. Used for a union's branches and a quantified construct's body
 	 * parts. Overlap checking is {@link #checkDisjoint}'s job, not this method's.
 	 */
-	static MergedEntries mergeEntryPoints(String pattern, List<PatternConstruct> candidates, String candidateNounPlural) {
+	static MergedEntries mergeEntryPoints(String pattern, ConstructList candidates, String candidateNounPlural) {
 		return mergeEntryPoints(pattern, candidates, null, candidateNounPlural);
 	}
 
@@ -242,7 +240,7 @@ public abstract class PatternConstruct {
 	 * candidates} into a new list: a loop's {@code next} joins only when {@code min == 0}.
 	 */
 	static MergedEntries mergeEntryPoints(
-			String pattern, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+			String pattern, ConstructList candidates, @Nullable PatternConstruct extra,
 			String candidateNounPlural) {
 		if (extra == null && candidates.size() == 1) {
 			// Lone candidate (the common quantified single char/class): alias its entry point, no allocation.
@@ -324,7 +322,7 @@ public abstract class PatternConstruct {
 	 * {@code elseTarget} fallback is expected to overlap every other candidate.
 	 */
 	static CodePointSet[] checkDisjoint(
-			String pattern, int flags, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+			String pattern, int flags, ConstructList candidates, @Nullable PatternConstruct extra,
 			String candidateNounPlural) {
 		return checkDisjoint(pattern, flags, candidates, extra, null, candidateNounPlural);
 	}
@@ -334,7 +332,7 @@ public abstract class PatternConstruct {
 	 * comparison only (an error still blames {@code extra}) -- see {@link #skipZeroWidthEntrySet}.
 	 */
 	static CodePointSet[] checkDisjoint(
-			String pattern, int flags, List<PatternConstruct> candidates, @Nullable PatternConstruct extra,
+			String pattern, int flags, ConstructList candidates, @Nullable PatternConstruct extra,
 			@Nullable CodePointSet extraEntrySet, String candidateNounPlural) {
 		int count = candidateCount(candidates, extra);
 		CodePointSet[] sets = new CodePointSet[count];
@@ -400,7 +398,7 @@ public abstract class PatternConstruct {
 			@Nullable PatternConstruct owner,
 			int flags,
 			String pattern,
-			List<PatternConstruct> candidates,
+			ConstructList candidates,
 			String candidateNounPlural,
 			PatternConstruct compileTarget,
 			@Nullable MatcherConstruct elseTarget,
@@ -497,7 +495,7 @@ public abstract class PatternConstruct {
 	 * All-or-nothing, like {@code lastCharSet} itself. Used only by the greedy-loop zero-width
 	 * ambiguity check (see {@link #skipZeroWidthEntrySet}).
 	 */
-	static @Nullable CodePointSet unionLastCharSet(List<PatternConstruct> body) {
+	static @Nullable CodePointSet unionLastCharSet(ConstructList body) {
 		if (body.size() == 1) {
 			// No copy: callers only read the result.
 			return body.get(0).lastCharSet();

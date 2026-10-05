@@ -8,14 +8,12 @@ import com.tbohne.llkpattern.impl.unicode.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
-import java.util.ArrayList;
-import java.util.List;
 
 public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternConstruct {
 	public int captureConstructIndex = 0;
 	public String captureName = "";
 	// Pre-sized to 4: 99.63% of unions have <= 4 elements, mean 1.38 (corpus measurement, 2026-09-27).
-	public final List<PatternConstruct> constructs = new ArrayList<>(4);
+	public final ConstructList constructs = new ConstructList(4);
 
 	// The real catch-all candidate, which buildMatcher() needs: the inherited entryElse is re-keyed onto
 	// `this` (like SequencePatternConstruct's) for ancestors' identity checks.
@@ -107,7 +105,8 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 			target.flags = flags;
 		}
 		compileTarget = target;
-		for (PatternConstruct part : constructs) {
+		for (int ci = 0; ci < constructs.size; ci++) {
+			PatternConstruct part = constructs.items[ci];
 			part.next = target;
 		}
 		MergedEntries result = mergeEntryPoints(pattern, constructs, "union subpattern");
@@ -152,12 +151,13 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 				rawEntryElse != null && rawEntryElse.elseIsEndOfFind() ? rawEntryElse : null;
 		PatternConstruct tailElse = endOfFindCandidate != null ? null : rawEntryElse;
 		MatcherConstruct elseTarget = tailElse != null ? tailElse.compile(compileTarget()) : null;
-		List<PatternConstruct> chainCandidates;
+		ConstructList chainCandidates;
 		if (tailElse == null) {
 			chainCandidates = constructs;
 		} else {
-			chainCandidates = new ArrayList<>(constructs.size());
-			for (PatternConstruct c : constructs) {
+			chainCandidates = new ConstructList(constructs.size());
+			for (int ci = 0; ci < constructs.size; ci++) {
+			PatternConstruct c = constructs.items[ci];
 				if (c != tailElse) {
 					chainCandidates.add(c);
 				}
@@ -175,7 +175,8 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 	final CodePointSet skipZeroWidthEntrySet(boolean checkAssertions, @Nullable CodePointSet bodyLastCharSet) {
 		if (isUnquantified() && !constructs.isEmpty()) {
 			MutableCodePointSet result = new ArrayCodePointSet();
-			for (PatternConstruct branch : constructs) {
+			for (int ci = 0; ci < constructs.size; ci++) {
+			PatternConstruct branch = constructs.items[ci];
 				result.insertAll(branch.skipZeroWidthEntrySet(checkAssertions, bodyLastCharSet));
 			}
 			return result;
@@ -197,7 +198,8 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 			return null;
 		}
 		MutableCodePointSet result = new ArrayCodePointSet();
-		for (PatternConstruct branch : constructs) {
+		for (int ci = 0; ci < constructs.size; ci++) {
+			PatternConstruct branch = constructs.items[ci];
 			CodePointSet branchSet = branch.firstCharSet();
 			if (branchSet == null) {
 				return null;
@@ -229,7 +231,8 @@ public final class QuantifiedUnionPatternConstruct extends QuantifiablePatternCo
 		// A real alternation: every branch must resolve with no capturing group of its own; only the whole
 		// alternation may capture, e.g. (?<=(a|b)) is supported, (?<=(a)|(b)) is not.
 		MutableCodePointSet result = new ArrayCodePointSet();
-		for (PatternConstruct branch : constructs) {
+		for (int ci = 0; ci < constructs.size; ci++) {
+			PatternConstruct branch = constructs.items[ci];
 			LookbehindPatternConstruct.SingleCodePointBody inner = branch.resolveSingleCodePointBody();
 			if (inner == null || inner.captureConstructIndex != -1) {
 				return null;

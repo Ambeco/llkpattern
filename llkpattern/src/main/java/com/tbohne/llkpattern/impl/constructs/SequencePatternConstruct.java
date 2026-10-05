@@ -5,12 +5,10 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
-import java.util.ArrayList;
-import java.util.List;
 
 public final class SequencePatternConstruct extends PatternConstruct {
 	// Pre-sized to 4: 100% of sequences have <= 4 elements, mean 1.15 (corpus measurement, 2026-09-27).
-	public final List<PatternConstruct> patterns = new ArrayList<>(4);
+	public final ConstructList patterns = new ConstructList(4);
 
 	public SequencePatternConstruct(int startIndex) {
 		super(startIndex);
@@ -21,9 +19,10 @@ public final class SequencePatternConstruct extends PatternConstruct {
 	// may run first.
 	private void wireElementNextPointers() {
 		PatternConstruct tail = next();
-		for (int i = patterns.size() - 1; i >= 0; i--) {
-			patterns.get(i).next = tail;
-			tail = patterns.get(i);
+		PatternConstruct[] parts = patterns.items;
+		for (int i = patterns.size - 1; i >= 0; i--) {
+			parts[i].next = tail;
+			tail = parts[i];
 		}
 	}
 
@@ -76,10 +75,11 @@ public final class SequencePatternConstruct extends PatternConstruct {
 		patterns.get(0).dispatchFailedEntry = dispatchFailedEntry;
 		// Compile tail-to-front: the last element's next is ours, each earlier one's is the element after it.
 		PatternConstruct tail = next();
-		for (int i = patterns.size() - 1; i >= 0; i--) {
-			PatternConstruct part = patterns.get(i);
+		PatternConstruct[] parts = patterns.items;
+		for (int i = patterns.size - 1; i >= 0; i--) {
+			PatternConstruct part = parts[i];
 			if (part instanceof WordBoundaryPatternConstruct && i > 0) {
-				((WordBoundaryPatternConstruct) part).priorCharSet = patterns.get(i - 1).lastCharSet();
+				((WordBoundaryPatternConstruct) part).priorCharSet = parts[i - 1].lastCharSet();
 			}
 			part.compile(tail);
 			tail = part;

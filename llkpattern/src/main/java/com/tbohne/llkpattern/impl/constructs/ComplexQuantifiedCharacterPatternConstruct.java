@@ -5,17 +5,16 @@ import com.tbohne.llkpattern.impl.unicode.NamedCharClass;
 
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.Nullable;
-import java.util.List;
 
 public final class ComplexQuantifiedCharacterPatternConstruct extends QuantifiablePatternConstruct {
 	final ComplexCharacterPatternConstruct delegate;
-	// Built once: List.of is desugared on Android to ArrayList + unmodifiable wrapper (3 allocations per call).
-	private final List<PatternConstruct> delegateBody;
+	// Built once: List.of would allocate an ArrayList plus a wrapper per call on Android.
+	private final ConstructList delegateBody;
 
 	public ComplexQuantifiedCharacterPatternConstruct(String pattern, int startIndex, ComplexCharacterPatternConstruct delegate) {
 		super(pattern, startIndex, delegate.endIndex);
 		this.delegate = delegate;
-		this.delegateBody = java.util.Collections.singletonList(delegate);
+		this.delegateBody = ConstructList.of(delegate);
 	}
 
 	@Override

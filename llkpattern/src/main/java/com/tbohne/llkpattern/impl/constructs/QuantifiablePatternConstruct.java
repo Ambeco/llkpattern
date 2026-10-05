@@ -9,7 +9,6 @@ import com.tbohne.llkpattern.impl.unicode.CodePointSet.MutableCodePointSet;
 import com.tbohne.llkpattern.impl.unicode.NamedCharClass.*;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
-import java.util.ArrayList;
 import java.util.List;
 
 public abstract class QuantifiablePatternConstruct extends PatternConstruct {
@@ -40,7 +39,7 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 
 	// elseIsEndOfFind for the quantified case: the catch-all comes from whichever single candidate (a body
 	// part, or next when the loop is skippable) claimed it; mergeEntryPoints rejects two.
-	final boolean loopElseIsEndOfFind(List<PatternConstruct> body, PatternConstruct next) {
+	final boolean loopElseIsEndOfFind(ConstructList body, PatternConstruct next) {
 		if (max != 0) {
 			for (int i = 0; i < body.size(); i++) {
 				if (body.get(i).claimsEntryElse()) {
@@ -52,7 +51,7 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	}
 
 	/** {@link #elseIsResidual} for the quantified case, mirroring {@link #loopElseIsEndOfFind}. */
-	final boolean loopElseIsResidual(List<PatternConstruct> body, PatternConstruct next) {
+	final boolean loopElseIsResidual(ConstructList body, PatternConstruct next) {
 		if (max != 0) {
 			for (int i = 0; i < body.size(); i++) {
 				if (body.get(i).claimsEntryElse()) {
@@ -67,10 +66,10 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	// continuing routes back here), plus next's when min == 0. Reads ONLY entry points, never compile()s,
 	// so a loop nested in another's body resolves without forcing a cycle (design.md "Entry-point
 	// computation vs. matcher compilation").
-	void buildLoopEntryMap(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
+	void buildLoopEntryMap(ConstructList body, PatternConstruct next, int captureConstructIndex) {
 		if (max == 0) {
 			// `X{0}` never matches X at all: its entry point is exactly `next`'s.
-			MergedEntries skipped = mergeEntryPoints(pattern, List.of(), next, "loop part");
+			MergedEntries skipped = mergeEntryPoints(pattern, ConstructList.EMPTY, next, "loop part");
 			entryMap = skipped.ranges;
 			if (skipped.entryElse() != null) {
 				entryElse = this;
@@ -135,7 +134,7 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	 * standing in for the {@link LoopBackPatternConstruct}, so finishing an iteration records the
 	 * capture before looping back.
 	 */
-	void buildLoopMatcher(List<PatternConstruct> body, PatternConstruct next, int captureConstructIndex) {
+	void buildLoopMatcher(ConstructList body, PatternConstruct next, int captureConstructIndex) {
 		if (max == 0) {
 			// The body is never compiled: `X{0}` is a no-op, and its capture group (if any) stays unset.
 			MatcherConstruct.aliasOrPassThrough(this, next.matcher());
@@ -246,7 +245,7 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 	 * <p>Returns whether any part was residual: such a loop's entry isn't just {@code gates[0]}, so
 	 * {@code LoopFirstEntryMatcherConstruct}'s "outer gate already checked it" proof doesn't hold.
 	 */
-	private boolean narrowResidualGates(List<PatternConstruct> body, PatternConstruct next, CodePointSet[] gates) {
+	private boolean narrowResidualGates(ConstructList body, PatternConstruct next, CodePointSet[] gates) {
 		boolean any = false;
 		for (int i = 0; i < body.size(); i++) {
 			PatternConstruct part = body.get(i);

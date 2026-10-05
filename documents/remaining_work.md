@@ -171,19 +171,20 @@ splitting can't change JIT compile/inline decisions; the goal is navigability on
 - [ ] **`pattern.substring` via `patternChars`**: check whether `new String(patternChars, offset, length)` instead of
       `pattern.substring(...)` (capture names, error text, `\N{name}`, class names) has any compile-time effect.
       Probably little to none; measure before keeping.
-- [ ] **Re-profile with lower sampling cutoffs, then work the hot stacks** (2026-10-04 exploration; the cutoffs were
-      raised temporarily and reverted, nothing was committed). Desktop: `SamplingRunner` uses
-      `stack:lines=4;detailLine=true`; adding `top=60` (JMH default is 10 stacks) shows more stacks, though an
-      `<other>` bucket of ~10% remains; keep `lines=4` (8 was too diffuse). Android: `AndroidCorpusBenchmark`
-      `CUTOFF_LEAF_RANK` 10 -> 30 and `MIN_CALLER_CUTOFF_PERCENT` 0.5 -> 0.1 gave ~540 distinct leaves, 30 shown. Decide
-      whether to keep these permanently, then re-capture on the current code (the lexer changes below moved the
-      profile). Two thirds of the desktop samples are idle (`wait0` plus empty stacks), and the Android sampler is
-      safepoint-biased, so read stacks, not single leaves. Pre-change Pixel compile leads: `String.charAt` 9.6%
-      (`indexOf` in `removeQuoting`, `offsetByCodePoints` in `advanceCodePoint`, `META_CHARACTERS.indexOf` --
-      all since fixed), `ArrayList.get`/`Objects.checkIndex` ~6%, `PatternConstruct.next:73` 3.3%,
-      `PatternConstruct.<init>` ~3%, `Collections$Unmodifiable*` ~1.5%. Pixel match leads: `String.charAt` 17.7%,
-      `String.codePointAt` 9.6%, `MatcherConstruct.containsEntry` 9.1%, `ArrayCodePointSet.floorIndex` ~8%
-      (worth trying a `char[]` copy of the input for `find()` loops; measure first).
+- [ ] **Work the remaining hot compile/match stacks** (cutoffs are now permanent: desktop `top=60`, Pixel leaf rank 30 /
+      caller cutoff 0.1%; read stacks, not single leaves -- the Android sampler is safepoint-biased, and two thirds of
+      desktop samples are idle). Done 2026-10-05: literals as plain Strings, `forEscape` switch, `ConstructList`, lexer
+      `\Q` via `indexOf`, ASCII `codePointAt` path, inlinable `skipComments`; Pixel compile ratio 0.64 -> 0.56. Leaders
+      left on the Pixel compile profile (2026-10-05): `PatternLexer.codePointAtChecked` ~10% (it is the `chars[i]` read,
+      i.e. first-touch/safepoint smear after `toCharArray`, not the call itself), `String.charAt` ~6%, `arraycopy` ~3.7%
+      (`ArrayCodePointSet.insertRange`/`ensureCapacity` via `singletonCodePointMap`), `PatternConstruct.<init>` ~5% (field
+      count/object size?), `ConstructList.get/add` ~4%, `PatternConstruct.next` 2%, `ArrayCodePointSet.keyMax` ~2%.
+      Ideas: shrink `PatternConstruct` (lazy `dispatch*`/`entry*` fields), read `ConstructList.items` directly in the
+      remaining `get(i)` loops, a shared 1-element `singletonCodePointMap` for ASCII literals.
+      Pixel match leaders (unchanged): `String.charAt`/`codePointAt` ~27% combined (try a `char[]` copy of the input
+      for `find()` loops; measure first), `MatcherConstruct.containsEntry` ~9%, `Matcher.<init>` -> `syncPeeked` ~13%
+      plus `Arrays.fill` ~2% (matcher construction), `ArrayCodePointSet.floorIndex` ~8%. The ~8% `ArrayList.get` under
+      `AndroidCorpusBenchmark.lambda$sampleMatchLlk` is harness overhead, not library code.
 - [ ] Understand why the method splits improved the compile ratio (~2-3% desktop, from `parseUnion` 1849 -> 590
       bytecode bytes, `parseQuantifiable` 625 -> 176, etc.): check `-XX:+PrintInlining`/`PrintCompilation` on a
       compile-only loop, and A/B each split commit separately (only the cumulative effect was measured).

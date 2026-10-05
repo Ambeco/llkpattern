@@ -3906,3 +3906,12 @@ Desktop baseline-reuse drift check (2026-10-02, after a disk cleanup, same code)
 baseline: interleaved compile 2.197/2.216/2.215/2.221 vs committed 2.246 (-2.2% then three at -1.1..-1.4%, each flagged by
 pairedCompare; the three agree with each other within 0.4%), compile-blocked within -1.3..0.0%, match within +-0.6%. So the
 committed baseline is trustworthy to ~1.5-2% on interleaved compile and ~0.6% on match; same-session A/B for smaller effects.
+
+2026-10-05, compile-path pass from the lowered-cutoff profile: same-session desktop A/Bs gave compile -2.6% (literal
+String / escape switch / cached singleton body / small `next()`; literal bucket -10%) and -3.9% (`ConstructList`);
+the later ASCII-codePointAt/skipComments step was neutral on desktop (-0.8%, unflagged) and added nothing visible on the
+Pixel over the `ConstructList` run (0.566 vs 0.560). Pixel total 0.643 -> 0.560 interleaved, 0.611 -> 0.540 blocked;
+`llkCompile` 2,962,389 -> 2,850,134 B/op. Gotchas: `git stash push` can silently create nothing (an intent-to-add file
+broke it) while an old unrelated stash sits at `stash@{0}` -- check the stash count, `git add` first; and
+`git checkout -- benchmarks` after an A/B discards uncommitted Pixel outputs, so commit or copy them first. Tests need JDK 25
+(JDK 17 fails ~90 ``/`(?iu)` oracle rows; see CLAUDE.md).

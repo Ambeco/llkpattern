@@ -68,7 +68,7 @@ public final class SamplingRunner {
     Options opts =
         new OptionsBuilder()
             .include(".*" + CorpusBenchmark.class.getSimpleName() + "\\." + name + "$")
-            .addProfiler(StackProfiler.class, "lines=4;detailLine=true")
+            .addProfiler(StackProfiler.class, "lines=4;detailLine=true;top=60")
             .warmupIterations(warmupIterations)
             .warmupTime(TimeValue.fromString(warmupTime))
             .measurementIterations(iterations)

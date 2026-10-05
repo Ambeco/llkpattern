@@ -116,7 +116,7 @@ public class AndroidCorpusBenchmark {
   private static final long SAMPLE_INTERVAL_MILLIS = 1;
   /** Leaf rank (1-based, so 10 means "the 10th most common leaf") whose most-common caller's
    *  percentage becomes the depth cutoff in {@link #printCallers} -- see that method's javadoc. */
-  private static final int CUTOFF_LEAF_RANK = 10;
+  private static final int CUTOFF_LEAF_RANK = 30;
   /** One entry per {@code @Test} method, dumped by {@link #writeResults}. {@link FixMethodOrder} pins the order
    *  only for readability of the file. */
   private static final Map<String, Object> results = new LinkedHashMap<>();
@@ -567,7 +567,7 @@ public class AndroidCorpusBenchmark {
 
    /** A floor under {@link #computeCallerCutoffPercent}'s rank-based cutoff, so a corpus with very few distinct
     *  leaves can't resolve to ~0% and print single-sample noise. */
-   private static final double MIN_CALLER_CUTOFF_PERCENT = 0.5;
+   private static final double MIN_CALLER_CUTOFF_PERCENT = 0.1;
 
    /**
     * Writes the reversed call tree as plain text: the top {@link #CUTOFF_LEAF_RANK} leaves (capped at exactly

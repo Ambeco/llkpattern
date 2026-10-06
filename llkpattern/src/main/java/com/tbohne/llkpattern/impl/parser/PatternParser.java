@@ -199,17 +199,6 @@ public final class PatternParser extends CharClassParser {
           || peek == '^' || peek == '$' || peek == EOF) {
         accumulator = flushLiteralRun(accumulator, altStartIndex, index);
         switch (peek) {
-          case '(':
-            // Null only for a lookbehind quantified to "{0}" (see keepZeroWidthAfterQuantifier).
-            PatternConstruct group = parseGroup();
-            if (group != null) {
-              accumulator = addToAlternative(accumulator, group, altStartIndex);
-            }
-            break;
-          case '[':
-            accumulator = addToAlternative(
-                accumulator, parseQuantifiable(parseComplexCharacter()), altStartIndex);
-            break;
           case '|':
             PatternConstruct altConstruct = finishAlternative(accumulator, altStartIndex, unionStartIndex);
             if (union != null) {
@@ -217,57 +206,78 @@ public final class PatternParser extends CharClassParser {
             } else if (firstAlternative == null) {
               firstAlternative = altConstruct;
             } else {
-              union = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
-              union.flags = unionFlags;
-              union.captureConstructIndex = captureConstructIndex;
-              union.captureName = captureName;
-              union.constructs.add(firstAlternative);
-              union.constructs.add(altConstruct);
+              union = newUnion(unionStartIndex, unionFlags, captureConstructIndex, captureName,
+                  firstAlternative, altConstruct);
             }
             accumulator = null;
             altStartIndex = index;
             advance(1);
             break;
-          case '.':
-            ComplexCharacterPatternConstruct dot = parseDot();
-            // Must advance before parseQuantifiable, or ".*" is read as "." then literal "*".
-            advance(1);
-            accumulator = addToAlternative(accumulator, parseQuantifiable(dot), altStartIndex);
-            break;
-          case '^':
-            LineBoundaryPatternConstruct lineBegin = new LineBoundaryPatternConstruct(index, index+1, /* isLineBegin= */ true);
-            lineBegin.flags = flags;
-            advance(1);
-            if (keepZeroWidthAfterQuantifier()) {
-              accumulator = addToAlternative(accumulator, lineBegin, altStartIndex);
-            }
-            break;
-          case '$':
-            LineBoundaryPatternConstruct lineEnd = new LineBoundaryPatternConstruct(index, index+1, /* isLineBegin= */ false);
-            lineEnd.flags = flags;
-            advance(1);
-            if (keepZeroWidthAfterQuantifier()) {
-              accumulator = addToAlternative(accumulator, lineEnd, altStartIndex);
-            }
-            break;
           case ')':
           case EOF:
             return finishUnion(accumulator, altStartIndex, unionStartIndex, unionFlags,
                 captureConstructIndex, captureName, firstAlternative, union);
+          default:
+            accumulator = parseDelimitedAtom(accumulator, altStartIndex);
         }
       } else if (peek == '\\') {
-        int startIndex = index;
-        int codePoint = tryParseSingleCharEscape();
-        if (codePoint != -1) {
-          accumulator = parseEscapedCharacter(accumulator, altStartIndex, startIndex, codePoint);
-        } else {
-          accumulator = flushLiteralRun(accumulator, altStartIndex, index);
-          accumulator = parseNonLiteralEscape(accumulator, altStartIndex);
-        }
+        accumulator = parseBackslashAtom(accumulator, altStartIndex);
       } else {
         accumulator = parsePlainCharacter(accumulator, altStartIndex);
       }
     }
+  }
+
+  private QuantifiedUnionPatternConstruct newUnion(
+      int unionStartIndex, int unionFlags, int captureConstructIndex, String captureName,
+      PatternConstruct firstAlternative, PatternConstruct secondAlternative) {
+    QuantifiedUnionPatternConstruct union = new QuantifiedUnionPatternConstruct(pattern, unionStartIndex);
+    union.flags = unionFlags;
+    union.captureConstructIndex = captureConstructIndex;
+    union.captureName = captureName;
+    union.constructs.add(firstAlternative);
+    union.constructs.add(secondAlternative);
+    return union;
+  }
+
+  // The atom introduced by '(', '[', '.', '^' or '$'; parseUnion has already flushed the literal run.
+  private @Nullable Object parseDelimitedAtom(@Nullable Object accumulator, int altStartIndex) {
+    switch (peek) {
+      case '(':
+        // Null only for a lookbehind quantified to "{0}" (see keepZeroWidthAfterQuantifier).
+        PatternConstruct group = parseGroup();
+        return group != null ? addToAlternative(accumulator, group, altStartIndex) : accumulator;
+      case '[':
+        return addToAlternative(
+            accumulator, parseQuantifiable(parseComplexCharacter()), altStartIndex);
+      case '.':
+        ComplexCharacterPatternConstruct dot = parseDot();
+        // Must advance before parseQuantifiable, or ".*" is read as "." then literal "*".
+        advance(1);
+        return addToAlternative(accumulator, parseQuantifiable(dot), altStartIndex);
+      case '^':
+      case '$':
+        LineBoundaryPatternConstruct boundary =
+            new LineBoundaryPatternConstruct(index, index + 1, /* isLineBegin= */ peek == '^');
+        boundary.flags = flags;
+        advance(1);
+        return keepZeroWidthAfterQuantifier()
+            ? addToAlternative(accumulator, boundary, altStartIndex) : accumulator;
+      default:
+        throw new IllegalStateException("parseDelimitedAtom called at index " + index
+            + " with peek=" + peek + ", which does not start an atom; did you mean parseUnion's"
+            + " '|', ')' or end-of-pattern handling?");
+    }
+  }
+
+  private @Nullable Object parseBackslashAtom(@Nullable Object accumulator, int altStartIndex) {
+    int startIndex = index;
+    int codePoint = tryParseSingleCharEscape();
+    if (codePoint != -1) {
+      return parseEscapedCharacter(accumulator, altStartIndex, startIndex, codePoint);
+    }
+    accumulator = flushLiteralRun(accumulator, altStartIndex, index);
+    return parseNonLiteralEscape(accumulator, altStartIndex);
   }
 
   /**
@@ -576,15 +586,31 @@ public final class PatternParser extends CharClassParser {
     // The index must be assigned here, in opening-paren order, before recursing: assigning after
     // parseUnion numbered an outer group higher than its nested ones.
     if (groupCaptureIndex != -1) {
-      groupCaptureIndex = captureConstructIndex++;
-      if (!captureName.isEmpty()) {
-        if (namedGroups == null) {
-          namedGroups = new MutableObjectIntMap<>(4);
-        }
-        namedGroups.set(captureName, groupCaptureIndex);
-      }
+      groupCaptureIndex = openCapturingGroup(captureName);
     }
     PatternConstruct body = parseUnion(groupStartIndex, entryFlags, groupCaptureIndex, captureName);
+    closeGroup(body, groupStartIndex, groupCaptureIndex);
+    PatternConstruct group = quantifyGroupBody(body, groupStartIndex, entryFlags);
+    if (restoreFlagsOnExit) {
+      flags = entryFlags;
+    }
+    return group;
+  }
+
+  // Allocates the next capture index (and registers the name, if any).
+  private int openCapturingGroup(String captureName) {
+    int groupCaptureIndex = captureConstructIndex++;
+    if (!captureName.isEmpty()) {
+      if (namedGroups == null) {
+        namedGroups = new MutableObjectIntMap<>(4);
+      }
+      namedGroups.set(captureName, groupCaptureIndex);
+    }
+    return groupCaptureIndex;
+  }
+
+  // Consumes the ')' that parseUnion stopped at.
+  private void closeGroup(PatternConstruct body, int groupStartIndex, int groupCaptureIndex) {
     if (index == patternChars.length) {
       throw throwUnexpectedChar(
           "expected \")\" to match ", new CodePointReference(groupStartIndex));
@@ -600,11 +626,6 @@ public final class PatternParser extends CharClassParser {
       closedGroupsByIndex.set(groupCaptureIndex, (QuantifiedUnionPatternConstruct) body);
     }
     advance(1);
-    PatternConstruct group = quantifyGroupBody(body, groupStartIndex, entryFlags);
-    if (restoreFlagsOnExit) {
-      flags = entryFlags;
-    }
-    return group;
   }
 
   /**

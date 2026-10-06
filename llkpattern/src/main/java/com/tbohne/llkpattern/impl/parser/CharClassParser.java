@@ -216,7 +216,11 @@ class CharClassParser extends PatternLexer {
       advance(1);
       return result;
     }
-    // All the rest of this method is parsing named character classes
+    return parsePropertyEscape();
+  }
+
+  // The \p{...} / \P{...} / \pL tail of parseComplexEscape (peek is at the 'p' or 'P').
+  private CodePointSet parsePropertyEscape() {
     boolean positive = peek == 'p';
     advance(1);
     String charClassName;

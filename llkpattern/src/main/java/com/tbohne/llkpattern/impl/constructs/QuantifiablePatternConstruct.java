@@ -188,31 +188,8 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 			bodyCompileTarget.compile(marker);
 		}
 
-		// Body parts chain tail-to-front like buildFlattenedChain, but a part is never ungated: "doesn't match"
-		// always has somewhere to go (exitNode enforces min, allowing an immediate min == 0 skip).
-		//
-		// When capturing, each part's OWN gate must run BEFORE the capture start is recorded: one shared
-		// Begin wrapping the chain head recorded a start even on a min == 0 loop's zero-iteration attempt
-		// (reverted; notes.md). So each part gets a throwaway LoopBodyPartGatePatternConstruct carrying the
-		// gate, with the capture INSIDE it (compiled ungated).
-		MatcherConstruct bodyTail = exitNode;
-		for (int i = body.size - 1; i >= 0; i--) {
-			PatternConstruct part = body.items[i];
-			CodePointSet partEntrySet = gates[i];
-			if (capturing) {
-				MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
-				LoopBodyPartGatePatternConstruct gateMarker = new LoopBodyPartGatePatternConstruct(startIndex);
-				gateMarker.flags = flags;
-				gateMarker.dispatchEntrySet = partEntrySet;
-				gateMarker.dispatchFailedEntry = bodyTail;
-				bodyTail = new BeginCaptureMatcherConstruct(gateMarker, captureConstructIndex, rawPartMatcher);
-			} else {
-				part.dispatchEntrySet = partEntrySet;
-				part.dispatchFailedEntry = bodyTail;
-				bodyTail = part.compile(bodyCompileTarget);
-			}
-		}
-		MatcherConstruct bodyHead = bodyTail;
+		MatcherConstruct bodyHead =
+				compileLoopBody(body, gates, bodyCompileTarget, exitNode, captureConstructIndex);
 		continueMarker.matcher = bodyHead;
 
 		// A greedy loop's entry point is the body chain's head; a reluctant-safe loop's is loopNode.
@@ -231,6 +208,40 @@ public abstract class QuantifiablePatternConstruct extends PatternConstruct {
 						? new LoopFirstEntryMatcherConstruct(flags, bodyHead)
 						: bodyHead;
 		MatcherConstruct.aliasOrPassThrough(this, entryPoint);
+	}
+
+	/**
+	 * Compiles the body parts tail-to-front like buildFlattenedChain, returning the chain head. A part is
+	 * never ungated: "doesn't match" always has somewhere to go (exitNode enforces min, allowing an
+	 * immediate min == 0 skip).
+	 *
+	 * <p>When capturing, each part's OWN gate must run BEFORE the capture start is recorded: one shared
+	 * Begin wrapping the chain head recorded a start even on a min == 0 loop's zero-iteration attempt
+	 * (reverted; notes.md). So each part gets a throwaway LoopBodyPartGatePatternConstruct carrying the
+	 * gate, with the capture INSIDE it (compiled ungated).
+	 */
+	private MatcherConstruct compileLoopBody(
+			ConstructList body, CodePointSet[] gates, PatternConstruct bodyCompileTarget,
+			LoopExitMatcherConstruct exitNode, int captureConstructIndex) {
+		boolean capturing = captureConstructIndex != -1;
+		MatcherConstruct bodyTail = exitNode;
+		for (int i = body.size - 1; i >= 0; i--) {
+			PatternConstruct part = body.items[i];
+			CodePointSet partEntrySet = gates[i];
+			if (capturing) {
+				MatcherConstruct rawPartMatcher = part.compile(bodyCompileTarget);
+				LoopBodyPartGatePatternConstruct gateMarker = new LoopBodyPartGatePatternConstruct(startIndex);
+				gateMarker.flags = flags;
+				gateMarker.dispatchEntrySet = partEntrySet;
+				gateMarker.dispatchFailedEntry = bodyTail;
+				bodyTail = new BeginCaptureMatcherConstruct(gateMarker, captureConstructIndex, rawPartMatcher);
+			} else {
+				part.dispatchEntrySet = partEntrySet;
+				part.dispatchFailedEntry = bodyTail;
+				bodyTail = part.compile(bodyCompileTarget);
+			}
+		}
+		return bodyTail;
 	}
 
 	/**

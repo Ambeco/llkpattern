@@ -454,7 +454,7 @@ public final class PatternParser extends CharClassParser {
     }
     PatternConstruct backReference = tryParseBackReference();
     if (backReference != null) {
-      accumulator = addToAlternative(accumulator, quantifyBackReference(backReference), altStartIndex);
+      accumulator = addToAlternative(accumulator, quantifySingleConstruct(backReference), altStartIndex);
     return accumulator;
     }
     if (peek == '\\' && index + 1 < patternChars.length && patternChars[index + 1] == 'X') {
@@ -792,41 +792,34 @@ public final class PatternParser extends CharClassParser {
           return g;
         }
         rejectBoundaryType();
-        WordBoundaryPatternConstruct b = new WordBoundaryPatternConstruct(pattern, index-2, index, /* isWordBoundary= */ true);
-        b.flags = flags;
-        return b;
+        return newWordBoundary(/* isWordBoundary= */ true);
       }
-      case 'B': {
+      case 'B':
         advance(2);
         rejectBoundaryType();
-        WordBoundaryPatternConstruct b = new WordBoundaryPatternConstruct(pattern, index-2, index, /* isWordBoundary= */ false);
-        b.flags = flags;
-        return b;
-      }
-      case 'A': {
-        advance(2);
-        BoundaryPatternConstruct b = new BoundaryPatternConstruct(index-2, index, BoundaryEnum.InputBegin);
-        b.flags = flags;
-        return b;
-      }
-      case 'Z': {
-        advance(2);
-        BoundaryPatternConstruct b = new BoundaryPatternConstruct(index-2, index, BoundaryEnum.InputEndExceptTerminator);
-        b.flags = flags;
-        return b;
-      }
-      case 'z': {
-        advance(2);
-        BoundaryPatternConstruct b = new BoundaryPatternConstruct(index-2, index, BoundaryEnum.InputEnd);
-        b.flags = flags;
-        return b;
-      }
+        return newWordBoundary(/* isWordBoundary= */ false);
+      case 'A':
+        return parseInputBoundary(BoundaryEnum.InputBegin);
+      case 'Z':
+        return parseInputBoundary(BoundaryEnum.InputEndExceptTerminator);
+      case 'z':
+        return parseInputBoundary(BoundaryEnum.InputEnd);
     }
     return null;
   }
 
-  private PatternConstruct quantifyBackReference(PatternConstruct backReference) {
-    return quantifySingleConstruct(backReference);
+  // Both boundary helpers build from the two-character escape ending at index.
+  private WordBoundaryPatternConstruct newWordBoundary(boolean isWordBoundary) {
+    WordBoundaryPatternConstruct b = new WordBoundaryPatternConstruct(pattern, index - 2, index, isWordBoundary);
+    b.flags = flags;
+    return b;
+  }
+
+  private BoundaryPatternConstruct parseInputBoundary(BoundaryEnum kind) {
+    advance(2);
+    BoundaryPatternConstruct b = new BoundaryPatternConstruct(index - 2, index, kind);
+    b.flags = flags;
+    return b;
   }
 
   // Wraps a non-quantifiable construct (backreference, \X) in a one-branch union only if a quantifier follows.
@@ -859,74 +852,86 @@ public final class PatternParser extends CharClassParser {
     }
     int peek2 = peekAfter();
     if (peek2 >= '1' && peek2 <= '9') {
-      int startIndex = index;
-      int groupNumber = peek2 - '0';
-      int digitsEnd = index + 2;
-      while (digitsEnd < patternChars.length) {
-        char digit = patternChars[digitsEnd];
-        int extended = groupNumber * 10 + (digit - '0');
-        if (digit < '0' || digit > '9' || extended > captureConstructIndex) {
-          break;
-        }
-        groupNumber = extended;
-        digitsEnd++;
-      }
-      int referencedIndex = groupNumber - 1;
-      QuantifiedUnionPatternConstruct referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
-      if (referenced == null) {
-        throw PatternSyntaxException.throwWithReferences(
-            pattern,
-            startIndex,
-            "backreference \\", groupNumber, " refers to a group that either doesn't exist or ",
-            "hasn't been closed yet at this point in the pattern (forward references aren't ",
-            "supported) -- ", captureConstructIndex, " capturing group(s) defined so far");
-      }
-      advance(digitsEnd - index);
-      BackReferencePatternConstruct backReference = new BackReferencePatternConstruct(startIndex, index, referencedIndex, referenced);
-      backReference.flags = flags;
-      return backReference;
+      return parseNumericBackReference(peek2 - '0');
     }
     if (peek2 == 'k') {
-      int startIndex = index;
-      advance(2);
-      if (peek != '<') {
-        throw throwUnexpectedChar("\\k must be followed by \"<name>\" naming a capturing group");
-      }
-      advance(1);
-      int startName = index;
-      while (isAsciiAlphanumeric(peek)) {
-        advance(1);
-      }
-      if (peek != '>') {
-        throw throwUnexpectedChar(
-            "Character not allowed in backreference name. Expected '>' to match ",
-            new CodePointReference(startName));
-      }
-      String name = pattern.substring(startName, index);
-      advance(1);
-      // -1 sentinel avoids boxing; real indices are >= 0.
-      int referencedIndex = namedGroups != null ? namedGroups.getOrDefault(name, -1) : -1;
-      if (referencedIndex == -1) {
-        throw PatternSyntaxException.throwWithReferences(
-            pattern,
-            startIndex,
-            "backreference \\k<", name, "> refers to a named group that either doesn't exist or ",
-            "hasn't been closed yet at this point in the pattern (forward references aren't ",
-            "supported)");
-      }
-      QuantifiedUnionPatternConstruct referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
-      if (referenced == null) {
-        throw PatternSyntaxException.throwWithReferences(
-            pattern,
-            startIndex,
-            "backreference \\k<", name, "> refers to a named group that hasn't been closed yet at ",
-            "this point in the pattern (forward references aren't supported)");
-      }
-      BackReferencePatternConstruct backReference = new BackReferencePatternConstruct(startIndex, index, referencedIndex, referenced);
-      backReference.flags = flags;
-      return backReference;
+      return parseNamedBackReference();
     }
     return null;
+  }
+
+  private BackReferencePatternConstruct parseNumericBackReference(int firstDigit) {
+    int startIndex = index;
+    int groupNumber = firstDigit;
+    int digitsEnd = index + 2;
+    while (digitsEnd < patternChars.length) {
+      char digit = patternChars[digitsEnd];
+      int extended = groupNumber * 10 + (digit - '0');
+      if (digit < '0' || digit > '9' || extended > captureConstructIndex) {
+        break;
+      }
+      groupNumber = extended;
+      digitsEnd++;
+    }
+    int referencedIndex = groupNumber - 1;
+    QuantifiedUnionPatternConstruct referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
+    if (referenced == null) {
+      throw PatternSyntaxException.throwWithReferences(
+          pattern,
+          startIndex,
+          "backreference \\", groupNumber, " refers to a group that either doesn't exist or ",
+          "hasn't been closed yet at this point in the pattern (forward references aren't ",
+          "supported) -- ", captureConstructIndex, " capturing group(s) defined so far");
+    }
+    advance(digitsEnd - index);
+    return newBackReference(startIndex, referencedIndex, referenced);
+  }
+
+  private BackReferencePatternConstruct parseNamedBackReference() {
+    int startIndex = index;
+    advance(2);
+    if (peek != '<') {
+      throw throwUnexpectedChar("\\k must be followed by \"<name>\" naming a capturing group");
+    }
+    advance(1);
+    int startName = index;
+    while (isAsciiAlphanumeric(peek)) {
+      advance(1);
+    }
+    if (peek != '>') {
+      throw throwUnexpectedChar(
+          "Character not allowed in backreference name. Expected '>' to match ",
+          new CodePointReference(startName));
+    }
+    String name = pattern.substring(startName, index);
+    advance(1);
+    // -1 sentinel avoids boxing; real indices are >= 0.
+    int referencedIndex = namedGroups != null ? namedGroups.getOrDefault(name, -1) : -1;
+    if (referencedIndex == -1) {
+      throw PatternSyntaxException.throwWithReferences(
+          pattern,
+          startIndex,
+          "backreference \\k<", name, "> refers to a named group that either doesn't exist or ",
+          "hasn't been closed yet at this point in the pattern (forward references aren't ",
+          "supported)");
+    }
+    QuantifiedUnionPatternConstruct referenced = closedGroupsByIndex != null ? closedGroupsByIndex.get(referencedIndex) : null;
+    if (referenced == null) {
+      throw PatternSyntaxException.throwWithReferences(
+          pattern,
+          startIndex,
+          "backreference \\k<", name, "> refers to a named group that hasn't been closed yet at ",
+          "this point in the pattern (forward references aren't supported)");
+    }
+    return newBackReference(startIndex, referencedIndex, referenced);
+  }
+
+  private BackReferencePatternConstruct newBackReference(
+      int startIndex, int referencedIndex, QuantifiedUnionPatternConstruct referenced) {
+    BackReferencePatternConstruct backReference =
+        new BackReferencePatternConstruct(startIndex, index, referencedIndex, referenced);
+    backReference.flags = flags;
+    return backReference;
   }
 
   private PatternConstruct parseQuantifiable(ComplexCharacterPatternConstruct construct) {

@@ -161,64 +161,7 @@ public class Matcher implements MatchResult {
 				result.append(replacement.charAt(cursor));
 				cursor++;
 			} else if (c == '$') {
-				cursor++;
-				if (cursor == length) {
-					throw new IllegalArgumentException(
-							"Illegal group reference: group index is missing (a literal '$' in a replacement must be "
-									+ "escaped as \\$; did you mean Matcher.quoteReplacement(...)?)");
-				}
-				c = replacement.charAt(cursor);
-				int refNum;
-				if (c == '{') {
-					cursor++;
-					int nameStart = cursor;
-					while (cursor < length && isAsciiAlphanumeric(replacement.charAt(cursor))) {
-						cursor++;
-					}
-					String name = replacement.substring(nameStart, cursor);
-					if (name.isEmpty()) {
-						throw new IllegalArgumentException("named capturing group has 0 length name");
-					}
-					if (cursor == length || replacement.charAt(cursor) != '}') {
-						throw new IllegalArgumentException("named capturing group is missing trailing '}'");
-					}
-					if (name.charAt(0) >= '0' && name.charAt(0) <= '9') {
-						throw new IllegalArgumentException(
-								"capturing group name {" + name + "} starts with digit character");
-					}
-					// -1 sentinel avoids boxing; real indices are >= 0.
-					int index = pattern.namedGroups.getOrDefault(name, -1);
-					if (index == -1) {
-						throw new IllegalArgumentException("No group with name {" + name + "}");
-					}
-					refNum = index + 1;
-					cursor++;
-				} else {
-					refNum = c - '0';
-					if (refNum < 0 || refNum > 9) {
-						throw new IllegalArgumentException(
-								"Illegal group reference (expected a digit or {name} after '$', got '" + c + "')");
-					}
-					cursor++;
-					// Greedy extra digits, but only while the result is still a real group -- so "$10"
-					// with one group means group 1 followed by a literal '0'.
-					while (cursor < length) {
-						int digit = replacement.charAt(cursor) - '0';
-						if (digit < 0 || digit > 9) {
-							break;
-						}
-						int extended = refNum * 10 + digit;
-						if (groupCount() < extended) {
-							break;
-						}
-						refNum = extended;
-						cursor++;
-					}
-				}
-				String text = group(refNum);
-				if (text != null) {
-					result.append(text);
-				}
+				cursor = appendGroupReference(result, replacement, cursor + 1);
 			} else {
 				result.append(c);
 				cursor++;
@@ -226,6 +169,75 @@ public class Matcher implements MatchResult {
 		}
 		appendPos = matchEnd;
 		return result.toString();
+	}
+
+	/**
+	 * Appends the group named by the reference starting at {@code cursor} (just past a {@code '$'}), and
+	 * returns the cursor just past the reference. An unmatched group appends nothing.
+	 */
+	private int appendGroupReference(StringBuilder result, String replacement, int cursor) {
+		int length = replacement.length();
+		if (cursor == length) {
+			throw new IllegalArgumentException(
+					"Illegal group reference: group index is missing (a literal '$' in a replacement must be "
+							+ "escaped as \\$; did you mean Matcher.quoteReplacement(...)?)");
+		}
+		char c = replacement.charAt(cursor);
+		int refNum;
+		if (c == '{') {
+			int nameStart = cursor + 1;
+			int nameEnd = nameStart;
+			while (nameEnd < length && isAsciiAlphanumeric(replacement.charAt(nameEnd))) {
+				nameEnd++;
+			}
+			if (nameEnd == nameStart) {
+				throw new IllegalArgumentException("named capturing group has 0 length name");
+			}
+			if (nameEnd == length || replacement.charAt(nameEnd) != '}') {
+				throw new IllegalArgumentException("named capturing group is missing trailing '}'");
+			}
+			refNum = namedGroupNumber(replacement.substring(nameStart, nameEnd));
+			cursor = nameEnd + 1;
+		} else {
+			refNum = c - '0';
+			if (refNum < 0 || refNum > 9) {
+				throw new IllegalArgumentException(
+						"Illegal group reference (expected a digit or {name} after '$', got '" + c + "')");
+			}
+			cursor++;
+			// Greedy extra digits, but only while the result is still a real group -- so "$10"
+			// with one group means group 1 followed by a literal '0'.
+			while (cursor < length) {
+				int digit = replacement.charAt(cursor) - '0';
+				if (digit < 0 || digit > 9) {
+					break;
+				}
+				int extended = refNum * 10 + digit;
+				if (groupCount() < extended) {
+					break;
+				}
+				refNum = extended;
+				cursor++;
+			}
+		}
+		String text = group(refNum);
+		if (text != null) {
+			result.append(text);
+		}
+		return cursor;
+	}
+
+	private int namedGroupNumber(String name) {
+		if (name.charAt(0) >= '0' && name.charAt(0) <= '9') {
+			throw new IllegalArgumentException(
+					"capturing group name {" + name + "} starts with digit character");
+		}
+		// -1 sentinel avoids boxing; real indices are >= 0.
+		int index = pattern.namedGroups.getOrDefault(name, -1);
+		if (index == -1) {
+			throw new IllegalArgumentException("No group with name {" + name + "}");
+		}
+		return index + 1;
 	}
 
 	private static boolean isAsciiAlphanumeric(char c) {

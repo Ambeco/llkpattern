@@ -104,13 +104,17 @@ public abstract class MatcherConstruct {
 	@VisibleForTesting
 	public final MatcherConstruct getNext() { return next; }
 
-	// Checks entrySet (if any), deferring to failedEntry on a miss, then runs matchBody.
+	// Checks entrySet (if any), deferring to failedEntry on a miss, then runs matchBody. The miss path is a
+	// separate method to keep this one under HotSpot's 35-bytecode cold-inline limit (it was 52).
 	public final boolean match(Matcher matcher, int peeked) {
 		if (containsEntry(entrySet, peeked)) {
 			return matchBody(matcher, peeked);
 		}
-		// Miss path only: a gated dispatch that fails at end of input has looked past the end
-		// (Matcher#hitEnd).
+		return matchMiss(matcher, peeked);
+	}
+
+	// A gated dispatch that fails at end of input has looked past the end (Matcher#hitEnd).
+	private boolean matchMiss(Matcher matcher, int peeked) {
 		if (peeked == -1) {
 			matcher.hitEnd = true;
 		}

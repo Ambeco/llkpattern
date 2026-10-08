@@ -3915,3 +3915,9 @@ Pixel over the `ConstructList` run (0.566 vs 0.560). Pixel total 0.643 -> 0.560 
 broke it) while an old unrelated stash sits at `stash@{0}` -- check the stash count, `git add` first; and
 `git checkout -- benchmarks` after an A/B discards uncommitted Pixel outputs, so commit or copy them first. Tests need JDK 25
 (JDK 17 fails ~90 ``/`(?iu)` oracle rows; see CLAUDE.md).
+
+2026-10-07, failed Pixel experiment: guarding `PatternLexer`'s `pattern.indexOf("\\Q")` with `pattern.indexOf('Q') >=
+0` (expecting an ART intrinsic for the char form). Compile ratio 0.566 -> 0.561 (noise), and the profile still showed
+`String.indexOf` at ~3.5% from `PatternLexer.<init>`: on ART both indexOf forms run as Java loops. Reverted. Also
+found that the 2026-09-24 "Pixel CPU-sampling leaders" list in remaining_work.md was already fully done by the
+2026-10-05 pass.

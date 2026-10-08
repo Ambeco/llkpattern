@@ -36,21 +36,11 @@ finished work live in [notes.md](notes.md); current design in [design.md](design
       *speed*, not correctness) or common enough to need Android-specific golden columns or forked golden files --
       not yet checked against a real device.
 - [ ] Re-run the timing and sampling benchmarks on the other phones once convenient.
-- [ ] **Pixel 3a CPU-sampling leaders** (`Google_Pixel_3a_sargo_CompileLlk_sampling.txt`, captured 2026-09-24 --
-      refresh before trusting exact percentages): none measured yet, just flagged from reading the profile.
-  - [ ] `PatternParser`'s constructor does a full-pattern pre-scan (`Character.codePointAt` <-
-        `PatternParser.codePointAt` <- `PatternParser.<init>`, ~7.8% combined) -- read what this scan computes and
-        whether it can be folded into the same pass as parsing itself, or skipped when the pattern doesn't need it.
-  - [ ] `PatternParser.advanceCodePoint` uses `String.offsetByCodePoints` (~1.4%) -- likely replaceable with
-        `Character.charCount(codePointAt(...))`.
-  - [ ] `PatternParser.removeQuoting`'s repeated `String.indexOf` calls (~2.7% combined) -- worth a single-pass
-        rewrite if `removeQuoting` is called often enough to matter (check corpus frequency of `\Q...\E` first).
-  - [ ] `NamedCharClass$RegexCharacterClass.valueOf` goes through `Enum.valueOf` (~1.3%) -- convert to a generated
-        string switch, like `NamedCharClass#scriptByName`/`#blockByName`.
-  - [ ] `PatternConstruct$Sequence.buildMatcher` calls `patterns.get(i)` repeatedly (~3.0% `ArrayList.get` + ~1.7%
-        `Objects.checkIndex` on ART) -- hoist the element into a local once per iteration.
-  - [ ] `PatternParser.skipComments` is its own leaf at ~1.9% -- confirm it early-returns when `COMMENTS` isn't set.
-  - [ ] `PatternParser.tryParseSingleCharEscape` calls `String.indexOf` (~1.0%) -- a plain `switch` may be cheaper.
+- [ ] **Pixel 3a compile leaders** (profile current as of 2026-10-07): `PatternLexer.<init>` is ~11% combined:
+      `codePointAtChecked` ~8.9% (the first read of the fresh `char[]`, i.e. first-touch/safepoint smear after
+      `toCharArray`) and the `indexOf("\\Q")` scan ~3.4% (both `indexOf` forms are Java loops on ART; a char guard was
+      tried and did nothing, see notes.md). A fix would have to avoid a separate scan for `\Q`, e.g. by folding that
+      check into the lexer's single pass. Everything else in the profile is under ~1% per leaf.
 
 Before touching any desktop allocation-sampling leader, read the `CodePointSetBuilder` entries in notes.md
 (2026-09-18 and 2026-09-25): small-N accumulation sites have repeatedly regressed when converted to a

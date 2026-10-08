@@ -112,6 +112,10 @@ benchmark checklist, since `addAll`'s hot paths are sensitive -- see notes.md, 2
 
 ## Optional experiments (nothing here is required work)
 
+- [ ] **Single-pass parser (future experimental fork/rewrite, theoretical):** build the `MatcherConstruct` graph directly
+      from the parser, with no `PatternConstruct` AST. Not scheduled; see
+      [single_pass_parser_proposal.md](single_pass_parser_proposal.md).
+
 - [ ] **Consider a parse-time check rejecting a quantified construct whose entire body is nullable** (e.g. `(a?)+`).
       Today only the entry-point-computation guard (design.md's "Entry-point computation vs. matcher compilation")
       catches it, as a compile-time `PatternSyntaxException`; `PatternParser` has no `nullable(construct)` recursion

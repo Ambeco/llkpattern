@@ -3949,3 +3949,5 @@ comparison against the previous file). Class 353KB -> 111KB; cold init ~16 -> ~1
 JDK 17 (the interned data strings stay live). `UnicodeAnalyzer` no longer compiles on JDK 17 (uses JDK 21+ `Character`
 APIs), so the old "compile via Gradle on JDK 17" regeneration step was stale; compile with JDK 27's `javac`. Pixel
 class-init time and APK/dex size not measured.
+
+2026-10-09, decided not to make `UnicodePredicates` lazy (enum/ordinal table): it would need a per-set offset table into the packed strings plus `NamedCharClass`/switch rewrites for at most ~13 ms and ~230 KB at class init. Revisit only if startup on a device shows it matters.

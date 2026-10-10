@@ -47,18 +47,6 @@ Before touching any desktop allocation-sampling leader, read the `CodePointSetBu
 `CodePointSetBuilder`, but plain `ArrayCodePointSet` pre-sizing (its `(int initialCapacity)` constructor, with a
 correctly-computed hint) has measured as a real win at least once -- don't conflate the two.
 
-## Shrink `UnicodePredicates` (idea from the project owner, 2026-09-19)
-
-Not urgent. The sets' data is now packed strings decoded eagerly at class init (class file ~110KB, ~13ms, ~230KB
-heap; see design.md). What's left is laziness, so an app that only uses `\p{L}` doesn't pay for 592 sets.
-
-- [ ] **Replace the 592 members with an enum** (or an ordinal-indexed table) and
-      one method that materializes the set for a given value on the fly. Fits the existing name lookups
-      (`NamedCharClass#scriptByName`/`#blockByName`, currently generated string switches) and lets
-      nothing be built until asked for.
-      This changes the generator (`UnicodeAnalyzer`) output again, so re-run the regeneration (CLAUDE.md) and the
-      full suite afterward, and re-measure class size, init time and heap.
-
 ## Toolchain and testing
 
 - [ ] **Paired benchmark follow-ups** (runner built: `:llkpattern:jmhPaired`, `:llkpattern:pairedCompare`, Android

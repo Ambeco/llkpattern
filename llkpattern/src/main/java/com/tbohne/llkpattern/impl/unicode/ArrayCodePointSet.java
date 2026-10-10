@@ -60,6 +60,16 @@ public class ArrayCodePointSet implements MutableCodePointSet {
     insertAllImpl(other);
   }
 
+  // Adopts keys (already sorted, disjoint, non-touching, each count <= MAX_COUNT) without copying: PackedSets' decoder.
+  static ArrayCodePointSet ofPackedKeys(int[] keys) {
+    ArrayCodePointSet result = new ArrayCodePointSet();
+    if (keys.length > 0) {
+      result.keys = keys;
+      result.size = keys.length;
+    }
+    return result;
+  }
+
   // The complement of source: an array copy plus a flipped invert bit. A static factory, not a constructor:
   // ArrayCodePointSet(ArrayCodePointSet) would out-specify the public copy constructor and make every
   // `new ArrayCodePointSet(this)` inside this class silently build a complement.

@@ -3932,3 +3932,20 @@ broke it) while an old unrelated stash sits at `stash@{0}` -- check the stash co
 `String.indexOf` at ~3.5% from `PatternLexer.<init>`: on ART both indexOf forms run as Java loops. Reverted. Also
 found that the 2026-09-24 "Pixel CPU-sampling leaders" list in remaining_work.md was already fully done by the
 2026-10-05 pass.
+
+2026-10-09, `UnicodePredicates` shrink step 1 design question (a), settled by throwaway microbenchmark (4096 `contains`
+queries over the real 592 predicate sets, 19,446 packed keys total; variants run monomorphic): shared `int[]` blob
+with (offset, length) is within noise of a private `int[]` per set on the Pixel 3a (85.7 vs 86.0 ns/op all-sets; 635
+vs 637 hot `isDefined`), and +2% to +12% on the desktop (JDK 25: 10.3 vs 10.2 all-sets, 37.4 vs 34.3 hot `isDefined`).
+An `IntBuffer` slice per set is clearly worse: +20-37% desktop, 2-2.5x on the Pixel. So: use the shared blob (option
+i) or copy-on-first-use (option iii); not `IntBuffer`. Side finding: production `ArrayCodePointSet.contains` ran
+31% faster than my field-reading copy of the same search on the Pixel (437 vs 637 ns hot) but 12% slower on the desktop;
+ART seems to favor the static `floorIndex(keys, size, cp)` shape, so write any blob-backed search in that same
+static-helper form. Code was throwaway (not committed).
+
+2026-10-09, `UnicodePredicates` shrink step 1 landed (packed varint strings + `PackedSets.decode`, a private `int[]` per
+set; see design.md). Output verified bit-identical to the old generated sets (all 592 `keys` arrays equal, via a scratch
+comparison against the previous file). Class 353KB -> 111KB; cold init ~16 -> ~13 ms and retained heap 192 -> 232 KB on
+JDK 17 (the interned data strings stay live). `UnicodeAnalyzer` no longer compiles on JDK 17 (uses JDK 21+ `Character`
+APIs), so the old "compile via Gradle on JDK 17" regeneration step was stale; compile with JDK 27's `javac`. Pixel
+class-init time and APK/dex size not measured.

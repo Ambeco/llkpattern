@@ -207,8 +207,9 @@ either failure in the reverted experiment: `((a?b)c)?` vs `""` must match, and `
 
 Run `UnicodeAnalyzer` with the NEWEST installed JDK (currently `C:\Program Files\Java\jdk-27`) for the
 newest Unicode data -- this means sidestepping Gradle (which crashed intermittently on JDK 25): compile via
-`./gradlew :unicodeanalyzer:classes` on JDK 17, run the class directly with that JDK's `java`, and
-copy its output over with CRLF. Steps: documents/notes.md, 2026-09-19 entry. From Git Bash the
+that JDK's own `javac` (`:unicodeanalyzer:classes` fails on JDK 17: it uses JDK 21+ `Character` APIs;
+needs the guava and checker-qual jars on `-cp`), run the class directly with its `java` (add
+`-Dstdout.encoding=UTF-8`), and copy its output over with CRLF. Steps: documents/notes.md, 2026-09-19 entry. From Git Bash the
 Windows `java` needs classpath entries in Windows form: `cygpath -w` the guava jar (under
 `~/.gradle/caches/modules-2/files-2.1/com.google.guava/`) and join with `;`.
 

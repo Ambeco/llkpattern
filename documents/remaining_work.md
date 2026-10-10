@@ -49,35 +49,15 @@ correctly-computed hint) has measured as a real win at least once -- don't confl
 
 ## Shrink `UnicodePredicates` (idea from the project owner, 2026-09-19)
 
-Not urgent: `UnicodePredicates` is 561 `CodePointSet` fields holding 13,640 ranges; a 316KB class file; ~14ms
-first-touch (mostly one-time class-loading overhead); ~109KB heap afterward. Only worth doing to keep the jar/dex
-small and startup "vaguely reasonable".
+Not urgent. The sets' data is now packed strings decoded eagerly at class init (class file ~110KB, ~13ms, ~230KB
+heap; see design.md). What's left is laziness, so an app that only uses `\p{L}` doesn't pay for 592 sets.
 
-- [ ] **Step 1: pack all the ranges into one binary blob plus an index.** The generator concatenates
-      every set's `int[]` internals (`ArrayCodePointSet`'s own packed `(min<<11)|count` format, ~55KB
-      total before compression) into one big buffer, and writes a second buffer mapping each predicate
-      to its slice (offset/length). Both live as jar resources (or, to avoid needing resource loading
-      at all -- relevant on Android -- as `String` constants in a generated class, split into <64KB
-      pieces since a class-file string constant is capped at 65,535 modified-UTF-8 bytes). Each
-      predicate becomes a thin set built on demand from its slice. Should collapse the class file,
-      verification, and static-init cost, since there'd be no per-set bytecode at all.
-      Design questions to settle first: (a) lookup speed matters more than init speed, and it is UNMEASURED
-      whether a slice view would be slower than `ArrayCodePointSet`'s plain `int[]` indexing (ART inlines less
-      than HotSpot's C2, so the Pixel 3a is where a gap is likelier). Options, cheapest first: (i) one shared
-      `int[]` blob with each thin set holding `(offset, length)` and indexing `blob[offset + i]` -- needs a small
-      new `CodePointSet` implementation (or `ArrayCodePointSet`'s search working over array+offset) and keeps the
-      whole ~55KB blob alive; (ii) an `IntBuffer` slice per set; (iii) copy the slice into a real
-      `ArrayCodePointSet` on first use and cache it (zero match-time cost, small per-used-set init cost). Settle
-      it with a throwaway JMH microbenchmark of `contains` on a large set such as `isDefined`, on the desktop AND
-      the Pixel 3a, not the full corpus cycle; (b) resource loading via `getResourceAsStream` needs checking on
-      the Pixel 3a / APK packaging, and its failure mode should be a loud, detailed exception.
-- [ ] **Step 2 (after step 1): replace the 561 members with an enum** (or an ordinal-indexed table) and
+- [ ] **Replace the 592 members with an enum** (or an ordinal-indexed table) and
       one method that materializes the set for a given value on the fly. Fits the existing name lookups
       (`NamedCharClass#scriptByName`/`#blockByName`, currently generated string switches) and lets
       nothing be built until asked for.
-- [ ] Both steps change the generator (`UnicodeAnalyzer`) output format, so re-run the regeneration
-      (see notes.md's 2026-09-19 entry) and the full suite afterward, and re-measure class size, init
-      time and heap.
+      This changes the generator (`UnicodeAnalyzer`) output again, so re-run the regeneration (CLAUDE.md) and the
+      full suite afterward, and re-measure class size, init time and heap.
 
 ## Toolchain and testing
 
@@ -110,14 +90,6 @@ small and startup "vaguely reasonable".
       catches it, as a compile-time `PatternSyntaxException`; `PatternParser` has no `nullable(construct)` recursion
       (a third sibling to `firstCharSet()`/`lastCharSet()`). A parse-time version would only improve the
       diagnostic (an earlier, more specific message), not correctness (`NestedQuantifierCombinatorialTest`).
-- [ ] **`CodePointMap#forEachRange` isn't used everywhere `entrySet()` still is.** It visits ranges
-      as primitive `int`/`value` triples with no `Range`/`Entry`/`Iterator` allocated per range (for
-      `ArrayCodePointMap`'s common `elseValue == null` case). `PatternParser`'s `intersect` helper and
-      `ArrayCodePointMap#putAll`'s `sweepMerge` already use it. Still unconverted: `TreeCodePointMap`'s own methods
-      (low priority -- differential-test oracle only), and every `PatternConstruct`/`MatcherConstruct` loop that
-      walks an entry map while building the matcher/dispatch graph (`grep -n '\.entrySet()'
-      llkpattern/src/main/java` finds them all). Most are on the `llkCompile` hot path, so likely worth a dedicated
-      pass (its own session) rather than opportunistic conversion.
 - [ ] **`ArrayCodePointMap`/`TreeCodePointMap` immutable+builder split**: neither has it today (both are
       mutable-only) -- worth doing for both together if immutability is ever wanted.
 - [ ] **Followup experiment** for `ArrayCodePointMap`: shrink the range field to 10 bits and use the

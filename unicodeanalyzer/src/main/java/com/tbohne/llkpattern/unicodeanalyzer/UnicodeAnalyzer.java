@@ -15,6 +15,8 @@ public class UnicodeAnalyzer {
 
 	public static void main(String[] args) {
 		printHeader();
+		beginBody();
+		printCodePointMap("ascii", java.util.List.of(Range.closedOpen(0x0, 0x80)));
 		intPredicate("isValidCodePoint", Character::isValidCodePoint);
 		intPredicate("isBmpCodePoint", Character::isBmpCodePoint);
 		intPredicate("isSupplementaryCodePoint", Character::isSupplementaryCodePoint);
@@ -207,11 +209,80 @@ public class UnicodeAnalyzer {
 		System.out.print(" */\n");
 		System.out.printf("@Generated(value = \"com.tbohne.llkpattern.unicodeanalyzer.UnicodeAnalyzer\", date = \"%s\")\n", LocalDate.now());
 		System.out.print("class UnicodePredicates {\n");
-		printCodePointMap("ascii", java.util.List.of(Range.closedOpen(0x0, 0x80)));
+	}
+
+	// The set fields (and the switches) are captured here, so printFooter can emit the packed data they index into
+	// before them: the SETS array must be declared before the fields that read it.
+	private static java.io.PrintStream realOut;
+	private static java.io.ByteArrayOutputStream body;
+	private static final List<int[]> packedSets = new ArrayList<>();
+
+	private static void beginBody() {
+		realOut = System.out;
+		body = new java.io.ByteArrayOutputStream();
+		System.setOut(new java.io.PrintStream(body, false, java.nio.charset.StandardCharsets.UTF_8));
 	}
 
 	public static void printFooter() {
+		System.out.flush();
+		System.setOut(realOut);
+		StringBuilder lengths = new StringBuilder();
+		StringBuilder keys = new StringBuilder();
+		for (int[] set : packedSets) {
+			appendVarint(lengths, set.length / 2);
+			for (int v : set) {
+				appendVarint(keys, v);
+			}
+		}
+		// Pieces split only between values, and stay far under the 65,535-byte class-file string constant limit
+		// (every char is 1 byte of modified UTF-8).
+		final int pieceChars = 60000;
+		List<String> pieces = new ArrayList<>();
+		for (int start = 0; start < keys.length(); ) {
+			int end = Math.min(keys.length(), start + pieceChars);
+			while (end < keys.length() && (keys.charAt(end - 1) - DIGIT_BASE & CONTINUE) != 0) {
+				end--;
+			}
+			pieces.add(keys.substring(start, end));
+			start = end;
+		}
+		System.out.print("// Packed data for every set below, in field order; decoded by PackedSets.\n");
+		System.out.printf("private static final String LENGTHS = %s;\n", javaLiteral(lengths.toString()));
+		StringBuilder args = new StringBuilder("LENGTHS");
+		for (int i = 0; i < pieces.size(); i++) {
+			System.out.printf("private static final String KEYS_%d = %s;\n", i, javaLiteral(pieces.get(i)));
+			args.append(", KEYS_").append(i);
+		}
+		System.out.printf("private static final CodePointSet[] SETS = PackedSets.decode(%s);\n\n", args);
+		System.out.print(body.toString(java.nio.charset.StandardCharsets.UTF_8));
 		System.out.print("}\n");
+	}
+
+	private static final char DIGIT_BASE = '#';
+	private static final int CONTINUE = 32;
+
+	// See PackedSets for the format.
+	private static void appendVarint(StringBuilder out, int value) {
+		if (value < 0) {
+			throw new IllegalArgumentException("Cannot pack negative value " + value);
+		}
+		do {
+			int digit = value & 31;
+			value >>>= 5;
+			out.append((char) (DIGIT_BASE + (digit | (value != 0 ? CONTINUE : 0))));
+		} while (value != 0);
+	}
+
+	private static String javaLiteral(String s) {
+		StringBuilder sb = new StringBuilder("\"");
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c == '"' || c == '\\') {
+				sb.append('\\');
+			}
+			sb.append(c);
+		}
+		return sb.append('"').toString();
 	}
 
 	private static IntPredicate reflectedCharacterPredicate(String methodName) {
@@ -376,14 +447,32 @@ public class UnicodeAnalyzer {
 	 * bytecode limit).
 	 */
 	public static void printCodePointMap(String name, List<Range<Integer>> ranges) {
-		System.out.printf("private static CodePointSet init_%s() {\n", name);
-		System.out.print("\tArrayCodePointSet result = new ArrayCodePointSet();\n");
-		System.out.printf("\tresult.ensureCapacity(%d);\n", ranges.size());
+		// Same entries ArrayCodePointSet#appendSorted would build for disjoint, non-touching ranges: each range as
+		// consecutive chunks of at most 2048 code points. Stored as (gap, count) pairs; see PackedSets.
+		List<Integer> pairs = new ArrayList<>();
+		int prevMax = 0;
 		for (Range<Integer> range : ranges) {
-			System.out.printf("\tresult.appendSorted(0x%x, 0x%x);\n", range.lowerEndpoint(), range.upperEndpoint());
+			int min = range.lowerEndpoint();
+			int max = range.upperEndpoint();
+			if (min < prevMax || (prevMax != 0 && min == prevMax)) {
+				throw new IllegalStateException("Ranges for " + name + " must be ascending, disjoint and non-touching, "
+						+ "but [" + min + ", " + max + ") follows one ending at " + prevMax
+						+ "; did the source predicate produce non-maximal runs?");
+			}
+			for (int chunkMin = min; chunkMin < max; chunkMin += MAX_CHUNK) {
+				int chunkMax = Math.min(max, chunkMin + MAX_CHUNK);
+				pairs.add(chunkMin - prevMax);
+				pairs.add(chunkMax - chunkMin - 1);
+				prevMax = chunkMax;
+			}
 		}
-		System.out.print("\treturn result;\n");
-		System.out.print("}\n");
-		System.out.printf("static final CodePointSet %s = init_%s();\n\n", name, name);
+		int[] flat = new int[pairs.size()];
+		for (int i = 0; i < flat.length; i++) {
+			flat[i] = pairs.get(i);
+		}
+		System.out.printf("static final CodePointSet %s = SETS[%d];\n", name, packedSets.size());
+		packedSets.add(flat);
 	}
+
+	private static final int MAX_CHUNK = 2048;
 }

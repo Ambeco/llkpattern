@@ -3892,6 +3892,17 @@ little ~1.0-1.1 GHz, battery 32.3-32.8 C, flat. Standalone Pixel runs: compile r
 ~125 rounds (llk JIT warmup; rare-path buckets worst), and one 1200-round run had a device-wide slow phase at rounds
 ~180-400 (regex +25%, llk +40%, ratio +15%) that did not recur in later runs (cause unknown: no monitor was running).
 Android interval vs rounds (steady state): 100 rounds/10 blocks +-1.2%/1.7%, 200/20 +-0.7%/1.1%, flat beyond.
+
+### `union(a,b)`/`insertAll` loops/`gate`: plain `ArrayCodePointSet` confirmed over `CodePointSetBuilder` (2026-10-08)
+
+Remaining_work.md flagged `union(a,b)` and the three `insertAll` loops in `PatternConstruct` as untried against
+`CodePointSetBuilder` (unlike `mergeEntryPoints`/`unionLastCharSet`, rejected 2026-09-25). Scratch microbenchmark
+(small-N accumulation, N=2/3/4/6, 2M reps, `ThreadMXBean.getThreadAllocatedBytes`, 3 trials): plain
+`ArrayCodePointSet`+`insertAll` beat `CodePointSetBuilder`+`appendAll`/`build()` at every N, ~15-25% faster and
+~8-9 B/op less, consistently across trials. Same conclusion as the 2026-09-25 rejections -- `build()`'s sort/compact
+pass still costs more than it saves at this N even with the two-sorted-runs merge added since. Left as-is; also
+added a real `sweepUnion`/`sweepDifference` fast path to `ArrayCodePointSet#union`/`#difference` for two
+non-inverted operands (one pass, one allocation), and simplified `PatternConstruct.union(a,b)` to `a.union(b)`.
 Android run-to-run noise (2026-10-02, three cold standalone testPaired runs, 100 warmup + 150 rounds, 15 blocks, raw+monitor
 on): same code twice gave compile 0.694/0.681, match 0.251/0.263, compile-blocked 0.622/0.639 (each run's CI only +-1-2%).
 Run-level variance (ART/JIT/device state per process) exceeds the within-run CI by ~2x, so Android needs several separate

@@ -484,10 +484,7 @@ public abstract class PatternConstruct {
 	}
 
 	static CodePointSet union(CodePointSet a, CodePointSet b) {
-		MutableCodePointSet result = new ArrayCodePointSet();
-		result.insertAll(a);
-		result.insertAll(b);
-		return result;
+		return a.union(b);
 	}
 
 	/**

@@ -97,17 +97,6 @@ small and startup "vaguely reasonable".
   - **Environment:** pause Dropbox; consider a High power plan; optionally raise child JVM priority/affinity.
 - [ ] Decide on a CI setup (or at least a documented local command; the daemon must be JDK 17-25, tests want JDK 27 -- see notes.md) to run the suite "frequently" per the owner's stated preference.
 
-## `ArrayCodePointSet` / `CodePointSetBuilder` API cleanup (project owner, 2026-10-01)
-
-The refactor that split "sorted-insert" (`ArrayCodePointSet`) from "unsorted-append" (`CodePointSetBuilder`)
-left the naming and layering muddled. Do as its own session (touches ~30 test call sites; re-run the full
-benchmark checklist, since `addAll`'s hot paths are sensitive -- see notes.md, 2026-09-30).
-
-- [ ] Keep the `ArrayCodePointSet(CodePointSet)` copy constructor (owner's decision). Its only non-test callers
-      are `union`/`difference`, which could instead use the existing `sweepUnion`/`sweepDifference` for two
-      non-inverted sets (one pass, one allocation), keeping the generic path only for inverted/lazy operands.
-- [ ] Remaining `MutableCodePointSet` sites (see notes.md, "MutableCodePointSet -> CodePointSetBuilder migration"): `union(a,b)` and the three `insertAll` loops in `PatternConstruct` (`skipZeroWidthEntrySet`/`firstCharSet`/`resolveSingleCodePointBody`) are untried; `build()` now merges two sorted runs linearly, so they are viable. Measure each batch (A/B plus the full benchmark cycle). `mergeRun` and `mergeEntryPoints`/`unionLastCharSet` regressed as builder users; `gate` needs `removeAll`.
-
 ## Open questions
 
 ## Optional experiments (nothing here is required work)

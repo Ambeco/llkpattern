@@ -685,6 +685,12 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public CodePointSet union(CodePointSet other) {
+    if (other instanceof ArrayCodePointSet && !invert && !(this instanceof CodePointSetBuilder)) {
+      ArrayCodePointSet o = (ArrayCodePointSet) other;
+      if (!o.invert && !(o instanceof CodePointSetBuilder)) {
+        return sweepUnion(this, o);
+      }
+    }
     ArrayCodePointSet result = new ArrayCodePointSet(this);
     result.insertAll(other);
     return result;
@@ -692,6 +698,12 @@ public class ArrayCodePointSet implements MutableCodePointSet {
 
   @Override
   public CodePointSet difference(CodePointSet other) {
+    if (other instanceof ArrayCodePointSet && !invert && !(this instanceof CodePointSetBuilder)) {
+      ArrayCodePointSet o = (ArrayCodePointSet) other;
+      if (!o.invert && !(o instanceof CodePointSetBuilder)) {
+        return sweepDifference(this, o);
+      }
+    }
     ArrayCodePointSet result = new ArrayCodePointSet(this);
     result.removeAll(other);
     return result;
